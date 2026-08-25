@@ -63,7 +63,7 @@ cd harbor
 
 Sign in to the [Antrieb dashboard](https://antrieb.sh/dash) using GitHub or Google and generate and copy an API key.
 
-Export the API key in your terminal:
+Export the API key in your terminal or add it to your examples/run-task.sh script:
 
 ```bash
 export ANTRIEB_TOKEN=ant_XXXXXX
@@ -72,21 +72,13 @@ export ANTRIEB_TOKEN=ant_XXXXXX
 Run a task:
 
 ```bash
-./packages/infraset/run-task.sh haproxy-nodejs-ubuntu16
+./tasks/run-task.sh greenfield/haproxy-nodejs-ubuntu16
 ```
 
 ## Exploring the logs
 
-The task definitions are available under:
-
-```text
-examples/infraset/
-```
-
-Execution logs are available under:
-```text
-jobs/
-```
+The task definitions are available in the tasks folder in this exact repo:
+Execution logs are available ```jobs```
 
 Use your preferred LLM or analysis tool to explore questions such as:
 
