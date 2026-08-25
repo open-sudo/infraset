@@ -75,6 +75,31 @@ Run a task:
 ./tasks/run-task.sh greenfield/haproxy-nodejs-ubuntu16
 ```
 
+## Creating a task
+
+InfraSet includes a task-builder skill that allows a coding agent to turn a task idea into a complete executable benchmark task.
+
+1. Copy `./skills/infraset-task-builder` into a skills directory your coding agent can access.
+2. Load the skill into your coding agent and describe the task you want to create.
+
+For example:
+
+> Create an OpenLDAP task with 50 service accounts that have been used at various times during the past eight months. Identify service accounts that have not been used for 90 or more days and disable them.
+
+The coding agent uses the skill to generate the complete task, including:
+
+- `instruction.md`
+- `task.toml`
+- Environment information
+- Setup files
+- Verification code
+- The task name
+
+You do not need to write the environment or verification logic manually, neither do you need to worry about creating the cluster in Antrieb. Copy the generated task name and run it:
+
+```bash
+./packages/infraset/run-task.sh <generated-task-name>
+
 ## Exploring the logs
 
 The task definitions are available in the tasks folder in this exact repo:
