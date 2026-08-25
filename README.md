@@ -61,9 +61,9 @@ git clone https://github.com/<your-account>/harbor.git
 cd harbor
 ```
 
-Sign in to the [Antrieb dashboard](https://antrieb.sh/dash) using GitHub or Google and generate an API key.
+Sign in to the [Antrieb dashboard](https://antrieb.sh/dash) using GitHub or Google and generate and copy an API key.
 
-Export the API key:
+Export the API key in your terminal:
 
 ```bash
 export ANTRIEB_TOKEN=ant_XXXXXX
