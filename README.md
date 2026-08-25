@@ -99,6 +99,7 @@ You do not need to write the environment or verification logic manually, neither
 
 ```bash
 ./packages/infraset/run-task.sh <generated-task-name>
+```
 
 ## Exploring the logs
 
