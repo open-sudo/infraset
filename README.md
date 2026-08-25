@@ -57,7 +57,7 @@ Clone the repository, point your preferred analysis tool at the logs, and begin 
 
 InfraSet tasks are executed through the InfraSet-enabled Harbor engine. Clone the Harbor fork containing the InfraSet engine:
 ```bash
-git clone https://github.com/<your-account>/harbor.git
+git clone https://github.com/open-sudo/harbor.git
 cd harbor
 ```
 
