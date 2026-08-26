@@ -9,11 +9,11 @@ I created **InfraSet** because I could not find answers to questions that kept a
 - How do they handle networks, routers, firewalls, and switches?
 - How do they handle migrations for version to version or from a distro to another distro?
 
-These questions matter to anyone considering AI agents for real infrastructure. Increasingly, it has also become my scratchpad for infrastructure work. Instead of sending an LLM directly into a live environment, I first express the intended change as an executable InfraSet test case. The LLM works on a disposable twin, and the evaluator checks the resulting infrastructure state (almost like TDD for LLM-driven infra work).
+I suppose these questions matter to anyone considering AI agents for real infrastructure. Increasingly, **InfraSet** has also become my scratchpad for infra work. Instead of sending an LLM directly into a live environment, I first express the intended change as an executable InfraSet test case. The LLM works on a disposable twin, and the evaluator checks the resulting state (almost like TDD for LLM-driven infra work).
 
 ## What makes InfraSet different
 
-Enterprise IT infrastructure is diverse. It includes different operating systems, software versions, existing configurations, multi-node clusters, and complex networks. InfraSet uses a capable LLM as an instrument for exploring this diversity. Each task places the LLM in a realistic infrastructure environment and asks it to set it up, investigate a problem, make changes, and verify the result. The goal is to understand:
+Enterprise IT infrastructure is diverse. It includes different operating systems, software versions, existing configurations, multi-node clusters, and complex networks. InfraSet uses LLM as an instrument for exploring this heterogeneity. Each task places the LLM in a realistic infrastructure environment and asks it to set it up, investigate a problem, make changes, and verify the result. The goal is to understand:
 
 - What infra work the LLM can complete
 - Where and how it fails
@@ -97,7 +97,7 @@ The coding agent uses the skill to generate the complete task, including:
 You do not need to write the environment or verification logic manually, neither do you need to worry about creating the cluster in Antrieb. Copy the generated task name and run it:
 
 ```bash
-./packages/infraset/run-task.sh <generated-task-name>
+./tasks/run-task.sh <generated-task-name>
 ```
 
 ## Exploring the logs
