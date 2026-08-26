@@ -1,6 +1,6 @@
 # InfraSet
 
-**Testing LLMs in the role of enterprise system administrator**
+**Testing LLMs as enterprise system administrators**
 
 I created InfraSet because I could not find answers to questions that kept arising as I worked with LLMs on IT infrastructure:
 
