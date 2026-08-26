@@ -1,6 +1,6 @@
 # InfraSet
 
-**Test cases exploring how LLMs handle infrastructure work across heterogeneous enterprise environments**
+**Test cases exploring LLM as enterprise system administrator**
 
 I created InfraSet because I could not find answers to questions that kept arising as I worked with LLMs on IT infrastructure:
 
