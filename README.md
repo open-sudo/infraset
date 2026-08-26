@@ -4,11 +4,12 @@ I created **InfraSet** because I could not find answers to questions that kept a
 
 - How do LLMs behave on end-of-life Linux distributions (e.g. Ubuntu 16)?
 - How do they perform on full-system VMs rather than container-only or MicroVMs?
-- How do they handle or setup clustered environments?
+- How do they handle distribued environments?
 - How do they operate in brownfield enterprise environments?
 - How do they handle networks, routers, firewalls, and switches?
+- How do they handle migrations for version to version or from a distro to another distro?
 
-I figure, these questions matter to anyone considering AI agents for real infra. InfraSet starts with 40 tasks, and we hope the community will help expand it.
+These questions matter to anyone considering AI agents for real infrastructure. Increasingly, it has also become my scratchpad for infrastructure work. Instead of sending an LLM directly into a live environment, I first express the intended change as an executable InfraSet test case. The LLM works on a disposable twin, and the evaluator checks the resulting infrastructure state (almost like TDD for LLM-driven infra work).
 
 ## What makes InfraSet different
 
