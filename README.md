@@ -1,6 +1,6 @@
 # Testing LLMs as enterprise system administrators
 
-I created InfraSet because I could not find answers to questions that kept arising as I worked with LLMs on IT infrastructure:
+I created **InfraSet** because I could not find answers to questions that kept arising as I worked with LLMs on IT infrastructure:
 
 - How do LLMs behave on end-of-life Linux distributions (e.g. Ubuntu 16)?
 - How do they perform on full-system VMs rather than container-only or MicroVMs?
