@@ -12,6 +12,11 @@ task_categories:
   - other
 size_categories:
   - n<1K
+configs:
+  - config_name: summary
+    data_files:
+      - split: train
+        path: data/summary.jsonl
 ---
 
 # Execution summary

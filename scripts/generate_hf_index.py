@@ -164,6 +164,39 @@ def provisioning_time_ms(trial_path: Path) -> int | None:
     return None
 
 
+def summary_records() -> list[dict[str, Any]]:
+    path = ROOT / "results-summary.md"
+    records = []
+    for line in path.read_text().splitlines():
+        match = re.match(r"\|\s*(\d+)\s*\|(.+)\|", line)
+        if not match:
+            continue
+        fields = [field.strip() for field in match.group(2).split("|")]
+        if len(fields) != 9 or fields[0] == "Task":
+            continue
+        def number(value: str) -> float | None:
+            return None if value == "—" else float(value)
+
+        def percent(value: str) -> float | None:
+            return None if value == "—" else float(value.rstrip("%"))
+
+        records.append(
+            {
+                "row": int(match.group(1)),
+                "task": fields[0],
+                "environment": fields[1],
+                "runs": int(fields[2]),
+                "full_passes": fields[3],
+                "best_score": number(fields[4]),
+                "evaluation_coverage_percent": percent(fields[5]),
+                "operational_hygiene_percent": percent(fields[6]),
+                "provisioning_time": fields[7],
+                "mean_duration": fields[8],
+            }
+        )
+    return records
+
+
 def main() -> int:
     task_map, tasks = task_records()
     jobs: dict[tuple[str, str], dict[str, Any]] = {}
@@ -259,6 +292,7 @@ def main() -> int:
 
     OUTPUT.mkdir(exist_ok=True)
     outputs = {
+        "summary.jsonl": summary_records(),
         "tasks.jsonl": tasks,
         "jobs.jsonl": sorted(jobs.values(), key=lambda item: (item["task_name"], item["job_name"])),
         "trials.jsonl": sorted(trials, key=lambda item: (item["task_name"], item["job_name"], item["trial_name"])),
