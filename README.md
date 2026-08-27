@@ -11,10 +11,12 @@ traces. It helps answer questions such as:
 
 These questions matter to anyone considering LLMs for real infrastructure work.
 
-InfraSet starts with 40 tasks, and we hope the community will help expand it.
+InfraSet currently contains 48 tasks, and we hope the community will help expand it.
 This repository contains the dataset: task definitions, task-building guidance,
 and execution results. These execution results can also be explored on
 [Hugging Face](https://huggingface.co/datasets/infraset/infraset).
+[A summary of all recorded task executions](results-summary.md) provides a quick
+overview of environments, run counts, scores, durations, and takeaways.
 [Harbor](https://github.com/harbor-framework/harbor) provides the execution
 framework, [Antrieb](https://antrieb.sh/) provides the infrastructure, while
 [`harbor-antrieb`](https://github.com/open-sudo/harbor-antrieb) connects Harbor
