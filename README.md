@@ -55,8 +55,7 @@ Published runs include the observable, redacted agent trajectory:
 - Final response and evaluator result
 
 Each task is evaluated against the resulting infrastructure state, not merely the
-LLM's final answer. Credential values are excluded or redacted from published
-artifacts. Browse and download the published traces from the
+LLM's final answer. Browse and download the published traces from the
 [InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset).
 
 ## Running a task
