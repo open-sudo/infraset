@@ -1,3 +1,28 @@
+---
+pretty_name: InfraSet execution summary
+license: apache-2.0
+language:
+  - en
+tags:
+  - infrastructure
+  - llm-evaluation
+  - linux
+  - systems-administration
+task_categories:
+  - other
+size_categories:
+  - n<1K
+configs:
+  - config_name: trials
+    data_files:
+      - split: train
+        path: data/trials.jsonl
+  - config_name: evaluation-analysis
+    data_files:
+      - split: train
+        path: data/evaluation-analysis.jsonl
+---
+
 # Execution summary
 
 This table summarizes the recorded jobs in `jobs/`. `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials.
