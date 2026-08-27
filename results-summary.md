@@ -21,7 +21,7 @@ configs:
 
 # Execution summary
 
-InfraSet is a collection of infrastructure tasks that AI agents try to complete.
+InfraSet is a collection of system administration tasks attempted by AI agents.
 
 This table summarizes the recorded jobs in `jobs/`. `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials.
 
