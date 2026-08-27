@@ -57,8 +57,9 @@ artifacts.
 
 ## Running a task
 
-Install `uv` and log in to your model provider on the host. Create an API key in
-the [Antrieb dashboard](https://antrieb.sh/dash), then export the Antrieb token:
+Install `uv` and log in to the agent you want to use, such as Codex or Claude
+Code. Create an API key in the [Antrieb dashboard](https://antrieb.sh/dash), then
+export the Antrieb token:
 
 ```bash
 export ANTRIEB_TOKEN='ant_XXXXXX'
