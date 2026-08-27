@@ -22,6 +22,7 @@ configs:
 # Execution summary
 
 InfraSet is a collection of system administration tasks attempted by AI agents.
+To run these tasks, visit the [InfraSet GitHub repository](https://github.com/open-sudo/infraset).
 
 This table summarizes the recorded jobs in `jobs/`. `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials.
 
