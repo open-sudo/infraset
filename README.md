@@ -27,10 +27,10 @@ Tasks run on disposable VMs, clusters, and networks provisioned through [Antrieb
 
 The environments can include:
 
-- Current and end-of-life Linux distributions, including RHEL 7 through 10, AlmaLinux 9, Alpine, Arch, Debian 13, Ubuntu 16.04, and Ubuntu 24.04
+- Current and end-of-life Linux distributions, including *RHEL 7 through 10, AlmaLinux 9, Alpine, Arch, Debian 13, Ubuntu 16.04, and Ubuntu 24.04*
 - Single-node and multi-node systems
 - Brownfield configurations and pre-existing state
-- Routers, firewalls, and switches, including VyOS, OPNsense, OpenWrt, and SONiC
+- Routers, firewalls, and switches, including *VyOS, OPNsense, OpenWrt, and SONiC*
 - Multi-network topologies
 - Real services and application dependencies
 
