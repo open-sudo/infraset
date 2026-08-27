@@ -15,7 +15,7 @@ from typing import Any
 REQUIRED_FILES = (
     "instruction.md",
     "task.toml",
-    "environment/infraset.toml",
+    "environment/harbor_antrieb.toml",
     "verifier/judge.toml",
     "verifier/checks.toml",
     "tests/test.sh",
@@ -82,7 +82,9 @@ def validate(task_dir: Path) -> tuple[list[str], list[str]]:
     task_config = load_toml(task_dir / "task.toml", errors)
     if task_config and not task_config.get("schema_version"):
         errors.append("task.toml is missing schema_version")
-    environment_config = load_toml(task_dir / "environment" / "infraset.toml", errors)
+    environment_config = load_toml(
+        task_dir / "environment" / "harbor_antrieb.toml", errors
+    )
     count = cluster_node_count(environment_config.get("cluster"))
     if environment_config and count is None:
         errors.append("environment cluster must be a non-empty supported list")

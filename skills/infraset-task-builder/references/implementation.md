@@ -27,7 +27,7 @@ Within the selected directory, create:
 ```text
 instruction.md
 task.toml
-environment/infraset.toml
+environment/harbor_antrieb.toml
 verifier/checks.toml
 tests/test.sh
 ```
@@ -48,7 +48,7 @@ directories or compatibility files.
 Use the current task schema and shared verifier environment mode. Follow the closest
 existing example rather than copying stale values blindly.
 
-Define managed topology in `environment/infraset.toml`:
+Define managed topology in `environment/harbor_antrieb.toml`:
 
 ```toml
 cluster = ["ubuntu24.04 x3"]

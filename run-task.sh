@@ -25,7 +25,31 @@ fi
 task_name="$(basename "$task_path")"
 job_name="${INFRASET_JOB_NAME:-$(date '+%Y-%m-%d__%H-%M-%S')}"
 jobs_dir="$jobs_root/$task_name"
-mkdir -p "$jobs_dir"
+job_dir="$jobs_dir/$job_name"
+mkdir -p "$job_dir"
+
+if [[ -f "$task_path/instruction.md" ]]; then
+  cp "$task_path/instruction.md" "$job_dir/instruction.md"
+else
+  printf 'InfraSet task does not contain instruction.md: %s\n' "$task_path" >&2
+  exit 2
+fi
+
+environment_file=""
+for candidate in \
+  "$task_path/environment/harbor_antrieb.toml" \
+  "$task_path/environment/infraset.toml"; do
+  if [[ -f "$candidate" ]]; then
+    environment_file="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$environment_file" ]]; then
+  printf 'InfraSet task does not contain an environment definition: %s\n' "$task_path" >&2
+  exit 2
+fi
+cp "$environment_file" "$job_dir/environment.toml"
 
 if [[ -n "${HARBOR_DIR:-}" ]]; then
   if [[ ! -d "$HARBOR_DIR" ]]; then
