@@ -57,9 +57,8 @@ artifacts.
 
 ## Running a task
 
-Install `uv`, configure the model agent's normal host-side authentication, and
-create an API key in the [Antrieb dashboard](https://antrieb.sh/dash). Export the
-Antrieb token on the host:
+Install `uv` and log in to your model provider on the host. Create an API key in
+the [Antrieb dashboard](https://antrieb.sh/dash), then export the Antrieb token:
 
 ```bash
 export ANTRIEB_TOKEN='ant_XXXXXX'
