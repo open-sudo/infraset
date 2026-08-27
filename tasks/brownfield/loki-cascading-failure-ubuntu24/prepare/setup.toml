@@ -1,0 +1,432 @@
+timeout_sec = 720
+
+[[steps]]
+id = "prepare-observability-prerequisites"
+stage = 10
+node = "node1"
+retries = 3
+retry_delay_sec = 10
+command = '''
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get -o Acquire::Retries=5 update -qq
+apt-get -o Acquire::Retries=5 install -y -qq ca-certificates curl jq openssl ufw unzip >/dev/null
+
+sed -i '/# BEGIN INFRASET CLUSTER HOSTS/,/# END INFRASET CLUSTER HOSTS/d' /etc/hosts
+printf '# BEGIN INFRASET CLUSTER HOSTS\n%s\n# END INFRASET CLUSTER HOSTS\n' "$CLUSTER_HOSTS" >> /etc/hosts
+getent group loki >/dev/null 2>&1 || groupadd --system loki
+id loki >/dev/null 2>&1 || useradd --system --gid loki --home-dir /var/lib/loki --shell /usr/sbin/nologin loki
+install -d -o root -g loki -m 0750 /etc/loki
+install -d -o loki -g loki -m 0750 /var/lib/loki /var/lib/loki/chunks /var/lib/loki/rules
+'''
+
+[[steps]]
+id = "install-loki"
+stage = 20
+node = "node1"
+retries = 3
+retry_delay_sec = 5
+command = '''
+set -eu
+if ! printf '%s  %s\n' \
+    '4449378c6e74281e99163dec9cca70479b6095d139c0403042f59bd962ec8791' \
+    '/tmp/loki-linux-amd64.zip' | sha256sum --check --status 2>/dev/null; then
+  if ! curl --fail --location --retry 5 --retry-all-errors \
+      --continue-at - \
+      --output /tmp/loki-linux-amd64.zip \
+      https://github.com/grafana/loki/releases/download/v3.4.2/loki-linux-amd64.zip; then
+    rm -f /tmp/loki-linux-amd64.zip
+    curl --fail --location --retry 5 --retry-all-errors \
+      --output /tmp/loki-linux-amd64.zip \
+      https://github.com/grafana/loki/releases/download/v3.4.2/loki-linux-amd64.zip
+  fi
+fi
+printf '%s  %s\n' \
+  '4449378c6e74281e99163dec9cca70479b6095d139c0403042f59bd962ec8791' \
+  '/tmp/loki-linux-amd64.zip' | sha256sum --check --status
+rm -rf /tmp/infraset-loki-install
+install -d -m 0755 /tmp/infraset-loki-install
+unzip -q /tmp/loki-linux-amd64.zip -d /tmp/infraset-loki-install
+install -o root -g root -m 0755 /tmp/infraset-loki-install/loki-linux-amd64 /usr/local/bin/loki
+
+cat > /etc/loki/config.yaml <<'LOKI_CONFIG'
+auth_enabled: false
+
+server:
+  http_listen_address: 0.0.0.0
+  http_listen_port: 3100
+  grpc_listen_address: 127.0.0.1
+  grpc_listen_port: 9096
+  log_level: info
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /var/lib/loki
+  storage:
+    filesystem:
+      chunks_directory: /var/lib/loki/chunks
+      rules_directory: /var/lib/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+analytics:
+  reporting_enabled: false
+LOKI_CONFIG
+chown root:loki /etc/loki/config.yaml
+chmod 0640 /etc/loki/config.yaml
+cat > /etc/systemd/system/loki.service <<'LOKI_UNIT'
+[Unit]
+Description=InfraSet Loki service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=loki
+Group=loki
+ExecStart=/usr/local/bin/loki -config.file=/etc/loki/config.yaml
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/loki
+
+[Install]
+WantedBy=multi-user.target
+LOKI_UNIT
+rm -rf /tmp/infraset-loki-install /tmp/loki-linux-amd64.zip
+'''
+
+[[steps]]
+id = "install-and-configure-grafana"
+stage = 20
+node = "node1"
+retries = 3
+retry_delay_sec = 5
+command = '''
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+if ! printf '%s  %s\n' \
+    'c5159ce58c1eb7b4a47474951f0334055dd1a4b3325ffc432ef1761da6474b2a' \
+    '/tmp/grafana.deb' | sha256sum --check --status 2>/dev/null; then
+  if ! curl --fail --location --retry 5 --retry-all-errors \
+      --continue-at - \
+      --output /tmp/grafana.deb \
+      https://dl.grafana.com/oss/release/grafana_11.6.0_amd64.deb; then
+    rm -f /tmp/grafana.deb
+    curl --fail --location --retry 5 --retry-all-errors \
+      --output /tmp/grafana.deb \
+      https://dl.grafana.com/oss/release/grafana_11.6.0_amd64.deb
+  fi
+fi
+printf '%s  %s\n' \
+  'c5159ce58c1eb7b4a47474951f0334055dd1a4b3325ffc432ef1761da6474b2a' \
+  '/tmp/grafana.deb' | sha256sum --check --status
+apt-get -o Acquire::Retries=5 install -y -qq /tmp/grafana.deb >/dev/null
+
+install -d -o root -g grafana -m 0750 /etc/grafana
+if ! test -s /etc/grafana/infraset-admin.env; then
+  umask 077
+  grafana_password="$(openssl rand -hex 24)"
+  printf 'GF_SECURITY_ADMIN_USER=admin\nGF_SECURITY_ADMIN_PASSWORD=%s\nGF_SERVER_HTTP_ADDR=127.0.0.1\nGF_SERVER_HTTP_PORT=3000\n' \
+    "$grafana_password" > /etc/grafana/infraset-admin.env
+fi
+chown root:grafana /etc/grafana/infraset-admin.env
+chmod 0640 /etc/grafana/infraset-admin.env
+install -d -o root -g root -m 0755 /etc/systemd/system/grafana-server.service.d
+cat > /etc/systemd/system/grafana-server.service.d/infraset.conf <<'GRAFANA_UNIT'
+[Service]
+EnvironmentFile=/etc/grafana/infraset-admin.env
+GRAFANA_UNIT
+install -d -o root -g grafana -m 0750 /etc/grafana/provisioning/datasources
+cat > /etc/grafana/provisioning/datasources/infraset-loki.yaml <<'GRAFANA_DATASOURCE'
+apiVersion: 1
+datasources:
+  - name: Loki
+    uid: infraset-loki
+    type: loki
+    access: proxy
+    url: http://127.0.0.1:3100
+    isDefault: true
+    editable: false
+GRAFANA_DATASOURCE
+chown root:grafana /etc/grafana/provisioning/datasources/infraset-loki.yaml
+chmod 0640 /etc/grafana/provisioning/datasources/infraset-loki.yaml
+rm -f /tmp/grafana.deb
+'''
+
+[[steps]]
+id = "start-and-secure-observability"
+stage = 30
+node = "node1"
+retries = 2
+retry_delay_sec = 5
+command = '''
+set -eu
+systemctl daemon-reload
+systemctl enable loki.service grafana-server.service >/dev/null
+systemctl restart loki.service grafana-server.service
+timeout 180 sh -c 'until curl -fsS http://127.0.0.1:3100/ready >/dev/null; do sleep 2; done'
+timeout 180 sh -c 'until curl -fsS http://127.0.0.1:3000/api/health | jq -e '\''[.database,.version] | all(type == "string" and length > 0)'\'' >/dev/null; do sleep 2; done'
+systemctl is-active --quiet loki.service
+systemctl is-active --quiet grafana-server.service
+systemctl disable --now ssh.socket ssh.service 2>/dev/null || true
+node2_ip="$(getent ahostsv4 node2 | awk 'NR == 1 {print $1}')"
+node3_ip="$(getent ahostsv4 node3 | awk 'NR == 1 {print $1}')"
+node4_ip="$(getent ahostsv4 node4 | awk 'NR == 1 {print $1}')"
+ufw --force reset >/dev/null
+ufw default deny incoming >/dev/null
+ufw default allow outgoing >/dev/null
+ufw allow from "$node2_ip" to any port 3100 proto tcp >/dev/null
+ufw allow from "$node3_ip" to any port 3100 proto tcp >/dev/null
+ufw allow from "$node4_ip" to any port 3100 proto tcp >/dev/null
+ufw --force enable >/dev/null
+'''
+
+[[steps]]
+id = "install-node2-service"
+stage = 10
+node = "node2"
+retries = 3
+retry_delay_sec = 10
+command = '''
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get -o Acquire::Retries=5 update -qq
+apt-get -o Acquire::Retries=5 install -y -qq nginx curl jq ufw >/dev/null
+sed -i '/# BEGIN INFRASET CLUSTER HOSTS/,/# END INFRASET CLUSTER HOSTS/d' /etc/hosts
+printf '# BEGIN INFRASET CLUSTER HOSTS\n%s\n# END INFRASET CLUSTER HOSTS\n' "$CLUSTER_HOSTS" >> /etc/hosts
+'''
+
+[[steps]]
+id = "install-node3-service"
+stage = 10
+node = "node3"
+retries = 3
+retry_delay_sec = 10
+command = '''
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get -o Acquire::Retries=5 update -qq
+apt-get -o Acquire::Retries=5 install -y -qq nginx curl jq ufw >/dev/null
+sed -i '/# BEGIN INFRASET CLUSTER HOSTS/,/# END INFRASET CLUSTER HOSTS/d' /etc/hosts
+printf '# BEGIN INFRASET CLUSTER HOSTS\n%s\n# END INFRASET CLUSTER HOSTS\n' "$CLUSTER_HOSTS" >> /etc/hosts
+'''
+
+[[steps]]
+id = "install-node4-service"
+stage = 10
+node = "node4"
+retries = 3
+retry_delay_sec = 10
+command = '''
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get -o Acquire::Retries=5 update -qq
+apt-get -o Acquire::Retries=5 install -y -qq nginx curl jq ufw >/dev/null
+sed -i '/# BEGIN INFRASET CLUSTER HOSTS/,/# END INFRASET CLUSTER HOSTS/d' /etc/hosts
+printf '# BEGIN INFRASET CLUSTER HOSTS\n%s\n# END INFRASET CLUSTER HOSTS\n' "$CLUSTER_HOSTS" >> /etc/hosts
+'''
+
+[[steps]]
+id = "configure-catalog-node2"
+stage = 20
+node = "node2"
+command = '''
+set -eu
+install -d -o root -g root -m 0755 /srv/infraset-cascade/catalog
+printf '%s\n' '{"service":"catalog-api","status":"ok","node":"node2"}' > /srv/infraset-cascade/catalog/health.json
+printf '%s\n' '{"catalog_version":7,"records":["alpha","bravo","charlie"]}' > /srv/infraset-cascade/catalog/records.json
+chown root:root /srv/infraset-cascade/catalog/health.json /srv/infraset-cascade/catalog/records.json
+chmod 0644 /srv/infraset-cascade/catalog/health.json /srv/infraset-cascade/catalog/records.json
+cat > /etc/nginx/sites-available/infraset-cascade.conf <<'NGINX'
+server {
+    listen 18081;
+    server_name _;
+    access_log /var/log/nginx/catalog-access.log;
+    error_log /var/log/nginx/catalog-error.log warn;
+
+    location = /health {
+        default_type application/json;
+        alias /srv/infraset-cascade/catalog/health.json;
+    }
+}
+NGINX
+ln -sfn /etc/nginx/sites-available/infraset-cascade.conf /etc/nginx/sites-enabled/infraset-cascade.conf
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl enable nginx.service >/dev/null
+systemctl restart nginx.service
+systemctl disable --now ssh.socket ssh.service 2>/dev/null || true
+node3_ip="$(getent ahostsv4 node3 | awk 'NR == 1 {print $1}')"
+ufw --force reset >/dev/null
+ufw default deny incoming >/dev/null
+ufw default allow outgoing >/dev/null
+ufw allow from "$node3_ip" to any port 18081 proto tcp >/dev/null
+ufw --force enable >/dev/null
+curl -fsS http://127.0.0.1:18081/health | grep -Fq '"status":"ok"'
+'''
+
+[[steps]]
+id = "configure-orders-node3"
+stage = 20
+node = "node3"
+command = '''
+set -eu
+cat > /etc/nginx/sites-available/infraset-cascade.conf <<'NGINX'
+server {
+    listen 18082;
+    server_name _;
+    access_log /var/log/nginx/orders-access.log;
+    error_log /var/log/nginx/orders-error.log warn;
+
+    location = /health {
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 2s;
+        proxy_pass http://node2:18081/health;
+    }
+}
+NGINX
+ln -sfn /etc/nginx/sites-available/infraset-cascade.conf /etc/nginx/sites-enabled/infraset-cascade.conf
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl enable nginx.service >/dev/null
+systemctl restart nginx.service
+systemctl disable --now ssh.socket ssh.service 2>/dev/null || true
+node4_ip="$(getent ahostsv4 node4 | awk 'NR == 1 {print $1}')"
+ufw --force reset >/dev/null
+ufw default deny incoming >/dev/null
+ufw default allow outgoing >/dev/null
+ufw allow from "$node4_ip" to any port 18082 proto tcp >/dev/null
+ufw --force enable >/dev/null
+curl -fsS http://127.0.0.1:18082/health | grep -Fq '"status":"ok"'
+'''
+
+[[steps]]
+id = "configure-checkout-node4"
+stage = 20
+node = "node4"
+command = '''
+set -eu
+cat > /etc/nginx/sites-available/infraset-cascade.conf <<'NGINX'
+server {
+    listen 18083;
+    server_name _;
+    access_log /var/log/nginx/checkout-access.log;
+    error_log /var/log/nginx/checkout-error.log warn;
+
+    location = /health {
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 2s;
+        proxy_pass http://node3:18082/health;
+    }
+}
+NGINX
+ln -sfn /etc/nginx/sites-available/infraset-cascade.conf /etc/nginx/sites-enabled/infraset-cascade.conf
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl enable nginx.service >/dev/null
+systemctl restart nginx.service
+systemctl disable --now ssh.socket ssh.service 2>/dev/null || true
+node1_ip="$(getent ahostsv4 node1 | awk 'NR == 1 {print $1}')"
+ufw --force reset >/dev/null
+ufw default deny incoming >/dev/null
+ufw default allow outgoing >/dev/null
+ufw allow from "$node1_ip" to any port 18083 proto tcp >/dev/null
+ufw --force enable >/dev/null
+curl -fsS http://127.0.0.1:18083/health | grep -Fq '"status":"ok"'
+'''
+
+[[steps]]
+id = "verify-healthy-chain-before-incident"
+stage = 40
+node = "node1"
+command = "curl -fsS http://node4:18083/health | grep -Fq '\"status\":\"ok\"'"
+
+[[steps]]
+id = "inject-originating-node2-failure"
+stage = 50
+node = "node2"
+command = '''
+set -eu
+sed -i '/server_name _;/a\    upstream_timeoutx 5s;' /etc/nginx/sites-available/infraset-cascade.conf
+if nginx -t >/run/INC-042-node2.log 2>&1; then
+  exit 1
+fi
+systemctl restart nginx.service >/dev/null 2>&1 || true
+! systemctl is-active --quiet nginx.service
+timestamp="$(date +%s%N)"
+line="$(tr '\n' ' ' < /run/INC-042-node2.log)"
+payload="$(jq -cn --arg timestamp "$timestamp" --arg line "$line" '{streams:[{stream:{job:"infraset-cascade",incident:"INC-042",host:"node2",service:"catalog-api",event:"configuration_error"},values:[[$timestamp,$line]]}]}')"
+curl -fsS -H 'Content-Type: application/json' -X POST --data "$payload" http://node1:3100/loki/api/v1/push
+rm -f /run/INC-042-node2.log
+'''
+
+[[steps]]
+id = "record-node3-dependent-failure"
+stage = 60
+node = "node3"
+command = '''
+set -eu
+sleep 2
+status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18082/health || true)"
+test "$status" != 200
+timestamp="$(date +%s%N)"
+line="incident=INC-042 level=error dependency=node2:18081 status=${status:-000} message=upstream_catalog_unavailable"
+payload="$(jq -cn --arg timestamp "$timestamp" --arg line "$line" '{streams:[{stream:{job:"infraset-cascade",incident:"INC-042",host:"node3",service:"orders-api",event:"dependency_error"},values:[[$timestamp,$line]]}]}')"
+curl -fsS -H 'Content-Type: application/json' -X POST --data "$payload" http://node1:3100/loki/api/v1/push
+'''
+
+[[steps]]
+id = "record-node4-dependent-failure"
+stage = 70
+node = "node4"
+command = '''
+set -eu
+sleep 2
+status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18083/health || true)"
+test "$status" != 200
+timestamp="$(date +%s%N)"
+line="incident=INC-042 level=error dependency=node3:18082 status=${status:-000} message=upstream_orders_unavailable"
+payload="$(jq -cn --arg timestamp "$timestamp" --arg line "$line" '{streams:[{stream:{job:"infraset-cascade",incident:"INC-042",host:"node4",service:"checkout-api",event:"dependency_error"},values:[[$timestamp,$line]]}]}')"
+curl -fsS -H 'Content-Type: application/json' -X POST --data "$payload" http://node1:3100/loki/api/v1/push
+'''
+
+[[steps]]
+id = "verify-prepared-loki-timeline"
+stage = 80
+node = "node1"
+retries = 15
+retry_delay_sec = 2
+command = '''
+set -eu
+body="$(curl -fsSG http://127.0.0.1:3100/loki/api/v1/query_range --data-urlencode 'query={job="infraset-cascade",incident="INC-042"}' --data-urlencode 'since=1h' --data-urlencode 'direction=forward' --data-urlencode 'limit=20')"
+printf '%s' "$body" | jq -e '
+  .status == "success" and
+  ([.data.result[] as $stream | $stream.values[] |
+    {timestamp: .[0], host: $stream.stream.host}] | length) >= 3 and
+  ([.data.result[] as $stream | $stream.values[] |
+    {timestamp: .[0], host: $stream.stream.host}] | sort_by(.timestamp) | .[0].host) == "node2"
+' >/dev/null
+'''

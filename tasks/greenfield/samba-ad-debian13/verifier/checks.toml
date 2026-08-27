@@ -1,0 +1,167 @@
+schema_version = 1
+
+[[probes]]
+id = "samba-domain-contract"
+level = 1
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 10
+procedure = "Inspect both writable CORP.EXAMPLE controllers and their directory, SYSVOL, DNS, Kerberos, and replication state; establish node3 as a joined member server and node4 as a joined client using identity-network controllers. Confirm engineering and infrasetuser membership."
+
+[[probes]]
+id = "samba-share-contract"
+level = 2
+targets = ["node3", "node4"]
+effect = "evaluator_owned_data"
+max_exec_calls = 8
+procedure = "On node3 discover the member server's canonical CIFS identity from effective host/service configuration, AD service principal names, and DNS; accept any coherent implementation-defined name that resolves through both controllers and has the matching CIFS principal. On node4 source /root/corp-user.env without exposing values, obtain a Kerberos ticket, resolve both controllers, and connect to the share through that discovered canonical identity rather than assuming the managed node label is the service name. Read engineering/welcome.txt, then create, modify, read, and remove a unique evaluator file through SMB. If a custom credential-cache path is rejected by the installed client, obtain a fresh ticket in that privileged identity's default cache and retry the same canonical endpoint. Inspect resulting ownership and engineering-group ACL semantics on node3."
+cleanup = "Remove the evaluator share file, ticket/cache artifacts created by the probe, and temporary mounts while preserving declared share data."
+
+[[probes]]
+id = "samba-security-boundary"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+effect = "evaluator_owned_data"
+max_exec_calls = 9
+procedure = "Verify Kerberos-backed access, anonymous/invalid-password rejection, SMB1 absence, signing, protected databases/keytabs/client credentials, and identity-network scope. Safely create a temporary ordinary non-engineering domain identity, prove it cannot write the share, then remove it."
+cleanup = "Delete the temporary ordinary identity, its files/tickets, and any evaluator share artifacts; confirm directory convergence."
+
+[[probes]]
+id = "samba-operational-state"
+level = 5
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 5
+procedure = "Inspect failed Samba units, stale joins, resolver conflicts, duplicate realm/workgroup state, provisioning scripts, plaintext credentials, keytab/database copies, temporary mounts, debug state, enabled SSH, unrelated directory services, and residue."
+
+[[probes]]
+id = "samba-controller-loss"
+level = 6
+targets = ["node1", "node2", "node3", "node4"]
+effect = "controlled_failure"
+max_exec_calls = 14
+procedure = "Stop node1's actual domain-controller service. Force node3/node4 to use node2, obtain a fresh ticket, resolve the realm, and write/read an evaluator share file. Create a uniquely named evaluator directory or DNS object through node2, restore node1, and require directory/DNS/SYSVOL convergence plus authentication through node1."
+cleanup = "Restore node1, remove evaluator directory/DNS/share state and tickets, and leave both controllers converged."
+
+[[probes]]
+id = "samba-controller-member-reboots"
+level = 8
+targets = ["node1", "node3"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities, reboot controller node1 and member server node3 sequentially, and verify domain replication/availability, membership, share data/ACLs, and authenticated client operations recover."
+cleanup = "Wait for controller replication and member/share availability and remove evaluator files/tickets."
+
+[[probes]]
+id = "samba-remaining-reboots"
+level = 10
+targets = ["node2", "node4"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities, reboot controller node2 and client node4 sequentially, then verify both controllers, DNS/Kerberos, joins, share content, fresh tickets, both-controller resolution, and evaluator file operations."
+cleanup = "Leave both controllers converged and remove evaluator identities, records, tickets, mounts, and files."
+
+[[assertions]]
+id = "samba-required-domain-roles-and-joins"
+probe = "samba-domain-contract"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "Node1 and node2 are active writable CORP.EXAMPLE controllers, node3 is a joined member server, and node4 is a joined client using the identity network."
+fail_condition = "Live evidence confirms a wrong controller or member role, wrong realm, inactive required domain service, missing join, or identity service bound only to the management path."
+
+[[assertions]]
+id = "samba-directory-replication"
+probe = "samba-domain-contract"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "Both controllers report healthy bidirectional directory and AD-integrated DNS replication without current failures or divergent required directory state."
+fail_condition = "Live replication evidence confirms a broken direction or naming partition, current replication errors, or divergent required directory state."
+
+[[assertions]]
+id = "samba-sysvol-health"
+probe = "samba-domain-contract"
+dimension = "functionality"
+points = 1
+pass_condition = "Both controllers expose a complete usable CORP.EXAMPLE SYSVOL with the required policy tree and valid effective ACL state."
+fail_condition = "A controller's live SYSVOL is missing, incomplete, inaccessible, or fails its effective ACL validation."
+
+[[assertions]]
+id = "samba-required-identities"
+probe = "samba-domain-contract"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "engineering and infrasetuser exist and infrasetuser is a member of engineering on converged controllers."
+fail_condition = "Authenticated directory state confirms a required identity or membership absent/incorrect."
+
+[[assertions]]
+id = "samba-engineering-share-works"
+probe = "samba-share-contract"
+dimension = "functionality"
+points = 3
+critical = true
+requires = ["samba-required-identities"]
+pass_condition = "Node4 obtains Kerberos credentials and, through a canonical CIFS identity discovered from live DNS and SPNs, reads welcome.txt containing infraset-samba and completes evaluator SMB file I/O with correct engineering ownership semantics."
+fail_condition = "After discovering and validating the implementation's canonical CIFS identity, healthy domain/client prerequisites confirm ticket, DNS, share read, content, file operation, ownership, or group semantics fail."
+
+[[assertions]]
+id = "samba-share-access-controlled"
+probe = "samba-security-boundary"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "Kerberos engineering access works while anonymous, invalid-password, and ordinary non-engineering writes fail; SMB1 is unavailable and signing is effective."
+fail_condition = "A valid controlled probe confirms unauthorized share write/access, SMB1, or missing signing."
+
+[[assertions]]
+id = "samba-secrets-and-network-protected"
+probe = "samba-security-boundary"
+dimension = "security"
+points = 1
+pass_condition = "Databases, keytabs, credentials, and ACLs are protected and identity services/host controls are confined to intended peers."
+fail_condition = "Concrete evidence confirms exposed secrets, broad management-network identity traffic, unsafe filesystem ACLs, or disabled host controls."
+
+[[assertions]]
+id = "samba-state-clean"
+probe = "samba-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only coherent required AD, DNS, Kerberos, join, share, ACL, log, credential, and package state remains."
+fail_condition = "Concrete failed, stale, duplicate, conflicting, secret-bearing, debug, temporary, or abandoned executor state remains."
+
+[[assertions]]
+id = "samba-survives-controller-loss"
+probe = "samba-controller-loss"
+dimension = "resilience"
+points = 3
+critical = true
+pass_condition = "With node1 stopped, node2 supplies fresh Kerberos/DNS/domain service and node3/node4 complete new authenticated share I/O."
+fail_condition = "The confirmed controller outage stops required authentication, resolution, or share operations despite a healthy survivor."
+
+[[assertions]]
+id = "samba-controller-rejoins-current"
+probe = "samba-controller-loss"
+dimension = "resilience"
+points = 2
+critical = true
+requires = ["samba-survives-controller-loss"]
+pass_condition = "Restored node1 automatically rejoins with current directory, DNS, and SYSVOL state and authenticates clients."
+fail_condition = "Restored node1 needs repair, remains stale, lacks evaluator outage state, or cannot authenticate the client."
+
+[[assertions]]
+id = "samba-two-roles-persist"
+probe = "samba-controller-member-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1 and node3 change boot identities and controller replication plus member/share service and ACLs recover automatically."
+fail_condition = "A completed controller/member reboot loses domain health, membership, share data, ACLs, or authenticated operations."
+
+[[assertions]]
+id = "samba-all-roles-persist"
+probe = "samba-remaining-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node2 and node4 change boot identities and the complete domain, DNS/Kerberos, joins, both-controller client use, and share I/O recover."
+fail_condition = "A completed remaining-role reboot loses domain convergence, client join/ticket, resolution, share data, or access."

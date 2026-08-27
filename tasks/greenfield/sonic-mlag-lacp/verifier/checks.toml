@@ -1,0 +1,128 @@
+schema_version = 1
+
+[[probes]]
+id = "mlag-fabric-contract"
+level = 1
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 12
+procedure = "Map every added NIC to its declared point-to-point network. Inspect both SONiC dataplanes and Ubuntu hosts to establish both peer links in infraset-fabric, LACP bonds spanning switches, VLAN 100 end to end, exact host addresses, MAC learning, and bidirectional L2-only communication without routing/NAT."
+
+[[probes]]
+id = "mlag-fabric-boundary"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 7
+procedure = "Inspect effective VLAN membership, management reachability from data bonds, L3 forwarding/NAT/docker0 leakage, extra VLANs, host configuration permissions, AppArmor/firewall, SSH, and SONiC data-interface management/debug exposure."
+
+[[probes]]
+id = "mlag-operational-state"
+level = 5
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 5
+procedure = "Inspect failed services, duplicate bridges/bonds, stale namespaces, duplicate addresses, conflicting network managers, scripts/captures/archives, extra routing/debug services, unsaved dataplane, and executor-created residue."
+
+[[probes]]
+id = "mlag-path-failures"
+level = 6
+targets = ["node1", "node2", "node3", "node4"]
+effect = "controlled_failure"
+max_exec_calls = 16
+procedure = "Record LACP members, peer state, MAC learning, and continuous timestamped host traffic. Separately disable and restore one node3 bond member, one inter-switch member, and one SONiC switch data path. After each fault prove continuous or prompt same-address recovery through the remaining path, then verify all members return active."
+cleanup = "Restore every host/switch link and service, remove temporary interface state/captures/probes, and leave full LACP and peer state active."
+
+[[probes]]
+id = "mlag-switch-host-reboots"
+level = 8
+targets = ["node1", "node3"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities, reboot one SONiC switch and one host sequentially while testing surviving connectivity, then verify peer, VLAN, LACP, address, MAC, and host-control recovery."
+cleanup = "Wait for all LACP members and peer links to become active and remove evaluator probes."
+
+[[probes]]
+id = "mlag-remaining-reboots"
+level = 10
+targets = ["node2", "node4"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities, reboot the remaining switch and host sequentially, then verify the full fabric and repeat one member-link loss to prove final failure tolerance."
+cleanup = "Restore the test link and leave every peer and LACP member active."
+
+[[assertions]]
+id = "mlag-required-fabric"
+probe = "mlag-fabric-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "Both peer links participate in infraset-fabric; each host has an active cross-switch LACP bond carrying VLAN 100 with the exact declared address."
+fail_condition = "Live kernel/switch state confirms a missing peer/member/VLAN, wrong address, or bond not spanning switches."
+
+[[assertions]]
+id = "mlag-l2-connectivity"
+probe = "mlag-fabric-contract"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "Node3 and node4 communicate bidirectionally with correct MAC learning and no routing or address translation."
+fail_condition = "Correctly sourced data-bond probes confirm broken bidirectional L2 service, routing, or NAT."
+
+[[assertions]]
+id = "mlag-vlan-management-contained"
+probe = "mlag-fabric-boundary"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "The fabric carries only VLAN 100 on declared links and exposes no management service or L3/NAT/docker0 path through data bonds."
+fail_condition = "Concrete probes confirm extra VLAN access, data-bond management exposure, forwarding/NAT, or docker0 leakage."
+
+[[assertions]]
+id = "mlag-host-controls-effective"
+probe = "mlag-fabric-boundary"
+dimension = "security"
+points = 1
+pass_condition = "Host network configuration is protected and AppArmor/firewall/SSH plus SONiC debug exposure remain appropriately constrained."
+fail_condition = "Concrete evidence confirms unsafe configuration, disabled host controls, enabled Ubuntu SSH, or executor-added data-interface debug access."
+
+[[assertions]]
+id = "mlag-state-clean"
+probe = "mlag-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only coherent saved SONiC fabric and persistent Ubuntu bond/VLAN state remains without failures, conflicts, debug state, or residue."
+fail_condition = "Concrete failed, duplicate, stale, conflicting, unsaved, temporary, debug, or abandoned executor state remains."
+
+[[assertions]]
+id = "mlag-survives-member-and-peer-loss"
+probe = "mlag-path-failures"
+dimension = "resilience"
+points = 3
+critical = true
+pass_condition = "Traffic remains continuous or promptly recovers with original addresses during separate host-member and inter-switch-member failures."
+fail_condition = "A confirmed single member-link failure causes sustained loss, address change, routing, or duplicate traffic."
+
+[[assertions]]
+id = "mlag-survives-switch-loss"
+probe = "mlag-path-failures"
+dimension = "resilience"
+points = 3
+critical = true
+pass_condition = "One SONiC data-path loss preserves or promptly restores host traffic through the other switch, and restored components return active automatically."
+fail_condition = "A confirmed single-switch loss causes sustained service failure or restored peer/LACP state requires repair."
+
+[[assertions]]
+id = "mlag-two-roles-persist"
+probe = "mlag-switch-host-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1 and node3 change boot identities and peer, VLAN, LACP, addressing, connectivity, and controls recover automatically."
+fail_condition = "A completed switch/host reboot loses required fabric state, address, connectivity, or host controls."
+
+[[assertions]]
+id = "mlag-full-fabric-persists"
+probe = "mlag-remaining-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node2 and node4 change boot identities, the complete fabric returns, and it again survives a single member-link loss."
+fail_condition = "A completed remaining-node reboot or final member fault loses required service or needs evaluator repair."

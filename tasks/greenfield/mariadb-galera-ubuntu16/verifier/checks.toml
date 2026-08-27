@@ -1,0 +1,132 @@
+schema_version = 1
+
+[[probes]]
+id = "galera-member-state"
+level = 1
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 6
+procedure = "Discover the installed database client and a usable protected local administrative authentication method from each member's live configuration, then inspect each member directly and establish that all three report one Primary Galera component, the same cluster identity and size, synchronized/ready state, and writable database service. If a client or authentication attempt fails, diagnose it locally and try an available equivalent instead of repeating the same failed command on other members."
+
+[[probes]]
+id = "galera-cross-member-io"
+level = 1
+targets = ["node1", "node2", "node3"]
+effect = "evaluator_owned_data"
+max_exec_calls = 9
+procedure = "Using the working client and protected administrative authentication discovered from the live members, create uniquely named evaluator database state through one member, commit distinct rows through the other members, and read the complete ordered state through every member. Discover an equivalent local client or authentication method when layouts differ; do not assume one client binary, environment file, or credential location."
+cleanup = "Remove only the evaluator-owned database state and confirm its removal through another healthy member."
+
+[[probes]]
+id = "galera-operational-state"
+level = 5
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 3
+procedure = "Inspect failed units, duplicate database processes, stale bootstrap modes, conflicting cluster configuration, debug settings, abandoned installers or backups, and executor-created temporary residue."
+
+[[probes]]
+id = "galera-single-member-loss"
+level = 6
+targets = ["node1", "node2", "node3"]
+effect = "controlled_failure"
+max_exec_calls = 8
+procedure = "Stop the database service on node3, commit evaluator-owned data through node1, read it through node2 while node3 is unavailable, restore node3, and verify it rejoins synchronized with the outage write."
+cleanup = "Restore node3, wait for the original three-member Primary component, and delete evaluator-owned outage data."
+
+[[probes]]
+id = "galera-representative-reboots"
+level = 8
+targets = ["node1", "node2"]
+effect = "reboot"
+max_exec_calls = 8
+procedure = "Record boot identities, reboot node1 and node2 sequentially, wait for convergence after each reboot, and repeat member-state and cross-member data checks."
+cleanup = "Wait for the three-member Primary component and remove evaluator-owned data."
+
+[[probes]]
+id = "galera-remaining-reboot"
+level = 10
+targets = ["node3"]
+effect = "reboot"
+max_exec_calls = 5
+procedure = "Record node3's boot identity, reboot it, and confirm automatic return to the same writable synchronized three-member component with prior data intact."
+cleanup = "Wait for node3 to rejoin and leave all three members healthy."
+
+[[assertions]]
+id = "galera-exact-primary-component"
+probe = "galera-member-state"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "Node1 through node3 report exactly one three-member Primary component with one consistent cluster identity."
+fail_condition = "Reachable members confirm a non-Primary, undersized, split, duplicated, or inconsistent cluster."
+
+[[assertions]]
+id = "galera-all-members-ready"
+probe = "galera-member-state"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "Every member is connected, synchronized, ready, and accepts database writes."
+fail_condition = "Any correctly addressed member is confirmed disconnected, desynchronized, unready, read-only, or unavailable."
+
+[[assertions]]
+id = "galera-every-member-writable"
+probe = "galera-cross-member-io"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "A committed evaluator row is accepted through each of node1, node2, and node3."
+fail_condition = "A healthy declared member is confirmed unable to commit its evaluator-owned row."
+
+[[assertions]]
+id = "galera-cross-member-consistency"
+probe = "galera-cross-member-io"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "Every member returns the identical complete set of committed evaluator rows."
+fail_condition = "Healthy members confirm missing, divergent, or inconsistent committed evaluator data."
+
+[[assertions]]
+id = "galera-state-clean"
+probe = "galera-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only necessary MariaDB/Galera services, configuration, data, logs, and maintained operational tooling remain."
+fail_condition = "Concrete executor-created failed, duplicate, bootstrap-only, debug, conflicting, temporary, or abandoned state remains."
+
+[[assertions]]
+id = "galera-io-survives-one-member-loss"
+probe = "galera-single-member-loss"
+dimension = "resilience"
+points = 2
+critical = true
+pass_condition = "The surviving two-member Primary component accepts and returns new committed evaluator data while node3 is stopped."
+fail_condition = "One confirmed member outage makes the surviving component non-Primary, unwritable, or unable to return committed data."
+
+[[assertions]]
+id = "galera-member-rejoins-current"
+probe = "galera-single-member-loss"
+dimension = "resilience"
+points = 2
+critical = true
+requires = ["galera-io-survives-one-member-loss"]
+pass_condition = "Restored node3 rejoins automatically in synchronized/ready state and contains the outage write."
+fail_condition = "Restored node3 is reachable but cannot rejoin current without manual cluster repair or lacks the outage write."
+
+[[assertions]]
+id = "galera-two-members-persist"
+probe = "galera-representative-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1 and node2 have changed boot identities and automatically return to the same writable synchronized component with data intact."
+fail_condition = "A completed reboot is confirmed to lose required membership, writable service, synchronization, or committed data."
+
+[[assertions]]
+id = "galera-all-members-persist"
+probe = "galera-remaining-reboot"
+dimension = "persistence"
+points = 1
+critical = true
+pass_condition = "Node3 has changed boot identity and the complete three-member writable synchronized cluster returns automatically with prior data intact."
+fail_condition = "Node3's completed reboot is confirmed to lose required service, membership, synchronization, or data."

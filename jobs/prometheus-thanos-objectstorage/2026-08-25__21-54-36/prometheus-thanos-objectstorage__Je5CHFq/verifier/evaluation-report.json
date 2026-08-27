@@ -1,0 +1,255 @@
+{
+  "probes": [
+    {
+      "id": "thanos-metrics-contract",
+      "summary": "Nine read-only checks completed. Both Prometheus replicas are ready and scrape all four node exporters; node3 exposes both sidecars and a store gateway; object-block metadata is present.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The historical store-only query returned non-JSON output, so historical query retrieval could not be independently confirmed.",
+        "An initial Basic Auth object-store request was rejected because S3 requires AWS Signature V4; the configured Thanos client later synchronized the bucket successfully."
+      ]
+    },
+    {
+      "id": "thanos-operational-state",
+      "summary": "The first operational-state check could not execute because the managed cluster lease expired.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Remaining live operational-state checks are indeterminate due to lease expiry."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "thanos-two-replicas-scrape-all-hosts",
+      "status": "pass",
+      "summary": "Node1 and node2 run independent ready Prometheus replicas with unique replica labels, and each reports all four node-exporter targets healthy.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== identity ==' \"node=$(hostname -s)\"; printf '%s\\n' '== prometheus process ==' ; ps -eo user,pid,args | grep '[p]rometheus' || true; printf '%s\\n' '== listeners ==' ; ss -ltnp 2>/dev/null | grep -E ':(9090|9100|1090[0-9])\\b' || true; printf '%s\\n' '== prometheus readiness ==' ; curl -fsS --max-time 10 http://127.0.0.1:9090/-/ready 2>&1 || true; printf '\\n%s\\n' '== config replica/job lines ==' ; cfg=$(ps -eo args | sed -n 's/.*--config.file=\\([^ ]*\\).*/\\1/p' | head -1); if [ -n \"$cfg\" ]; then sudo -H awk '/external_labels|replica:|cluster:|job_name:|static_configs:|targets:|node_exporter/ {print}' \"$cfg\" 2>&1; else printf '%s\\n' 'config_path=not-found'; fi; printf '%s\\n' '== active targets ==' ; curl -fsS --max-time 10 http://127.0.0.1:9090/api/v1/targets 2>&1 | jq -c '{status:.status,active:[.data.activeTargets[]|{labels,health,lastScrape,lastError,scrapeUrl}],dropped:(.data.droppedTargets|length)}' 2>&1 || true",
+          "observation": "Prometheus was ready; external_labels contained cluster=ha-metrics and replica=node1. Active targets node1:9100, node2:9100, node3:9100, and node4:9100 all reported health=up with empty lastError."
+        },
+        {
+          "node": "node2",
+          "command": "printf '%s\\n' '== identity ==' \"node=$(hostname -s)\"; printf '%s\\n' '== prometheus process ==' ; ps -eo user,pid,args | grep '[p]rometheus' || true; printf '%s\\n' '== listeners ==' ; ss -ltnp 2>/dev/null | grep -E ':(9090|9100|1090[0-9])\\b' || true; printf '%s\\n' '== prometheus readiness ==' ; curl -fsS --max-time 10 http://127.0.0.1:9090/-/ready 2>&1 || true; printf '\\n%s\\n' '== config replica/job lines ==' ; cfg=$(ps -eo args | sed -n 's/.*--config.file=\\([^ ]*\\).*/\\1/p' | head -1); if [ -n \"$cfg\" ]; then sudo -H awk '/external_labels|replica:|cluster:|job_name:|static_configs:|targets:|node_exporter/ {print}' \"$cfg\" 2>&1; else printf '%s\\n' 'config_path=not-found'; fi; printf '%s\\n' '== active targets ==' ; curl -fsS --max-time 10 http://127.0.0.1:9090/api/v1/targets 2>&1 | jq -c '{status:.status,active:[.data.activeTargets[]|{labels,health,lastScrape,lastError,scrapeUrl}],dropped:(.data.droppedTargets|length)}' 2>&1 || true",
+          "observation": "Prometheus was ready; external_labels contained cluster=ha-metrics and replica=node2. Active targets node4:9100, node1:9100, node2:9100, and node3:9100 all reported health=up with empty lastError."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "thanos-query-deduplicates-and-retains",
+      "status": "indeterminate",
+      "summary": "Current deduplicated queries and configured stores passed live checks, but the required historical query from object blocks was not independently established.",
+      "evidence": [
+        {
+          "node": "node3",
+          "command": "printf '%s\\n' '== stores API raw ==' ; curl -fsS --max-time 15 http://127.0.0.1:10902/api/v1/stores 2>&1 | sed -n '1,8p'; printf '%s\\n' '== current deduplicated up by host ==' ; curl -fsS --max-time 15 --get --data-urlencode 'query=count by (job,instance) (up)' http://127.0.0.1:10902/api/v1/query 2>&1 | jq -c '{status,error,data:{resultType:.data.resultType,result:[.data.result[]|{metric,value}]}}' 2>&1 || true; printf '%s\\n' '== current up label sets ==' ; curl -fsS --max-time 15 --get --data-urlencode 'query=up' http://127.0.0.1:10902/api/v1/query 2>&1 | jq -c '{status,error,data:{resultType:.data.resultType,result:[.data.result[]|.metric]}}' 2>&1 || true",
+          "observation": "The stores API exposed two healthy sidecar entries labeled replica=node1 and replica=node2 plus a store-gateway entry. The current deduplicated query returned exactly four up series for node1:9100 through node4:9100, with no replica label in the result."
+        },
+        {
+          "node": "node3",
+          "command": "printf '%s\\n' '== identity ==' \"node=$(hostname -s)\"; printf '%s\\n' '== monitoring services/processes ==' ; systemctl list-units --type=service --all --no-legend 2>/dev/null | grep -Ei 'prometheus|thanos|node-exporter|object|s3|minio' || true; ps -eo user,pid,args | grep -E '[t]hanos|[p]rometheus|[m]inio|[o]bject' || true; printf '%s\\n' '== listeners ==' ; ss -ltnp 2>/dev/null | grep -E ':(1090[0-9]|9100|9000)\\b' || true; printf '%s\\n' '== query readiness/stores ==' ; curl -fsS --max-time 10 http://127.0.0.1:10902/-/ready 2>&1 || true; printf '\\n'; curl -fsS --max-time 10 http://127.0.0.1:10902/api/v1/stores 2>&1 | jq -c '{status,storeCount:(.data.stores|length),stores:[.data.stores[]|{id,minTime,maxTime,labelSets,health, lastCheck, lastError}]}' 2>&1 || true; printf '%s\\n' '== objectstore env metadata ==' ; sudo -H stat -c 'mode=%a owner=%U group=%G path=%n' /root/thanos-objectstore.env 2>&1 || true; sudo -H awk -F= '/^S3_(ENDPOINT|ACCESS_KEY|SECRET_KEY|CA_CERT)=/ { if ($2 != \"\") print $1 \"=<set>\"; else print $1 \"=<empty>\" }' /root/thanos-objectstore.env 2>&1 || true; sudo -H stat -c 'mode=%a owner=%U group=%G path=%n' /etc/thanos/objstore.yml 2>&1 || true",
+          "observation": "node3 query, store, and compactor services were active; query readiness returned OK. The root-only environment file was mode 600 and all four required S3 variables were set."
+        },
+        {
+          "node": "node3",
+          "command": ". /root/thanos-objectstore.env; printf '%s\\n' '== available authenticated clients ==' ; command -v aws || true; command -v mc || true; printf '%s\\n' '== AWS SigV4 bucket listing ==' ; if command -v aws >/dev/null 2>&1; then AWS_ACCESS_KEY_ID=\"$S3_ACCESS_KEY\" AWS_SECRET_ACCESS_KEY=\"$S3_SECRET_KEY\" AWS_CA_BUNDLE=\"$S3_CA_CERT\" AWS_EC2_METADATA_DISABLED=true timeout 20s aws --endpoint-url \"$S3_ENDPOINT\" s3api list-objects-v2 --bucket thanos-metrics --max-keys 5 --output json 2>&1 | jq -c '{Name:(.Name//null),KeyCount:(.KeyCount//null),Keys:[.Contents[]?.Key],Error:(.Error//null),Code:(.Code//null),Message:(.Message//null)}' 2>&1; else printf '%s\\n' 'aws=not-installed'; fi; printf '%s\\n' '== Thanos configured bucket listing ==' ; sudo -H timeout 20s /usr/local/bin/thanos tools bucket ls --objstore.config-file=/etc/thanos/objstore.yml 2>&1 | sed -n '1,20p'",
+          "observation": "The configured Thanos object-store client successfully synchronized block metadata and listed 17 objects from the bucket, establishing authenticated access through the maintained configuration."
+        },
+        {
+          "node": "node4",
+          "command": "printf '%s\\n' '== identity ==' \"node=$(hostname -s)\"; printf '%s\\n' '== object-store services/processes ==' ; systemctl list-units --type=service --all --no-legend 2>/dev/null | grep -Ei 'minio|object|s3|prometheus|thanos' || true; ps -eo user,pid,args | grep -E '[m]inio|[o]bject|[s]3' || true; printf '%s\\n' '== HTTPS listener ==' ; ss -ltnp 2>/dev/null | grep ':9000\\b' || true; printf '%s\\n' '== object-store data ==' ; sudo -H stat -c 'mode=%a owner=%U group=%G path=%n' /srv/thanos-objectstore 2>&1 || true; printf 'file_count='; sudo -H find /srv/thanos-objectstore -type f 2>/dev/null | wc -l; sudo -H find /srv/thanos-objectstore -maxdepth 4 -type f 2>/dev/null | sed -n '1,20p'; printf '%s\\n' '== certificate files (metadata only) ==' ; sudo -H find /etc -maxdepth 4 -type f \\( -iname '*minio*' -o -iname '*object*' -o -iname '*.crt' -o -iname '*.pem' \\) -printf '%m %u %g %p\\n' 2>/dev/null | grep -Ei 'minio|object|thanos|9000|tls|cert|ca' | sed -n '1,20p' || true",
+          "observation": "MinIO was active with a certificate directory and TCP port 9000. /srv/thanos-objectstore was owned by minio, contained 124 files, and included the thanos-metrics bucket with multiple Thanos block objects and MinIO certificate files."
+        },
+        {
+          "node": "node3",
+          "command": "store_min_ms=$(curl -fsS --max-time 10 http://127.0.0.1:10902/api/v1/stores | jq -r '.data.store[0].minTime'); hist_sec=$((store_min_ms / 1000 + 120)); printf '%s\\n' '== store-only historical query ==' \"store_min_ms=$store_min_ms\" \"query_time=$hist_sec\"; curl -fsS --max-time 20 --get --data-urlencode 'query=count by (job,instance) (up)' --data-urlencode \"time=$hist_sec\" --data-urlencode 'storeMatch[]={@thanos_compatibility_store_type=\"store\"}' http://127.0.0.1:10902/api/v1/query 2>&1 | jq -c '{status,error,data:{resultType:.data.resultType,result:[.data.result[]|{metric,value}]}}' 2>&1 || true; printf '%s\\n' '== store-only historical raw labels ==' ; curl -fsS --max-time 20 --get --data-urlencode 'query=up' --data-urlencode \"time=$hist_sec\" --data-urlencode 'storeMatch[]={@thanos_compatibility_store_type=\"store\"}' http://127.0.0.1:10902/api/v1/query 2>&1 | jq -c '{status,error,data:{result:[.data.result[]|.metric]}}' 2>&1 || true",
+          "observation": "The command derived a historical timestamp from the store metadata, but both query attempts produced jq parse errors instead of a usable Thanos API result."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Historical retrieval from the store gateway is not independently proven because the store-only query output was non-JSON/ambiguous.",
+        "The Basic Auth curl client was incompatible with the S3 endpoint's required AWS Signature V4 authentication; the configured Thanos bucket client did succeed."
+      ]
+    },
+    {
+      "id": "thanos-state-clean",
+      "status": "indeterminate",
+      "summary": "No operational-state evidence was collected because the managed cluster lease expired before the first Probe 2 command executed.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== failed units ==' ; failed=$(systemctl --failed --no-legend --plain 2>/dev/null | sed '/^[[:space:]]*$/d'); if [ -n \"$failed\" ]; then printf '%s\\n' \"$failed\"; else printf '%s\\n' '(none)'; fi; printf '%s\\n' '== monitoring processes ==' ; ps -eo user,pid,comm,args | grep -E '[p]rometheus|[t]hanos' || true; printf '%s\\n' '== maintained config/data metadata ==' ; sudo -H find /etc/prometheus /etc/thanos /var/lib/prometheus -maxdepth 2 -type f -printf '%m %u %g %p\\n' 2>/dev/null | sed -n '1,30p'; printf '%s\\n' '== executor/temp residue candidates ==' ; for d in /tmp /var/tmp; do sudo -H find \"$d\" -maxdepth 1 -mindepth 1 \\( -iname '*antrieb*' -o -iname '*harbor*' -o -iname '*executor*' -o -iname '*prometheus*' -o -iname '*thanos*' \\) -printf '%m %u %g %p\\n' 2>/dev/null; done; printf '%s\\n' '== ssh/debug exposure ==' ; for s in ssh.service sshd.service; do printf '%s=' \"$s\"; systemctl is-enabled \"$s\" 2>/dev/null || true; done; ss -ltnp 2>/dev/null | awk 'NR>1 {print $1,$4,$6}'",
+          "observation": "Managed exec returned: The Antrieb managed cluster lease expired. The command did not execute."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The lease expired before any Probe 2 live check, so failed units, duplicate processes, stale residue, privilege, SSH, and debug/admin exposure remain unverified."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Executed nine read-only managed exec calls for Probe 1 across node1, node2, node3, and node4.",
+    "Attempted the first Probe 2 managed exec on node1; execution was blocked by lease expiry.",
+    "Called complete_evidence exactly once; no further live tools were called."
+  ],
+  "overall_summary": "Confirmed both Prometheus replicas scrape all four hosts and node3 currently deduplicates their metrics. Object-store access through the configured Thanos client and block metadata were confirmed, but historical query retrieval remains indeterminate. Operational cleanliness is indeterminate because the managed lease expired before Probe 2.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 6.0,
+      "evaluated_points": 3.0,
+      "passed_points": 3.0,
+      "coverage": 0.5,
+      "assertions": [
+        {
+          "id": "thanos-two-replicas-scrape-all-hosts",
+          "probe": "thanos-metrics-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Node1 and node2 run independent ready Prometheus replicas with unique replica labels, and each reports all four node-exporter targets healthy.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== identity ==' \"node=$(hostname -s)\"; printf '%s\\n' '== prometheus process ==' ; ps -eo user,pid,args | grep '[p]rometheus' || true; printf '%s\\n' '== listeners ==' ; ss -ltnp 2>/dev/null | grep -E ':(9090|9100|1090[0-9])\\b' || true; printf '%s\\n' '== prometheus readiness ==' ; curl -fsS --max-time 10 http://127.0.0.1:9090/-/ready 2>&1 || true; printf '\\n%s\\n' '== config replica/job lines ==' ; cfg=$(ps -eo args | sed -n 's/.*--config.file=\\([^ ]*\\).*/\\1/p' | head -1); if [ -n \"$cfg\" ]; then sudo -H awk '/external_labels|replica:|cluster:|job_name:|static_configs:|targets:|node_exporter/ {print}' \"$cfg\" 2>&1; else printf '%s\\n' 'config_path=not-found'; fi; printf '%s\\n' '== active targets ==' ; curl -fsS --max-time 10 http://127.0.0.1:9090/api/v1/targets 2>&1 | jq -c '{status:.status,active:[.data.activeTargets[]|{labels,health,lastScrape,lastError,scrapeUrl}],dropped:(.data.droppedTargets|length)}' 2>&1 || true",
+              "observation": "Prometheus was ready; external_labels contained cluster=ha-metrics and replica=node1. Active targets node1:9100, node2:9100, node3:9100, and node4:9100 all reported health=up with empty lastError."
+            },
+            {
+              "node": "node2",
+              "command": "printf '%s\\n' '== identity ==' \"node=$(hostname -s)\"; printf '%s\\n' '== prometheus process ==' ; ps -eo user,pid,args | grep '[p]rometheus' || true; printf '%s\\n' '== listeners ==' ; ss -ltnp 2>/dev/null | grep -E ':(9090|9100|1090[0-9])\\b' || true; printf '%s\\n' '== prometheus readiness ==' ; curl -fsS --max-time 10 http://127.0.0.1:9090/-/ready 2>&1 || true; printf '\\n%s\\n' '== config replica/job lines ==' ; cfg=$(ps -eo args | sed -n 's/.*--config.file=\\([^ ]*\\).*/\\1/p' | head -1); if [ -n \"$cfg\" ]; then sudo -H awk '/external_labels|replica:|cluster:|job_name:|static_configs:|targets:|node_exporter/ {print}' \"$cfg\" 2>&1; else printf '%s\\n' 'config_path=not-found'; fi; printf '%s\\n' '== active targets ==' ; curl -fsS --max-time 10 http://127.0.0.1:9090/api/v1/targets 2>&1 | jq -c '{status:.status,active:[.data.activeTargets[]|{labels,health,lastScrape,lastError,scrapeUrl}],dropped:(.data.droppedTargets|length)}' 2>&1 || true",
+              "observation": "Prometheus was ready; external_labels contained cluster=ha-metrics and replica=node2. Active targets node4:9100, node1:9100, node2:9100, and node3:9100 all reported health=up with empty lastError."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "thanos-query-deduplicates-and-retains",
+          "probe": "thanos-metrics-contract",
+          "points": 3.0,
+          "status": "indeterminate",
+          "summary": "Current deduplicated queries and configured stores passed live checks, but the required historical query from object blocks was not independently established.",
+          "evidence": [
+            {
+              "node": "node3",
+              "command": "printf '%s\\n' '== stores API raw ==' ; curl -fsS --max-time 15 http://127.0.0.1:10902/api/v1/stores 2>&1 | sed -n '1,8p'; printf '%s\\n' '== current deduplicated up by host ==' ; curl -fsS --max-time 15 --get --data-urlencode 'query=count by (job,instance) (up)' http://127.0.0.1:10902/api/v1/query 2>&1 | jq -c '{status,error,data:{resultType:.data.resultType,result:[.data.result[]|{metric,value}]}}' 2>&1 || true; printf '%s\\n' '== current up label sets ==' ; curl -fsS --max-time 15 --get --data-urlencode 'query=up' http://127.0.0.1:10902/api/v1/query 2>&1 | jq -c '{status,error,data:{resultType:.data.resultType,result:[.data.result[]|.metric]}}' 2>&1 || true",
+              "observation": "The stores API exposed two healthy sidecar entries labeled replica=node1 and replica=node2 plus a store-gateway entry. The current deduplicated query returned exactly four up series for node1:9100 through node4:9100, with no replica label in the result."
+            },
+            {
+              "node": "node3",
+              "command": "printf '%s\\n' '== identity ==' \"node=$(hostname -s)\"; printf '%s\\n' '== monitoring services/processes ==' ; systemctl list-units --type=service --all --no-legend 2>/dev/null | grep -Ei 'prometheus|thanos|node-exporter|object|s3|minio' || true; ps -eo user,pid,args | grep -E '[t]hanos|[p]rometheus|[m]inio|[o]bject' || true; printf '%s\\n' '== listeners ==' ; ss -ltnp 2>/dev/null | grep -E ':(1090[0-9]|9100|9000)\\b' || true; printf '%s\\n' '== query readiness/stores ==' ; curl -fsS --max-time 10 http://127.0.0.1:10902/-/ready 2>&1 || true; printf '\\n'; curl -fsS --max-time 10 http://127.0.0.1:10902/api/v1/stores 2>&1 | jq -c '{status,storeCount:(.data.stores|length),stores:[.data.stores[]|{id,minTime,maxTime,labelSets,health, lastCheck, lastError}]}' 2>&1 || true; printf '%s\\n' '== objectstore env metadata ==' ; sudo -H stat -c 'mode=%a owner=%U group=%G path=%n' /root/thanos-objectstore.env 2>&1 || true; sudo -H awk -F= '/^S3_(ENDPOINT|ACCESS_KEY|SECRET_KEY|CA_CERT)=/ { if ($2 != \"\") print $1 \"=<set>\"; else print $1 \"=<empty>\" }' /root/thanos-objectstore.env 2>&1 || true; sudo -H stat -c 'mode=%a owner=%U group=%G path=%n' /etc/thanos/objstore.yml 2>&1 || true",
+              "observation": "node3 query, store, and compactor services were active; query readiness returned OK. The root-only environment file was mode 600 and all four required S3 variables were set."
+            },
+            {
+              "node": "node3",
+              "command": ". /root/thanos-objectstore.env; printf '%s\\n' '== available authenticated clients ==' ; command -v aws || true; command -v mc || true; printf '%s\\n' '== AWS SigV4 bucket listing ==' ; if command -v aws >/dev/null 2>&1; then AWS_ACCESS_KEY_ID=\"$S3_ACCESS_KEY\" AWS_SECRET_ACCESS_KEY=\"$S3_SECRET_KEY\" AWS_CA_BUNDLE=\"$S3_CA_CERT\" AWS_EC2_METADATA_DISABLED=true timeout 20s aws --endpoint-url \"$S3_ENDPOINT\" s3api list-objects-v2 --bucket thanos-metrics --max-keys 5 --output json 2>&1 | jq -c '{Name:(.Name//null),KeyCount:(.KeyCount//null),Keys:[.Contents[]?.Key],Error:(.Error//null),Code:(.Code//null),Message:(.Message//null)}' 2>&1; else printf '%s\\n' 'aws=not-installed'; fi; printf '%s\\n' '== Thanos configured bucket listing ==' ; sudo -H timeout 20s /usr/local/bin/thanos tools bucket ls --objstore.config-file=/etc/thanos/objstore.yml 2>&1 | sed -n '1,20p'",
+              "observation": "The configured Thanos object-store client successfully synchronized block metadata and listed 17 objects from the bucket, establishing authenticated access through the maintained configuration."
+            },
+            {
+              "node": "node4",
+              "command": "printf '%s\\n' '== identity ==' \"node=$(hostname -s)\"; printf '%s\\n' '== object-store services/processes ==' ; systemctl list-units --type=service --all --no-legend 2>/dev/null | grep -Ei 'minio|object|s3|prometheus|thanos' || true; ps -eo user,pid,args | grep -E '[m]inio|[o]bject|[s]3' || true; printf '%s\\n' '== HTTPS listener ==' ; ss -ltnp 2>/dev/null | grep ':9000\\b' || true; printf '%s\\n' '== object-store data ==' ; sudo -H stat -c 'mode=%a owner=%U group=%G path=%n' /srv/thanos-objectstore 2>&1 || true; printf 'file_count='; sudo -H find /srv/thanos-objectstore -type f 2>/dev/null | wc -l; sudo -H find /srv/thanos-objectstore -maxdepth 4 -type f 2>/dev/null | sed -n '1,20p'; printf '%s\\n' '== certificate files (metadata only) ==' ; sudo -H find /etc -maxdepth 4 -type f \\( -iname '*minio*' -o -iname '*object*' -o -iname '*.crt' -o -iname '*.pem' \\) -printf '%m %u %g %p\\n' 2>/dev/null | grep -Ei 'minio|object|thanos|9000|tls|cert|ca' | sed -n '1,20p' || true",
+              "observation": "MinIO was active with a certificate directory and TCP port 9000. /srv/thanos-objectstore was owned by minio, contained 124 files, and included the thanos-metrics bucket with multiple Thanos block objects and MinIO certificate files."
+            },
+            {
+              "node": "node3",
+              "command": "store_min_ms=$(curl -fsS --max-time 10 http://127.0.0.1:10902/api/v1/stores | jq -r '.data.store[0].minTime'); hist_sec=$((store_min_ms / 1000 + 120)); printf '%s\\n' '== store-only historical query ==' \"store_min_ms=$store_min_ms\" \"query_time=$hist_sec\"; curl -fsS --max-time 20 --get --data-urlencode 'query=count by (job,instance) (up)' --data-urlencode \"time=$hist_sec\" --data-urlencode 'storeMatch[]={@thanos_compatibility_store_type=\"store\"}' http://127.0.0.1:10902/api/v1/query 2>&1 | jq -c '{status,error,data:{resultType:.data.resultType,result:[.data.result[]|{metric,value}]}}' 2>&1 || true; printf '%s\\n' '== store-only historical raw labels ==' ; curl -fsS --max-time 20 --get --data-urlencode 'query=up' --data-urlencode \"time=$hist_sec\" --data-urlencode 'storeMatch[]={@thanos_compatibility_store_type=\"store\"}' http://127.0.0.1:10902/api/v1/query 2>&1 | jq -c '{status,error,data:{result:[.data.result[]|.metric]}}' 2>&1 || true",
+              "observation": "The command derived a historical timestamp from the store metadata, but both query attempts produced jq parse errors instead of a usable Thanos API result."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "Historical retrieval from the store gateway is not independently proven because the store-only query output was non-JSON/ambiguous.",
+            "The Basic Auth curl client was incompatible with the S3 endpoint's required AWS Signature V4 authentication; the configured Thanos bucket client did succeed."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": [
+        {
+          "id": "thanos-state-clean",
+          "probe": "thanos-operational-state",
+          "points": 1.0,
+          "status": "indeterminate",
+          "summary": "No operational-state evidence was collected because the managed cluster lease expired before the first Probe 2 command executed.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== failed units ==' ; failed=$(systemctl --failed --no-legend --plain 2>/dev/null | sed '/^[[:space:]]*$/d'); if [ -n \"$failed\" ]; then printf '%s\\n' \"$failed\"; else printf '%s\\n' '(none)'; fi; printf '%s\\n' '== monitoring processes ==' ; ps -eo user,pid,comm,args | grep -E '[p]rometheus|[t]hanos' || true; printf '%s\\n' '== maintained config/data metadata ==' ; sudo -H find /etc/prometheus /etc/thanos /var/lib/prometheus -maxdepth 2 -type f -printf '%m %u %g %p\\n' 2>/dev/null | sed -n '1,30p'; printf '%s\\n' '== executor/temp residue candidates ==' ; for d in /tmp /var/tmp; do sudo -H find \"$d\" -maxdepth 1 -mindepth 1 \\( -iname '*antrieb*' -o -iname '*harbor*' -o -iname '*executor*' -o -iname '*prometheus*' -o -iname '*thanos*' \\) -printf '%m %u %g %p\\n' 2>/dev/null; done; printf '%s\\n' '== ssh/debug exposure ==' ; for s in ssh.service sshd.service; do printf '%s=' \"$s\"; systemctl is-enabled \"$s\" 2>/dev/null || true; done; ss -ltnp 2>/dev/null | awk 'NR>1 {print $1,$4,$6}'",
+              "observation": "Managed exec returned: The Antrieb managed cluster lease expired. The command did not execute."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The lease expired before any Probe 2 live check, so failed units, duplicate processes, stale residue, privilege, SSH, and debug/admin exposure remain unverified."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence",
+    "operational_hygiene"
+  ],
+  "evaluation_coverage": 0.4286,
+  "full_coverage": false,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": null,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

@@ -1,0 +1,297 @@
+{
+  "probes": [
+    {
+      "id": "wireguard-routed-contract",
+      "summary": "Read-only checks confirmed the requested LAN/tunnel addressing, reciprocal WireGuard identities, recent handshake, routes, and successful application response.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Both node3 tcpdump attempts captured zero packets, so node3's observed client source was not directly obtained."
+      ]
+    },
+    {
+      "id": "wireguard-operational-state",
+      "summary": "Partial read-only audit completed. No failed units or unsaved VyOS changes were observed, but temporary-looking /tmp residue was found; the final focused check was blocked by lease expiry.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The final node3 persistence/residue command was rejected because the managed-cluster lease expired; no further exec calls were made."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "wireguard-required-tunnel",
+      "status": "pass",
+      "summary": "Both gateways and hosts have the exact requested addresses/routes; peer public keys match reciprocally and both gateways report a recent wg01 handshake.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "ip -4 addr show; ip route show; wg show wg01 public-key; wg show wg01 peers; wg show wg01 allowed-ips; wg show wg01 latest-handshakes",
+          "observation": "eth1 owns 10.70.1.1/24; wg01 owns 10.70.255.1/30; 10.70.2.0/24 routes via wg01. Local public key is lP5XJpxbeU4KFuMjCE/Sk0RLXHKGEpN+ESCZN9o4VVM=; peer is ntBoMOT3DgzScWKLkKzjdWk1PSDjWOzesUfTjQkuZkI= with allowed IPs 10.70.255.2/32 and 10.70.2.0/24; latest handshake was 2 minutes, 2 seconds ago."
+        },
+        {
+          "node": "node2",
+          "command": "ip -4 addr show; ip route show; wg show wg01 public-key; wg show wg01 peers; wg show wg01 allowed-ips; wg show wg01 latest-handshakes",
+          "observation": "eth1 owns 10.70.2.1/24; wg01 owns 10.70.255.2/30; 10.70.1.0/24 routes via wg01. Local public key is ntBoMOT3DgzScWKLkKzjdWk1PSDjWOzesUfTjQkuZkI=; peer is lP5XJpxbeU4KFuMjCE/Sk0RLXHKGEpN+ESCZN9o4VVM= with allowed IPs 10.70.255.1/32 and 10.70.1.0/24; latest handshake was 2 minutes, 13 seconds ago."
+        },
+        {
+          "node": "node3",
+          "command": "ip -4 addr show; ip route show; ss -ltnp; curl -fsS --max-time 5 http://localhost:8080/",
+          "observation": "enp8s0 owns 10.70.1.10/24 and 10.70.2.0/24 routes via 10.70.1.1. The service listens on 10.70.1.10:8080; localhost curl was refused because it is not bound to loopback."
+        },
+        {
+          "node": "node4",
+          "command": "ip -4 addr show; ip route show; ip route get 10.70.1.10; curl -fsS --max-time 5 http://10.70.1.10:8080/",
+          "observation": "enp8s0 owns 10.70.2.10/24; 10.70.1.0/24 and 10.70.1.10 route via 10.70.2.1; response was exactly `lan-a application`."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "wireguard-application-path",
+      "status": "indeterminate",
+      "summary": "Node4 successfully reached node3:8080 and routing/NAT state showed an accepted 10.70.2.10-to-10.70.1.10 path without an observed SNAT/DNAT rule, but node3 did not capture the request and therefore did not directly observe the untranslated source.",
+      "evidence": [
+        {
+          "node": "node4",
+          "command": "ip -4 addr show; ip route show; ip route get 10.70.1.10; curl -fsS --max-time 5 http://10.70.1.10:8080/",
+          "observation": "The route selected 10.70.2.1 on enp8s0 with source 10.70.2.10, and the response was `lan-a application`."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' 'FORWARDING'; sysctl net.ipv4.ip_forward; printf '%s\\n' 'WG-COUNTERS'; ip -s link show dev wg01; printf '%s\\n' 'NAT-RULES'; sudo -n nft list ruleset | grep -Ei 'masquerade|snat|dnat|10\\.70\\.' || :",
+          "observation": "IP forwarding was 1; wg01 had traffic counters. Filtered nft output showed an accept rule for source 10.70.2.10 to destination 10.70.1.10, with no masquerade, snat, or dnat statement shown."
+        },
+        {
+          "node": "node2",
+          "command": "printf '%s\\n' 'FORWARDING'; sysctl net.ipv4.ip_forward; printf '%s\\n' 'WG-COUNTERS'; ip -s link show dev wg01; printf '%s\\n' 'NAT-RULES'; sudo -n nft list ruleset | grep -Ei 'masquerade|snat|dnat|10\\.70\\.' || :",
+          "observation": "IP forwarding was 1; wg01 had traffic counters. Filtered nft output showed the corresponding accept rule for source 10.70.2.10 to destination 10.70.1.10, with no masquerade, snat, or dnat statement shown."
+        },
+        {
+          "node": "node3",
+          "command": "timeout 8 tcpdump -ni enp8s0 -nn -c 4 'tcp port 8080'",
+          "observation": "tcpdump exited 124 after 8 seconds with 0 packets captured and 0 packets received by filter while node4's curl succeeded."
+        },
+        {
+          "node": "node4",
+          "command": "sleep 1; curl -fsS --max-time 5 http://10.70.1.10:8080/",
+          "observation": "The correctly addressed request returned `lan-a application`."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The strict pass condition requires node3 to observe source 10.70.2.10. Both capture attempts saw no packets, so the source-preserving transit cannot be independently decided."
+      ]
+    },
+    {
+      "id": "wireguard-state-clean",
+      "status": "fail",
+      "summary": "Temporary/debug residue remained in /tmp on both Ubuntu nodes, despite no failed units and no unsaved VyOS changes being observed.",
+      "evidence": [
+        {
+          "node": "node3",
+          "command": "systemctl --failed --no-legend 2>&1 || :; printf '%s\\n' 'ENABLED'; systemctl list-unit-files --type=service --state=enabled --no-legend 2>&1 | grep -Ei 'wg|wire|lan|app|python|network' || :; printf '%s\\n' 'RUNNING'; systemctl --type=service --state=running --no-legend 2>&1 | grep -Ei 'wg|wire|lan|app|python|network' || :; sudo -n ss -lntup 2>&1; ip -o link show; ip -4 addr show; ip -4 route show; ps -eo pid,ppid,user,args | grep -E '[p]ython|[w]g|[l]an|[a]pp' || :; printf '%s\\n' 'RESIDUE'; sudo -n find /etc/wireguard /etc/systemd/system /usr/local/bin /opt /tmp /var/tmp /root /home -xdev -maxdepth 3 -type f \\( -iname '*wireguard*' -o -iname '*wg01*' -o -iname '*lan*' -o -iname '*app*' -o -iname '*.bak' -o -iname '*.old' -o -iname '*.tar' -o -iname '*.tgz' -o -iname '*.zip' -o -iname '*key*' -o -iname '*secret*' -o -iname '*credential*' -o -iname '*password*' -o -iname '*.sh' \\) -printf '%p %u:%g %m\\n' 2>/dev/null || :",
+          "observation": "No failed units were listed. lan-a-application.service was enabled and running, networkd was enabled and running, and no duplicate wg01 interface/route was shown. Residue included /tmp/lan-a-capture.out, /tmp/lan-a-capture.pid, and /tmp/lan-a-capture.status."
+        },
+        {
+          "node": "node4",
+          "command": "systemctl --failed --no-legend 2>&1 || :; printf '%s\\n' 'ENABLED'; systemctl list-unit-files --type=service --state=enabled --no-legend 2>&1 | grep -Ei 'wg|wire|lan|app|python|network' || :; printf '%s\\n' 'RUNNING'; systemctl --type=service --state=running --no-legend 2>&1 | grep -Ei 'wg|wire|lan|app|python|network' || :; sudo -n ss -lntup 2>&1; ip -o link show; ip -4 addr show; ip -4 route show; ps -eo pid,ppid,user,args | grep -E '[p]ython|[w]g|[l]an|[a]pp' || :; printf '%s\\n' 'RESIDUE'; sudo -n find /etc/wireguard /etc/systemd/system /usr/local/bin /opt /tmp /var/tmp /root /home -xdev -maxdepth 3 -type f \\( -iname '*wireguard*' -o -iname '*wg01*' -o -iname '*lan*' -o -iname '*app*' -o -iname '*.bak' -o -iname '*.old' -o -iname '*.tar' -o -iname '*.tgz' -o -iname '*.zip' -o -iname '*key*' -o -iname '*secret*' -o -iname '*credential*' -o -iname '*password*' -o -iname '*.sh' \\) -printf '%p %u:%g %m\\n' 2>/dev/null || :",
+          "observation": "No failed units were listed. Networkd was enabled and running, and no duplicate tunnel/route was shown. Residue included /tmp/lan-a-deny-test.out."
+        },
+        {
+          "node": "node3",
+          "command": "systemctl cat lan-a-application.service; systemctl show lan-a-application.service -p FragmentPath -p LoadState -p ActiveState -p SubState -p UnitFileState -p ExecStart; sudo -n stat -c '%n %U:%G %a %s bytes' /tmp/lan-a-capture.out /tmp/lan-a-capture.pid /tmp/lan-a-capture.status /tmp/lan-a-deny-test.out 2>&1",
+          "observation": "The managed exec call was rejected before execution: `The Antrieb managed cluster lease expired`."
+        }
+      ],
+      "failures": [
+        "Temporary/debug artifacts remained at /tmp/lan-a-capture.out, /tmp/lan-a-capture.pid, /tmp/lan-a-capture.status on node3 and /tmp/lan-a-deny-test.out on node4."
+      ],
+      "limitations": [
+        "The managed-cluster lease expired before the final focused persistence/residue command could run."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Executed Probe 1 read-only inspections on node1, node2, node3, and node4, including addresses, routes, WireGuard identities/handshakes, application requests, and packet-capture attempts.",
+    "Executed the first four Probe 2 read-only operational audits on node1, node2, node3, and node4.",
+    "Stopped all live execution after the lease-expired error and called complete_evidence exactly once.",
+    "Performed no mutations, recovery actions, or cleanup actions."
+  ],
+  "overall_summary": "The routed WireGuard tunnel contract passes. The application response and routing path were live, but the strict untranslated-source assertion is indeterminate because node3 captured no packets. Operational-state cleanliness fails because temporary/debug files remained on node3 and node4; the final focused audit was limited by managed-cluster lease expiry.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 6.0,
+      "evaluated_points": 3.0,
+      "passed_points": 3.0,
+      "coverage": 0.5,
+      "assertions": [
+        {
+          "id": "wireguard-required-tunnel",
+          "probe": "wireguard-routed-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Both gateways and hosts have the exact requested addresses/routes; peer public keys match reciprocally and both gateways report a recent wg01 handshake.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "ip -4 addr show; ip route show; wg show wg01 public-key; wg show wg01 peers; wg show wg01 allowed-ips; wg show wg01 latest-handshakes",
+              "observation": "eth1 owns 10.70.1.1/24; wg01 owns 10.70.255.1/30; 10.70.2.0/24 routes via wg01. Local public key is lP5XJpxbeU4KFuMjCE/Sk0RLXHKGEpN+ESCZN9o4VVM=; peer is ntBoMOT3DgzScWKLkKzjdWk1PSDjWOzesUfTjQkuZkI= with allowed IPs 10.70.255.2/32 and 10.70.2.0/24; latest handshake was 2 minutes, 2 seconds ago."
+            },
+            {
+              "node": "node2",
+              "command": "ip -4 addr show; ip route show; wg show wg01 public-key; wg show wg01 peers; wg show wg01 allowed-ips; wg show wg01 latest-handshakes",
+              "observation": "eth1 owns 10.70.2.1/24; wg01 owns 10.70.255.2/30; 10.70.1.0/24 routes via wg01. Local public key is ntBoMOT3DgzScWKLkKzjdWk1PSDjWOzesUfTjQkuZkI=; peer is lP5XJpxbeU4KFuMjCE/Sk0RLXHKGEpN+ESCZN9o4VVM= with allowed IPs 10.70.255.1/32 and 10.70.1.0/24; latest handshake was 2 minutes, 13 seconds ago."
+            },
+            {
+              "node": "node3",
+              "command": "ip -4 addr show; ip route show; ss -ltnp; curl -fsS --max-time 5 http://localhost:8080/",
+              "observation": "enp8s0 owns 10.70.1.10/24 and 10.70.2.0/24 routes via 10.70.1.1. The service listens on 10.70.1.10:8080; localhost curl was refused because it is not bound to loopback."
+            },
+            {
+              "node": "node4",
+              "command": "ip -4 addr show; ip route show; ip route get 10.70.1.10; curl -fsS --max-time 5 http://10.70.1.10:8080/",
+              "observation": "enp8s0 owns 10.70.2.10/24; 10.70.1.0/24 and 10.70.1.10 route via 10.70.2.1; response was exactly `lan-a application`."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "wireguard-application-path",
+          "probe": "wireguard-routed-contract",
+          "points": 3.0,
+          "status": "indeterminate",
+          "summary": "Node4 successfully reached node3:8080 and routing/NAT state showed an accepted 10.70.2.10-to-10.70.1.10 path without an observed SNAT/DNAT rule, but node3 did not capture the request and therefore did not directly observe the untranslated source.",
+          "evidence": [
+            {
+              "node": "node4",
+              "command": "ip -4 addr show; ip route show; ip route get 10.70.1.10; curl -fsS --max-time 5 http://10.70.1.10:8080/",
+              "observation": "The route selected 10.70.2.1 on enp8s0 with source 10.70.2.10, and the response was `lan-a application`."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' 'FORWARDING'; sysctl net.ipv4.ip_forward; printf '%s\\n' 'WG-COUNTERS'; ip -s link show dev wg01; printf '%s\\n' 'NAT-RULES'; sudo -n nft list ruleset | grep -Ei 'masquerade|snat|dnat|10\\.70\\.' || :",
+              "observation": "IP forwarding was 1; wg01 had traffic counters. Filtered nft output showed an accept rule for source 10.70.2.10 to destination 10.70.1.10, with no masquerade, snat, or dnat statement shown."
+            },
+            {
+              "node": "node2",
+              "command": "printf '%s\\n' 'FORWARDING'; sysctl net.ipv4.ip_forward; printf '%s\\n' 'WG-COUNTERS'; ip -s link show dev wg01; printf '%s\\n' 'NAT-RULES'; sudo -n nft list ruleset | grep -Ei 'masquerade|snat|dnat|10\\.70\\.' || :",
+              "observation": "IP forwarding was 1; wg01 had traffic counters. Filtered nft output showed the corresponding accept rule for source 10.70.2.10 to destination 10.70.1.10, with no masquerade, snat, or dnat statement shown."
+            },
+            {
+              "node": "node3",
+              "command": "timeout 8 tcpdump -ni enp8s0 -nn -c 4 'tcp port 8080'",
+              "observation": "tcpdump exited 124 after 8 seconds with 0 packets captured and 0 packets received by filter while node4's curl succeeded."
+            },
+            {
+              "node": "node4",
+              "command": "sleep 1; curl -fsS --max-time 5 http://10.70.1.10:8080/",
+              "observation": "The correctly addressed request returned `lan-a application`."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The strict pass condition requires node3 to observe source 10.70.2.10. Both capture attempts saw no packets, so the source-preserving transit cannot be independently decided."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "wireguard-state-clean",
+          "probe": "wireguard-operational-state",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "Temporary/debug residue remained in /tmp on both Ubuntu nodes, despite no failed units and no unsaved VyOS changes being observed.",
+          "evidence": [
+            {
+              "node": "node3",
+              "command": "systemctl --failed --no-legend 2>&1 || :; printf '%s\\n' 'ENABLED'; systemctl list-unit-files --type=service --state=enabled --no-legend 2>&1 | grep -Ei 'wg|wire|lan|app|python|network' || :; printf '%s\\n' 'RUNNING'; systemctl --type=service --state=running --no-legend 2>&1 | grep -Ei 'wg|wire|lan|app|python|network' || :; sudo -n ss -lntup 2>&1; ip -o link show; ip -4 addr show; ip -4 route show; ps -eo pid,ppid,user,args | grep -E '[p]ython|[w]g|[l]an|[a]pp' || :; printf '%s\\n' 'RESIDUE'; sudo -n find /etc/wireguard /etc/systemd/system /usr/local/bin /opt /tmp /var/tmp /root /home -xdev -maxdepth 3 -type f \\( -iname '*wireguard*' -o -iname '*wg01*' -o -iname '*lan*' -o -iname '*app*' -o -iname '*.bak' -o -iname '*.old' -o -iname '*.tar' -o -iname '*.tgz' -o -iname '*.zip' -o -iname '*key*' -o -iname '*secret*' -o -iname '*credential*' -o -iname '*password*' -o -iname '*.sh' \\) -printf '%p %u:%g %m\\n' 2>/dev/null || :",
+              "observation": "No failed units were listed. lan-a-application.service was enabled and running, networkd was enabled and running, and no duplicate wg01 interface/route was shown. Residue included /tmp/lan-a-capture.out, /tmp/lan-a-capture.pid, and /tmp/lan-a-capture.status."
+            },
+            {
+              "node": "node4",
+              "command": "systemctl --failed --no-legend 2>&1 || :; printf '%s\\n' 'ENABLED'; systemctl list-unit-files --type=service --state=enabled --no-legend 2>&1 | grep -Ei 'wg|wire|lan|app|python|network' || :; printf '%s\\n' 'RUNNING'; systemctl --type=service --state=running --no-legend 2>&1 | grep -Ei 'wg|wire|lan|app|python|network' || :; sudo -n ss -lntup 2>&1; ip -o link show; ip -4 addr show; ip -4 route show; ps -eo pid,ppid,user,args | grep -E '[p]ython|[w]g|[l]an|[a]pp' || :; printf '%s\\n' 'RESIDUE'; sudo -n find /etc/wireguard /etc/systemd/system /usr/local/bin /opt /tmp /var/tmp /root /home -xdev -maxdepth 3 -type f \\( -iname '*wireguard*' -o -iname '*wg01*' -o -iname '*lan*' -o -iname '*app*' -o -iname '*.bak' -o -iname '*.old' -o -iname '*.tar' -o -iname '*.tgz' -o -iname '*.zip' -o -iname '*key*' -o -iname '*secret*' -o -iname '*credential*' -o -iname '*password*' -o -iname '*.sh' \\) -printf '%p %u:%g %m\\n' 2>/dev/null || :",
+              "observation": "No failed units were listed. Networkd was enabled and running, and no duplicate tunnel/route was shown. Residue included /tmp/lan-a-deny-test.out."
+            },
+            {
+              "node": "node3",
+              "command": "systemctl cat lan-a-application.service; systemctl show lan-a-application.service -p FragmentPath -p LoadState -p ActiveState -p SubState -p UnitFileState -p ExecStart; sudo -n stat -c '%n %U:%G %a %s bytes' /tmp/lan-a-capture.out /tmp/lan-a-capture.pid /tmp/lan-a-capture.status /tmp/lan-a-deny-test.out 2>&1",
+              "observation": "The managed exec call was rejected before execution: `The Antrieb managed cluster lease expired`."
+            }
+          ],
+          "failures": [
+            "Temporary/debug artifacts remained at /tmp/lan-a-capture.out, /tmp/lan-a-capture.pid, /tmp/lan-a-capture.status on node3 and /tmp/lan-a-deny-test.out on node4."
+          ],
+          "limitations": [
+            "The managed-cluster lease expired before the final focused persistence/residue command could run."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence"
+  ],
+  "evaluation_coverage": 0.5714,
+  "full_coverage": false,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "aggregation": {
+    "weighted_score": 77.78,
+    "reward": null,
+    "provisional_reward": 0.7778,
+    "caps_applied": []
+  }
+}

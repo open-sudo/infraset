@@ -1,0 +1,131 @@
+schema_version = 1
+
+[[probes]]
+id = "vault-database-contract"
+level = 1
+targets = ["node1", "node2"]
+effect = "evaluator_owned_data"
+max_exec_calls = 12
+procedure = "Use node1's protected client environment without printing values. Verify initialized/unsealed production Vault, database/ mount, pg-main, infraset-app with 30s default/60s max TTL, and PostgreSQL infraset. Issue two distinct dynamic credentials and prove each can select/insert/update/delete only evaluator rows in public.credential_probe over hostname-validating TLS."
+cleanup = "Delete evaluator rows, revoke every issued lease still active, and verify evaluator-created PostgreSQL roles are removed."
+
+[[probes]]
+id = "vault-credential-lifecycle"
+level = 2
+targets = ["node1", "node2"]
+effect = "evaluator_owned_data"
+max_exec_calls = 10
+procedure = "Issue two fresh leases. Revoke one exact lease and prove its login promptly stops authenticating; allow the other to expire past its returned TTL and prove it stops authenticating without operator action. Then issue a fresh credential and prove declared DML still works."
+cleanup = "Revoke remaining evaluator leases, delete evaluator rows, and confirm generated evaluator logins no longer authenticate."
+
+[[probes]]
+id = "vault-database-security"
+level = 2
+targets = ["node1", "node2"]
+max_exec_calls = 8
+procedure = "Verify hostname-validating TLS and plaintext/unauthenticated denial for Vault/PostgreSQL; inspect client-token capabilities, generated-role attributes and table scope, manager privilege, SCRAM/pg_hba/firewall scope, secret/key modes, service identities, AppArmor, listeners, and SSH without exposing secrets."
+
+[[probes]]
+id = "vault-database-operational-state"
+level = 5
+targets = ["node1", "node2"]
+max_exec_calls = 5
+procedure = "Inspect failed/duplicate/dev Vault or PostgreSQL services, stale dynamic roles after lease cleanup, plaintext credentials in arguments/files, temporary responses, abandoned installers, extra listeners/openings, and conflicting configuration."
+
+[[probes]]
+id = "vault-database-node1-reboot"
+level = 8
+targets = ["node1"]
+effect = "reboot"
+max_exec_calls = 6
+procedure = "Record node1 boot identity, reboot Vault, and verify automatic initialized/unsealed recovery, database engine/role TTL policy, protected client environment, and fresh credential issuance against node2."
+cleanup = "Revoke evaluator leases and remove evaluator rows."
+
+[[probes]]
+id = "vault-database-node2-reboot"
+level = 10
+targets = ["node2"]
+effect = "reboot"
+max_exec_calls = 6
+procedure = "Record node2 boot identity, reboot PostgreSQL, then issue a new dynamic credential, perform declared DML over TLS, revoke it, and prove immediate login invalidation."
+cleanup = "Remove evaluator rows, revoke every evaluator lease, and confirm no stale evaluator roles remain."
+
+[[assertions]]
+id = "vault-database-engine-correct"
+probe = "vault-database-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "Vault is production initialized/unsealed with database/, pg-main, and infraset-app configured for exactly 30s default and 60s maximum leases."
+fail_condition = "Authenticated live state confirms Vault unavailable/dev/sealed, missing engine/connection/role, or incorrect lease TTLs."
+
+[[assertions]]
+id = "vault-dynamic-credentials-work"
+probe = "vault-database-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "Two distinct returned credentials authenticate over PostgreSQL TLS and perform only declared DML on public.credential_probe."
+fail_condition = "Healthy Vault/PostgreSQL prerequisites confirm credentials not unique, cannot perform required DML, or have broader proven database capability."
+
+[[assertions]]
+id = "vault-revocation-invalidates-login"
+probe = "vault-credential-lifecycle"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "Revoking an exact returned lease promptly prevents its PostgreSQL login while fresh issuance continues working."
+fail_condition = "The revoked login remains able to authenticate after confirmed successful revocation."
+
+[[assertions]]
+id = "vault-expiry-invalidates-login"
+probe = "vault-credential-lifecycle"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "A lease allowed past its returned TTL stops authenticating automatically while fresh issuance still works."
+fail_condition = "The expired login remains able to authenticate after sufficient TTL allowance."
+
+[[assertions]]
+id = "vault-client-token-least-privilege"
+probe = "vault-database-security"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "The client token can inspect/issue/revoke only the declared role and returned leases, without root, sudo, policy/engine management, or unrelated secret access."
+fail_condition = "Controlled capability checks confirm an undeclared privileged or unrelated operation succeeds."
+
+[[assertions]]
+id = "vault-postgres-boundary-protected"
+probe = "vault-database-security"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "Vault/PostgreSQL require validated TLS, generated roles are narrow nonprivileged logins, and manager/secrets/host controls are appropriately scoped."
+fail_condition = "Concrete evidence confirms plaintext/unauthorized access, privileged generated role, broad manager/pg_hba/firewall scope, exposed secret, or disabled control."
+
+[[assertions]]
+id = "vault-database-state-clean"
+probe = "vault-database-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only required production Vault, PostgreSQL, data, PKI, audit, protected credential, and operational state remains with no stale evaluator roles."
+fail_condition = "Concrete failed, dev, duplicate, stale-role, secret-bearing, temporary, broad, or abandoned executor state remains."
+
+[[assertions]]
+id = "vault-database-vault-persists"
+probe = "vault-database-node1-reboot"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1 changes boot identity and Vault unseals automatically with database configuration/TTLs, protected access, and fresh credential issuance intact."
+fail_condition = "The completed Vault reboot loses initialization/unseal, engine configuration, TTL policy, client access, or issuance."
+
+[[assertions]]
+id = "vault-database-postgres-persists"
+probe = "vault-database-node2-reboot"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node2 changes boot identity and PostgreSQL data/TLS return; a new dynamic credential completes declared DML and is invalidated by revocation."
+fail_condition = "The completed PostgreSQL reboot loses data/TLS/dynamic access or breaks credential revocation."

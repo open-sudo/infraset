@@ -1,0 +1,178 @@
+timeout_sec = 300
+
+[[steps]]
+id = "prepare-rhel9-ssh-target"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+password_hash='$6$InfraSetSSH9$2NeDRQj1s46Scokieo5x3m.XkVG6jaIsLCQrjh2tyOmQ1e8sv.tci3ZOPRu1KcpY9VfylfGOPSvPAywpFSg.41'
+
+if ! getent group ssh-access >/dev/null; then
+  groupadd --gid 24000 ssh-access
+fi
+test "$(getent group ssh-access | cut -d: -f3)" = 24000
+
+if ! id opsadmin >/dev/null 2>&1; then
+  useradd --create-home --uid 24001 --user-group --shell /bin/bash --comment 'Prepared SSH administrator' opsadmin
+fi
+if ! id contractor >/dev/null 2>&1; then
+  useradd --create-home --uid 24002 --user-group --shell /bin/bash --comment 'Prepared restricted contractor' contractor
+fi
+usermod --append --groups ssh-access opsadmin
+if id -nG contractor | tr ' ' '\n' | grep -qx ssh-access; then
+  gpasswd --delete contractor ssh-access
+fi
+usermod --password "$password_hash" opsadmin
+usermod --password "$password_hash" contractor
+
+install -d -m 0700 -o opsadmin -g opsadmin /home/opsadmin/.ssh
+install -d -m 0700 -o contractor -g contractor /home/contractor/.ssh
+for user in opsadmin contractor; do
+  key_file="/home/$user/.ssh/authorized_keys"
+  touch "$key_file"
+  grep -qxF "$CLUSTER_SSH_PUBKEY" "$key_file" || printf '%s\n' "$CLUSTER_SSH_PUBKEY" >> "$key_file"
+  chown "$user:$user" "$key_file"
+  chmod 0600 "$key_file"
+done
+
+install -d -m 0700 /root/.ssh
+touch /root/.ssh/authorized_keys
+grep -qxF "$CLUSTER_SSH_PUBKEY" /root/.ssh/authorized_keys || printf '%s\n' "$CLUSTER_SSH_PUBKEY" >> /root/.ssh/authorized_keys
+chmod 0600 /root/.ssh/authorized_keys
+
+printf '%s\n' 'prepared opsadmin state: preserve' > /home/opsadmin/prepared-state.txt
+printf '%s\n' 'prepared contractor state: preserve' > /home/contractor/prepared-state.txt
+chown opsadmin:opsadmin /home/opsadmin/prepared-state.txt
+chown contractor:contractor /home/contractor/prepared-state.txt
+chmod 0640 /home/opsadmin/prepared-state.txt /home/contractor/prepared-state.txt
+
+install -d -m 0700 /var/lib/infraset-ssh-fixture
+printf '%s\n' "$CLUSTER_SSH_PUBKEY" > /var/lib/infraset-ssh-fixture/access-key.pub
+{
+  getent shadow opsadmin | cut -d: -f1,2
+  getent shadow contractor | cut -d: -f1,2
+} | sha256sum | cut -d' ' -f1 > /var/lib/infraset-ssh-fixture/shadow.sha256
+chmod 0600 /var/lib/infraset-ssh-fixture/access-key.pub /var/lib/infraset-ssh-fixture/shadow.sha256
+
+restorecon -RF /root/.ssh /home/opsadmin /home/contractor /var/lib/infraset-ssh-fixture
+sshd -t
+systemctl enable --now sshd.service
+'''
+
+[[steps]]
+id = "prepare-authorized-jump-client"
+stage = 10
+node = "node2"
+command = '''
+set -eu
+if ! id sshprobe >/dev/null 2>&1; then
+  useradd --create-home --uid 24010 --user-group --shell /bin/bash --comment 'Prepared SSH validation identity' sshprobe
+fi
+install -d -m 0700 -o sshprobe -g sshprobe /home/sshprobe/.ssh
+printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > /home/sshprobe/.ssh/id_ed25519
+printf '%s\n' "$CLUSTER_SSH_PUBKEY" > /home/sshprobe/.ssh/id_ed25519.pub
+printf '%s\n' 'Ssh-Probe_9!' > /home/sshprobe/.ssh/password-probe
+cat > /home/sshprobe/.ssh/askpass <<'INFRASET_ASKPASS'
+#!/bin/sh
+exec cat /home/sshprobe/.ssh/password-probe
+INFRASET_ASKPASS
+chown -R sshprobe:sshprobe /home/sshprobe/.ssh
+chmod 0600 /home/sshprobe/.ssh/id_ed25519 /home/sshprobe/.ssh/id_ed25519.pub /home/sshprobe/.ssh/password-probe
+chmod 0700 /home/sshprobe/.ssh/askpass
+command -v ssh >/dev/null
+command -v ssh-keyscan >/dev/null
+command -v setsid >/dev/null
+'''
+
+[[steps]]
+id = "prepare-untrusted-client"
+stage = 10
+node = "node3"
+command = '''
+set -eu
+if ! id sshprobe >/dev/null 2>&1; then
+  useradd --create-home --uid 24010 --user-group --shell /bin/bash --comment 'Prepared untrusted SSH validation identity' sshprobe
+fi
+install -d -m 0700 -o sshprobe -g sshprobe /home/sshprobe/.ssh
+printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > /home/sshprobe/.ssh/id_ed25519
+printf '%s\n' "$CLUSTER_SSH_PUBKEY" > /home/sshprobe/.ssh/id_ed25519.pub
+chown -R sshprobe:sshprobe /home/sshprobe/.ssh
+chmod 0600 /home/sshprobe/.ssh/id_ed25519 /home/sshprobe/.ssh/id_ed25519.pub
+command -v ssh >/dev/null
+command -v ssh-keyscan >/dev/null
+'''
+
+[[steps]]
+id = "pin-target-host-key-on-jump"
+stage = 20
+node = "node2"
+command = '''
+set -eu
+printf '%s\n' "$CLUSTER_HOSTS" >> /etc/hosts
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+attempt=0
+while ! { ssh-keyscan -T 3 node1 > "$tmp" 2>/dev/null && test -s "$tmp"; }; do
+  attempt=$((attempt + 1))
+  test "$attempt" -lt 10
+  sleep 2
+done
+test -s "$tmp"
+sort -u "$tmp" > /home/sshprobe/.ssh/known_hosts
+chown sshprobe:sshprobe /home/sshprobe/.ssh/known_hosts
+chmod 0600 /home/sshprobe/.ssh/known_hosts
+'''
+
+[[steps]]
+id = "pin-target-host-key-on-untrusted-client"
+stage = 20
+node = "node3"
+command = '''
+set -eu
+printf '%s\n' "$CLUSTER_HOSTS" >> /etc/hosts
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+attempt=0
+while ! { ssh-keyscan -T 3 node1 > "$tmp" 2>/dev/null && test -s "$tmp"; }; do
+  attempt=$((attempt + 1))
+  test "$attempt" -lt 10
+  sleep 2
+done
+test -s "$tmp"
+sort -u "$tmp" > /home/sshprobe/.ssh/known_hosts
+chown sshprobe:sshprobe /home/sshprobe/.ssh/known_hosts
+chmod 0600 /home/sshprobe/.ssh/known_hosts
+'''
+
+[[steps]]
+id = "confirm-prepared-ssh-paths"
+stage = 30
+node = "node2"
+command = '''
+set -eu
+for user in opsadmin contractor root; do
+  runuser -u sshprobe -- ssh \
+    -o BatchMode=yes \
+    -o IdentitiesOnly=yes \
+    -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile=/home/sshprobe/.ssh/known_hosts \
+    -i /home/sshprobe/.ssh/id_ed25519 \
+    "$user@node1" 'id -un' | grep -qx "$user"
+done
+'''
+
+[[steps]]
+id = "confirm-untrusted-precondition"
+stage = 30
+node = "node3"
+command = '''
+set -eu
+runuser -u sshprobe -- ssh \
+  -o BatchMode=yes \
+  -o IdentitiesOnly=yes \
+  -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=/home/sshprobe/.ssh/known_hosts \
+  -i /home/sshprobe/.ssh/id_ed25519 \
+  opsadmin@node1 'id -un' | grep -qx opsadmin
+'''

@@ -1,0 +1,122 @@
+schema_version = 1
+
+[[probes]]
+id = "prometheus-monitoring-core"
+level = 1
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 8
+procedure = "Inspect node1's live Prometheus readiness, targets API, and query API. Establish that exactly one current node_exporter target for each of node2, node3, and node4 is UP on TCP 9100, that each target is identified by its node name, and that fresh host metrics with distinguishable values or labels are queryable for all three targets. Correlate API results with direct node_exporter service state on every target rather than relying only on configuration text."
+
+[[probes]]
+id = "prometheus-security-boundaries"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 10
+procedure = "Inspect effective service identities, process privileges, listeners, AppArmor state, and runtime and persistent firewall policy on every node. Establish successful node1-to-target exporter access before negatively testing target-to-target TCP 9100 access, and establish node1's local Prometheus endpoint before negatively testing target-to-node1 TCP 9090 access; connection errors without those positive controls are indeterminate, not proof of denial. Inspect SSH, debug exposure, writable service configuration, and unnecessary capabilities."
+
+[[probes]]
+id = "prometheus-operational-state"
+level = 5
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 5
+procedure = "Inspect failed units, duplicate Prometheus or node_exporter processes, conflicting scrape definitions, enabled SSH, unrelated packages or users, stale archives and downloads, temporary configuration, abandoned setup scripts, debug settings, and unintended listeners. Preserve legitimate monitoring data, binaries or packages, service units, logs, and persistent configuration."
+
+[[probes]]
+id = "prometheus-server-and-first-target-reboots"
+level = 8
+targets = ["node1", "node2", "node3", "node4"]
+effect = "reboot"
+max_exec_calls = 12
+procedure = "Record node1 and node2 boot identities and the current three-target state, reboot node1 and node2 sequentially with convergence after each reboot, and prove both boot identities changed. After each return, verify automatic service recovery, all three named targets UP, fresh metrics, and effective AppArmor and firewall boundaries without evaluator repair."
+cleanup = "Wait for node1 and node2 and the complete monitoring topology to recover; remove evaluator-owned temporary observations or markers without changing the monitoring configuration."
+
+[[probes]]
+id = "prometheus-remaining-target-reboots"
+level = 10
+targets = ["node1", "node2", "node3", "node4"]
+effect = "reboot"
+max_exec_calls = 12
+procedure = "Record node3 and node4 boot identities, reboot them sequentially with convergence after each reboot, and prove both identities changed. Confirm all four systems have now been rebooted by the selected reboot probes and that the same three uniquely named targets return UP with fresh host metrics, automatic services, and intact AppArmor and firewall boundaries."
+cleanup = "Wait for node3 and node4 and all Prometheus targets to recover; remove evaluator-owned temporary observations or markers and leave every monitoring service healthy."
+
+[[assertions]]
+id = "prometheus-ready-on-node1"
+probe = "prometheus-monitoring-core"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "Node1's live Prometheus service is ready and answers its local administrative API on TCP 9090."
+fail_condition = "Node1 is reachable but its correctly addressed Prometheus service is confirmed absent, unready, or unable to answer the local API."
+
+[[assertions]]
+id = "prometheus-three-named-targets-up"
+probe = "prometheus-monitoring-core"
+dimension = "functionality"
+points = 4
+critical = true
+requires = ["prometheus-ready-on-node1"]
+pass_condition = "The live targets API reports exactly one current UP node_exporter target for each of node2, node3, and node4, with each target uniquely identifiable by that node name."
+fail_condition = "The live API confirms a required target missing, duplicated, DOWN, stale, incorrectly addressed, or not identifiable by its required node name."
+
+[[assertions]]
+id = "prometheus-fresh-host-metrics"
+probe = "prometheus-monitoring-core"
+dimension = "functionality"
+points = 3
+critical = true
+requires = ["prometheus-three-named-targets-up"]
+pass_condition = "Current node_exporter host metrics from all three distinct targets are queryable through Prometheus and correlate with live exporters."
+fail_condition = "A healthy Prometheus API confirms current host metrics absent, stale, or not distinguishable for any required target."
+
+[[assertions]]
+id = "monitoring-runs-unprivileged"
+probe = "prometheus-security-boundaries"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "Prometheus and all three node_exporter services run under dedicated unprivileged identities without unnecessary capabilities or writable service configuration."
+fail_condition = "Runtime evidence confirms a monitoring process runs as root or with unnecessary privilege, or a service or configuration path is insecurely writable."
+
+[[assertions]]
+id = "monitoring-network-boundaries"
+probe = "prometheus-security-boundaries"
+dimension = "security"
+points = 3
+critical = true
+pass_condition = "Node1 can collect each exporter, peer targets cannot reach each other's exporter endpoints, target nodes cannot reach node1's Prometheus endpoint, and matching firewall policy is effective and persistent."
+fail_condition = "Controlled positive and negative tests confirm a required scrape is blocked, a peer can reach another target's exporter, a target can reach TCP 9090, or policy is transient or broader than required."
+
+[[assertions]]
+id = "monitoring-host-confinement"
+probe = "prometheus-security-boundaries"
+dimension = "security"
+points = 1
+pass_condition = "AppArmor remains active and effective on all four nodes, with no introduced SSH, debug, or unintended administrative exposure."
+fail_condition = "A reachable node confirms AppArmor disabled or bypassed, or executor-created SSH, debug, or unintended administrative exposure."
+
+[[assertions]]
+id = "monitoring-state-clean"
+probe = "prometheus-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only necessary monitoring identities, services, packages or binaries, configuration, data, logs, and firewall policy remain."
+fail_condition = "Concrete executor-created failed, duplicate, conflicting, debug, temporary, stale, unrelated, or abandoned state remains."
+
+[[assertions]]
+id = "prometheus-and-node2-persist"
+probe = "prometheus-server-and-first-target-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1 and node2 have changed boot identities and monitoring services, all named targets, fresh metrics, AppArmor, and firewall boundaries recover automatically after each reboot."
+fail_condition = "A completed node1 or node2 reboot is confirmed to lose required service, target identity or health, current metrics, or a host security control."
+
+[[assertions]]
+id = "all-monitoring-nodes-persist"
+probe = "prometheus-remaining-target-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+requires = ["prometheus-and-node2-persist"]
+pass_condition = "Node3 and node4 also have changed boot identities, and after all four sequential reboots the complete secured monitoring topology returns automatically with all three named targets UP and fresh metrics."
+fail_condition = "A completed node3 or node4 reboot, or the final post-reboot state, is confirmed to lose service, target identity or health, current metrics, or a host security control."

@@ -1,0 +1,275 @@
+{
+  "probes": [
+    {
+      "id": "etcd-initial-state",
+      "summary": "Completed live initial-state checks; authenticated node4 evidence established the intended three-member cluster and restore-proof key.",
+      "cleanup_completed": true,
+      "limitations": [
+        "One node1 client attempt used an unqualified etcdctl path, and node2 lacked the expected client environment; node4 supplied the decisive authenticated evidence.",
+        "Five exec calls were used while recovering from the client-discovery error against a four-call evidence budget."
+      ]
+    },
+    {
+      "id": "etcd-linearizable-io",
+      "summary": "Evaluator-owned key was written, read consistently through all three members, deleted, and cleanup confirmed its absence.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The reserved node1 cleanup confirmation had a malformed endpoint-parsing command; subsequent cleanup calls confirmed the key absent through different endpoints, including node1."
+      ]
+    },
+    {
+      "id": "etcd-snapshot",
+      "summary": "Not executed because the managed-cluster lease expired before the first command.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Managed exec lease expired; no snapshot integrity, revision, content, or restore-proof check could run. No further exec call was attempted."
+      ]
+    },
+    {
+      "id": "etcd-operational-state",
+      "summary": "Not executed because evidence collection was closed after the managed-cluster lease expired.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Managed exec lease expired before this read-only probe could run; operational-state status is therefore indeterminate."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "initial-membership-exact",
+      "status": "pass",
+      "summary": "Authenticated status and membership evidence show exactly started, non-learner members node1, node2, and node3; node4 is inactive/disabled and absent.",
+      "evidence": [
+        {
+          "node": "node4",
+          "command": "sudo -n systemctl is-active etcd; sudo -n systemctl is-enabled etcd; sudo -n -H sh -c '. /etc/etcd/etcdctl.env\nexport ETCDCTL_API=3\n/usr/local/bin/etcdctl endpoint status --cluster -w table'; sudo -n -H sh -c '. /etc/etcd/etcdctl.env\nexport ETCDCTL_API=3\n/usr/local/bin/etcdctl endpoint health --cluster'; sudo -n -H sh -c '. /etc/etcd/etcdctl.env\nexport ETCDCTL_API=3\n/usr/local/bin/etcdctl member list -w table'",
+          "observation": "node4 etcd was inactive and disabled. All three advertised endpoints reported healthy committed proposals and synchronized raft state. The member list contained exactly node1, node2, and node3, each started with IS LEARNER=false; node4 was absent."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "restore-proof-present",
+      "status": "pass",
+      "summary": "Protected administrative access from node4 returned the required value exactly as ready.",
+      "evidence": [
+        {
+          "node": "node4",
+          "command": "sudo -n -H sh -c '. /etc/etcd/etcdctl.env\nexport ETCDCTL_API=3\n/usr/local/bin/etcdctl get /infraset/restore-proof --print-value-only'",
+          "observation": "Authenticated read returned exactly ready."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "all-endpoints-linearizable",
+      "status": "pass",
+      "summary": "The evaluator value was returned with the same cluster revision and key revision from all three advertised client endpoints.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "derive $ep from the live etcd process --advertise-client-urls, then run sudo -n -H /usr/local/bin/etcdctl --endpoints=\"$ep\" --cacert=/etc/etcd/pki/ca.crt --cert=/etc/etcd/pki/admin.crt --key=/etc/etcd/pki/admin.key put /infraset/evaluator/linearizable-7zsWpXU probe2-7zsWpXU followed by the same authenticated etcdctl get key -w json",
+          "observation": "put returned OK. The linearizable get returned the evaluator value with cluster revision 3, create_revision 3, mod_revision 3, and count 1."
+        },
+        {
+          "node": "node2",
+          "command": "derive $ep from the live etcd process --advertise-client-urls, then run sudo -n -H /usr/local/bin/etcdctl --endpoints=\"$ep\" --cacert=/etc/etcd/pki/ca.crt --cert=/etc/etcd/pki/node.crt --key=/etc/etcd/pki/node.key get /infraset/evaluator/linearizable-7zsWpXU -w json",
+          "observation": "The get returned the same evaluator value with cluster revision 3, create_revision 3, mod_revision 3, and count 1."
+        },
+        {
+          "node": "node3",
+          "command": "derive $ep from the live etcd process --advertise-client-urls, then run sudo -n -H /usr/local/bin/etcdctl --endpoints=\"$ep\" --cacert=/etc/etcd/pki/ca.crt --cert=/etc/etcd/pki/node.crt --key=/etc/etcd/pki/node.key get /infraset/evaluator/linearizable-7zsWpXU -w json",
+          "observation": "The get returned the same evaluator value with cluster revision 3, create_revision 3, mod_revision 3, and count 1."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "snapshot-valid-current",
+      "status": "indeterminate",
+      "summary": "No defensible snapshot decision is possible because the lease expired before snapshot inspection.",
+      "evidence": [],
+      "failures": [],
+      "limitations": [
+        "The first Probe 3 exec call failed with the managed-cluster lease-expired error. Per instruction, exec was not retried and no snapshot evidence was collected."
+      ]
+    },
+    {
+      "id": "etcd-state-clean",
+      "status": "indeterminate",
+      "summary": "No defensible operational-state decision is possible because the lease expired before the read-only inspection probe.",
+      "evidence": [],
+      "failures": [],
+      "limitations": [
+        "Probe 4 could not run after the lease-expired boundary; failed or duplicate services, residue, exposure, and unnecessary resources were not assessed."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Created evaluator-owned key /infraset/evaluator/linearizable-7zsWpXU, read it through node1-node3, and deleted it.",
+    "Reserved cleanup on node2 and node3 returned zero deletions and confirmed no key through different endpoints.",
+    "Called complete_evidence exactly once after lease expiry; no further live tools were called."
+  ],
+  "overall_summary": "Initial membership, restore-proof presence, and three-endpoint linearizable I/O passed. Snapshot validity and operational-state cleanliness are indeterminate because the managed-cluster lease expired before Probe 3; evidence was then closed exactly once as required.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 4.0,
+      "evaluated_points": 3.0,
+      "passed_points": 3.0,
+      "coverage": 0.75,
+      "assertions": [
+        {
+          "id": "initial-membership-exact",
+          "probe": "etcd-initial-state",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Authenticated status and membership evidence show exactly started, non-learner members node1, node2, and node3; node4 is inactive/disabled and absent.",
+          "evidence": [
+            {
+              "node": "node4",
+              "command": "sudo -n systemctl is-active etcd; sudo -n systemctl is-enabled etcd; sudo -n -H sh -c '. /etc/etcd/etcdctl.env\nexport ETCDCTL_API=3\n/usr/local/bin/etcdctl endpoint status --cluster -w table'; sudo -n -H sh -c '. /etc/etcd/etcdctl.env\nexport ETCDCTL_API=3\n/usr/local/bin/etcdctl endpoint health --cluster'; sudo -n -H sh -c '. /etc/etcd/etcdctl.env\nexport ETCDCTL_API=3\n/usr/local/bin/etcdctl member list -w table'",
+              "observation": "node4 etcd was inactive and disabled. All three advertised endpoints reported healthy committed proposals and synchronized raft state. The member list contained exactly node1, node2, and node3, each started with IS LEARNER=false; node4 was absent."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "restore-proof-present",
+          "probe": "etcd-initial-state",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Protected administrative access from node4 returned the required value exactly as ready.",
+          "evidence": [
+            {
+              "node": "node4",
+              "command": "sudo -n -H sh -c '. /etc/etcd/etcdctl.env\nexport ETCDCTL_API=3\n/usr/local/bin/etcdctl get /infraset/restore-proof --print-value-only'",
+              "observation": "Authenticated read returned exactly ready."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "all-endpoints-linearizable",
+          "probe": "etcd-linearizable-io",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "The evaluator value was returned with the same cluster revision and key revision from all three advertised client endpoints.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "derive $ep from the live etcd process --advertise-client-urls, then run sudo -n -H /usr/local/bin/etcdctl --endpoints=\"$ep\" --cacert=/etc/etcd/pki/ca.crt --cert=/etc/etcd/pki/admin.crt --key=/etc/etcd/pki/admin.key put /infraset/evaluator/linearizable-7zsWpXU probe2-7zsWpXU followed by the same authenticated etcdctl get key -w json",
+              "observation": "put returned OK. The linearizable get returned the evaluator value with cluster revision 3, create_revision 3, mod_revision 3, and count 1."
+            },
+            {
+              "node": "node2",
+              "command": "derive $ep from the live etcd process --advertise-client-urls, then run sudo -n -H /usr/local/bin/etcdctl --endpoints=\"$ep\" --cacert=/etc/etcd/pki/ca.crt --cert=/etc/etcd/pki/node.crt --key=/etc/etcd/pki/node.key get /infraset/evaluator/linearizable-7zsWpXU -w json",
+              "observation": "The get returned the same evaluator value with cluster revision 3, create_revision 3, mod_revision 3, and count 1."
+            },
+            {
+              "node": "node3",
+              "command": "derive $ep from the live etcd process --advertise-client-urls, then run sudo -n -H /usr/local/bin/etcdctl --endpoints=\"$ep\" --cacert=/etc/etcd/pki/ca.crt --cert=/etc/etcd/pki/node.crt --key=/etc/etcd/pki/node.key get /infraset/evaluator/linearizable-7zsWpXU -w json",
+              "observation": "The get returned the same evaluator value with cluster revision 3, create_revision 3, mod_revision 3, and count 1."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "snapshot-valid-current",
+          "probe": "etcd-snapshot",
+          "points": 1.0,
+          "status": "indeterminate",
+          "summary": "No defensible snapshot decision is possible because the lease expired before snapshot inspection.",
+          "evidence": [],
+          "failures": [],
+          "limitations": [
+            "The first Probe 3 exec call failed with the managed-cluster lease-expired error. Per instruction, exec was not retried and no snapshot evidence was collected."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": [
+        {
+          "id": "etcd-state-clean",
+          "probe": "etcd-operational-state",
+          "points": 1.0,
+          "status": "indeterminate",
+          "summary": "No defensible operational-state decision is possible because the lease expired before the read-only inspection probe.",
+          "evidence": [],
+          "failures": [],
+          "limitations": [
+            "Probe 4 could not run after the lease-expired boundary; failed or duplicate services, residue, exposure, and unnecessary resources were not assessed."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence",
+    "operational_hygiene"
+  ],
+  "evaluation_coverage": 0.6,
+  "full_coverage": false,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": null,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

@@ -1,0 +1,407 @@
+{
+  "probes": [
+    {
+      "id": "nginx-tls-service-smoke",
+      "summary": "Nginx configuration and service are healthy; node2 completed SNI TLS and received the declared health response.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "rotated-certificate-contract",
+      "summary": "The served certificate is valid for node1 for one year, self-issued, self-verifying, and matches Nginx\u2019s configured certificate.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "tls-content-preservation",
+      "summary": "The existing HTTPS root content and health response remain unchanged.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "prepared-continuity-evidence",
+      "summary": "Both preparation-owned continuity and availability probes remain active with live processes.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "tls-operational-state",
+      "summary": "Operational TLS checks passed, but stale legacy TLS material and failed ssh.service units remain.",
+      "cleanup_completed": true,
+      "limitations": []
+    }
+  ],
+  "assertions": [
+    {
+      "id": "nginx-https-ready",
+      "status": "pass",
+      "summary": "Nginx is valid, enabled, active, TLS-capable with SNI node1, and /healthz returns the required response.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo nginx -t",
+          "observation": "exit_code=0; nginx.conf syntax is ok and configuration test is successful."
+        },
+        {
+          "node": "node1",
+          "command": "systemctl is-enabled nginx; systemctl is-active nginx",
+          "observation": "exit_code=0; stdout: enabled; active."
+        },
+        {
+          "node": "node2",
+          "command": "openssl s_client -connect node1:443 -servername node1 -brief < /dev/null 2>&1",
+          "observation": "exit_code=0; CONNECTION ESTABLISHED; TLSv1.3; Peer certificate: CN=node1; Verification: OK."
+        },
+        {
+          "node": "node2",
+          "command": "curl --fail --silent --show-error --connect-timeout 5 https://node1/healthz",
+          "observation": "exit_code=0; stdout: certificate-rotation-ready."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "rotated-certificate-valid-for-node1",
+      "status": "pass",
+      "summary": "The served certificate matches node1, is currently valid with at least 180 days remaining, is self-issued, and verifies successfully.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "openssl s_client -connect node1:443 -servername node1 -showcerts < /dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -fingerprint -sha256 -ext subjectAltName -checkhost node1 -checkend 15552000",
+          "observation": "exit_code=0; subject=CN=node1; issuer=CN=node1; notAfter=Aug 26 18:49:24 2027 GMT; SAN DNS:node1; SHA-256 fingerprint 95:EC:DA:B5:04:C5:FC:CC:4B:7C:7D:E8:E4:00:EA:9E:77:B9:06:AD:79:67:6F:D3:57:B6:02:D9:F0:10:78:D8; Certificate will not expire."
+        },
+        {
+          "node": "node2",
+          "command": "openssl s_client -connect node1:443 -servername node1 -verify_return_error -brief < /dev/null 2>&1",
+          "observation": "exit_code=0; Peer certificate CN=node1; Verification: OK."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "served-and-configured-certificates-match",
+      "status": "pass",
+      "summary": "The served and effective configured certificates have the same SHA-256 fingerprint.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "openssl s_client -connect node1:443 -servername node1 -showcerts < /dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -fingerprint -sha256 -ext subjectAltName -checkhost node1 -checkend 15552000",
+          "observation": "Served SHA-256 fingerprint: 95:EC:DA:B5:04:C5:FC:CC:4B:7C:7D:E8:E4:00:EA:9E:77:B9:06:AD:79:67:6F:D3:57:B6:02:D9:F0:10:78:D8."
+        },
+        {
+          "node": "node1",
+          "command": "cert=$(sudo nginx -T 2>/dev/null | awk '$1==\"ssl_certificate\" {gsub(\";\",\"\",$2); print $2; exit}'); printf 'effective_certificate=%s\\n' \"$cert\"; sudo openssl x509 -in \"$cert\" -noout -subject -issuer -dates -fingerprint -sha256",
+          "observation": "exit_code=0; effective_certificate=/etc/nginx/tls/server-rotation.crt; configured SHA-256 fingerprint: 95:EC:DA:B5:04:C5:FC:CC:4B:7C:7D:E8:E4:00:EA:9E:77:B9:06:AD:79:67:6F:D3:57:B6:02:D9:F0:10:78:D8."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "https-content-preserved",
+      "status": "pass",
+      "summary": "Node2 receives the existing HTTPS page and the exact certificate-rotation-ready health response.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "curl --fail --silent --show-error --connect-timeout 5 https://node1/",
+          "observation": "exit_code=0; stdout: existing HTTPS content: preserve during certificate rotation."
+        },
+        {
+          "node": "node2",
+          "command": "curl --fail --silent --show-error --connect-timeout 5 https://node1/healthz",
+          "observation": "exit_code=0; stdout: certificate-rotation-ready."
+        },
+        {
+          "node": "node1",
+          "command": "sudo nginx -T 2>/dev/null | grep -E '^[[:space:]]*(listen .*443|server_name|root |location|ssl_certificate(_key)? )'",
+          "observation": "Effective configuration includes listen 443 ssl, server_name node1, root /var/www/html, and the expected TLS certificate/key directives."
+        },
+        {
+          "node": "node1",
+          "command": "root=$(sudo nginx -T 2>/dev/null | awk '$1==\"root\" {gsub(\";\",\"\",$2); print $2; exit}'); printf 'web_root=%s\\n' \"$root\"; sudo find \"$root\" -maxdepth 1 -type f -printf '%f mode=%m owner=%u:%g\\n' | sort; sudo sha256sum \"$root/index.html\"; sudo sed -n '1,5p' \"$root/index.html\"; printf 'tls_artifacts\\n'; sudo find /etc/nginx/tls -maxdepth 1 -type f -printf '%f mode=%m owner=%u:%g\\n' | sort; printf 'accounts\\n'; getent passwd www-data; getent passwd nginx || true",
+          "observation": "web_root=/var/www/html; index.html contains the existing HTTPS content and is root-owned mode 644; www-data remains the distribution account."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "executor-rotation-preserved-connections",
+      "status": "pass",
+      "summary": "Both preparation-owned probes are active with nonzero live processes: the long-lived continuity transfer and rapid health loop.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "for u in infraset-continuity.service infraset-availability.service; do printf '[%s]\\n' \"$u\"; systemctl is-active \"$u\"; pid=$(systemctl show \"$u\" -p MainPID --value); systemctl show \"$u\" -p ActiveState -p SubState -p MainPID; ps -p \"$pid\" -o pid=,stat=,etime=,args=; done",
+          "observation": "Both units report active/running. infraset-continuity has MainPID 1346 running curl against https://node1/continuity.bin; infraset-availability has MainPID 1347 running the repeating health loop."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "tls-state-clean",
+      "status": "fail",
+      "summary": "The endpoint is operational, but the clean-state contract is violated by stale legacy TLS material and failed ssh.service units.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf 'nginx_tls_files\\n'; sudo find /etc/nginx -type f \\( -name '*.crt' -o -name '*.pem' -o -name '*.key' -o -name '*.csr' \\) -printf '%p mode=%m owner=%u:%g\\n' | sort; printf 'certificate_status\\n'; for f in $(sudo find /etc/nginx -type f \\( -name '*.crt' -o -name '*.pem' \\) -print); do printf '%s\\n' \"$f\"; sudo openssl x509 -in \"$f\" -noout -subject -issuer -dates -fingerprint -sha256 2>&1; done; printf 'suspicious_residue_names\\n'; sudo find /etc/nginx /var/www /tmp /var/tmp /root /home -xdev -type f \\( -iname '*.csr' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.orig' -o -iname '*.tmp' -o -iname '*openssl*' -o -iname '*debug*' -o -iname '*password*' -o -iname '*secret*' -o -iname '*credential*' \\) -printf '%p mode=%m owner=%u:%g\\n' | sort",
+          "observation": "The active rotation pair is present, but /etc/nginx/tls/server.crt remains expired with notAfter=Jan 1 00:00:00 2025 GMT and /etc/nginx/tls/server.key remains as an extra protected private key."
+        },
+        {
+          "node": "node1",
+          "command": "printf 'failed_units\\n'; systemctl --failed --no-legend --no-pager; printf 'nginx_state\\n'; systemctl show nginx -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStartTimestamp; printf 'nginx_journal_tail\\n'; sudo journalctl -u nginx -n 30 --no-pager",
+          "observation": "systemctl --failed reports ssh.service failed. Nginx is active/running with NRestarts=0; journal shows a clean stop/start at 14:48:34 and a later successful reload at 14:49:55."
+        },
+        {
+          "node": "node2",
+          "command": "printf 'failed_units\\n'; systemctl --failed --no-legend --no-pager; printf 'preparation_units\\n'; for u in infraset-continuity.service infraset-availability.service; do systemctl show \"$u\" -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStartTimestamp; done",
+          "observation": "systemctl --failed also reports ssh.service failed on node2; both preparation units are active/running with NRestarts=0."
+        }
+      ],
+      "failures": [
+        "Expired legacy certificate /etc/nginx/tls/server.crt remains alongside the active rotated certificate.",
+        "Extra legacy private key /etc/nginx/tls/server.key remains alongside the active protected key.",
+        "ssh.service is reported failed on both managed nodes; the authored clean-state assertion includes concrete failed units."
+      ],
+      "limitations": []
+    }
+  ],
+  "actions_performed": [
+    "Executed only read-only managed-cluster checks on node1 and node2 in authored probe order.",
+    "No mutation, recovery, or evaluator cleanup action was performed; all probes are marked cleanup_completed=true.",
+    "Called complete_evidence exactly once after all live checks."
+  ],
+  "overall_summary": "Operational TLS, content preservation, certificate validity, certificate matching, and continuity assertions passed. tls-state-clean failed because the expired legacy certificate and extra legacy private key remain, and ssh.service is failed on both nodes.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 10.0,
+      "evaluated_points": 10.0,
+      "passed_points": 10.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "nginx-https-ready",
+          "probe": "nginx-tls-service-smoke",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Nginx is valid, enabled, active, TLS-capable with SNI node1, and /healthz returns the required response.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo nginx -t",
+              "observation": "exit_code=0; nginx.conf syntax is ok and configuration test is successful."
+            },
+            {
+              "node": "node1",
+              "command": "systemctl is-enabled nginx; systemctl is-active nginx",
+              "observation": "exit_code=0; stdout: enabled; active."
+            },
+            {
+              "node": "node2",
+              "command": "openssl s_client -connect node1:443 -servername node1 -brief < /dev/null 2>&1",
+              "observation": "exit_code=0; CONNECTION ESTABLISHED; TLSv1.3; Peer certificate: CN=node1; Verification: OK."
+            },
+            {
+              "node": "node2",
+              "command": "curl --fail --silent --show-error --connect-timeout 5 https://node1/healthz",
+              "observation": "exit_code=0; stdout: certificate-rotation-ready."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "rotated-certificate-valid-for-node1",
+          "probe": "rotated-certificate-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "The served certificate matches node1, is currently valid with at least 180 days remaining, is self-issued, and verifies successfully.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "openssl s_client -connect node1:443 -servername node1 -showcerts < /dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -fingerprint -sha256 -ext subjectAltName -checkhost node1 -checkend 15552000",
+              "observation": "exit_code=0; subject=CN=node1; issuer=CN=node1; notAfter=Aug 26 18:49:24 2027 GMT; SAN DNS:node1; SHA-256 fingerprint 95:EC:DA:B5:04:C5:FC:CC:4B:7C:7D:E8:E4:00:EA:9E:77:B9:06:AD:79:67:6F:D3:57:B6:02:D9:F0:10:78:D8; Certificate will not expire."
+            },
+            {
+              "node": "node2",
+              "command": "openssl s_client -connect node1:443 -servername node1 -verify_return_error -brief < /dev/null 2>&1",
+              "observation": "exit_code=0; Peer certificate CN=node1; Verification: OK."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "served-and-configured-certificates-match",
+          "probe": "rotated-certificate-contract",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "The served and effective configured certificates have the same SHA-256 fingerprint.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "openssl s_client -connect node1:443 -servername node1 -showcerts < /dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -fingerprint -sha256 -ext subjectAltName -checkhost node1 -checkend 15552000",
+              "observation": "Served SHA-256 fingerprint: 95:EC:DA:B5:04:C5:FC:CC:4B:7C:7D:E8:E4:00:EA:9E:77:B9:06:AD:79:67:6F:D3:57:B6:02:D9:F0:10:78:D8."
+            },
+            {
+              "node": "node1",
+              "command": "cert=$(sudo nginx -T 2>/dev/null | awk '$1==\"ssl_certificate\" {gsub(\";\",\"\",$2); print $2; exit}'); printf 'effective_certificate=%s\\n' \"$cert\"; sudo openssl x509 -in \"$cert\" -noout -subject -issuer -dates -fingerprint -sha256",
+              "observation": "exit_code=0; effective_certificate=/etc/nginx/tls/server-rotation.crt; configured SHA-256 fingerprint: 95:EC:DA:B5:04:C5:FC:CC:4B:7C:7D:E8:E4:00:EA:9E:77:B9:06:AD:79:67:6F:D3:57:B6:02:D9:F0:10:78:D8."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "https-content-preserved",
+          "probe": "tls-content-preservation",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Node2 receives the existing HTTPS page and the exact certificate-rotation-ready health response.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "curl --fail --silent --show-error --connect-timeout 5 https://node1/",
+              "observation": "exit_code=0; stdout: existing HTTPS content: preserve during certificate rotation."
+            },
+            {
+              "node": "node2",
+              "command": "curl --fail --silent --show-error --connect-timeout 5 https://node1/healthz",
+              "observation": "exit_code=0; stdout: certificate-rotation-ready."
+            },
+            {
+              "node": "node1",
+              "command": "sudo nginx -T 2>/dev/null | grep -E '^[[:space:]]*(listen .*443|server_name|root |location|ssl_certificate(_key)? )'",
+              "observation": "Effective configuration includes listen 443 ssl, server_name node1, root /var/www/html, and the expected TLS certificate/key directives."
+            },
+            {
+              "node": "node1",
+              "command": "root=$(sudo nginx -T 2>/dev/null | awk '$1==\"root\" {gsub(\";\",\"\",$2); print $2; exit}'); printf 'web_root=%s\\n' \"$root\"; sudo find \"$root\" -maxdepth 1 -type f -printf '%f mode=%m owner=%u:%g\\n' | sort; sudo sha256sum \"$root/index.html\"; sudo sed -n '1,5p' \"$root/index.html\"; printf 'tls_artifacts\\n'; sudo find /etc/nginx/tls -maxdepth 1 -type f -printf '%f mode=%m owner=%u:%g\\n' | sort; printf 'accounts\\n'; getent passwd www-data; getent passwd nginx || true",
+              "observation": "web_root=/var/www/html; index.html contains the existing HTTPS content and is root-owned mode 644; www-data remains the distribution account."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 3.0,
+      "evaluated_points": 3.0,
+      "passed_points": 3.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "executor-rotation-preserved-connections",
+          "probe": "prepared-continuity-evidence",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Both preparation-owned probes are active with nonzero live processes: the long-lived continuity transfer and rapid health loop.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "for u in infraset-continuity.service infraset-availability.service; do printf '[%s]\\n' \"$u\"; systemctl is-active \"$u\"; pid=$(systemctl show \"$u\" -p MainPID --value); systemctl show \"$u\" -p ActiveState -p SubState -p MainPID; ps -p \"$pid\" -o pid=,stat=,etime=,args=; done",
+              "observation": "Both units report active/running. infraset-continuity has MainPID 1346 running curl against https://node1/continuity.bin; infraset-availability has MainPID 1347 running the repeating health loop."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 2.0,
+      "evaluated_points": 2.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "tls-state-clean",
+          "probe": "tls-operational-state",
+          "points": 2.0,
+          "status": "fail",
+          "summary": "The endpoint is operational, but the clean-state contract is violated by stale legacy TLS material and failed ssh.service units.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf 'nginx_tls_files\\n'; sudo find /etc/nginx -type f \\( -name '*.crt' -o -name '*.pem' -o -name '*.key' -o -name '*.csr' \\) -printf '%p mode=%m owner=%u:%g\\n' | sort; printf 'certificate_status\\n'; for f in $(sudo find /etc/nginx -type f \\( -name '*.crt' -o -name '*.pem' \\) -print); do printf '%s\\n' \"$f\"; sudo openssl x509 -in \"$f\" -noout -subject -issuer -dates -fingerprint -sha256 2>&1; done; printf 'suspicious_residue_names\\n'; sudo find /etc/nginx /var/www /tmp /var/tmp /root /home -xdev -type f \\( -iname '*.csr' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.orig' -o -iname '*.tmp' -o -iname '*openssl*' -o -iname '*debug*' -o -iname '*password*' -o -iname '*secret*' -o -iname '*credential*' \\) -printf '%p mode=%m owner=%u:%g\\n' | sort",
+              "observation": "The active rotation pair is present, but /etc/nginx/tls/server.crt remains expired with notAfter=Jan 1 00:00:00 2025 GMT and /etc/nginx/tls/server.key remains as an extra protected private key."
+            },
+            {
+              "node": "node1",
+              "command": "printf 'failed_units\\n'; systemctl --failed --no-legend --no-pager; printf 'nginx_state\\n'; systemctl show nginx -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStartTimestamp; printf 'nginx_journal_tail\\n'; sudo journalctl -u nginx -n 30 --no-pager",
+              "observation": "systemctl --failed reports ssh.service failed. Nginx is active/running with NRestarts=0; journal shows a clean stop/start at 14:48:34 and a later successful reload at 14:49:55."
+            },
+            {
+              "node": "node2",
+              "command": "printf 'failed_units\\n'; systemctl --failed --no-legend --no-pager; printf 'preparation_units\\n'; for u in infraset-continuity.service infraset-availability.service; do systemctl show \"$u\" -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStartTimestamp; done",
+              "observation": "systemctl --failed also reports ssh.service failed on node2; both preparation units are active/running with NRestarts=0."
+            }
+          ],
+          "failures": [
+            "Expired legacy certificate /etc/nginx/tls/server.crt remains alongside the active rotated certificate.",
+            "Extra legacy private key /etc/nginx/tls/server.key remains alongside the active protected key.",
+            "ssh.service is reported failed on both managed nodes; the authored clean-state assertion includes concrete failed units."
+          ],
+          "limitations": []
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "resilience",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 75.0,
+    "reward": 0.75,
+    "provisional_reward": 0.75,
+    "caps_applied": []
+  }
+}

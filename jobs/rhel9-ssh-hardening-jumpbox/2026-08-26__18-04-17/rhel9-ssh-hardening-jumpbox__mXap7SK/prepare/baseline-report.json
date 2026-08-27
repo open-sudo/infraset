@@ -1,0 +1,153 @@
+{
+  "source": "static-prepare",
+  "nodes": [
+    {
+      "name": "node1",
+      "facts": [
+        {
+          "category": "target-platform-and-security",
+          "observation": "rhel:9.8\nactive\nenabled",
+          "command": "set -eu\n. /etc/os-release\nprintf '%s:%s\\n' \"$ID\" \"$VERSION_ID\"\ntest \"$ID\" = rhel\ncase \"$VERSION_ID\" in 9|9.*) ;; *) exit 1 ;; esac\ntest \"$(getenforce)\" = Enforcing\nsystemctl is-active sshd.service\nsystemctl is-enabled sshd.service\n"
+        },
+        {
+          "category": "prepared-target-identities",
+          "observation": "opsadmin:24001:24001:Prepared SSH administrator:/home/opsadmin:/bin/bash\ncontractor:24002:24002:Prepared restricted contractor:/home/contractor:/bin/bash\nssh-access:x:24000:opsadmin\nuid=24001(opsadmin) gid=24001(opsadmin) groups=24001(opsadmin),24000(ssh-access)\nuid=24002(contractor) gid=24002(contractor) groups=24002(contractor)",
+          "command": "set -eu\ngetent passwd opsadmin | cut -d: -f1,3,4,5,6,7\ngetent passwd contractor | cut -d: -f1,3,4,5,6,7\ngetent group ssh-access\nid opsadmin\nid contractor\nid -nG opsadmin | tr ' ' '\\n' | grep -qx ssh-access\n! id -nG contractor | tr ' ' '\\n' | grep -qx ssh-access\n"
+        },
+        {
+          "category": "prepared-target-state",
+          "observation": "root:root:600:/root/.ssh/authorized_keys\nopsadmin:opsadmin:600:/home/opsadmin/.ssh/authorized_keys\ncontractor:contractor:600:/home/contractor/.ssh/authorized_keys",
+          "command": "set -eu\ntest \"$(cat /home/opsadmin/prepared-state.txt)\" = 'prepared opsadmin state: preserve'\ntest \"$(cat /home/contractor/prepared-state.txt)\" = 'prepared contractor state: preserve'\nfixture_key=\"$(cat /var/lib/infraset-ssh-fixture/access-key.pub)\"\nfor file in /root/.ssh/authorized_keys /home/opsadmin/.ssh/authorized_keys /home/contractor/.ssh/authorized_keys; do\n  grep -qxF \"$fixture_key\" \"$file\"\n  stat -c '%U:%G:%a:%n' \"$file\"\ndone\nactual_shadow_checksum=\"$({\n  getent shadow opsadmin | cut -d: -f1,2\n  getent shadow contractor | cut -d: -f1,2\n} | sha256sum | cut -d' ' -f1)\"\ntest \"$actual_shadow_checksum\" = \"$(cat /var/lib/infraset-ssh-fixture/shadow.sha256)\"\n"
+        }
+      ],
+      "unavailable": []
+    },
+    {
+      "name": "node2",
+      "facts": [
+        {
+          "category": "prepared-jump-box",
+          "observation": "almalinux:9.6\nuid=24010(sshprobe) gid=24010(sshprobe) groups=24010(sshprobe)\n256 SHA256:VSgE9j9KSsDhdYu/Agc/IHr/8wFvpsvOYlIw7L42BQI antrieb-cluster-6a8f62e4dccfab02026ac5c7 (ED25519)",
+          "command": "set -eu\n. /etc/os-release\nprintf '%s:%s\\n' \"$ID\" \"$VERSION_ID\"\ntest \"$ID\" = almalinux\ncase \"$VERSION_ID\" in 9|9.*) ;; *) exit 1 ;; esac\nid sshprobe\ntest -s /home/sshprobe/.ssh/id_ed25519\ntest -s /home/sshprobe/.ssh/known_hosts\ntest -x /home/sshprobe/.ssh/askpass\nssh-keygen -lf /home/sshprobe/.ssh/id_ed25519.pub\n"
+        },
+        {
+          "category": "prepared-access-preconditions",
+          "observation": "opsadmin:node1\ncontractor:node1\nroot:node1",
+          "command": "set -eu\nfor user in opsadmin contractor root; do\n  runuser -u sshprobe -- ssh \\\n    -o BatchMode=yes \\\n    -o IdentitiesOnly=yes \\\n    -o StrictHostKeyChecking=yes \\\n    -o UserKnownHostsFile=/home/sshprobe/.ssh/known_hosts \\\n    -i /home/sshprobe/.ssh/id_ed25519 \\\n    \"$user@node1\" 'printf \"%s:%s\\n\" \"$(id -un)\" \"$(hostname -s)\"'\ndone\n"
+        }
+      ],
+      "unavailable": []
+    },
+    {
+      "name": "node3",
+      "facts": [
+        {
+          "category": "prepared-untrusted-client",
+          "observation": "almalinux:9.6\nuid=24010(sshprobe) gid=24010(sshprobe) groups=24010(sshprobe)\n256 SHA256:VSgE9j9KSsDhdYu/Agc/IHr/8wFvpsvOYlIw7L42BQI antrieb-cluster-6a8f62e4dccfab02026ac5c7 (ED25519)",
+          "command": "set -eu\n. /etc/os-release\nprintf '%s:%s\\n' \"$ID\" \"$VERSION_ID\"\ntest \"$ID\" = almalinux\ncase \"$VERSION_ID\" in 9|9.*) ;; *) exit 1 ;; esac\nid sshprobe\ntest -s /home/sshprobe/.ssh/id_ed25519\ntest -s /home/sshprobe/.ssh/known_hosts\nssh-keygen -lf /home/sshprobe/.ssh/id_ed25519.pub\n"
+        },
+        {
+          "category": "prepared-firewall-precondition",
+          "observation": "opsadmin:node1",
+          "command": "set -eu\nrunuser -u sshprobe -- ssh \\\n  -o BatchMode=yes \\\n  -o IdentitiesOnly=yes \\\n  -o StrictHostKeyChecking=yes \\\n  -o UserKnownHostsFile=/home/sshprobe/.ssh/known_hosts \\\n  -i /home/sshprobe/.ssh/id_ed25519 \\\n  opsadmin@node1 'printf \"%s:%s\\n\" \"$(id -un)\" \"$(hostname -s)\"'\n"
+        }
+      ],
+      "unavailable": []
+    }
+  ],
+  "topology_observations": [],
+  "limitations": [],
+  "observations": [
+    {
+      "id": "target-platform-and-security",
+      "stage": 10,
+      "node": "node1",
+      "command": "set -eu\n. /etc/os-release\nprintf '%s:%s\\n' \"$ID\" \"$VERSION_ID\"\ntest \"$ID\" = rhel\ncase \"$VERSION_ID\" in 9|9.*) ;; *) exit 1 ;; esac\ntest \"$(getenforce)\" = Enforcing\nsystemctl is-active sshd.service\nsystemctl is-enabled sshd.service\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "rhel:9.8\nactive\nenabled",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "prepared-target-identities",
+      "stage": 10,
+      "node": "node1",
+      "command": "set -eu\ngetent passwd opsadmin | cut -d: -f1,3,4,5,6,7\ngetent passwd contractor | cut -d: -f1,3,4,5,6,7\ngetent group ssh-access\nid opsadmin\nid contractor\nid -nG opsadmin | tr ' ' '\\n' | grep -qx ssh-access\n! id -nG contractor | tr ' ' '\\n' | grep -qx ssh-access\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "opsadmin:24001:24001:Prepared SSH administrator:/home/opsadmin:/bin/bash\ncontractor:24002:24002:Prepared restricted contractor:/home/contractor:/bin/bash\nssh-access:x:24000:opsadmin\nuid=24001(opsadmin) gid=24001(opsadmin) groups=24001(opsadmin),24000(ssh-access)\nuid=24002(contractor) gid=24002(contractor) groups=24002(contractor)",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "prepared-target-state",
+      "stage": 10,
+      "node": "node1",
+      "command": "set -eu\ntest \"$(cat /home/opsadmin/prepared-state.txt)\" = 'prepared opsadmin state: preserve'\ntest \"$(cat /home/contractor/prepared-state.txt)\" = 'prepared contractor state: preserve'\nfixture_key=\"$(cat /var/lib/infraset-ssh-fixture/access-key.pub)\"\nfor file in /root/.ssh/authorized_keys /home/opsadmin/.ssh/authorized_keys /home/contractor/.ssh/authorized_keys; do\n  grep -qxF \"$fixture_key\" \"$file\"\n  stat -c '%U:%G:%a:%n' \"$file\"\ndone\nactual_shadow_checksum=\"$({\n  getent shadow opsadmin | cut -d: -f1,2\n  getent shadow contractor | cut -d: -f1,2\n} | sha256sum | cut -d' ' -f1)\"\ntest \"$actual_shadow_checksum\" = \"$(cat /var/lib/infraset-ssh-fixture/shadow.sha256)\"\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "root:root:600:/root/.ssh/authorized_keys\nopsadmin:opsadmin:600:/home/opsadmin/.ssh/authorized_keys\ncontractor:contractor:600:/home/contractor/.ssh/authorized_keys",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "prepared-jump-box",
+      "stage": 20,
+      "node": "node2",
+      "command": "set -eu\n. /etc/os-release\nprintf '%s:%s\\n' \"$ID\" \"$VERSION_ID\"\ntest \"$ID\" = almalinux\ncase \"$VERSION_ID\" in 9|9.*) ;; *) exit 1 ;; esac\nid sshprobe\ntest -s /home/sshprobe/.ssh/id_ed25519\ntest -s /home/sshprobe/.ssh/known_hosts\ntest -x /home/sshprobe/.ssh/askpass\nssh-keygen -lf /home/sshprobe/.ssh/id_ed25519.pub\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "almalinux:9.6\nuid=24010(sshprobe) gid=24010(sshprobe) groups=24010(sshprobe)\n256 SHA256:VSgE9j9KSsDhdYu/Agc/IHr/8wFvpsvOYlIw7L42BQI antrieb-cluster-6a8f62e4dccfab02026ac5c7 (ED25519)",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "prepared-untrusted-client",
+      "stage": 20,
+      "node": "node3",
+      "command": "set -eu\n. /etc/os-release\nprintf '%s:%s\\n' \"$ID\" \"$VERSION_ID\"\ntest \"$ID\" = almalinux\ncase \"$VERSION_ID\" in 9|9.*) ;; *) exit 1 ;; esac\nid sshprobe\ntest -s /home/sshprobe/.ssh/id_ed25519\ntest -s /home/sshprobe/.ssh/known_hosts\nssh-keygen -lf /home/sshprobe/.ssh/id_ed25519.pub\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "almalinux:9.6\nuid=24010(sshprobe) gid=24010(sshprobe) groups=24010(sshprobe)\n256 SHA256:VSgE9j9KSsDhdYu/Agc/IHr/8wFvpsvOYlIw7L42BQI antrieb-cluster-6a8f62e4dccfab02026ac5c7 (ED25519)",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "prepared-access-preconditions",
+      "stage": 30,
+      "node": "node2",
+      "command": "set -eu\nfor user in opsadmin contractor root; do\n  runuser -u sshprobe -- ssh \\\n    -o BatchMode=yes \\\n    -o IdentitiesOnly=yes \\\n    -o StrictHostKeyChecking=yes \\\n    -o UserKnownHostsFile=/home/sshprobe/.ssh/known_hosts \\\n    -i /home/sshprobe/.ssh/id_ed25519 \\\n    \"$user@node1\" 'printf \"%s:%s\\n\" \"$(id -un)\" \"$(hostname -s)\"'\ndone\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "opsadmin:node1\ncontractor:node1\nroot:node1",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "prepared-firewall-precondition",
+      "stage": 30,
+      "node": "node3",
+      "command": "set -eu\nrunuser -u sshprobe -- ssh \\\n  -o BatchMode=yes \\\n  -o IdentitiesOnly=yes \\\n  -o StrictHostKeyChecking=yes \\\n  -o UserKnownHostsFile=/home/sshprobe/.ssh/known_hosts \\\n  -i /home/sshprobe/.ssh/id_ed25519 \\\n  opsadmin@node1 'printf \"%s:%s\\n\" \"$(id -un)\" \"$(hostname -s)\"'\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "opsadmin:node1",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    }
+  ]
+}

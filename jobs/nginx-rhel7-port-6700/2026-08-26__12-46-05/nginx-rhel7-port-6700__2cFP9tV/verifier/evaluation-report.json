@@ -1,0 +1,317 @@
+{
+  "probes": [
+    {
+      "id": "nginx-http-contract",
+      "summary": "Both loopback and managed-address HTTP checks succeeded; active systemd, process, and RPM evidence was collected.",
+      "cleanup_completed": true,
+      "limitations": [
+        "node1 lacks ip and ss."
+      ]
+    },
+    {
+      "id": "nginx-installation-quality",
+      "summary": "Native configuration validation, RPM provenance, systemd state, effective listen directives, runtime socket, file modes, and service journal were inspected.",
+      "cleanup_completed": true,
+      "limitations": [
+        "lsof is unavailable; the journal records one recovered failed start before the current successful start."
+      ]
+    },
+    {
+      "id": "nginx-operational-hygiene",
+      "summary": "Failed units, competing web services, firewall state, artifact candidates, listeners, and debug or ad hoc processes were inspected.",
+      "cleanup_completed": true,
+      "limitations": [
+        "getenforce and iptables are unavailable."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "nginx-http-on-port-6700",
+      "status": "pass",
+      "summary": "Both correctly addressed requests returned HTTP 200 on TCP port 6700.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "curl -sS --max-time 5 -D - -o /dev/null http://127.0.0.1:6700/",
+          "observation": "HTTP/1.1 200 OK; Server: nginx/1.16.1."
+        },
+        {
+          "node": "node1",
+          "command": "curl -sS --max-time 5 -D - -o /dev/null \"http://$NODE_IP:6700/\"",
+          "observation": "NODE_IP was 10.100.55.10; request returned HTTP/1.1 200 OK with Server: nginx/1.16.1."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "ip was unavailable, but the managed NODE_IP was injected and successfully used for the address check."
+      ]
+    },
+    {
+      "id": "nginx-serves-endpoint",
+      "status": "pass",
+      "summary": "The endpoint is served by the active enabled RPM-managed Nginx service.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "systemctl is-enabled nginx 2>&1\nsystemctl is-active nginx 2>&1\nps -eo pid,user,comm,args | grep '[n]ginx'\nrpm -q nginx\nrpm -qf /usr/sbin/nginx",
+          "observation": "nginx was enabled and active; master PID 2869 and worker PID 2870 were running from /usr/sbin/nginx; RPM ownership was nginx-1.16.1-1.el7.ngx.x86_64."
+        },
+        {
+          "node": "node1",
+          "command": "if command -v netstat >/dev/null 2>&1; then sudo netstat -ltnp | grep -E '(:|])6700[[:space:]]'; else printf '%s\\n' NETSTAT_UNAVAILABLE; fi\nif command -v lsof >/dev/null 2>&1; then sudo lsof -nP -iTCP:6700 -sTCP:LISTEN; else printf '%s\\n' LSOF_UNAVAILABLE; fi\nsudo journalctl -u nginx -n 30 --no-pager -o short-iso 2>&1",
+          "observation": "0.0.0.0:6700 was LISTENING with PID 2869/nginx master; the privileged journal ended with a successful nginx start."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "ss and lsof are unavailable; netstat supplied the runtime socket ownership."
+      ]
+    },
+    {
+      "id": "nginx-configuration-valid",
+      "status": "pass",
+      "summary": "The distribution RPM owns the service, nginx -t succeeds, systemd is enabled and active, and the effective listener is TCP 6700.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -H /usr/sbin/nginx -t",
+          "observation": "nginx reported the /etc/nginx/nginx.conf syntax was ok and the configuration test was successful."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -H /usr/sbin/nginx -T 2>&1 | grep -nE '^[[:space:]]*listen[[:space:]]'",
+          "observation": "The only effective listen directive shown was line 138: listen 6700;."
+        },
+        {
+          "node": "node1",
+          "command": "rpm -qi nginx | sed -n '1,25p'\nrpm -qf /usr/sbin/nginx\nrpm -qf /etc/nginx/nginx.conf\nsudo stat -c '%A %a %U:%G %n' /usr/sbin/nginx /etc/nginx/nginx.conf\nrpm -V nginx",
+          "observation": "RPM nginx-1.16.1-1.el7.ngx.x86_64 owns the binary and configuration; binary mode was 755 root:root and nginx.conf mode was 644 root:root. RPM verification only reported the expected customized conf.d/default.conf."
+        },
+        {
+          "node": "node1",
+          "command": "systemctl is-enabled nginx 2>&1\nsystemctl is-active nginx 2>&1\nsystemctl show nginx -p FragmentPath -p ExecStart -p User -p ActiveState -p SubState -p Result -p UnitFileState 2>&1",
+          "observation": "systemd reported enabled and active; ActiveState=active, SubState=running, Result=success, FragmentPath=/usr/lib/systemd/system/nginx.service, and ExecStart=/usr/sbin/nginx -c /etc/nginx/nginx.conf."
+        },
+        {
+          "node": "node1",
+          "command": "if command -v netstat >/dev/null 2>&1; then sudo netstat -ltnp | grep -E '(:|])6700[[:space:]]'; else printf '%s\\n' NETSTAT_UNAVAILABLE; fi",
+          "observation": "Runtime socket evidence showed 0.0.0.0:6700 LISTENING under PID 2869/nginx master."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The journal included one earlier bind-permission failure, followed by a successful start; no current failed unit or inactive state was present."
+      ]
+    },
+    {
+      "id": "nginx-state-clean",
+      "status": "fail",
+      "summary": "A task-specific temporary artifact remains in /tmp.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' 'NGINX_BACKUPS'\nsudo find /etc/nginx -maxdepth 3 -type f \\( -name '*.bak' -o -name '*.orig' -o -name '*.old' -o -name '*.backup' -o -name '*~' -o -name '*.rpmnew' -o -name '*.rpmsave' \\) -printf '%M %u:%g %TY-%Tm-%Td %TH:%TM %p\\n' 2>&1\nprintf '%s\\n' 'TASK_ARTIFACT_CANDIDATES'\nsudo find /tmp /var/tmp /root /home /opt /usr/local/src -xdev -maxdepth 3 -type f \\( -iname '*.tar' -o -iname '*.tgz' -o -iname '*.tar.gz' -o -iname '*.zip' -o -iname '*.rpm' -o -iname '*nginx*' -o -iname '*setup*' -o -iname '*install*' -o -name '*.sh' \\) -printf '%M %u:%g %TY-%Tm-%Td %TH:%TM %p\\n' 2>&1",
+          "observation": "No Nginx backup files were found, but /tmp/nginx-root-response remains, owned by antrieb:antrieb and timestamped 2026-08-26 10:37."
+        },
+        {
+          "node": "node1",
+          "command": "systemctl --failed --no-legend --no-pager 2>&1\nps -eo pid,user,comm,args | grep -E '[n]ginx|[h]ttpd|[a]pache|[c]addy|[l]ighttpd|[p]ython.*http.server|[n]ode'\nrpm -qa | grep -Ei '(^|[-.])(nginx|httpd|apache|caddy|lighttpd)([-.]|$)' | sort",
+          "observation": "No failed units were listed; only the Nginx master/worker were present among matching web processes, and only the nginx RPM was installed among matching web packages."
+        },
+        {
+          "node": "node1",
+          "command": "if command -v netstat >/dev/null 2>&1; then sudo netstat -lntp 2>&1; else printf '%s\\n' NETSTAT_UNAVAILABLE; fi\nps -eo pid,user,comm,args | grep -E '[d]ebug|[s]trace|[t]cpdump|[t]race|[s]ocat|[n]c |[n]etcat|[p]ython.*http.server|[p]erl.*-e|[c]url.*6700'",
+          "observation": "Listeners were ssh on 22, loopback Postfix on 25, and Nginx on 6700; no ad hoc debug listener or process was found."
+        }
+      ],
+      "failures": [
+        "The current-run task-specific temporary file /tmp/nginx-root-response remains on node1."
+      ],
+      "limitations": [
+        "SELinux mode and iptables could not be inspected because those executables are unavailable."
+      ]
+    }
+  ],
+  "actions_performed": [],
+  "overall_summary": "HTTP contract and Nginx installation assertions passed. Operational hygiene failed because /tmp/nginx-root-response remains; all probes were read-only and evidence collection is closed.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 4.0,
+      "evaluated_points": 4.0,
+      "passed_points": 4.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "nginx-http-on-port-6700",
+          "probe": "nginx-http-contract",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Both correctly addressed requests returned HTTP 200 on TCP port 6700.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "curl -sS --max-time 5 -D - -o /dev/null http://127.0.0.1:6700/",
+              "observation": "HTTP/1.1 200 OK; Server: nginx/1.16.1."
+            },
+            {
+              "node": "node1",
+              "command": "curl -sS --max-time 5 -D - -o /dev/null \"http://$NODE_IP:6700/\"",
+              "observation": "NODE_IP was 10.100.55.10; request returned HTTP/1.1 200 OK with Server: nginx/1.16.1."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "ip was unavailable, but the managed NODE_IP was injected and successfully used for the address check."
+          ]
+        },
+        {
+          "id": "nginx-serves-endpoint",
+          "probe": "nginx-http-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "The endpoint is served by the active enabled RPM-managed Nginx service.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "systemctl is-enabled nginx 2>&1\nsystemctl is-active nginx 2>&1\nps -eo pid,user,comm,args | grep '[n]ginx'\nrpm -q nginx\nrpm -qf /usr/sbin/nginx",
+              "observation": "nginx was enabled and active; master PID 2869 and worker PID 2870 were running from /usr/sbin/nginx; RPM ownership was nginx-1.16.1-1.el7.ngx.x86_64."
+            },
+            {
+              "node": "node1",
+              "command": "if command -v netstat >/dev/null 2>&1; then sudo netstat -ltnp | grep -E '(:|])6700[[:space:]]'; else printf '%s\\n' NETSTAT_UNAVAILABLE; fi\nif command -v lsof >/dev/null 2>&1; then sudo lsof -nP -iTCP:6700 -sTCP:LISTEN; else printf '%s\\n' LSOF_UNAVAILABLE; fi\nsudo journalctl -u nginx -n 30 --no-pager -o short-iso 2>&1",
+              "observation": "0.0.0.0:6700 was LISTENING with PID 2869/nginx master; the privileged journal ended with a successful nginx start."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "ss and lsof are unavailable; netstat supplied the runtime socket ownership."
+          ]
+        },
+        {
+          "id": "nginx-configuration-valid",
+          "probe": "nginx-installation-quality",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "The distribution RPM owns the service, nginx -t succeeds, systemd is enabled and active, and the effective listener is TCP 6700.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -H /usr/sbin/nginx -t",
+              "observation": "nginx reported the /etc/nginx/nginx.conf syntax was ok and the configuration test was successful."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -H /usr/sbin/nginx -T 2>&1 | grep -nE '^[[:space:]]*listen[[:space:]]'",
+              "observation": "The only effective listen directive shown was line 138: listen 6700;."
+            },
+            {
+              "node": "node1",
+              "command": "rpm -qi nginx | sed -n '1,25p'\nrpm -qf /usr/sbin/nginx\nrpm -qf /etc/nginx/nginx.conf\nsudo stat -c '%A %a %U:%G %n' /usr/sbin/nginx /etc/nginx/nginx.conf\nrpm -V nginx",
+              "observation": "RPM nginx-1.16.1-1.el7.ngx.x86_64 owns the binary and configuration; binary mode was 755 root:root and nginx.conf mode was 644 root:root. RPM verification only reported the expected customized conf.d/default.conf."
+            },
+            {
+              "node": "node1",
+              "command": "systemctl is-enabled nginx 2>&1\nsystemctl is-active nginx 2>&1\nsystemctl show nginx -p FragmentPath -p ExecStart -p User -p ActiveState -p SubState -p Result -p UnitFileState 2>&1",
+              "observation": "systemd reported enabled and active; ActiveState=active, SubState=running, Result=success, FragmentPath=/usr/lib/systemd/system/nginx.service, and ExecStart=/usr/sbin/nginx -c /etc/nginx/nginx.conf."
+            },
+            {
+              "node": "node1",
+              "command": "if command -v netstat >/dev/null 2>&1; then sudo netstat -ltnp | grep -E '(:|])6700[[:space:]]'; else printf '%s\\n' NETSTAT_UNAVAILABLE; fi",
+              "observation": "Runtime socket evidence showed 0.0.0.0:6700 LISTENING under PID 2869/nginx master."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The journal included one earlier bind-permission failure, followed by a successful start; no current failed unit or inactive state was present."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "nginx-state-clean",
+          "probe": "nginx-operational-hygiene",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "A task-specific temporary artifact remains in /tmp.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' 'NGINX_BACKUPS'\nsudo find /etc/nginx -maxdepth 3 -type f \\( -name '*.bak' -o -name '*.orig' -o -name '*.old' -o -name '*.backup' -o -name '*~' -o -name '*.rpmnew' -o -name '*.rpmsave' \\) -printf '%M %u:%g %TY-%Tm-%Td %TH:%TM %p\\n' 2>&1\nprintf '%s\\n' 'TASK_ARTIFACT_CANDIDATES'\nsudo find /tmp /var/tmp /root /home /opt /usr/local/src -xdev -maxdepth 3 -type f \\( -iname '*.tar' -o -iname '*.tgz' -o -iname '*.tar.gz' -o -iname '*.zip' -o -iname '*.rpm' -o -iname '*nginx*' -o -iname '*setup*' -o -iname '*install*' -o -name '*.sh' \\) -printf '%M %u:%g %TY-%Tm-%Td %TH:%TM %p\\n' 2>&1",
+              "observation": "No Nginx backup files were found, but /tmp/nginx-root-response remains, owned by antrieb:antrieb and timestamped 2026-08-26 10:37."
+            },
+            {
+              "node": "node1",
+              "command": "systemctl --failed --no-legend --no-pager 2>&1\nps -eo pid,user,comm,args | grep -E '[n]ginx|[h]ttpd|[a]pache|[c]addy|[l]ighttpd|[p]ython.*http.server|[n]ode'\nrpm -qa | grep -Ei '(^|[-.])(nginx|httpd|apache|caddy|lighttpd)([-.]|$)' | sort",
+              "observation": "No failed units were listed; only the Nginx master/worker were present among matching web processes, and only the nginx RPM was installed among matching web packages."
+            },
+            {
+              "node": "node1",
+              "command": "if command -v netstat >/dev/null 2>&1; then sudo netstat -lntp 2>&1; else printf '%s\\n' NETSTAT_UNAVAILABLE; fi\nps -eo pid,user,comm,args | grep -E '[d]ebug|[s]trace|[t]cpdump|[t]race|[s]ocat|[n]c |[n]etcat|[p]ython.*http.server|[p]erl.*-e|[c]url.*6700'",
+              "observation": "Listeners were ssh on 22, loopback Postfix on 25, and Nginx on 6700; no ad hoc debug listener or process was found."
+            }
+          ],
+          "failures": [
+            "The current-run task-specific temporary file /tmp/nginx-root-response remains on node1."
+          ],
+          "limitations": [
+            "SELinux mode and iptables could not be inspected because those executables are unavailable."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 90.0,
+    "reward": 0.9,
+    "provisional_reward": 0.9,
+    "caps_applied": []
+  }
+}

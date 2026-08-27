@@ -1,0 +1,101 @@
+schema_version = 1
+
+[[probes]]
+id = "opnsense-service-contract"
+level = 1
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 8
+procedure = "Inspect effective and saved OPNsense interface, routing, pf, and NAT state plus each Ubuntu zone address and route. From node3 request the declared DMZ service endpoint on TCP 8080 and from node4 request the declared published WAN endpoint on TCP 8443, requiring infraset-dmz and confirming only the WAN path is translated."
+
+[[probes]]
+id = "opnsense-zone-boundary"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 8
+procedure = "With each source bound to its zone path, prove WAN reaches only the published application and not LAN, undeclared DMZ ports, or gateway administration; prove DMZ cannot initiate into LAN while LAN retains application access. Confirm prerequisites and avoid treating management-path failures as policy evidence."
+
+[[probes]]
+id = "opnsense-operational-state"
+level = 5
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 5
+procedure = "Inspect unapplied or duplicate filter/NAT state, stale backups outside normal history, captures, debug/admin exposure, failed Ubuntu units, duplicate routes or servers, enabled SSH, broad openings, and executor-created residue."
+
+[[probes]]
+id = "opnsense-gateway-app-reboots"
+level = 8
+targets = ["node1", "node2"]
+effect = "reboot"
+max_exec_calls = 8
+procedure = "Record boot identities, reboot OPNsense node1 and DMZ application node2 sequentially, then retest zone addressing, pf/NAT state, direct and published application paths, and the denied traffic matrix."
+cleanup = "Wait for pf and the application to recover and remove evaluator probes."
+
+[[probes]]
+id = "opnsense-client-reboots"
+level = 10
+targets = ["node3", "node4"]
+effect = "reboot"
+max_exec_calls = 7
+procedure = "Record boot identities, reboot LAN node3 and WAN node4 sequentially, then repeat direct/published access and every relevant WAN-to-LAN, WAN-to-DMZ, and DMZ-to-LAN denial."
+cleanup = "Wait for both clients to restore zone addressing and remove evaluator state."
+
+[[assertions]]
+id = "opnsense-zone-addressing"
+probe = "opnsense-service-contract"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "All four nodes own the declared zone addresses and their data-plane routes use the intended WAN, LAN, and DMZ NICs."
+fail_condition = "Live state confirms a missing/wrong address, gateway, or management-network data-plane bypass."
+
+[[assertions]]
+id = "opnsense-direct-and-published-app"
+probe = "opnsense-service-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "LAN receives infraset-dmz directly at the declared DMZ service endpoint on TCP 8080 and WAN receives it only through the declared published endpoint on TCP 8443 with correct DNAT."
+fail_condition = "A correctly sourced intended-client probe confirms either application path unavailable, incorrect, or translated contrary to the contract."
+
+[[assertions]]
+id = "opnsense-zone-policy-effective"
+probe = "opnsense-zone-boundary"
+dimension = "security"
+points = 3
+critical = true
+pass_condition = "WAN is limited to the published path, DMZ cannot initiate into LAN, LAN retains declared access, and stateful return traffic works."
+fail_condition = "A prerequisite-valid zone probe confirms an undeclared path, broad forwarding, or a required allowed path blocked."
+
+[[assertions]]
+id = "opnsense-administration-contained"
+probe = "opnsense-zone-boundary"
+dimension = "security"
+points = 1
+pass_condition = "Gateway administration and unnecessary Ubuntu listeners are absent from zone interfaces while persistent host controls remain active."
+fail_condition = "Concrete evidence confirms unintended zone-interface administration, broad service exposure, or disabled host controls."
+
+[[assertions]]
+id = "opnsense-state-clean"
+probe = "opnsense-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only coherent saved gateway, pf/NAT, application, route, log, history, and platform-management state remains."
+fail_condition = "Concrete unapplied, duplicate, stale, debug, failed, unsafe, or evaluator-created residue remains."
+
+[[assertions]]
+id = "opnsense-core-systems-persist"
+probe = "opnsense-gateway-app-reboots"
+dimension = "persistence"
+points = 3
+critical = true
+pass_condition = "Node1 and node2 change boot identities and zone routing, pf, DNAT, application content, allowed paths, and denials recover automatically."
+fail_condition = "A completed gateway or app reboot loses required address, routing, application, NAT, firewall, or traffic behavior."
+
+[[assertions]]
+id = "opnsense-all-systems-persist"
+probe = "opnsense-client-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node3 and node4 change boot identities, restore their zone paths, and the complete allowed and denied traffic matrix remains effective."
+fail_condition = "A completed client reboot loses declared access or invalidates the required zone boundary."

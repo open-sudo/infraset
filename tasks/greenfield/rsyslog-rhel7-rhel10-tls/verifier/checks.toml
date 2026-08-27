@@ -1,0 +1,95 @@
+schema_version = 1
+
+[[probes]]
+id = "rsyslog-service-and-topology"
+level = 1
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 8
+procedure = "Inspect each node directly and identify its operating-system role, rsyslog service state, enabled state, effective configuration, configured destinations, and listening sockets. Confirm that node1-node3 are clients, node4 is the collector, and the intended central destination and source-identifying layout are present. Use the live configuration and normal host name resolution; do not infer topology from transient addresses."
+
+[[probes]]
+id = "tls-forwarding-and-filtering"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+effect = "evaluator_owned_data"
+max_exec_calls = 12
+procedure = "Create uniquely marked evaluator-owned messages through the local0 facility and through an unrelated user facility on each client, then inspect the collector's persistent source-identifiable logs and its active TLS listener. Establish that every local0 marker arrives at node4 over the configured TLS path, that the source identity is preserved, and that unrelated user markers are absent from the central application logs. Inspect the certificate chain and client trust configuration sufficiently to establish that the intended private CA is used and certificates are valid for the collector identity."
+cleanup = "Remove only the evaluator-owned markers from the central logs and any evaluator-owned local test records, then confirm that the rsyslog services, TLS listener, and configured log destinations remain healthy."
+
+[[probes]]
+id = "retention-and-hygiene"
+level = 5
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 8
+procedure = "Inspect the effective rotation policy and central log directory. Confirm a persistent policy for the central application logs that retains at least seven days or seven daily rotations, compresses rotated logs where supported, and does not expose private keys broadly. Inspect failed units, duplicate rsyslog processes or listeners, cleartext syslog listeners, stale certificates, abandoned installers or backups, debug verbosity, temporary evaluator or executor residue, and conflicting configuration fragments."
+
+[[probes]]
+id = "reboot-persistence"
+level = 8
+targets = ["node1", "node2", "node3", "node4"]
+effect = "reboot"
+max_exec_calls = 14
+procedure = "Record boot identities and the initial forwarding contract, reboot node1 through node4 sequentially while waiting for each node to return, then re-check enabled/active rsyslog services, the node4 TLS listener, client trust, filtering, central source-identifiable destinations, and the rotation policy. Generate fresh evaluator-owned local0 markers after the reboots and confirm they arrive centrally while unrelated facility markers remain excluded."
+cleanup = "Remove only evaluator-owned markers and leave all four nodes with healthy enabled rsyslog services, the intended TLS listener, and the original logging policy."
+
+[[assertions]]
+id = "all-rsyslog-services-operational"
+probe = "rsyslog-service-and-topology"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "Rsyslog is installed, active, enabled, and configured for the intended client or collector role on every declared node."
+fail_condition = "Any declared node lacks an active/enabled service, has a duplicate/conflicting role, or is not configured for the required topology."
+
+[[assertions]]
+id = "collector-tls-only"
+probe = "tls-forwarding-and-filtering"
+dimension = "security"
+points = 3
+critical = true
+pass_condition = "Node4 accepts the intended syslog connection on TCP 6514 with a valid private-CA certificate chain, clients validate the collector identity, and no cleartext replacement listener is exposed."
+fail_condition = "TLS is absent, certificate trust is not validated, the collector identity is wrong, private material is broadly exposed, or a cleartext syslog listener is used instead."
+
+[[assertions]]
+id = "all-client-streams-arrive"
+probe = "tls-forwarding-and-filtering"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "Distinct evaluator local0 markers from node1, node2, and node3 are all present in the central source-identifiable logs after the TLS connection is established."
+fail_condition = "A healthy declared client is confirmed unable to deliver its designated local0 stream or the collector loses source identity."
+
+[[assertions]]
+id = "unrelated-facility-filtered"
+probe = "tls-forwarding-and-filtering"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "Evaluator markers from the unrelated user facility are absent from the central application logs while local0 markers are present."
+fail_condition = "An unrelated facility is confirmed copied into the central application destination or the filter drops the required local0 stream."
+
+[[assertions]]
+id = "retention-policy-present"
+probe = "retention-and-hygiene"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node4 has a persistent central-log rotation policy retaining at least seven days or seven daily rotations, with compression where supported."
+fail_condition = "The policy is missing, nonpersistent, retains less than the requirement, targets the wrong files, or cannot be applied safely."
+
+[[assertions]]
+id = "logging-state-clean"
+probe = "retention-and-hygiene"
+dimension = "operational_hygiene"
+points = 2
+pass_condition = "The final systems contain only coherent required rsyslog, PKI, rotation, service, and log state, with no concrete executor-created residue or insecure debug state."
+fail_condition = "Concrete failed, duplicate, stale, temporary, abandoned, broad-permission, conflicting, or cleartext logging state remains."
+
+[[assertions]]
+id = "logging-survives-reboots"
+probe = "reboot-persistence"
+dimension = "persistence"
+points = 3
+critical = true
+pass_condition = "All four boot identities change, every rsyslog service and the node4 TLS listener return automatically, and post-reboot local0 delivery and filtering still work."
+fail_condition = "A completed reboot loses service enablement, TLS trust/listener state, forwarding, filtering, destinations, or required central logging behavior."

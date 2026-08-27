@@ -1,0 +1,123 @@
+schema_version = 1
+
+[[probes]]
+id = "nodejs-rootless-workload"
+level = 1
+targets = ["node1"]
+max_exec_calls = 5
+procedure = "Inspect node1's live Podman state in nodeapp's user context and the host process tree. Establish that exactly the required node-hello container is running rootlessly under the nonzero nodeapp host UID, executes a Node.js application, listens on host TCP 8080, and returns exactly Hello, world! from HTTP GET /. Do not treat a host process or configuration text as a containerized workload."
+
+[[probes]]
+id = "nodejs-service-and-security"
+level = 2
+targets = ["node1"]
+max_exec_calls = 8
+procedure = "Discover whether node-hello is implemented as a system service running as nodeapp or a nodeapp user service with lingering, and verify the effective service is active and boot-enabled. Inspect nodeapp privilege and subordinate ID mappings, rootless Podman state, container privilege, namespaces, capabilities, mounts and security options, the host process SELinux label, persistent SELinux policy, firewalld runtime and persistent TCP 8080 policy, and ownership and modes of workload and service files. Accept equivalent Quadlet or systemd layouts and do not reject container UID 0 when correctly mapped through a rootless user namespace."
+
+[[probes]]
+id = "nodejs-operational-state"
+level = 5
+targets = ["node1"]
+max_exec_calls = 4
+procedure = "Inspect duplicate containers and root-owned workload copies, competing container engines, host Node.js runtimes, unrelated web servers, failed task services, debug-mode Node.js processes, stale backups, temporary setup files, permissive application or service files, and evaluator-created residue. Preserve legitimate source, container build input, image layers, and service definitions."
+
+[[probes]]
+id = "nodejs-node-reboot"
+level = 8
+targets = ["node1"]
+effect = "reboot"
+max_exec_calls = 10
+procedure = "Record node1's boot identity, reboot it without logging in as nodeapp or repairing the service, wait for convergence, and prove the boot identity changed. Verify node-hello's enabled service and rootless container return automatically, HTTP GET / again returns exactly Hello, world! on TCP 8080, the host container process is still owned by nodeapp, and SELinux confinement and persistent firewalld policy remain effective."
+cleanup = "Wait for node1, its service, rootless container, and HTTP endpoint to recover; remove evaluator-owned temporary observations or markers and leave the workload running."
+
+[[assertions]]
+id = "nodejs-container-rootless-and-running"
+probe = "nodejs-rootless-workload"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "A container named node-hello is running in nodeapp's rootless Podman context, its host process is owned by nodeapp's nonzero UID, and it executes Node.js."
+fail_condition = "Runtime evidence confirms node-hello absent, stopped, not owned by nodeapp's rootless Podman context, backed by a root host process, or not executing Node.js."
+
+[[assertions]]
+id = "nodejs-exact-http-contract"
+probe = "nodejs-rootless-workload"
+dimension = "functionality"
+points = 3
+critical = true
+requires = ["nodejs-container-rootless-and-running"]
+pass_condition = "HTTP GET / on node1 TCP 8080 returns exactly Hello, world! from the running node-hello container."
+fail_condition = "The reachable required endpoint returns an error or different body, or evidence shows TCP 8080 is served by something other than node-hello."
+
+[[assertions]]
+id = "nodejs-service-managed"
+probe = "nodejs-service-and-security"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "node-hello is controlled by an active boot-enabled service, either a system service running as nodeapp or a nodeapp user service with lingering enabled."
+fail_condition = "The live workload is unmanaged, its service is inactive or not enabled, a system service runs as root, or a user service depends on an interactive login."
+
+[[assertions]]
+id = "nodeapp-account-unprivileged"
+probe = "nodejs-service-and-security"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "nodeapp has a locked password, no administrative group membership, valid subordinate UID and GID ranges, and owns the rootless Podman engine and host container process."
+fail_condition = "Effective account evidence confirms nodeapp has a usable password, administrative privilege, missing subordinate mappings, or the engine or container is root-owned."
+
+[[assertions]]
+id = "nodejs-container-isolated"
+probe = "nodejs-service-and-security"
+dimension = "security"
+points = 3
+critical = true
+pass_condition = "node-hello is unprivileged, avoids host network and PID namespaces, adds no unnecessary capabilities or sensitive host mounts, preserves SELinux labeling, and has securely owned workload files."
+fail_condition = "Runtime or file evidence confirms privileged mode, host network or PID use, unnecessary capabilities, a sensitive host mount, disabled labeling, or insecurely writable workload state."
+
+[[assertions]]
+id = "nodejs-host-controls-effective"
+probe = "nodejs-service-and-security"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "SELinux is persistently enforcing and confines the container process, while active and persistent firewalld policy permits the required TCP 8080 service."
+fail_condition = "SELinux is confirmed non-enforcing or the container unconfined, or TCP 8080 lacks matching active and persistent firewalld policy."
+
+[[assertions]]
+id = "nodejs-state-clean"
+probe = "nodejs-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only the intended rootless workload, required Podman state, source and build input, image layers, service definitions, logs, and host policy remain."
+fail_condition = "Concrete executor-created duplicate, root-owned, competing, debug, failed, permissive, temporary, backup, unrelated, or evaluator state remains."
+
+[[assertions]]
+id = "nodejs-reboot-completed"
+probe = "nodejs-node-reboot"
+dimension = "persistence"
+points = 1
+critical = true
+pass_condition = "Node1 returns reachable with a boot identity different from the recorded pre-reboot identity."
+fail_condition = "Node1 is reachable after the requested reboot but its boot identity did not change."
+
+[[assertions]]
+id = "nodejs-workload-persists"
+probe = "nodejs-node-reboot"
+dimension = "persistence"
+points = 3
+critical = true
+requires = ["nodejs-reboot-completed"]
+pass_condition = "Without evaluator repair or nodeapp login, the enabled service, rootless node-hello container, and exact HTTP response on TCP 8080 recover automatically."
+fail_condition = "After a completed reboot, the service or container requires repair or interactive login, or the exact HTTP contract does not return."
+
+[[assertions]]
+id = "nodejs-security-persists"
+probe = "nodejs-node-reboot"
+dimension = "persistence"
+points = 2
+critical = true
+requires = ["nodejs-reboot-completed"]
+pass_condition = "After reboot the host container process remains owned by nodeapp, SELinux remains enforcing and confines it, and effective persistent firewalld policy remains present."
+fail_condition = "After a completed reboot, rootless ownership, SELinux enforcement or confinement, or firewalld protection is confirmed lost."

@@ -1,0 +1,94 @@
+timeout_sec = 300
+
+[[steps]]
+id = "create-legacy-identities"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+ensure_group() {
+  name="$1"
+  gid="$2"
+  if ! getent group "$name" >/dev/null; then
+    sudo -n groupadd --gid "$gid" "$name"
+  fi
+  test "$(getent group "$name" | cut -d: -f3)" = "$gid"
+}
+ensure_user() {
+  name="$1"
+  uid="$2"
+  gid="$3"
+  comment="$4"
+  if ! id "$name" >/dev/null 2>&1; then
+    sudo -n useradd --create-home --uid "$uid" --gid "$gid" --groups legacy-users --shell /bin/bash --comment "$comment" "$name"
+  fi
+  test "$(id -u "$name")" = "$uid"
+  test "$(id -g "$name")" = "$gid"
+}
+
+ensure_group legacy-users 21000
+ensure_group mira 21001
+ensure_group niko 21002
+ensure_group sana 21003
+ensure_user mira 21001 21001 'Mira Patel'
+ensure_user niko 21002 21002 'Niko Alvarez'
+ensure_user sana 21003 21003 'Sana Okafor'
+
+sudo -n usermod --append --groups legacy-users mira
+sudo -n usermod --append --groups legacy-users niko
+sudo -n usermod --append --groups legacy-users sana
+sudo -n usermod --password '$6$InfraSetMira16$mTxWOWGZVm2xJF7.GCT35ossf7J8GtUvUCJ8J3iPQ0og3m4pjIaAxHnpU50hdZeOB4Vl5Ll0pMvJMzjUnYfLK1' mira
+sudo -n usermod --password '$6$InfraSetNiko16$IuYHmgW2zD/8qir4zoGWlcn1X7QdFRQDodY.TyIxRtqJtvZxci49mYp/N9lBqDLwItKq2B1JCvD0YuYyb54WL0' niko
+sudo -n usermod --password '$6$InfraSetSana16$BRCLLuJlkhgJX9NN8EDgjzN/DrEqTGODhpEN3qiIpp3XfBt5kD0MAvOxtu1E9sQnyyyqVhU/WOu2zwb9bwi2C/' sana
+for user in mira niko sana; do
+  sudo -n chage --lastday 2026-08-01 --mindays 1 --maxdays 365 --warndays 14 --inactive 30 --expiredate -1 "$user"
+done
+'''
+
+[[steps]]
+id = "populate-legacy-homes"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+sudo -n install -d -o mira -g mira -m 0750 /home/mira /home/mira/Documents
+sudo -n install -d -o niko -g niko -m 0750 /home/niko /home/niko/projects /home/niko/bin
+sudo -n install -d -o sana -g sana -m 0750 /home/sana /home/sana/.config /home/sana/Documents
+
+printf '%s\n' 'Employee: Mira Patel' 'Office: Toronto' 'Migration tier: gold' | sudo -n tee /home/mira/Documents/profile.txt >/dev/null
+printf '%s\n' 'Quarterly planning notes' 'retain this private draft' | sudo -n tee /home/mira/.planning-notes >/dev/null
+printf '%s\n' 'asset,quantity' 'router,4' 'switch,7' | sudo -n tee /home/niko/projects/inventory.csv >/dev/null
+sudo -n tee /home/niko/bin/report.sh >/dev/null <<'INFRASET_REPORT'
+#!/bin/sh
+printf '%s\n' 'legacy inventory report'
+INFRASET_REPORT
+printf '%s\n' '[desktop]' 'theme=dark' 'timezone=America/Toronto' | sudo -n tee /home/sana/.config/preferences.ini >/dev/null
+printf '%s\n' 'Emergency contact: Operations' 'Extension: 4412' | sudo -n tee /home/sana/Documents/contact.txt >/dev/null
+sudo -n ln -sfn Documents/contact.txt /home/sana/contact-current
+
+sudo -n chown -R mira:mira /home/mira
+sudo -n chown -R niko:niko /home/niko
+sudo -n chown -R sana:sana /home/sana
+sudo -n chmod 0750 /home/mira /home/mira/Documents /home/niko /home/niko/projects /home/niko/bin /home/sana /home/sana/.config /home/sana/Documents
+sudo -n chmod 0640 /home/mira/Documents/profile.txt /home/niko/projects/inventory.csv /home/sana/Documents/contact.txt
+sudo -n chmod 0600 /home/mira/.planning-notes /home/sana/.config/preferences.ini
+sudo -n chmod 0750 /home/niko/bin/report.sh
+'''
+
+[[steps]]
+id = "confirm-clean-destination"
+stage = 20
+node = "node2"
+command = '''
+set -eu
+. /etc/os-release
+test "$ID" = ubuntu
+test "$VERSION_ID" = 24.04
+for user in mira niko sana; do
+  ! getent passwd "$user" >/dev/null
+  test ! -e "/home/$user"
+done
+for group in legacy-users mira niko sana; do
+  ! getent group "$group" >/dev/null
+done
+'''

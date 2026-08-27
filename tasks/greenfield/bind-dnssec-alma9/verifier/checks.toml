@@ -1,0 +1,261 @@
+schema_version = 1
+
+[[probes]]
+id = "dns-service-contract"
+level = 1
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 4
+procedure = "Use managed exec on each target. Query node1, node2, and node3 through their local DNS service without assuming or filtering for any IP address or CIDR. On node4, use its normal resolver and inspect the configured resolver path only as needed to verify that both secondaries are used."
+
+[[probes]]
+id = "authenticated-update-lifecycle"
+level = 1
+targets = ["node1", "node2", "node3"]
+effect = "evaluator_owned_data"
+max_exec_calls = 5
+procedure = "Create a uniquely named TXT record with node1's protected update identity, observe it on both secondaries, remove it, and confirm deletion converges."
+cleanup = "Delete the evaluator-owned TXT record and confirm deletion on all authorities."
+
+[[probes]]
+id = "dnssec-proof"
+level = 2
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 4
+procedure = "Fetch the complete served DNSKEY RRset without truncating wrapped key material, construct a standards-valid local trust anchor, and cryptographically validate required records against each authority. Treat trust-anchor construction errors as evaluator limitations."
+
+[[probes]]
+id = "dns-security-boundaries"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 5
+procedure = "Run bounded unauthorized update, transfer, and recursion probes from appropriate roles. Inspect effective key permissions, SELinux, DNS and SSH listeners, persistent firewall scope, and unnecessary services without assuming that a firewalld zone name describes external reachability."
+
+[[probes]]
+id = "dns-operational-state"
+level = 5
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 4
+procedure = "Inspect failed units, duplicate or stale zones, abandoned signing/update artifacts, conflicting resolvers or DNS services, debug listeners, and executor-attributable temporary residue."
+
+[[probes.cleanup_commands]]
+id = "final-remove-evaluator-axfr-output-node2"
+node = "node2"
+command = "rm -f -- /tmp/infra-axfr.out"
+
+[[probes.cleanup_commands]]
+id = "final-remove-evaluator-axfr-output-node3"
+node = "node3"
+command = "rm -f -- /tmp/infra-axfr.out"
+
+[[probes.cleanup_commands]]
+id = "final-remove-agent-signing-markers-node1"
+node = "node1"
+command = "rm -f -- /tmp/infra-ksk.name /tmp/infra-zsk.name"
+
+[[probes]]
+id = "secondary-loss"
+level = 6
+targets = ["node2", "node3", "node4"]
+effect = "controlled_failure"
+max_exec_calls = 6
+procedure = "Stop one secondary, test node4 through the survivor, restore the stopped service, and confirm its authoritative serial converges."
+cleanup = "Restart the stopped secondary and confirm current authoritative service."
+
+[[probes]]
+id = "authority-reboots"
+level = 8
+targets = ["node1", "node2", "node3"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities, reboot each authority sequentially, and after convergence repeat signed-answer, serial, authorization, and host-control probes."
+cleanup = "Wait for all authorities to return and remove evaluator-owned update data."
+
+[[probes]]
+id = "resolver-reboot"
+level = 10
+targets = ["node4"]
+effect = "reboot"
+max_exec_calls = 4
+procedure = "Record node4's boot identity, reboot it, and retest resolution through both secondaries."
+cleanup = "Wait for node4 to return fully online."
+
+[[assertions]]
+id = "primary-authoritative-data"
+probe = "dns-service-contract"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "Node1 answers authoritatively with app.infra.test set to the required node1 service address, status.infra.test=ready, and a valid SOA."
+fail_condition = "Node1 is reachable but is confirmed non-authoritative or serves incorrect required data."
+
+[[assertions]]
+id = "secondary-authoritative-data"
+probe = "dns-service-contract"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "Node2 and node3 both answer authoritatively with the required data and a current matching serial."
+fail_condition = "Either reachable secondary is confirmed non-authoritative, stale, or serves incorrect required data."
+
+[[assertions]]
+id = "resolver-uses-both-secondaries"
+probe = "dns-service-contract"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "Node4 is persistently configured for both secondaries and successfully resolves the required records through each one."
+fail_condition = "Node4 is confirmed to omit a secondary or cannot resolve correct data through either healthy secondary."
+
+[[assertions]]
+id = "authenticated-update-accepted"
+probe = "authenticated-update-lifecycle"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "A correctly authenticated evaluator-owned update is accepted by node1."
+fail_condition = "Node1 is reachable and confirmed to reject a correctly formed update using its protected declared key."
+
+[[assertions]]
+id = "update-propagates-to-node2"
+probe = "authenticated-update-lifecycle"
+dimension = "functionality"
+points = 1
+critical = true
+requires = ["authenticated-update-accepted"]
+pass_condition = "Node2 serves the evaluator record at the updated serial within a bounded interval."
+fail_condition = "Node2 remains healthy and authoritative but is confirmed not to receive the accepted update."
+
+[[assertions]]
+id = "update-propagates-to-node3"
+probe = "authenticated-update-lifecycle"
+dimension = "functionality"
+points = 1
+critical = true
+requires = ["authenticated-update-accepted"]
+pass_condition = "Node3 serves the evaluator record at the updated serial within a bounded interval."
+fail_condition = "Node3 remains healthy and authoritative but is confirmed not to receive the accepted update."
+
+[[assertions]]
+id = "dnskey-rrset-consistent"
+probe = "dnssec-proof"
+dimension = "security"
+points = 1
+pass_condition = "All authorities serve the same complete DNSKEY RRset and corresponding DNSKEY signature."
+fail_condition = "Reachable authorities are confirmed to serve inconsistent or unsigned DNSKEY state."
+
+[[assertions]]
+id = "dnssec-cryptographic-validation"
+probe = "dnssec-proof"
+dimension = "security"
+points = 2
+critical = true
+requires = ["dnskey-rrset-consistent"]
+pass_condition = "The required records validate cryptographically from a correctly constructed trust anchor derived from the complete served key."
+fail_condition = "A correctly constructed independent validation is confirmed to reject the zone's signatures or chain."
+
+[[assertions]]
+id = "unauthenticated-updates-denied"
+probe = "dns-security-boundaries"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "A well-formed unauthenticated update reaches node1 and is explicitly refused without changing zone data."
+fail_condition = "An unauthenticated update is confirmed accepted or changes zone data."
+
+[[assertions]]
+id = "unauthorized-transfers-denied"
+probe = "dns-security-boundaries"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "A transfer request from node4 reaches each authority and is explicitly refused."
+fail_condition = "Node4 is confirmed able to transfer the zone from any authority."
+
+[[assertions]]
+id = "authoritative-recursion-disabled"
+probe = "dns-security-boundaries"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "A recursive query reaches every authority and is refused with recursion unavailable."
+fail_condition = "Any authority is confirmed to provide recursive answers for unrelated names."
+
+[[assertions]]
+id = "dns-secrets-protected"
+probe = "dns-security-boundaries"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "The update secret and DNSSEC private material have restrictive role-appropriate ownership and modes."
+fail_condition = "Required secret or private-key material is confirmed readable or writable beyond its intended administrative/service identity."
+
+[[assertions]]
+id = "selinux-remains-enforcing"
+probe = "dns-security-boundaries"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "SELinux is enforcing on all four systems."
+fail_condition = "SELinux is confirmed permissive or disabled on any system."
+
+[[assertions]]
+id = "dns-network-scope"
+probe = "dns-security-boundaries"
+dimension = "security"
+points = 1
+pass_condition = "DNS is exposed only on loopback and the declared DNS network, with transfer authorization enforced by role."
+fail_condition = "DNS is confirmed exposed on an undeclared interface/network or transfers are broadly authorized."
+
+[[assertions]]
+id = "ssh-not-unnecessarily-exposed"
+probe = "dns-security-boundaries"
+dimension = "security"
+points = 1
+critical = false
+pass_condition = "SSH is absent or narrowly justified and restricted rather than globally exposed."
+fail_condition = "An unnecessary SSH service is confirmed enabled and broadly reachable on a declared task node."
+
+[[assertions]]
+id = "dns-state-clean"
+probe = "dns-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only required BIND, zone, signing, resolver, journal, and log state remains without failed or conflicting setup."
+fail_condition = "Concrete executor-created failed, conflicting, duplicate, debug, or temporary state remains."
+
+[[assertions]]
+id = "resolution-survives-secondary-loss"
+probe = "secondary-loss"
+dimension = "resilience"
+points = 1
+critical = true
+pass_condition = "Node4 continues resolving correct signed answers while one secondary is stopped."
+fail_condition = "One confirmed secondary outage stops node4 resolution despite the other secondary remaining healthy."
+
+[[assertions]]
+id = "secondary-rejoins-current"
+probe = "secondary-loss"
+dimension = "resilience"
+points = 1
+critical = true
+requires = ["resolution-survives-secondary-loss"]
+pass_condition = "The restored secondary returns authoritative automatically at the current serial."
+fail_condition = "The restored service is reachable but cannot return to current authoritative service without repair."
+
+[[assertions]]
+id = "authorities-persist-after-reboot"
+probe = "authority-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "All authority boot identities change and their roles, signed data, transfers, updates, and controls recover automatically."
+fail_condition = "A completed authority reboot is confirmed to lose required service, data, authorization, signing, or host controls."
+
+[[assertions]]
+id = "resolver-persists-after-reboot"
+probe = "resolver-reboot"
+dimension = "persistence"
+points = 1
+critical = true
+pass_condition = "Node4's boot identity changes and its persistent two-secondary resolver path returns without repair."
+fail_condition = "A completed node4 reboot is confirmed to lose the required resolver path or correct resolution."

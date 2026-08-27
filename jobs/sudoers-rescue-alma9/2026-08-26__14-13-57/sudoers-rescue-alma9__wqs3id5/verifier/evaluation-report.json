@@ -1,0 +1,410 @@
+{
+  "probes": [
+    {
+      "id": "sudoers-recovery-smoke",
+      "summary": "Sudo policy parsed successfully and the prepared invalid entry was absent.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "administrative-operation",
+      "summary": "Normal multi-user operation and opsadmin UID-0 sudo access were confirmed.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "sudo-brownfield-preservation",
+      "summary": "Operations data and opsadmin state were inspected; root password-status output was inconclusive.",
+      "cleanup_completed": true,
+      "limitations": [
+        "One compound metadata/content command had evaluator-side quoting trouble; metadata and content were subsequently captured successfully."
+      ]
+    },
+    {
+      "id": "sudo-recovery-hygiene",
+      "summary": "Recovery residue, boot overrides, policy artifacts, accounts, services, provider management, and security controls were checked.",
+      "cleanup_completed": true,
+      "limitations": []
+    }
+  ],
+  "assertions": [
+    {
+      "id": "sudoers-policy-valid",
+      "status": "pass",
+      "summary": "The complete sudo policy parsed and the prepared invalid entry was absent.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n visudo -c",
+          "observation": "exit_code=0; /etc/sudoers and /etc/sudoers.d/90-opsadmin both parsed OK."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n sh -c 'if grep -Fq \"BROKEN SUDOERS ENTRY\" /etc/sudoers; then echo \"prepared invalid entry: PRESENT\"; else echo \"prepared invalid entry: ABSENT\"; fi'",
+          "observation": "exit_code=0; prepared invalid entry: ABSENT."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "opsadmin-sudo-operational",
+      "status": "pass",
+      "summary": "opsadmin successfully performed non-interactive sudo as UID 0.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n -H -u opsadmin -- sh -c 'printf \"switched_uid=\"; id -u; printf \"switched_user=\"; id -un; printf \"sudo_uid=\"; sudo -n id -u; printf \"sudo_user=\"; sudo -n id -un'",
+          "observation": "exit_code=0; switched_user=opsadmin, switched_uid=1000, sudo_user=root, sudo_uid=0."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "normal-multi-user-operation-restored",
+      "status": "pass",
+      "summary": "The host is running normally with multi-user.target active and default; rescue and emergency targets are inactive.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf 'default='; systemctl get-default; for unit in multi-user.target rescue.target emergency.target; do printf '%s=' \"$unit\"; systemctl is-active \"$unit\" 2>/dev/null || true; done",
+          "observation": "exit_code=0; default=multi-user.target, multi-user.target=active, rescue.target=inactive, emergency.target=inactive."
+        },
+        {
+          "node": "node1",
+          "command": "systemctl is-system-running",
+          "observation": "exit_code=0; running. Managed exec remained available for all live checks."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "operations-data-preserved",
+      "status": "pass",
+      "summary": "keep.txt retained the expected record, opsadmin ownership, and mode 0640.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n stat -c 'owner=%U:%G mode=%a size=%s' /srv/operations/keep.txt; sudo -n sh -c 'printf \"content_begin\\n\"; cat -- /srv/operations/keep.txt; printf \"content_end\\n'",
+          "observation": "The stat segment reported owner=opsadmin:opsadmin, mode=640, size=54; the compound command then exited 2 due to an unmatched evaluator quote."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n cat -- /srv/operations/keep.txt",
+          "observation": "exit_code=0; content was exactly \"existing operations record: preserve through recovery\"."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The successful stat output came from a compound command whose later shell fragment had a quoting error; a standalone content read completed successfully."
+      ]
+    },
+    {
+      "id": "opsadmin-state-preserved",
+      "status": "pass",
+      "summary": "opsadmin identity, wheel membership, home, shell, and NOPASSWD policy remained coherent and usable.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "getent passwd opsadmin; id opsadmin; sudo -n visudo -c -f /etc/sudoers.d/90-opsadmin; sudo -n cat -- /etc/sudoers.d/90-opsadmin",
+          "observation": "exit_code=0; opsadmin UID=1000, primary GID=1000, supplementary group wheel; home=/home/opsadmin; shell=/bin/bash; policy parsed and was opsadmin ALL=(ALL) NOPASSWD: ALL."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n -H -u opsadmin -- sh -c 'printf \"switched_uid=\"; id -u; printf \"switched_user=\"; id -un; printf \"sudo_uid=\"; sudo -n id -u; printf \"sudo_user=\"; sudo -n id -un'",
+          "observation": "exit_code=0; opsadmin\u2019s sudo path returned UID 0/root."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n passwd -S root",
+          "observation": "exit_code=0 but stdout and stderr were empty."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Root account lock status was not established because passwd -S returned no status text; the explicit assertion requirements for opsadmin identity and policy were independently satisfied."
+      ]
+    },
+    {
+      "id": "sudo-recovery-state-clean",
+      "status": "pass",
+      "summary": "No concrete executor recovery residue or conflicting state was found; provider management and required security controls are active.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "systemctl --failed --no-legend",
+          "observation": "exit_code=0; no failed units listed."
+        },
+        {
+          "node": "node1",
+          "command": "printf 'cmdline='; cat /proc/cmdline; printf '\\noverride_matches\\n'; sudo -n grep -RniE 'systemd.unit=|rd.break|rd.emergency|single|rescue|emergency|init=' /etc/default/grub /etc/default/grub.d /boot/loader/entries 2>/dev/null || true",
+          "observation": "Normal kernel command line; no rescue, emergency, single-user, rd.break, or systemd.unit override matches."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' 'rescue.target dependencies:'; systemctl list-dependencies --all --plain rescue.target; printf '%s\\n' 'emergency.target dependencies:'; systemctl list-dependencies --all --plain emergency.target",
+          "observation": "exit_code=0; rescue dependencies contained standard rescue units plus the declared vsock-agent.service rescue link; emergency dependencies were standard emergency.service/system units with no additional recovery-specific dependency."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' 'recovery/repair unit paths:'; sudo -n find /run/systemd/system /etc/systemd/system -maxdepth 2 -type f -print 2>/dev/null | grep -Ei 'recovery|repair|rescue|sudo' || printf '%s\\n' none; printf '%s\\n' 'sudoers paths:'; sudo -n find /etc -maxdepth 3 -type f -print 2>/dev/null | grep -Ei '/sudoers($|\\.|/)|sudo.*(bak|backup|repair)|(^|/)repair.*sudo' || printf '%s\\n' none",
+          "observation": "No recovery/repair unit paths; sudoers paths were only /etc/sudoers and /etc/sudoers.d/90-opsadmin, with no backup or repair files."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' 'non-system accounts:'; awk -F: '$3 >= 1000 && $1 != \"nobody\" {print $1 \":uid=\" $3 \":home=\" $6 \":shell=\" $7}' /etc/passwd; printf '%s\\n' 'wheel and nonempty supplementary groups:'; getent group | awk -F: '$1 == \"wheel\" || $4 != \"\" {print $1 \":\" $4}'; printf '%s\\n' 'temporary/recovery artifact names:'; sudo -n find /tmp /var/tmp /run -xdev -maxdepth 3 -type f -print 2>/dev/null | grep -Ei '(credential|password|\\.pem$|\\.key$|authorized_keys|debug|recovery|repair|script|\\.sh$)' || printf '%s\\n' none",
+          "observation": "Only non-system account was opsadmin; wheel membership was wheel:opsadmin; no temporary, credential, recovery, repair, debug, or script artifact names were found."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' 'enabled recovery-like services:'; systemctl list-unit-files --state=enabled --type=service --no-legend | grep -Ei 'recovery|repair|debug|test|single|emergency' || printf '%s\\n' none; printf '%s\\n' 'recovery-like packages:'; rpm -qa | grep -Ei 'recovery|repair|debug|rescue' || printf '%s\\n' none",
+          "observation": "No enabled recovery-like services; the only heuristic package-name match was elfutils-debuginfod-client-0.192-5.el9.x86_64, with no evidence tying it to executor recovery state."
+        },
+        {
+          "node": "node1",
+          "command": "printf 'vsock-agent.active='; systemctl is-active vsock-agent.service 2>/dev/null || true; printf 'vsock-agent.enabled='; systemctl is-enabled vsock-agent.service 2>/dev/null || true; printf '%s\\n' 'managed-exec=available'",
+          "observation": "vsock-agent.active=active, vsock-agent.enabled=enabled, managed-exec=available."
+        },
+        {
+          "node": "node1",
+          "command": "printf 'SELinux='; getenforce; printf 'firewalld.active='; systemctl is-active firewalld 2>/dev/null || true; printf 'firewalld.enabled='; systemctl is-enabled firewalld 2>/dev/null || true",
+          "observation": "SELinux=Enforcing; firewalld.active=active; firewalld.enabled=enabled."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    }
+  ],
+  "actions_performed": [
+    "Executed all four authored probes on node1 using read-only checks.",
+    "No evaluator-created state, service changes, node changes, or cleanup mutations were performed."
+  ],
+  "overall_summary": "All six authored assertions passed. The repaired sudo policy, opsadmin administrative access, normal multi-user operation, protected operations data, provider management, SELinux, and firewalld were confirmed live; root lock-status text remained inconclusive.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 10.0,
+      "evaluated_points": 10.0,
+      "passed_points": 10.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "sudoers-policy-valid",
+          "probe": "sudoers-recovery-smoke",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "The complete sudo policy parsed and the prepared invalid entry was absent.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n visudo -c",
+              "observation": "exit_code=0; /etc/sudoers and /etc/sudoers.d/90-opsadmin both parsed OK."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n sh -c 'if grep -Fq \"BROKEN SUDOERS ENTRY\" /etc/sudoers; then echo \"prepared invalid entry: PRESENT\"; else echo \"prepared invalid entry: ABSENT\"; fi'",
+              "observation": "exit_code=0; prepared invalid entry: ABSENT."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "opsadmin-sudo-operational",
+          "probe": "administrative-operation",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "opsadmin successfully performed non-interactive sudo as UID 0.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n -H -u opsadmin -- sh -c 'printf \"switched_uid=\"; id -u; printf \"switched_user=\"; id -un; printf \"sudo_uid=\"; sudo -n id -u; printf \"sudo_user=\"; sudo -n id -un'",
+              "observation": "exit_code=0; switched_user=opsadmin, switched_uid=1000, sudo_user=root, sudo_uid=0."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "normal-multi-user-operation-restored",
+          "probe": "administrative-operation",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "The host is running normally with multi-user.target active and default; rescue and emergency targets are inactive.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf 'default='; systemctl get-default; for unit in multi-user.target rescue.target emergency.target; do printf '%s=' \"$unit\"; systemctl is-active \"$unit\" 2>/dev/null || true; done",
+              "observation": "exit_code=0; default=multi-user.target, multi-user.target=active, rescue.target=inactive, emergency.target=inactive."
+            },
+            {
+              "node": "node1",
+              "command": "systemctl is-system-running",
+              "observation": "exit_code=0; running. Managed exec remained available for all live checks."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "opsadmin-state-preserved",
+          "probe": "sudo-brownfield-preservation",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "opsadmin identity, wheel membership, home, shell, and NOPASSWD policy remained coherent and usable.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "getent passwd opsadmin; id opsadmin; sudo -n visudo -c -f /etc/sudoers.d/90-opsadmin; sudo -n cat -- /etc/sudoers.d/90-opsadmin",
+              "observation": "exit_code=0; opsadmin UID=1000, primary GID=1000, supplementary group wheel; home=/home/opsadmin; shell=/bin/bash; policy parsed and was opsadmin ALL=(ALL) NOPASSWD: ALL."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n -H -u opsadmin -- sh -c 'printf \"switched_uid=\"; id -u; printf \"switched_user=\"; id -un; printf \"sudo_uid=\"; sudo -n id -u; printf \"sudo_user=\"; sudo -n id -un'",
+              "observation": "exit_code=0; opsadmin\u2019s sudo path returned UID 0/root."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n passwd -S root",
+              "observation": "exit_code=0 but stdout and stderr were empty."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "Root account lock status was not established because passwd -S returned no status text; the explicit assertion requirements for opsadmin identity and policy were independently satisfied."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 4.0,
+      "evaluated_points": 4.0,
+      "passed_points": 4.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "operations-data-preserved",
+          "probe": "sudo-brownfield-preservation",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "keep.txt retained the expected record, opsadmin ownership, and mode 0640.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n stat -c 'owner=%U:%G mode=%a size=%s' /srv/operations/keep.txt; sudo -n sh -c 'printf \"content_begin\\n\"; cat -- /srv/operations/keep.txt; printf \"content_end\\n'",
+              "observation": "The stat segment reported owner=opsadmin:opsadmin, mode=640, size=54; the compound command then exited 2 due to an unmatched evaluator quote."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n cat -- /srv/operations/keep.txt",
+              "observation": "exit_code=0; content was exactly \"existing operations record: preserve through recovery\"."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The successful stat output came from a compound command whose later shell fragment had a quoting error; a standalone content read completed successfully."
+          ]
+        },
+        {
+          "id": "sudo-recovery-state-clean",
+          "probe": "sudo-recovery-hygiene",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "No concrete executor recovery residue or conflicting state was found; provider management and required security controls are active.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "systemctl --failed --no-legend",
+              "observation": "exit_code=0; no failed units listed."
+            },
+            {
+              "node": "node1",
+              "command": "printf 'cmdline='; cat /proc/cmdline; printf '\\noverride_matches\\n'; sudo -n grep -RniE 'systemd.unit=|rd.break|rd.emergency|single|rescue|emergency|init=' /etc/default/grub /etc/default/grub.d /boot/loader/entries 2>/dev/null || true",
+              "observation": "Normal kernel command line; no rescue, emergency, single-user, rd.break, or systemd.unit override matches."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' 'rescue.target dependencies:'; systemctl list-dependencies --all --plain rescue.target; printf '%s\\n' 'emergency.target dependencies:'; systemctl list-dependencies --all --plain emergency.target",
+              "observation": "exit_code=0; rescue dependencies contained standard rescue units plus the declared vsock-agent.service rescue link; emergency dependencies were standard emergency.service/system units with no additional recovery-specific dependency."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' 'recovery/repair unit paths:'; sudo -n find /run/systemd/system /etc/systemd/system -maxdepth 2 -type f -print 2>/dev/null | grep -Ei 'recovery|repair|rescue|sudo' || printf '%s\\n' none; printf '%s\\n' 'sudoers paths:'; sudo -n find /etc -maxdepth 3 -type f -print 2>/dev/null | grep -Ei '/sudoers($|\\.|/)|sudo.*(bak|backup|repair)|(^|/)repair.*sudo' || printf '%s\\n' none",
+              "observation": "No recovery/repair unit paths; sudoers paths were only /etc/sudoers and /etc/sudoers.d/90-opsadmin, with no backup or repair files."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' 'non-system accounts:'; awk -F: '$3 >= 1000 && $1 != \"nobody\" {print $1 \":uid=\" $3 \":home=\" $6 \":shell=\" $7}' /etc/passwd; printf '%s\\n' 'wheel and nonempty supplementary groups:'; getent group | awk -F: '$1 == \"wheel\" || $4 != \"\" {print $1 \":\" $4}'; printf '%s\\n' 'temporary/recovery artifact names:'; sudo -n find /tmp /var/tmp /run -xdev -maxdepth 3 -type f -print 2>/dev/null | grep -Ei '(credential|password|\\.pem$|\\.key$|authorized_keys|debug|recovery|repair|script|\\.sh$)' || printf '%s\\n' none",
+              "observation": "Only non-system account was opsadmin; wheel membership was wheel:opsadmin; no temporary, credential, recovery, repair, debug, or script artifact names were found."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' 'enabled recovery-like services:'; systemctl list-unit-files --state=enabled --type=service --no-legend | grep -Ei 'recovery|repair|debug|test|single|emergency' || printf '%s\\n' none; printf '%s\\n' 'recovery-like packages:'; rpm -qa | grep -Ei 'recovery|repair|debug|rescue' || printf '%s\\n' none",
+              "observation": "No enabled recovery-like services; the only heuristic package-name match was elfutils-debuginfod-client-0.192-5.el9.x86_64, with no evidence tying it to executor recovery state."
+            },
+            {
+              "node": "node1",
+              "command": "printf 'vsock-agent.active='; systemctl is-active vsock-agent.service 2>/dev/null || true; printf 'vsock-agent.enabled='; systemctl is-enabled vsock-agent.service 2>/dev/null || true; printf '%s\\n' 'managed-exec=available'",
+              "observation": "vsock-agent.active=active, vsock-agent.enabled=enabled, managed-exec=available."
+            },
+            {
+              "node": "node1",
+              "command": "printf 'SELinux='; getenforce; printf 'firewalld.active='; systemctl is-active firewalld 2>/dev/null || true; printf 'firewalld.enabled='; systemctl is-enabled firewalld 2>/dev/null || true",
+              "observation": "SELinux=Enforcing; firewalld.active=active; firewalld.enabled=enabled."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": 1.0,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

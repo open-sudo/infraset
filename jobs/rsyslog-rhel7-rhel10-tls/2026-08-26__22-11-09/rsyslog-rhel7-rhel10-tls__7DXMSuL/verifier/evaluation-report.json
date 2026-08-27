@@ -1,0 +1,423 @@
+{
+  "probes": [
+    {
+      "id": "rsyslog-service-and-topology",
+      "summary": "All four nodes were inspected read-only. Rsyslog was active, enabled, and configuration-valid; clients had local0-only TLS forwarding and node4 had the TLS collector on port 6514.",
+      "cleanup_completed": true,
+      "limitations": [
+        "No reboot was authored or performed, so reboot persistence is not independently verified."
+      ]
+    },
+    {
+      "id": "tls-forwarding-and-filtering",
+      "summary": "Local0 markers from all three clients arrived in source-identifiable central files over verified TLS; user-facility markers were absent. Original evaluator markers were removed, but later sudo audit logging recorded marker-bearing evaluator commands on node2 and node3.",
+      "cleanup_completed": false,
+      "limitations": [
+        "Three initial TLS commands had evaluator shell-quoting errors; corrected retries succeeded. Later evaluator command text appeared in node2/node3 /var/log/secure after the reserved cleanup calls."
+      ]
+    },
+    {
+      "id": "retention-and-hygiene",
+      "summary": "Node4 has daily central-log rotation with 14 compressed rotations. Corrected hygiene checks found one rsyslog process per node, no failed units, no cleartext listener, no active debug directives, valid certificates, and root-only private keys.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The initial process grep self-matched evaluator command text on node2-node4; corrected process checks succeeded."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "all-rsyslog-services-operational",
+      "status": "pass",
+      "summary": "Rsyslog is installed, active, enabled, configuration-valid, and role-configured on every declared node.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n sh -c 'cat /etc/redhat-release; systemctl is-active rsyslog; systemctl is-enabled rsyslog; rsyslogd -N1 2>&1 | tail -40; grep -RniE \"local0|omfwd|6514|gtls|streamdriver|ruleset\" /etc/rsyslog.conf /etc/rsyslog.d; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true'",
+          "observation": "RHEL 7.9; active and enabled; config validation ended successfully; local0 omfwd uses TCP 6514 with gtls and x509/name peer validation; no syslog listener."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n sh -c 'cat /etc/redhat-release; systemctl is-active rsyslog; systemctl is-enabled rsyslog; rsyslogd -N1 2>&1 | tail -40; grep -RniE \"local0|omfwd|6514|gtls|streamdriver|ruleset\" /etc/rsyslog.conf /etc/rsyslog.d; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true'",
+          "observation": "RHEL 8.8; active and enabled; config validation ended successfully; local0-only TCP/TLS forwarding configured; no syslog listener."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n sh -c 'cat /etc/redhat-release; systemctl is-active rsyslog; systemctl is-enabled rsyslog; rsyslogd -N1 2>&1 | tail -40; grep -RniE \"local0|omfwd|6514|gtls|streamdriver|ruleset\" /etc/rsyslog.conf /etc/rsyslog.d; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true'",
+          "observation": "RHEL 9.8; active and enabled; config validation ended successfully; local0-only TCP/TLS forwarding configured; no syslog listener."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n sh -c 'cat /etc/redhat-release; systemctl is-active rsyslog; systemctl is-enabled rsyslog; rsyslogd -N1 2>&1 | tail -40; sed -n \"1,200p\" /etc/rsyslog.d/10-central-tls.conf; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true'",
+          "observation": "RHEL 10.0; active and enabled; config validation ended successfully; imtcp uses gtls on TCP 6514 and routes only local0 to dynamic source-identifiable files; no 514 listener."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Reboot persistence was not tested because no reboot probe was authored."
+      ]
+    },
+    {
+      "id": "all-client-streams-arrive",
+      "status": "indeterminate",
+      "summary": "Distinct local0 markers from node1, node2, and node3 were present in separate central source-identifiable files while all three TLS connections were established.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "logger -p local0.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE1_LOCAL0_20260826' && logger -p user.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE1_USER_20260826'",
+          "observation": "Both evaluator messages were accepted locally with exit code 0."
+        },
+        {
+          "node": "node2",
+          "command": "logger -p local0.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE2_LOCAL0_20260826' && logger -p user.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE2_USER_20260826'",
+          "observation": "Both evaluator messages were accepted locally with exit code 0."
+        },
+        {
+          "node": "node3",
+          "command": "logger -p local0.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE3_LOCAL0_20260826' && logger -p user.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE3_USER_20260826'",
+          "observation": "Both evaluator messages were accepted locally with exit code 0."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n sh -c 'find /var/log/rsyslog/remote -maxdepth 3 -type f -name local0.log -print; for marker in EVAL_RSYSLOG_TLS_7DXMSuL_NODE1_LOCAL0_20260826 EVAL_RSYSLOG_TLS_7DXMSuL_NODE2_LOCAL0_20260826 EVAL_RSYSLOG_TLS_7DXMSuL_NODE3_LOCAL0_20260826; do grep -R -n -F -- \"$marker\" /var/log/rsyslog/remote || true; done; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true; ss -tnp 2>/dev/null | grep rsyslogd || true'",
+          "observation": "Each local0 marker appeared in its own source-specific local0.log, with message hostnames node1, node2, and node3. Node4 had the TLS listener and established rsyslog connections from all three clients."
+        },
+        {
+          "node": "node1",
+          "command": "target=$(sudo -n sed -n 's/.*target=\"\\([^\\\"]*\\)\".*/\\1/p' /etc/rsyslog.d/10-local0-tls-forward.conf | head -1); timeout 10 sudo -n openssl s_client -connect \"$target:6514\" -servername node4 -CAfile /etc/pki/rsyslog/central-ca.crt -verify_return_error -verify_hostname node4 </dev/null",
+          "observation": "TLS 1.2 handshake completed; peer subject was node4, issuer was rsyslog-central-private-ca, and Verify return code was 0 (ok)."
+        },
+        {
+          "node": "node2",
+          "command": "target=$(sudo -n sed -n 's/.*target=\"\\([^\\\"]*\\)\".*/\\1/p' /etc/rsyslog.d/10-local0-tls-forward.conf | head -1); timeout 10 sudo -n openssl s_client -connect \"$target:6514\" -servername node4 -CAfile /etc/pki/rsyslog/central-ca.crt -verify_return_error -verify_hostname node4 </dev/null",
+          "observation": "TLS 1.2 handshake completed with Verification: OK, Verified peername node4, and Verify return code 0 (ok)."
+        },
+        {
+          "node": "node3",
+          "command": "target=$(sudo -n sed -n 's/.*target=\"\\([^\\\"]*\\)\".*/\\1/p' /etc/rsyslog.d/10-local0-tls-forward.conf | head -1); timeout 10 sudo -n openssl s_client -connect \"$target:6514\" -servername node4 -CAfile /etc/pki/rsyslog/central-ca.crt -verify_return_error -verify_hostname node4 </dev/null",
+          "observation": "TLS 1.2 handshake completed with Verification: OK, Verified peername node4, and Verify return code 0 (ok)."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n sh -c 'openssl x509 -in /etc/pki/rsyslog/node4-server.crt -noout -subject -issuer -ext subjectAltName; openssl verify -CAfile /etc/pki/rsyslog/central-ca.crt -purpose sslserver -verify_hostname node4 /etc/pki/rsyslog/node4-server.crt'",
+          "observation": "Collector certificate subject was node4, issuer was the private rsyslog CA, SAN included DNS:node4, and verification returned OK."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The first three handshake commands were evaluator construction errors; corrected commands supplied the decisive evidence.",
+        "evaluator cleanup for probe 'tls-forwarding-and-filtering' was not completed"
+      ]
+    },
+    {
+      "id": "unrelated-facility-filtered",
+      "status": "indeterminate",
+      "summary": "All local0 markers were present in the central application files and all unrelated user markers were absent.",
+      "evidence": [
+        {
+          "node": "node4",
+          "command": "sudo -n sh -c 'for marker in EVAL_RSYSLOG_TLS_7DXMSuL_NODE1_USER_20260826 EVAL_RSYSLOG_TLS_7DXMSuL_NODE2_USER_20260826 EVAL_RSYSLOG_TLS_7DXMSuL_NODE3_USER_20260826; do grep -R -n -F -- \"$marker\" /var/log/rsyslog/remote || true; done'",
+          "observation": "The central user-marker search produced no matching lines."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n sh -c 'sed -n \"1,200p\" /etc/rsyslog.d/10-central-tls.conf'",
+          "observation": "The tls_local0 ruleset tests for local0, writes only that facility to CentralLocal0File, then stops processing."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "evaluator cleanup for probe 'tls-forwarding-and-filtering' was not completed"
+      ]
+    },
+    {
+      "id": "retention-policy-present",
+      "status": "pass",
+      "summary": "Node4 has a persistent daily rotation policy retaining 14 rotations with compression for the central local0 logs.",
+      "evidence": [
+        {
+          "node": "node4",
+          "command": "sudo -n sh -c 'grep -RniE \"rsyslog|/var/log/rsyslog|remote|local0|daily|weekly|rotate|compress|delaycompress|maxage|missingok|notifempty|su \" /etc/logrotate.conf /etc/logrotate.d 2>/dev/null | sed -n \"1,260p\"'",
+          "observation": "The central policy targets /var/log/rsyslog/remote/*/local0.log and specifies daily, rotate 14, compress, delaycompress, missingok, and notifempty."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n sh -c 'logrotate -d /etc/logrotate.conf 2>&1 | grep -E \"considering log|rotating pattern|/var/log/rsyslog/remote|daily|rotate|compress|delaycompress|error|warning\" | tail -80'",
+          "observation": "Dry-run considered all three central local0.log files under a 14-rotation daily pattern without configuration errors."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "logging-state-clean",
+      "status": "indeterminate",
+      "summary": "The candidate-managed state otherwise appears clean: one rsyslog process per node, no failed units, no cleartext listener, valid PKI, root-only private keys, no active debug directives, and no backup/temp filenames. However, node2 and node3 later showed the evaluator marker token in /var/log/secure because sudo audit logging recorded marker-bearing evaluator commands after cleanup.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n sh -c 'systemctl --failed --no-legend --plain; ps -C rsyslogd -o pid=,comm=,args=; ss -ltnup 2>/dev/null | grep -E \"(:514|:6514)\" || true; systemctl is-active rsyslog; systemctl is-enabled rsyslog'",
+          "observation": "No failed units; exactly one rsyslogd process; no 514/6514 listener; service active and enabled."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n sh -c 'systemctl --failed --no-legend --plain; ps -C rsyslogd -o pid=,comm=,args=; ss -ltnup 2>/dev/null | grep -E \"(:514|:6514)\" || true; systemctl is-active rsyslog; systemctl is-enabled rsyslog'",
+          "observation": "No failed units; exactly one rsyslogd process; no 514/6514 listener; service active and enabled. The later marker scan returned /var/log/secure."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n sh -c 'systemctl --failed --no-legend --plain; ps -C rsyslogd -o pid=,comm=,args=; ss -ltnup 2>/dev/null | grep -E \"(:514|:6514)\" || true; systemctl is-active rsyslog; systemctl is-enabled rsyslog'",
+          "observation": "No failed units; exactly one rsyslogd process; no 514/6514 listener; service active and enabled. The later marker scan returned /var/log/secure."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n sh -c 'systemctl --failed --no-legend --plain; ps -C rsyslogd -o pid=,comm=,args=; ss -ltnup 2>/dev/null | grep -E \"(:514|:6514)\" || true; for f in /etc/pki/rsyslog/*.key; do stat -c \"%A %a %U:%G %n\" \"$f\"; done; openssl x509 -checkend 0 -noout -in /etc/pki/rsyslog/node4-server.crt'",
+          "observation": "No failed units; exactly one rsyslogd process; only TCP 6514 listeners; certificates valid; private keys are mode 600 root:root."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The remaining marker text is attributable to evaluator command auditing, but it could not be removed without an additional mutation after the reserved cleanup window. No candidate-created residue was independently established."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Executed Probe 1 read-only checks on node1-node4.",
+    "Created local0 and user evaluator markers on node1-node3.",
+    "Verified central source-identifiable delivery, TLS listener state, private CA trust, collector identity, and filtering.",
+    "Used one reserved cleanup exec on each target to remove evaluator test markers and confirm health.",
+    "Executed Probe 3 retention and hygiene checks, including logrotate dry-run, process/listener checks, PKI checks, residue scans, and configuration validation.",
+    "Called mcp__infraset__complete_evidence exactly once after live checks and cleanup."
+  ],
+  "overall_summary": "Four assertions pass. logging-state-clean is indeterminate because later sudo audit logging left evaluator marker text in node2/node3 /var/log/secure after the reserved cleanup calls. Reboot persistence was not independently tested because no reboot probe was authored.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 7.0,
+      "evaluated_points": 2.0,
+      "passed_points": 2.0,
+      "coverage": 0.2857,
+      "assertions": [
+        {
+          "id": "all-rsyslog-services-operational",
+          "probe": "rsyslog-service-and-topology",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Rsyslog is installed, active, enabled, configuration-valid, and role-configured on every declared node.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n sh -c 'cat /etc/redhat-release; systemctl is-active rsyslog; systemctl is-enabled rsyslog; rsyslogd -N1 2>&1 | tail -40; grep -RniE \"local0|omfwd|6514|gtls|streamdriver|ruleset\" /etc/rsyslog.conf /etc/rsyslog.d; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true'",
+              "observation": "RHEL 7.9; active and enabled; config validation ended successfully; local0 omfwd uses TCP 6514 with gtls and x509/name peer validation; no syslog listener."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n sh -c 'cat /etc/redhat-release; systemctl is-active rsyslog; systemctl is-enabled rsyslog; rsyslogd -N1 2>&1 | tail -40; grep -RniE \"local0|omfwd|6514|gtls|streamdriver|ruleset\" /etc/rsyslog.conf /etc/rsyslog.d; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true'",
+              "observation": "RHEL 8.8; active and enabled; config validation ended successfully; local0-only TCP/TLS forwarding configured; no syslog listener."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n sh -c 'cat /etc/redhat-release; systemctl is-active rsyslog; systemctl is-enabled rsyslog; rsyslogd -N1 2>&1 | tail -40; grep -RniE \"local0|omfwd|6514|gtls|streamdriver|ruleset\" /etc/rsyslog.conf /etc/rsyslog.d; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true'",
+              "observation": "RHEL 9.8; active and enabled; config validation ended successfully; local0-only TCP/TLS forwarding configured; no syslog listener."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n sh -c 'cat /etc/redhat-release; systemctl is-active rsyslog; systemctl is-enabled rsyslog; rsyslogd -N1 2>&1 | tail -40; sed -n \"1,200p\" /etc/rsyslog.d/10-central-tls.conf; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true'",
+              "observation": "RHEL 10.0; active and enabled; config validation ended successfully; imtcp uses gtls on TCP 6514 and routes only local0 to dynamic source-identifiable files; no 514 listener."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "Reboot persistence was not tested because no reboot probe was authored."
+          ]
+        },
+        {
+          "id": "all-client-streams-arrive",
+          "probe": "tls-forwarding-and-filtering",
+          "points": 3.0,
+          "status": "indeterminate",
+          "summary": "Distinct local0 markers from node1, node2, and node3 were present in separate central source-identifiable files while all three TLS connections were established.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "logger -p local0.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE1_LOCAL0_20260826' && logger -p user.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE1_USER_20260826'",
+              "observation": "Both evaluator messages were accepted locally with exit code 0."
+            },
+            {
+              "node": "node2",
+              "command": "logger -p local0.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE2_LOCAL0_20260826' && logger -p user.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE2_USER_20260826'",
+              "observation": "Both evaluator messages were accepted locally with exit code 0."
+            },
+            {
+              "node": "node3",
+              "command": "logger -p local0.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE3_LOCAL0_20260826' && logger -p user.info -t EVAL_TLS 'EVAL_RSYSLOG_TLS_7DXMSuL_NODE3_USER_20260826'",
+              "observation": "Both evaluator messages were accepted locally with exit code 0."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n sh -c 'find /var/log/rsyslog/remote -maxdepth 3 -type f -name local0.log -print; for marker in EVAL_RSYSLOG_TLS_7DXMSuL_NODE1_LOCAL0_20260826 EVAL_RSYSLOG_TLS_7DXMSuL_NODE2_LOCAL0_20260826 EVAL_RSYSLOG_TLS_7DXMSuL_NODE3_LOCAL0_20260826; do grep -R -n -F -- \"$marker\" /var/log/rsyslog/remote || true; done; ss -ltnp 2>/dev/null | grep -E \"(rsyslog|:6514|:514)\" || true; ss -tnp 2>/dev/null | grep rsyslogd || true'",
+              "observation": "Each local0 marker appeared in its own source-specific local0.log, with message hostnames node1, node2, and node3. Node4 had the TLS listener and established rsyslog connections from all three clients."
+            },
+            {
+              "node": "node1",
+              "command": "target=$(sudo -n sed -n 's/.*target=\"\\([^\\\"]*\\)\".*/\\1/p' /etc/rsyslog.d/10-local0-tls-forward.conf | head -1); timeout 10 sudo -n openssl s_client -connect \"$target:6514\" -servername node4 -CAfile /etc/pki/rsyslog/central-ca.crt -verify_return_error -verify_hostname node4 </dev/null",
+              "observation": "TLS 1.2 handshake completed; peer subject was node4, issuer was rsyslog-central-private-ca, and Verify return code was 0 (ok)."
+            },
+            {
+              "node": "node2",
+              "command": "target=$(sudo -n sed -n 's/.*target=\"\\([^\\\"]*\\)\".*/\\1/p' /etc/rsyslog.d/10-local0-tls-forward.conf | head -1); timeout 10 sudo -n openssl s_client -connect \"$target:6514\" -servername node4 -CAfile /etc/pki/rsyslog/central-ca.crt -verify_return_error -verify_hostname node4 </dev/null",
+              "observation": "TLS 1.2 handshake completed with Verification: OK, Verified peername node4, and Verify return code 0 (ok)."
+            },
+            {
+              "node": "node3",
+              "command": "target=$(sudo -n sed -n 's/.*target=\"\\([^\\\"]*\\)\".*/\\1/p' /etc/rsyslog.d/10-local0-tls-forward.conf | head -1); timeout 10 sudo -n openssl s_client -connect \"$target:6514\" -servername node4 -CAfile /etc/pki/rsyslog/central-ca.crt -verify_return_error -verify_hostname node4 </dev/null",
+              "observation": "TLS 1.2 handshake completed with Verification: OK, Verified peername node4, and Verify return code 0 (ok)."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n sh -c 'openssl x509 -in /etc/pki/rsyslog/node4-server.crt -noout -subject -issuer -ext subjectAltName; openssl verify -CAfile /etc/pki/rsyslog/central-ca.crt -purpose sslserver -verify_hostname node4 /etc/pki/rsyslog/node4-server.crt'",
+              "observation": "Collector certificate subject was node4, issuer was the private rsyslog CA, SAN included DNS:node4, and verification returned OK."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The first three handshake commands were evaluator construction errors; corrected commands supplied the decisive evidence.",
+            "evaluator cleanup for probe 'tls-forwarding-and-filtering' was not completed"
+          ]
+        },
+        {
+          "id": "unrelated-facility-filtered",
+          "probe": "tls-forwarding-and-filtering",
+          "points": 2.0,
+          "status": "indeterminate",
+          "summary": "All local0 markers were present in the central application files and all unrelated user markers were absent.",
+          "evidence": [
+            {
+              "node": "node4",
+              "command": "sudo -n sh -c 'for marker in EVAL_RSYSLOG_TLS_7DXMSuL_NODE1_USER_20260826 EVAL_RSYSLOG_TLS_7DXMSuL_NODE2_USER_20260826 EVAL_RSYSLOG_TLS_7DXMSuL_NODE3_USER_20260826; do grep -R -n -F -- \"$marker\" /var/log/rsyslog/remote || true; done'",
+              "observation": "The central user-marker search produced no matching lines."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n sh -c 'sed -n \"1,200p\" /etc/rsyslog.d/10-central-tls.conf'",
+              "observation": "The tls_local0 ruleset tests for local0, writes only that facility to CentralLocal0File, then stops processing."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "evaluator cleanup for probe 'tls-forwarding-and-filtering' was not completed"
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 2.0,
+      "evaluated_points": 2.0,
+      "passed_points": 2.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "retention-policy-present",
+          "probe": "retention-and-hygiene",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Node4 has a persistent daily rotation policy retaining 14 rotations with compression for the central local0 logs.",
+          "evidence": [
+            {
+              "node": "node4",
+              "command": "sudo -n sh -c 'grep -RniE \"rsyslog|/var/log/rsyslog|remote|local0|daily|weekly|rotate|compress|delaycompress|maxage|missingok|notifempty|su \" /etc/logrotate.conf /etc/logrotate.d 2>/dev/null | sed -n \"1,260p\"'",
+              "observation": "The central policy targets /var/log/rsyslog/remote/*/local0.log and specifies daily, rotate 14, compress, delaycompress, missingok, and notifempty."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n sh -c 'logrotate -d /etc/logrotate.conf 2>&1 | grep -E \"considering log|rotating pattern|/var/log/rsyslog/remote|daily|rotate|compress|delaycompress|error|warning\" | tail -80'",
+              "observation": "Dry-run considered all three central local0.log files under a 14-rotation daily pattern without configuration errors."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 2.0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": [
+        {
+          "id": "logging-state-clean",
+          "probe": "retention-and-hygiene",
+          "points": 2.0,
+          "status": "indeterminate",
+          "summary": "The candidate-managed state otherwise appears clean: one rsyslog process per node, no failed units, no cleartext listener, valid PKI, root-only private keys, no active debug directives, and no backup/temp filenames. However, node2 and node3 later showed the evaluator marker token in /var/log/secure because sudo audit logging recorded marker-bearing evaluator commands after cleanup.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n sh -c 'systemctl --failed --no-legend --plain; ps -C rsyslogd -o pid=,comm=,args=; ss -ltnup 2>/dev/null | grep -E \"(:514|:6514)\" || true; systemctl is-active rsyslog; systemctl is-enabled rsyslog'",
+              "observation": "No failed units; exactly one rsyslogd process; no 514/6514 listener; service active and enabled."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n sh -c 'systemctl --failed --no-legend --plain; ps -C rsyslogd -o pid=,comm=,args=; ss -ltnup 2>/dev/null | grep -E \"(:514|:6514)\" || true; systemctl is-active rsyslog; systemctl is-enabled rsyslog'",
+              "observation": "No failed units; exactly one rsyslogd process; no 514/6514 listener; service active and enabled. The later marker scan returned /var/log/secure."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n sh -c 'systemctl --failed --no-legend --plain; ps -C rsyslogd -o pid=,comm=,args=; ss -ltnup 2>/dev/null | grep -E \"(:514|:6514)\" || true; systemctl is-active rsyslog; systemctl is-enabled rsyslog'",
+              "observation": "No failed units; exactly one rsyslogd process; no 514/6514 listener; service active and enabled. The later marker scan returned /var/log/secure."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n sh -c 'systemctl --failed --no-legend --plain; ps -C rsyslogd -o pid=,comm=,args=; ss -ltnup 2>/dev/null | grep -E \"(:514|:6514)\" || true; for f in /etc/pki/rsyslog/*.key; do stat -c \"%A %a %U:%G %n\" \"$f\"; done; openssl x509 -checkend 0 -noout -in /etc/pki/rsyslog/node4-server.crt'",
+              "observation": "No failed units; exactly one rsyslogd process; only TCP 6514 listeners; certificates valid; private keys are mode 600 root:root."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The remaining marker text is attributable to evaluator command auditing, but it could not be removed without an additional mutation after the reserved cleanup window. No candidate-created residue was independently established."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "persistence"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "operational_hygiene"
+  ],
+  "evaluation_coverage": 0.3636,
+  "full_coverage": false,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": null,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

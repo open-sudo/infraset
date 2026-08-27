@@ -1,0 +1,78 @@
+[[observations]]
+id = "source-platform"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+. /etc/os-release
+printf '%s:%s\n' "$ID" "$VERSION_ID"
+test "$ID" = ubuntu
+test "$VERSION_ID" = 16.04
+systemctl is-active mysql
+'''
+required = true
+
+[[observations]]
+id = "destination-platform"
+stage = 10
+node = "node2"
+command = '''
+set -eu
+. /etc/os-release
+printf '%s:%s\n' "$ID" "$VERSION_ID"
+test "$ID" = ubuntu
+test "$VERSION_ID" = 24.04
+'''
+required = true
+
+[[observations]]
+id = "source-schema"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+sudo -n mysql --batch --skip-column-names legacy_shop -e "SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA='legacy_shop' ORDER BY TABLE_NAME; SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='legacy_shop' ORDER BY TABLE_NAME, ORDINAL_POSITION;"
+'''
+required = true
+
+[[observations]]
+id = "source-row-counts"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+for table in customers orders order_items audit_events; do
+  printf '%s ' "$table"
+  sudo -n mysql --batch --skip-column-names legacy_shop -e "SELECT COUNT(*) FROM $table"
+done
+'''
+required = true
+
+[[observations]]
+id = "source-content-digests"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+digest() {
+  table="$1"
+  sudo -n mysql --batch --skip-column-names legacy_shop -e "SELECT * FROM $table" | sort | sha256sum | cut -d' ' -f1
+}
+for table in customers orders order_items audit_events; do
+  printf '%s ' "$table"
+  digest "$table"
+done
+'''
+required = true
+
+[[observations]]
+id = "source-service-state"
+stage = 30
+node = "node1"
+command = '''
+set -eu
+systemctl is-active mysql
+systemctl is-enabled mysql
+sudo -n mysql --batch --skip-column-names -e "SELECT @@version, @@datadir, @@character_set_server, @@collation_server"
+'''
+required = true

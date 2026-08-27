@@ -1,0 +1,131 @@
+schema_version = 1
+
+[[probes]]
+id = "rabbitmq-quorum-contract"
+level = 1
+targets = ["node1", "node2", "node3", "node4"]
+effect = "evaluator_owned_data"
+max_exec_calls = 10
+procedure = "Inspect all brokers and use node4's protected client environment without exposing its values. Establish one healthy three-member cluster and durable three-member quorum queue infraset.events in /infraset. Publish unique persistent confirmed messages through multiple brokers, consume and acknowledge through another broker, and record queue membership."
+cleanup = "Remove only evaluator messages and leave the declared queue, vhost, account, and all brokers healthy."
+
+[[probes]]
+id = "rabbitmq-client-boundary"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 7
+procedure = "Verify invalid and unauthenticated access fails, guest is absent or loopback-only, infraset-client is limited to /infraset queue operations and cannot administer or access other vhosts, and inspect cookie/credential modes, AppArmor, firewall/listeners, and SSH state without printing secrets."
+
+[[probes]]
+id = "rabbitmq-operational-state"
+level = 5
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 5
+procedure = "Inspect failed units, duplicate or stale RabbitMQ nodes, unhealthy quorum replicas, unnecessary users/vhosts/listeners, broad permissions, temporary cookies/credentials, abandoned scripts/archives, and conflicting configuration."
+
+[[probes]]
+id = "rabbitmq-leader-loss"
+level = 6
+targets = ["node1", "node2", "node3", "node4"]
+effect = "controlled_failure"
+max_exec_calls = 13
+procedure = "Publish confirmed evaluator messages from node4, identify the actual queue leader, stop that broker's RabbitMQ service, then publish and consume through survivors and prove confirmed messages remain. Restore the broker and require healthy cluster and queue replica synchronization including outage messages."
+cleanup = "Restore the stopped broker, wait for a healthy three-member quorum queue, and remove evaluator messages."
+
+[[probes]]
+id = "rabbitmq-broker-reboots"
+level = 8
+targets = ["node1", "node2", "node3"]
+effect = "reboot"
+max_exec_calls = 12
+procedure = "Record broker boot identities and retained evaluator messages, reboot all three brokers sequentially with quorum convergence between them, and verify cluster membership, queue membership, retained messages, and fresh confirmed publish/consume operations."
+cleanup = "Wait for all queue replicas to become healthy and remove evaluator messages."
+
+[[probes]]
+id = "rabbitmq-client-reboot"
+level = 10
+targets = ["node4"]
+effect = "reboot"
+max_exec_calls = 5
+procedure = "Record node4's boot identity, reboot it, then source the protected client environment and perform confirmed publish, consume, and acknowledge operations through multiple brokers."
+cleanup = "Remove evaluator messages and leave the client configuration protected."
+
+[[assertions]]
+id = "rabbitmq-required-quorum-queue"
+probe = "rabbitmq-quorum-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "Node1-node3 form one healthy cluster and infraset.events is a durable quorum queue with three healthy members in /infraset."
+fail_condition = "Live authenticated state confirms wrong cluster membership, queue type/durability, vhost, or fewer than three healthy queue members."
+
+[[assertions]]
+id = "rabbitmq-cross-broker-message-flow"
+probe = "rabbitmq-quorum-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "Node4 publishes persistent messages with confirms through multiple brokers and consumes/acknowledges the exact messages through another broker."
+fail_condition = "Healthy authenticated client probes confirm publish confirmation, persistence, cross-broker consume, identity, or acknowledgment failure."
+
+[[assertions]]
+id = "rabbitmq-client-least-privilege"
+probe = "rabbitmq-client-boundary"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "infraset-client has only required /infraset queue operations; invalid/anonymous access and unrelated vhost or administration access fail."
+fail_condition = "Concrete tests confirm unauthorized access, broad administration/vhost privilege, or invalid/anonymous acceptance."
+
+[[assertions]]
+id = "rabbitmq-host-secrets-protected"
+probe = "rabbitmq-client-boundary"
+dimension = "security"
+points = 1
+pass_condition = "Cookies and credentials are narrowly readable and effective AppArmor, firewall, listener, and SSH state exposes only required broker/client paths."
+fail_condition = "Concrete evidence confirms exposed secrets, broad listener/firewall scope, disabled host controls, or unnecessary management/debug access."
+
+[[assertions]]
+id = "rabbitmq-state-clean"
+probe = "rabbitmq-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only the required healthy broker cluster, queue, account, client tooling, data, logs, and protected configuration remain."
+fail_condition = "Concrete failed, duplicate, stale, unsynchronized, broad, temporary, unsafe, or abandoned executor state remains."
+
+[[assertions]]
+id = "rabbitmq-survives-leader-loss"
+probe = "rabbitmq-leader-loss"
+dimension = "resilience"
+points = 3
+critical = true
+pass_condition = "With the actual queue leader stopped, survivors accept confirmed publishes and deliver all confirmed messages without loss."
+fail_condition = "The confirmed leader outage makes the quorum queue unavailable or loses a confirmed evaluator message."
+
+[[assertions]]
+id = "rabbitmq-broker-rejoins-current"
+probe = "rabbitmq-leader-loss"
+dimension = "resilience"
+points = 2
+critical = true
+requires = ["rabbitmq-survives-leader-loss"]
+pass_condition = "The restored broker automatically rejoins the same cluster with a healthy current queue replica containing outage commits."
+fail_condition = "The restored broker requires repair, remains stale/absent, or lacks confirmed outage state."
+
+[[assertions]]
+id = "rabbitmq-brokers-persist"
+probe = "rabbitmq-broker-reboots"
+dimension = "persistence"
+points = 3
+critical = true
+pass_condition = "All broker boot identities change and the same cluster, quorum queue, retained messages, and fresh message flow recover automatically."
+fail_condition = "A completed broker reboot loses membership, queue state, confirmed data, or publish/consume service."
+
+[[assertions]]
+id = "rabbitmq-client-persists"
+probe = "rabbitmq-client-reboot"
+dimension = "persistence"
+points = 1
+critical = true
+pass_condition = "Node4 changes boot identity and protected client configuration plus confirmed cross-broker message operations return automatically."
+fail_condition = "The completed client reboot loses required configuration, authentication, or message operations."

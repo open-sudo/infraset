@@ -1,0 +1,176 @@
+schema_version = 1
+
+[[probes]]
+id = "authorized-jump-access"
+level = 1
+targets = ["node1", "node2"]
+max_exec_calls = 7
+procedure = "Establish node1's managed address and node2's managed source address. As the prepared sshprobe identity on node2, use its prepared private key and pinned known_hosts entry to connect noninteractively to opsadmin@node1 by the stable name node1. Require strict host-key checking, identify the remote user and hostname, inspect opsadmin's ssh-access membership, and corroborate the session in node1's SSH authentication logs."
+
+[[probes]]
+id = "ssh-authentication-boundary"
+level = 2
+targets = ["node1", "node2"]
+max_exec_calls = 11
+procedure = "First re-establish the successful opsadmin public-key login from node2 so negative results cannot be caused by an unreachable or broken SSH service. Inspect sshd's global and connection-specific effective configuration for opsadmin, contractor, and root from node2's address. Using the same valid prepared key, prove contractor and root are denied. Using node2's prepared askpass helper without printing its password, attempt an opsadmin password-only login and prove password and keyboard-interactive methods are not offered or accepted. Verify public-key authentication remains enabled, root login is disabled, and ssh-access membership is required without a Match block or include overriding the intended policy."
+
+[[probes]]
+id = "firewall-zone-boundary"
+level = 3
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 12
+procedure = "Identify node2 and node3 managed source addresses. Establish the successful strict-key opsadmin login from node2. Inspect node1's runtime and permanent firewalld state, including active zones, zone sources, services, rich rules, direct rules, and the effective nftables path. Verify custom zone ssh-admin contains exactly node2's managed /32 source and permits SSH, while SSH is absent from other active zones. From node3, use its valid prepared copy of the same key and pinned node1 host key to prove TCP 22 is rejected by the firewall before SSH authentication; distinguish a firewall rejection from an authentication denial or general server failure."
+
+[[probes]]
+id = "prepared-state-preservation"
+level = 4
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 10
+procedure = "Inspect the prepared opsadmin, contractor, ssh-access, and sshprobe identities, numeric IDs, group memberships, login shells, home marker contents, key fingerprints, ownership, and modes. On node1 compare the current opsadmin and contractor shadow-record checksum to the root-only prepared fixture and confirm the prepared public key remains in root, opsadmin, and contractor authorized_keys. Confirm the prepared client private keys and pinned host keys remain protected and usable, without revealing key or password contents."
+
+[[probes]]
+id = "rhel9-sshd-quality"
+level = 5
+targets = ["node1"]
+max_exec_calls = 8
+procedure = "Validate node1's complete OpenSSH server configuration with its native checker and inspect effective includes and Match conditions, package ownership, enabled and active systemd state, live TCP 22 listener ownership, recent failures, SELinux enforcement and file contexts, authorized-key path permissions, system-wide crypto-policy integration, and the absence of conflicting legacy SSH services or alternate listeners. Accept equivalent persistent drop-in layouts when their effective behavior is identical."
+
+[[probes]]
+id = "ssh-hardening-hygiene"
+level = 7
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 8
+procedure = "Inspect for executor-created extra users or groups, copied private keys on node1, broadly readable credentials, duplicate or stale known_hosts entries, abandoned configuration backups and scripts, debug sshd processes, failed units, permissive SELinux, conflicting firewall managers, broad SSH allow rules, unnecessary packages, and unintended listeners. Preserve the prepared fixtures and normal RHEL or AlmaLinux state needed for evaluation."
+
+[[probes]]
+id = "target-reboot-persistence"
+level = 8
+targets = ["node1", "node2", "node3"]
+effect = "reboot"
+max_exec_calls = 14
+procedure = "Record node1's boot identity, reboot node1, and wait for it to return. Prove its boot identity changed. Without repair, repeat the node2 strict-host-key opsadmin login, contractor and root valid-key denials, password-only denial, sshd effective-policy inspection, ssh-admin runtime and permanent zone inspection, node3 firewall rejection with the valid key, SELinux check, and prepared-state preservation checks."
+cleanup = "Wait for node1, sshd, and firewalld to return fully online; confirm the allowed node2 path and denied node3 path settle, and remove only evaluator-owned temporary observations without repairing candidate state."
+
+[[probes]]
+id = "full-reboot-persistence"
+level = 10
+targets = ["node1", "node2", "node3"]
+effect = "reboot"
+max_exec_calls = 16
+procedure = "Record all three boot identities, reboot node1, node2, and node3, wait for each to return, and prove every boot identity changed. Without repair, verify the complete contract: node2's pinned-key opsadmin access by stable name, all prohibited authentication paths, ssh-access group enforcement, ssh-admin source-zone restriction, node3 firewall rejection using the still-valid prepared key, protected key and password fixtures, unchanged prepared users and home markers, enabled services, SELinux enforcement, and valid effective sshd configuration."
+cleanup = "Wait for all nodes and required services to return fully online. Ensure prepared identities and probe material remain intact and remove only evaluator-owned temporary observations without changing candidate configuration."
+
+[[assertions]]
+id = "opsadmin-key-login-from-jump"
+probe = "authorized-jump-access"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "From node2, the prepared sshprobe identity connects noninteractively by stable name to node1 as opsadmin using its prepared key and strict pinned host-key verification, and reaches the correct remote identity and host."
+fail_condition = "The prepared nodes and credentials are available, but the correctly invoked pinned-key login fails, becomes interactive, relaxes host verification, or reaches the wrong identity or host."
+
+[[assertions]]
+id = "opsadmin-group-authorized"
+probe = "authorized-jump-access"
+dimension = "functionality"
+points = 1
+pass_condition = "The successful remote opsadmin identity remains a member of ssh-access and concrete server evidence associates the accepted session with public-key authentication."
+fail_condition = "The session is accepted through another authentication method, opsadmin lacks the required group membership, or the observed session cannot be tied to the prepared identity."
+
+[[assertions]]
+id = "password-and-interactive-auth-disabled"
+probe = "ssh-authentication-boundary"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "After a successful key-login prerequisite, effective sshd policy and an actual prepared password-only attempt confirm password and keyboard-interactive authentication are neither offered nor accepted."
+fail_condition = "Node1 is reachable and key login works, but effective policy or a live attempt confirms password or keyboard-interactive authentication available or accepted."
+
+[[assertions]]
+id = "root-login-disabled"
+probe = "ssh-authentication-boundary"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "Effective connection-specific sshd policy sets root login to no and an actual root attempt with the valid prepared authorized key is denied while opsadmin succeeds."
+fail_condition = "The positive opsadmin path works, but root is accepted with the prepared key or effective policy permits any direct root login."
+
+[[assertions]]
+id = "ssh-group-boundary-effective"
+probe = "ssh-authentication-boundary"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "Effective policy requires ssh-access membership, opsadmin succeeds as a member, and contractor is denied with the same valid prepared key while remaining outside the group."
+fail_condition = "The positive path works, but ssh-access is not effectively required, contractor is accepted, or denial depends on removing contractor's prepared identity or key."
+
+[[assertions]]
+id = "firewall-zone-allows-authorized-jump"
+probe = "firewall-zone-boundary"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "Node1's runtime and permanent ssh-admin zone contains node2's exact managed /32 source, permits SSH, excludes broader sources, and supports the successful node2 SSH path."
+fail_condition = "Node2's SSH path is confirmed working through an absent, transient, broadly sourced, incorrectly named, or otherwise ineffective ssh-admin zone."
+
+[[assertions]]
+id = "firewall-zone-denies-untrusted-client"
+probe = "firewall-zone-boundary"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "Node2 reaches SSH, while node3 with the same valid key and pinned host key is rejected at the TCP/firewall boundary; other active zones and direct rules do not expose SSH."
+fail_condition = "Positive node2 access is established, but node3 reaches SSH authentication or node1 has another effective broad SSH exposure."
+
+[[assertions]]
+id = "prepared-identities-and-local-state-preserved"
+probe = "prepared-state-preservation"
+dimension = "operational_hygiene"
+points = 1
+critical = true
+pass_condition = "Prepared users, numeric identities, group boundary, login shells, local password checksum, home markers, and all three node1 authorized-key fixtures remain intact."
+fail_condition = "Concrete comparison with prepared fixtures confirms deletion or alteration of a required identity, password state, membership, shell, marker, or authorized key."
+
+[[assertions]]
+id = "prepared-client-material-protected"
+probe = "prepared-state-preservation"
+dimension = "security"
+points = 1
+pass_condition = "The prepared node2 and node3 probe keys and pinned host-key files retain matching fingerprints, safe ownership and modes, and no private-key content is exposed on node1."
+fail_condition = "A required probe key or host pin was replaced or removed, is broadly accessible, or private-key material is confirmed copied to node1."
+
+[[assertions]]
+id = "sshd-valid-and-host-controls-enforcing"
+probe = "rhel9-sshd-quality"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "The distribution OpenSSH server has a valid effective configuration, is enabled and active on its intended TCP 22 listener, retains SELinux enforcement and correct contexts, and has no conflicting alternate SSH service or policy override."
+fail_condition = "Native validation, live service/socket evidence, package provenance, SELinux state, or effective includes confirm an invalid, inactive, conflicting, permissive, or bypassed server."
+
+[[assertions]]
+id = "ssh-hardening-state-clean"
+probe = "ssh-hardening-hygiene"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only prepared and required identities, keys, host pins, OpenSSH configuration, firewall policy, packages, logs, and normal platform state remain, without concrete executor-created insecure or abandoned residue."
+fail_condition = "Concrete executor-created extra identities, private-key copies, broad credentials or firewall rules, debug state, failed units, stale backups, conflicting policy, unrelated changes, or unintended listeners remain."
+
+[[assertions]]
+id = "target-hardening-persists-after-reboot"
+probe = "target-reboot-persistence"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1's boot identity changes and, without repair, allowed node2 key access, every authentication denial, group policy, ssh-admin zone boundary, node3 firewall denial, SELinux, services, and prepared state remain effective."
+fail_condition = "A confirmed node1 reboot loses or weakens any required access, denial, firewall-zone, host-control, service, or prepared-state property."
+
+[[assertions]]
+id = "complete-contract-persists-after-all-reboots"
+probe = "full-reboot-persistence"
+dimension = "persistence"
+points = 2
+critical = true
+requires = ["target-hardening-persists-after-reboot"]
+pass_condition = "All three boot identities change and the complete secured SSH contract works without repair using the original prepared identities, keys, passwords, host pins, group memberships, and firewall source boundary."
+fail_condition = "After confirmed reboots of all three systems, any required positive path, negative boundary, prepared fixture, host control, service, stable name, or strict host-key verification is lost."

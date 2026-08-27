@@ -1,0 +1,111 @@
+schema_version = 1
+
+[[probes]]
+id = "kubernetes-routed-contract"
+level = 1
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 10
+procedure = "Inspect VyOS routing and all Ubuntu nodes directly. Establish node2 as control plane, node3/node4 as workers, all three Ready with LAN internal addresses, host routes through node1, and Kubernetes control/data/CNI paths using lan-a/lan-b rather than management."
+
+[[probes]]
+id = "kubernetes-cross-lan-workload"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+effect = "evaluator_owned_data"
+max_exec_calls = 12
+procedure = "Using authenticated cluster administration, deploy a uniquely named evaluator namespace/workload with one pod per Kubernetes node and a ClusterIP service. Prove pod-to-pod HTTP across lan-a/lan-b, ClusterIP access, and cluster DNS, and use routes/counters or narrow captures to establish the cross-LAN node/overlay path traverses VyOS."
+cleanup = "Delete the evaluator namespace/workload and confirm its pods, service, endpoints, and temporary capture files are gone."
+
+[[probes]]
+id = "kubernetes-security-boundary"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 8
+procedure = "Inspect authenticated API behavior, kubeconfig/join-token/PKI/service-account permissions, management listeners, host firewall/AppArmor/swap/runtime endpoints/SSH, and VyOS forwarding/NAT. Confirm management is acquisition-only without requiring an unrequested VyOS firewall."
+
+[[probes]]
+id = "kubernetes-operational-state"
+level = 5
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 5
+procedure = "Inspect failed services, duplicate Kubernetes/CNI/runtime installations, abandoned installers/manifests/logs/backups, debug state, credential copies, conflicting routes/firewall/NAT, enabled SSH, and executor-created residue."
+
+[[probes]]
+id = "kubernetes-router-worker-reboots"
+level = 8
+targets = ["node1", "node4"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities, reboot VyOS node1 and worker node4 sequentially, and after each verify saved routing, host paths, node readiness/roles, DNS, ClusterIP, and cross-LAN evaluator workload communication."
+cleanup = "Wait for routing and Kubernetes convergence and delete evaluator workloads/captures."
+
+[[probes]]
+id = "kubernetes-remaining-reboots"
+level = 10
+targets = ["node2", "node3"]
+effect = "reboot"
+max_exec_calls = 10
+procedure = "Record boot identities, reboot control-plane node2 and worker node3 sequentially, then redeploy a clean evaluator workload and prove all three members Ready, persistent cluster state, DNS, ClusterIP, and cross-LAN pod traffic."
+cleanup = "Delete evaluator workloads and leave all nodes Ready with no temporary files."
+
+[[assertions]]
+id = "kubernetes-required-routed-topology"
+probe = "kubernetes-routed-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "VyOS owns both declared gateway addresses and all three Ubuntu members are Ready in one cluster with correct control-plane/worker roles and LAN addresses/routes."
+fail_condition = "Live router/API evidence confirms missing routing, wrong member/role/address, NotReady node, or management-path control/data traffic."
+
+[[assertions]]
+id = "kubernetes-cross-lan-networking"
+probe = "kubernetes-cross-lan-workload"
+dimension = "functionality"
+points = 4
+critical = true
+requires = ["kubernetes-required-routed-topology"]
+pass_condition = "Evaluator pods on every node communicate across LANs directly and through ClusterIP with working cluster DNS, and cross-LAN traffic traverses VyOS."
+fail_condition = "Healthy cluster/workload prerequisites confirm pod HTTP, DNS, service access, placement, or routed cross-LAN path fails."
+
+[[assertions]]
+id = "kubernetes-credentials-api-protected"
+probe = "kubernetes-security-boundary"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "Administrative API access is authenticated, cluster credentials/keys are protected, and no unnecessary management-network endpoint exposure exists."
+fail_condition = "Concrete evidence confirms anonymous administrative access, exposed kubeconfig/token/key, or unnecessary management service exposure."
+
+[[assertions]]
+id = "kubernetes-host-router-controls"
+probe = "kubernetes-security-boundary"
+dimension = "security"
+points = 1
+pass_condition = "Ubuntu AppArmor/firewall/runtime/SSH state is sound and VyOS provides intentional persistent forwarding without unnecessary cross-LAN NAT."
+fail_condition = "Concrete evidence confirms disabled host controls, unsafe runtime endpoint, enabled SSH, unintended NAT, or conflicting forwarding state."
+
+[[assertions]]
+id = "kubernetes-state-clean"
+probe = "kubernetes-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only coherent required Kubernetes, CNI, runtime, certificate, route, saved VyOS, image, log, and manifest state remains."
+fail_condition = "Concrete failed, duplicate, conflicting, debug, credential-copy, temporary, or abandoned executor state remains."
+
+[[assertions]]
+id = "kubernetes-router-worker-persist"
+probe = "kubernetes-router-worker-reboots"
+dimension = "persistence"
+points = 3
+critical = true
+pass_condition = "Node1 and node4 change boot identities and routing, readiness, roles, DNS, ClusterIP, and cross-LAN workload traffic recover automatically."
+fail_condition = "A completed router/worker reboot loses required route, node state, cluster service, DNS, or workload communication."
+
+[[assertions]]
+id = "kubernetes-full-cluster-persists"
+probe = "kubernetes-remaining-reboots"
+dimension = "persistence"
+points = 3
+critical = true
+pass_condition = "Node2 and node3 change boot identities and the complete routed three-node cluster returns with persistent state and fresh cross-LAN DNS/service/pod behavior."
+fail_condition = "A completed control-plane/worker reboot loses membership/state or fresh DNS, ClusterIP, or cross-LAN workload operations."

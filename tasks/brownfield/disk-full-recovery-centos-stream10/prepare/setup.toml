@@ -1,0 +1,59 @@
+timeout_sec = 300
+
+[[steps]]
+id = "create-existing-archive-filesystem"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+command -v mkfs.xfs >/dev/null
+command -v fallocate >/dev/null
+getenforce | grep -qx Enforcing
+if ! id archiveapp >/dev/null 2>&1; then
+  useradd --system --home-dir /nonexistent --shell /sbin/nologin archiveapp
+fi
+install -d -o root -g root -m 0750 /var/lib/archive-storage
+truncate -s 768M /var/lib/archive-storage/archive-volume.img
+chown root:root /var/lib/archive-storage/archive-volume.img
+chmod 0600 /var/lib/archive-storage/archive-volume.img
+mkfs.xfs -f -L archive-data /var/lib/archive-storage/archive-volume.img >/dev/null
+install -d -o root -g root -m 0755 /srv/archive
+if ! grep -Fq '/var/lib/archive-storage/archive-volume.img /srv/archive ' /etc/fstab; then
+  printf '%s\n' '/var/lib/archive-storage/archive-volume.img /srv/archive xfs loop,nofail,nodev,nosuid,noexec 0 0' >> /etc/fstab
+fi
+mount /srv/archive
+mountpoint -q /srv/archive
+findmnt -n -o FSTYPE /srv/archive | grep -qx xfs
+install -d -o archiveapp -g archiveapp -m 0750 /srv/archive/incoming
+install -d -o archiveapp -g archiveapp -m 0750 /srv/archive/records
+printf '%s\n' 'existing archive manifest: preserve during capacity recovery' > /srv/archive/records/manifest.db
+chown archiveapp:archiveapp /srv/archive/records/manifest.db
+chmod 0640 /srv/archive/records/manifest.db
+install -d -o root -g root -m 0700 /srv/archive/.telemetry-cache
+install -o root -g root -m 0600 /dev/null /srv/archive/.telemetry-cache/collector-debug.capture
+restorecon -RF /var/lib/archive-storage /srv/archive
+'''
+
+[[steps]]
+id = "exhaust-archive-filesystem"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+target=/srv/archive/.telemetry-cache/collector-debug.capture
+available_kib="$(df -Pk /srv/archive | awk 'NR == 2 {print $4}')"
+test "$available_kib" -gt 65536
+initial_kib=$((available_kib - 1024))
+fallocate -l "${initial_kib}K" "$target"
+while dd if=/dev/zero of="$target" bs=64K count=1 oflag=append conv=notrunc status=none 2>/dev/null; do
+  :
+done
+sync
+used_percent="$(df -Pk /srv/archive | awk 'NR == 2 {gsub(/%/, "", $5); print $5}')"
+test "$used_percent" -eq 100
+if runuser -u archiveapp -- sh -c 'dd if=/dev/zero of=/srv/archive/incoming/.prepare-write-probe bs=1M count=1 conv=fsync status=none' 2>/dev/null; then
+  rm -f /srv/archive/incoming/.prepare-write-probe
+  exit 1
+fi
+rm -f /srv/archive/incoming/.prepare-write-probe
+'''

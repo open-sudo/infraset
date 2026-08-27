@@ -1,0 +1,131 @@
+schema_version = 1
+
+[[probes]]
+id = "infra-rabbit-contract"
+level = 1
+targets = ["node1", "node2", "node3"]
+effect = "evaluator_owned_data"
+max_exec_calls = 9
+procedure = "Use node1's protected operator environment and installed clients without printing secrets. Establish one healthy infra-rabbit cluster, /infra, and durable three-member quorum queue infra.jobs through TLS APIs. Publish unique evaluator messages, consume and acknowledge them, and inspect membership on every broker."
+cleanup = "Remove evaluator messages while preserving infra.jobs, /infra, operator access, and healthy membership."
+
+[[probes]]
+id = "infra-rabbit-security"
+level = 2
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 7
+procedure = "Test node-name-validating TLS on 5671 and 15671 and prove plaintext, anonymous, default, and invalid credentials fail. Inspect messaging/distribution interface scope, secret/key/cookie modes, service privilege, AppArmor, persistent firewall, listeners, and SSH state."
+
+[[probes]]
+id = "infra-rabbit-operational-state"
+level = 5
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 4
+procedure = "Inspect failed units, stale members, duplicate RabbitMQ stacks, debug listeners, abandoned installers/archives/scripts, temporary credentials, unnecessary users/services/openings, and conflicting configuration."
+
+[[probes]]
+id = "infra-rabbit-member-loss"
+level = 6
+targets = ["node1", "node2", "node3"]
+effect = "controlled_failure"
+max_exec_calls = 10
+procedure = "Identify a non-leader queue member, stop its RabbitMQ service, and through a survivor perform new confirmed publish/consume operations. Restore the stopped broker and require it to rejoin infra-rabbit with a healthy current infra.jobs replica."
+cleanup = "Restore the broker, wait for three healthy queue members, and remove evaluator messages."
+
+[[probes]]
+id = "infra-rabbit-representative-reboots"
+level = 8
+targets = ["node1", "node2"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities and retained messages, reboot node1 and node2 sequentially with convergence, and retest cluster, queue, retained/new message flow, TLS, and authentication."
+cleanup = "Wait for all members and remove evaluator messages."
+
+[[probes]]
+id = "infra-rabbit-final-reboot"
+level = 10
+targets = ["node3"]
+effect = "reboot"
+max_exec_calls = 5
+procedure = "Record node3's boot identity, reboot it, and prove the complete cluster, quorum queue, TLS endpoints, retained data, and fresh message operations recover automatically."
+cleanup = "Wait for node3 to rejoin and remove evaluator messages."
+
+[[assertions]]
+id = "infra-rabbit-required-cluster"
+probe = "infra-rabbit-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "All three brokers form one healthy infra-rabbit cluster and infra.jobs is a durable three-member quorum queue in /infra."
+fail_condition = "Authenticated live state confirms wrong membership/name/vhost/queue type, missing durability, or unhealthy queue replicas."
+
+[[assertions]]
+id = "infra-rabbit-message-flow"
+probe = "infra-rabbit-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "Authenticated TLS clients publish, consume, and acknowledge exact evaluator messages through the declared queue."
+fail_condition = "Healthy TLS/API prerequisites confirm required evaluator message operations fail or lose data."
+
+[[assertions]]
+id = "infra-rabbit-tls-auth-effective"
+probe = "infra-rabbit-security"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "AMQP and management require node-name-validating TLS and authentication; plaintext, anonymous, default, and invalid credentials fail."
+fail_condition = "A controlled probe confirms invalid identity, plaintext, or unauthorized access succeeds."
+
+[[assertions]]
+id = "infra-rabbit-host-boundary"
+probe = "infra-rabbit-security"
+dimension = "security"
+points = 1
+pass_condition = "Secrets are protected and messaging/distribution plus host controls are confined to intended peers without unnecessary SSH/listeners."
+fail_condition = "Concrete evidence confirms exposed secrets, management-network messaging, broad distribution/listener access, or disabled host controls."
+
+[[assertions]]
+id = "infra-rabbit-state-clean"
+probe = "infra-rabbit-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only coherent required RabbitMQ data, logs, PKI, service configuration, and runtime packages remain."
+fail_condition = "Concrete failed, stale, duplicate, debug, unsafe, temporary, or abandoned executor state remains."
+
+[[assertions]]
+id = "infra-rabbit-survives-member-loss"
+probe = "infra-rabbit-member-loss"
+dimension = "resilience"
+points = 2
+critical = true
+pass_condition = "The quorum queue accepts and delivers new confirmed messages while one non-leader broker is stopped."
+fail_condition = "The confirmed non-leader outage makes required publish/consume unavailable or loses confirmed data."
+
+[[assertions]]
+id = "infra-rabbit-member-rejoins"
+probe = "infra-rabbit-member-loss"
+dimension = "resilience"
+points = 2
+critical = true
+requires = ["infra-rabbit-survives-member-loss"]
+pass_condition = "The restored broker automatically rejoins with a current healthy infra.jobs replica."
+fail_condition = "The restored broker needs repair, remains absent/unhealthy, or lacks current queue state."
+
+[[assertions]]
+id = "infra-rabbit-two-nodes-persist"
+probe = "infra-rabbit-representative-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1 and node2 change boot identities and cluster, queue, retained/new message flow, TLS, and authentication recover automatically."
+fail_condition = "A completed representative reboot loses required membership, queue/data, message flow, or TLS authentication."
+
+[[assertions]]
+id = "infra-rabbit-all-nodes-persist"
+probe = "infra-rabbit-final-reboot"
+dimension = "persistence"
+points = 1
+critical = true
+pass_condition = "Node3 changes boot identity and the complete secure three-member quorum service returns automatically."
+fail_condition = "Node3's completed reboot loses required membership, queue state, data, TLS endpoint, or message operations."

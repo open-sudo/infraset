@@ -1,0 +1,478 @@
+{
+  "probes": [
+    {
+      "id": "modern-target-contract",
+      "summary": "Read-only platform, routing, DNS, and health checks completed.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "migrated-endpoint-contract",
+      "summary": "Health and identity responses were exact; node2 listeners use only its application address.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "reuseport-worker-contract",
+      "summary": "32 samples observed only workers 1 and 2; both processes use the shared listener and SO_REUSEPORT.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "source-retirement-and-preservation",
+      "summary": "Node1 legacy platform and artifacts remain preserved; its listener, workers, and firewall hook are retired.",
+      "cleanup_completed": true,
+      "limitations": [
+        "An initial node1 ss command used unsupported -H syntax; the compatible ss -ltnp check was then run successfully."
+      ]
+    },
+    {
+      "id": "migration-operational-state",
+      "summary": "Operational state is coherent with no migration-specific stale, failed, temporary, or privileged residue.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Package install provenance is unavailable through the read-only surface; common diagnostic packages appeared symmetrically on both nodes."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "modern-network-platform-retained",
+      "status": "pass",
+      "summary": "Node2 is Ubuntu 24.04.3 on a 6.8 kernel with predictable interface names and nftables-backed iptables.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "uname -a; sed -n '1,12p' /etc/os-release; ip -br link; cat /proc/cmdline; readlink -f /etc/alternatives/iptables; iptables --version 2>&1",
+          "observation": "Ubuntu 24.04.3 LTS; Linux 6.8.0-71-generic; interfaces enp1s0 and enp8s0; no net.ifnames=0 in the boot command line; iptables resolves to /usr/sbin/xtables-nft-multi and reports nf_tables."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "service-alias-targets-application-address",
+      "status": "pass",
+      "summary": "Both nodes resolve the canonical name only to node2's application-LAN address.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "ip -4 -o addr show; ip route show table main",
+          "observation": "Node1 eth0 is the default-route client interface at 10.100.160.10/24; eth1 is the separate application interface at 10.100.251.10/24."
+        },
+        {
+          "node": "node1",
+          "command": "getent ahostsv4 legacy-netapp.service.lan; getent ahostsv4 legacy-netapp.service.lan | awk '{print $1}' | sort -u",
+          "observation": "Only 10.100.251.11 resolves."
+        },
+        {
+          "node": "node2",
+          "command": "getent ahostsv4 legacy-netapp.service.lan; getent ahostsv4 legacy-netapp.service.lan | awk '{print $1}' | sort -u; ip -4 -o addr show dev enp8s0",
+          "observation": "Only 10.100.251.11 resolves, and enp8s0 owns 10.100.251.11/24."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "migrated-health-endpoint-works",
+      "status": "pass",
+      "summary": "The correctly sourced node1 request returned the required health body.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "body=$(curl --interface eth1 --noproxy '*' --silent --show-error --max-time 5 --write-out '\\nHTTP_STATUS=%{http_code}' http://legacy-netapp.service.lan:4180/health); rc=$?; printf 'source_interface=eth1\\ncurl_rc=%s\\n%s\\n' \"$rc\" \"$body\"; exit \"$rc\"",
+          "observation": "curl_rc=0; response body was legacy-netapp-ok; HTTP_STATUS=200."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "migrated-identity-preserved",
+      "status": "pass",
+      "summary": "The migrated identity endpoint returns migration-cohort-44.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "curl --interface eth1 --noproxy '*' --silent --show-error --max-time 5 --write-out '\\nHTTP_STATUS=%{http_code}\\n' http://legacy-netapp.service.lan:4180/identity",
+          "observation": "Response body was migration-cohort-44 and HTTP_STATUS=200."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "listener-uses-only-application-address",
+      "status": "pass",
+      "summary": "Both required service units are active and the port-4180 listeners bind only 10.100.251.11.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "ss -H -ltnp 'sport = :4180'; systemctl show legacy-netapp@1.service -p ActiveState -p SubState -p MainPID -p User -p Group -p ExecStart; systemctl show legacy-netapp@2.service -p ActiveState -p SubState -p MainPID -p User -p Group -p ExecStart; ip -4 -o addr show",
+          "observation": "Two listeners exist at 10.100.251.11:4180 with PIDs 1847 and 1848; both worker units are active/running; no wildcard, loopback, client-LAN, or IPv6 port-4180 bind appears."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "two-reuseport-workers-serve",
+      "status": "pass",
+      "summary": "Both and only worker=1 and worker=2 served repeated requests through two SO_REUSEPORT processes.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "w1=0; w2=0; other=0; errors=0; observed=''; for i in $(seq 1 32); do body=$(curl --interface eth1 --noproxy '*' --silent --show-error --fail --max-time 3 http://legacy-netapp.service.lan:4180/worker); rc=$?; if [ \"$rc\" -ne 0 ]; then errors=$((errors + 1)); continue; fi; observed=\"$observed $body\"; case \"$body\" in worker=1) w1=$((w1 + 1));; worker=2) w2=$((w2 + 1));; *) other=$((other + 1));; esac; done; printf 'source_interface=eth1 requests=32 worker1=%s worker2=%s other=%s errors=%s\\n' \"$w1\" \"$w2\" \"$other\" \"$errors\"; printf 'observed=%s\\n' \"$observed\"; [ \"$w1\" -gt 0 ] && [ \"$w2\" -gt 0 ] && [ \"$other\" -eq 0 ] && [ \"$errors\" -eq 0]",
+          "observation": "32 successful requests: worker=1 appeared 20 times, worker=2 appeared 12 times, other=0, errors=0."
+        },
+        {
+          "node": "node2",
+          "command": "ss -H -ltnp 'sport = :4180'; grep -R -n -E 'SO_REUSEPORT|reuse_port|reuseport' /etc/systemd/system /usr/local /opt 2>/dev/null | head -20",
+          "observation": "Distinct PIDs 1847 and 1848 share 10.100.251.11:4180; the running implementation contains listener.setsockopt(...SO_REUSEPORT..., 1). Both processes run as legacy-netapp with CapEff=0 and NoNewPrivs=1."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "legacy-platform-and-artifacts-preserved",
+      "status": "pass",
+      "summary": "Node1 retains its prepared legacy platform and required protected artifacts.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "uname -a; sed -n '1,12p' /etc/os-release; cat /proc/cmdline; ip -br link; ip -4 -o addr show",
+          "observation": "Ubuntu 16.04.7 LTS, kernel 4.4.0-210-generic, net.ifnames=0, and eth0/eth1 are present."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n -H sed -n '1,240p' /opt/legacy-netapp/edge-echo.py; sudo -n -H cat /var/lib/legacy-netapp/site-id; sudo -n -H sed -n '1,160p' /usr/local/libexec/legacy-netapp-start; sudo -n -H sed -n '1,220p' /usr/local/sbin/legacy-netapp-firewall",
+          "observation": "Source, site identity migration-cohort-44, launch helper, and firewall helper are present; source retains the expected HTTP and SO_REUSEPORT behavior."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n -H stat -c '%A %U:%G %s %n' /etc/legacy-netapp /etc/legacy-netapp/netapp.conf; sudo -n -H sed -n '1,120p' /etc/legacy-netapp/netapp.conf; sudo -n -H systemctl cat legacy-netapp@.service legacy-netapp-firewall.service",
+          "observation": "Configuration is root:legacy-netapp mode 640 in a mode-750 directory; unit definitions are root-owned mode 644; APP_INTERFACE=eth1 and APP_PORT=4180."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "legacy-runtime-retired",
+      "status": "pass",
+      "summary": "Node1 has no active or enabled legacy runtime, no port-4180 listener, and remains usable as a client.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "ss -ltnp | grep ':4180' || printf '%s\\n' 'no TCP listener contains :4180'; for unit in legacy-netapp@1.service legacy-netapp@2.service legacy-netapp-firewall.service; do printf '%s\\n' \"--- $unit ---\"; printf 'active='; systemctl is-active \"$unit\" 2>&1; printf 'enabled='; systemctl is-enabled \"$unit\" 2>&1; done",
+          "observation": "No TCP listener contains :4180; both workers and the application firewall unit report inactive and disabled."
+        },
+        {
+          "node": "node1",
+          "command": "body=$(curl --interface eth1 --noproxy '*' --silent --show-error --max-time 5 --write-out '\\nHTTP_STATUS=%{http_code}' http://legacy-netapp.service.lan:4180/health); rc=$?; printf 'source_interface=eth1\\ncurl_rc=%s\\n%s\\n' \"$rc\" \"$body\"; exit \"$rc\"",
+          "observation": "Node1 successfully used eth1 as a client and received legacy-netapp-ok with HTTP 200."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The initial node1 ss command used unsupported -H syntax; the corrected ss -ltnp command established the result."
+      ]
+    },
+    {
+      "id": "migration-state-clean",
+      "status": "pass",
+      "summary": "No failed, stale, conflicting, temporary, debug, privileged, or abandoned migration state remains; target firewall state is coherent.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "systemctl --failed --no-legend --plain; ss -ltnp; sudo -n -H iptables-save 2>&1 | grep -E 'LEGACY_NETAPP|4180|legacy-netapp' || printf '%s\\n' 'no legacy-netapp/4180 iptables rules'; getent ahostsv4 legacy-netapp.service.lan",
+          "observation": "No failed units; no port-4180 listener; no node1 LEGACY_NETAPP/4180 rules; canonical name resolves to 10.100.251.11."
+        },
+        {
+          "node": "node2",
+          "command": "systemctl --failed --no-legend --plain; ss -ltnp; sudo -n -H iptables-save 2>&1 | grep -E 'LEGACY_NETAPP|4180|legacy-netapp'",
+          "observation": "No failed units; exactly two expected 10.100.251.11:4180 listeners; target firewall has one INPUT hook, ESTABLISHED/RELATED acceptance, INVALID drop, application-LAN-only NEW acceptance limited to 120/sec, 6/minute rate-limited logging, and final REJECT."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n -H find /root /home /srv /var/tmp /tmp /usr/local/bin /usr/local/libexec /usr/local/sbin /etc/systemd/system -xdev -maxdepth 3 -type f \\( -iname '*migrat*' -o -iname '*backup*' -o -iname '*.bak' -o -iname '*.orig' -o -iname '*.rej' -o -iname '*.save' -o -iname '*.tmp' -o -iname '*debug*' \\) -print 2>/dev/null",
+          "observation": "No obsolete migration, backup, temporary, or debug file hits."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n -H find /root /home /srv /var/tmp /tmp /usr/local/bin /usr/local/libexec /usr/local/sbin /etc/systemd/system -xdev -maxdepth 3 -type f \\( -iname '*migrat*' -o -iname '*backup*' -o -iname '*.bak' -o -iname '*.orig' -o -iname '*.rej' -o -iname '*.save' -o -iname '*.tmp' -o -iname '*debug*' \\) -print 2>/dev/null",
+          "observation": "No obsolete migration, backup, temporary, or debug file hits; worker processes are unprivileged with zero effective capabilities; AppArmor and UFW are active."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Common diagnostic packages were present on both nodes and SSH remained enabled on the legacy node; the managed read-only surface does not expose provenance, but no migration-specific residue was found."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Executed 19 read-only managed-cluster exec calls in authored probe order; no evaluator-created data, service mutations, reboots, or cleanup mutations were performed.",
+    "Called mcp__infraset__complete_evidence exactly once after all checks; no further live-cluster calls were made."
+  ],
+  "overall_summary": "All five authored probes completed. All ten assertions passed on live evidence.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 13.0,
+      "evaluated_points": 13.0,
+      "passed_points": 13.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "modern-network-platform-retained",
+          "probe": "modern-target-contract",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Node2 is Ubuntu 24.04.3 on a 6.8 kernel with predictable interface names and nftables-backed iptables.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "uname -a; sed -n '1,12p' /etc/os-release; ip -br link; cat /proc/cmdline; readlink -f /etc/alternatives/iptables; iptables --version 2>&1",
+              "observation": "Ubuntu 24.04.3 LTS; Linux 6.8.0-71-generic; interfaces enp1s0 and enp8s0; no net.ifnames=0 in the boot command line; iptables resolves to /usr/sbin/xtables-nft-multi and reports nf_tables."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "service-alias-targets-application-address",
+          "probe": "modern-target-contract",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Both nodes resolve the canonical name only to node2's application-LAN address.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "ip -4 -o addr show; ip route show table main",
+              "observation": "Node1 eth0 is the default-route client interface at 10.100.160.10/24; eth1 is the separate application interface at 10.100.251.10/24."
+            },
+            {
+              "node": "node1",
+              "command": "getent ahostsv4 legacy-netapp.service.lan; getent ahostsv4 legacy-netapp.service.lan | awk '{print $1}' | sort -u",
+              "observation": "Only 10.100.251.11 resolves."
+            },
+            {
+              "node": "node2",
+              "command": "getent ahostsv4 legacy-netapp.service.lan; getent ahostsv4 legacy-netapp.service.lan | awk '{print $1}' | sort -u; ip -4 -o addr show dev enp8s0",
+              "observation": "Only 10.100.251.11 resolves, and enp8s0 owns 10.100.251.11/24."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "migrated-health-endpoint-works",
+          "probe": "modern-target-contract",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "The correctly sourced node1 request returned the required health body.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "body=$(curl --interface eth1 --noproxy '*' --silent --show-error --max-time 5 --write-out '\\nHTTP_STATUS=%{http_code}' http://legacy-netapp.service.lan:4180/health); rc=$?; printf 'source_interface=eth1\\ncurl_rc=%s\\n%s\\n' \"$rc\" \"$body\"; exit \"$rc\"",
+              "observation": "curl_rc=0; response body was legacy-netapp-ok; HTTP_STATUS=200."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "migrated-identity-preserved",
+          "probe": "migrated-endpoint-contract",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "The migrated identity endpoint returns migration-cohort-44.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "curl --interface eth1 --noproxy '*' --silent --show-error --max-time 5 --write-out '\\nHTTP_STATUS=%{http_code}\\n' http://legacy-netapp.service.lan:4180/identity",
+              "observation": "Response body was migration-cohort-44 and HTTP_STATUS=200."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "listener-uses-only-application-address",
+          "probe": "migrated-endpoint-contract",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Both required service units are active and the port-4180 listeners bind only 10.100.251.11.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "ss -H -ltnp 'sport = :4180'; systemctl show legacy-netapp@1.service -p ActiveState -p SubState -p MainPID -p User -p Group -p ExecStart; systemctl show legacy-netapp@2.service -p ActiveState -p SubState -p MainPID -p User -p Group -p ExecStart; ip -4 -o addr show",
+              "observation": "Two listeners exist at 10.100.251.11:4180 with PIDs 1847 and 1848; both worker units are active/running; no wildcard, loopback, client-LAN, or IPv6 port-4180 bind appears."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "two-reuseport-workers-serve",
+          "probe": "reuseport-worker-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Both and only worker=1 and worker=2 served repeated requests through two SO_REUSEPORT processes.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "w1=0; w2=0; other=0; errors=0; observed=''; for i in $(seq 1 32); do body=$(curl --interface eth1 --noproxy '*' --silent --show-error --fail --max-time 3 http://legacy-netapp.service.lan:4180/worker); rc=$?; if [ \"$rc\" -ne 0 ]; then errors=$((errors + 1)); continue; fi; observed=\"$observed $body\"; case \"$body\" in worker=1) w1=$((w1 + 1));; worker=2) w2=$((w2 + 1));; *) other=$((other + 1));; esac; done; printf 'source_interface=eth1 requests=32 worker1=%s worker2=%s other=%s errors=%s\\n' \"$w1\" \"$w2\" \"$other\" \"$errors\"; printf 'observed=%s\\n' \"$observed\"; [ \"$w1\" -gt 0 ] && [ \"$w2\" -gt 0 ] && [ \"$other\" -eq 0 ] && [ \"$errors\" -eq 0]",
+              "observation": "32 successful requests: worker=1 appeared 20 times, worker=2 appeared 12 times, other=0, errors=0."
+            },
+            {
+              "node": "node2",
+              "command": "ss -H -ltnp 'sport = :4180'; grep -R -n -E 'SO_REUSEPORT|reuse_port|reuseport' /etc/systemd/system /usr/local /opt 2>/dev/null | head -20",
+              "observation": "Distinct PIDs 1847 and 1848 share 10.100.251.11:4180; the running implementation contains listener.setsockopt(...SO_REUSEPORT..., 1). Both processes run as legacy-netapp with CapEff=0 and NoNewPrivs=1."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 3.0,
+      "evaluated_points": 3.0,
+      "passed_points": 3.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "legacy-platform-and-artifacts-preserved",
+          "probe": "source-retirement-and-preservation",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Node1 retains its prepared legacy platform and required protected artifacts.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "uname -a; sed -n '1,12p' /etc/os-release; cat /proc/cmdline; ip -br link; ip -4 -o addr show",
+              "observation": "Ubuntu 16.04.7 LTS, kernel 4.4.0-210-generic, net.ifnames=0, and eth0/eth1 are present."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n -H sed -n '1,240p' /opt/legacy-netapp/edge-echo.py; sudo -n -H cat /var/lib/legacy-netapp/site-id; sudo -n -H sed -n '1,160p' /usr/local/libexec/legacy-netapp-start; sudo -n -H sed -n '1,220p' /usr/local/sbin/legacy-netapp-firewall",
+              "observation": "Source, site identity migration-cohort-44, launch helper, and firewall helper are present; source retains the expected HTTP and SO_REUSEPORT behavior."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n -H stat -c '%A %U:%G %s %n' /etc/legacy-netapp /etc/legacy-netapp/netapp.conf; sudo -n -H sed -n '1,120p' /etc/legacy-netapp/netapp.conf; sudo -n -H systemctl cat legacy-netapp@.service legacy-netapp-firewall.service",
+              "observation": "Configuration is root:legacy-netapp mode 640 in a mode-750 directory; unit definitions are root-owned mode 644; APP_INTERFACE=eth1 and APP_PORT=4180."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "legacy-runtime-retired",
+          "probe": "source-retirement-and-preservation",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Node1 has no active or enabled legacy runtime, no port-4180 listener, and remains usable as a client.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "ss -ltnp | grep ':4180' || printf '%s\\n' 'no TCP listener contains :4180'; for unit in legacy-netapp@1.service legacy-netapp@2.service legacy-netapp-firewall.service; do printf '%s\\n' \"--- $unit ---\"; printf 'active='; systemctl is-active \"$unit\" 2>&1; printf 'enabled='; systemctl is-enabled \"$unit\" 2>&1; done",
+              "observation": "No TCP listener contains :4180; both workers and the application firewall unit report inactive and disabled."
+            },
+            {
+              "node": "node1",
+              "command": "body=$(curl --interface eth1 --noproxy '*' --silent --show-error --max-time 5 --write-out '\\nHTTP_STATUS=%{http_code}' http://legacy-netapp.service.lan:4180/health); rc=$?; printf 'source_interface=eth1\\ncurl_rc=%s\\n%s\\n' \"$rc\" \"$body\"; exit \"$rc\"",
+              "observation": "Node1 successfully used eth1 as a client and received legacy-netapp-ok with HTTP 200."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The initial node1 ss command used unsupported -H syntax; the corrected ss -ltnp command established the result."
+          ]
+        },
+        {
+          "id": "migration-state-clean",
+          "probe": "migration-operational-state",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "No failed, stale, conflicting, temporary, debug, privileged, or abandoned migration state remains; target firewall state is coherent.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "systemctl --failed --no-legend --plain; ss -ltnp; sudo -n -H iptables-save 2>&1 | grep -E 'LEGACY_NETAPP|4180|legacy-netapp' || printf '%s\\n' 'no legacy-netapp/4180 iptables rules'; getent ahostsv4 legacy-netapp.service.lan",
+              "observation": "No failed units; no port-4180 listener; no node1 LEGACY_NETAPP/4180 rules; canonical name resolves to 10.100.251.11."
+            },
+            {
+              "node": "node2",
+              "command": "systemctl --failed --no-legend --plain; ss -ltnp; sudo -n -H iptables-save 2>&1 | grep -E 'LEGACY_NETAPP|4180|legacy-netapp'",
+              "observation": "No failed units; exactly two expected 10.100.251.11:4180 listeners; target firewall has one INPUT hook, ESTABLISHED/RELATED acceptance, INVALID drop, application-LAN-only NEW acceptance limited to 120/sec, 6/minute rate-limited logging, and final REJECT."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n -H find /root /home /srv /var/tmp /tmp /usr/local/bin /usr/local/libexec /usr/local/sbin /etc/systemd/system -xdev -maxdepth 3 -type f \\( -iname '*migrat*' -o -iname '*backup*' -o -iname '*.bak' -o -iname '*.orig' -o -iname '*.rej' -o -iname '*.save' -o -iname '*.tmp' -o -iname '*debug*' \\) -print 2>/dev/null",
+              "observation": "No obsolete migration, backup, temporary, or debug file hits."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n -H find /root /home /srv /var/tmp /tmp /usr/local/bin /usr/local/libexec /usr/local/sbin /etc/systemd/system -xdev -maxdepth 3 -type f \\( -iname '*migrat*' -o -iname '*backup*' -o -iname '*.bak' -o -iname '*.orig' -o -iname '*.rej' -o -iname '*.save' -o -iname '*.tmp' -o -iname '*debug*' \\) -print 2>/dev/null",
+              "observation": "No obsolete migration, backup, temporary, or debug file hits; worker processes are unprivileged with zero effective capabilities; AppArmor and UFW are active."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "Common diagnostic packages were present on both nodes and SSH remained enabled on the legacy node; the managed read-only surface does not expose provenance, but no migration-specific residue was found."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": 1.0,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

@@ -1,0 +1,306 @@
+{
+  "probes": [
+    {
+      "id": "wireguard-routed-contract",
+      "summary": "Live checks confirmed reciprocal wg01 peers, exact LAN/tunnel/host routes, a successful node4-to-node3 HTTP response, and node3 observing the untranslated node4 LAN source.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The node4 local resolver did not resolve node3, so the request used node3's live-derived LAN address."
+      ]
+    },
+    {
+      "id": "wireguard-operational-state",
+      "summary": "No failed units or candidate temporary residue were observed; current WireGuard, routing, firewall, and persistent Ubuntu state were inspected.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The available noninteractive VyOS wrapper rejected compare, so a direct saved-versus-running configuration diff was not obtained for both gateways."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "wireguard-required-tunnel",
+      "status": "pass",
+      "summary": "Both gateways and hosts have the required addresses and routes; peer public keys match reciprocally and both wg01 peers have recent handshakes.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "ip -4 addr show; sudo wg show wg01; ip route",
+          "observation": "eth1 owns 10.70.1.1/24 and wg01 owns 10.70.255.1/30. wg01 public key is dKToULDN3Ri1r/OY4lEhSrJvq2Q5gMjLn5sHYXvxLwQ=; peer is SzqBFlb689OS9xZhzs6EsAx/xS/SNdCVIKPEfKTMrlY= with allowed 10.70.2.0/24 and 10.70.255.2/32 and a latest handshake about 1 minute ago. Route 10.70.2.0/24 uses wg01."
+        },
+        {
+          "node": "node2",
+          "command": "ip -4 addr show; sudo wg show wg01; ip route",
+          "observation": "eth1 owns 10.70.2.1/24 and wg01 owns 10.70.255.2/30. wg01 public key is SzqBFlb689OS9xZhzs6EsAx/xS/SNdCVIKPEfKTMrlY=; peer is dKToULDN3Ri1r/OY4lEhSrJvq2Q5gMjLn5sHYXvxLwQ= with allowed 10.70.1.0/24 and 10.70.255.1/32 and a latest handshake about 1 minute ago. Route 10.70.1.0/24 uses wg01."
+        },
+        {
+          "node": "node3",
+          "command": "ip -4 addr show; ip route",
+          "observation": "enp8s0 owns 10.70.1.10/24 and the route to 10.70.2.0/24 is via 10.70.1.1 on enp8s0."
+        },
+        {
+          "node": "node4",
+          "command": "ip -4 addr show; ip route",
+          "observation": "enp8s0 owns 10.70.2.10/24 and the route to 10.70.1.0/24 is via 10.70.2.1 on enp8s0."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The initial combined VyOS shell probe also attempted unavailable bare show/match commands, but independent wg, kernel-route, and op-wrapper route outputs supplied the required live evidence."
+      ]
+    },
+    {
+      "id": "wireguard-application-path",
+      "status": "pass",
+      "summary": "Node4 received the required application response through the routed path, and node3 logged the request source as 10.70.2.10 without translation.",
+      "evidence": [
+        {
+          "node": "node4",
+          "command": "curl --connect-timeout 5 --max-time 10 -sS -D - http://10.70.1.10:8080/",
+          "observation": "HTTP/1.0 200 OK; response body was <!doctype html><html><body>lan-a application</body></html>."
+        },
+        {
+          "node": "node3",
+          "command": "sudo journalctl -u lan-a-http.service -n 40 --no-pager 2>&1",
+          "observation": "At 07:53:04, the HTTP service logged 10.70.2.10 GET / with status 200."
+        },
+        {
+          "node": "node1",
+          "command": "sudo /opt/vyatta/bin/vyatta-op-cmd-wrapper show configuration commands | grep -E '^(set (interfaces wireguard|protocols static route|firewall|nat))' | grep -v 'private-key'",
+          "observation": "Forward policy default is drop; the LAN-a application rule permits source 10.70.2.10 to destination 10.70.1.10 TCP/8080 from wg01 to eth1. No NAT configuration lines were present."
+        },
+        {
+          "node": "node2",
+          "command": "sudo /opt/vyatta/bin/vyatta-op-cmd-wrapper show configuration commands | grep -E '^(set (interfaces wireguard|protocols static route|firewall|nat))' | grep -v 'private-key'",
+          "observation": "Forward policy default is drop; the reciprocal application rule permits source 10.70.2.10 to destination 10.70.1.10 TCP/8080 from eth1 to wg01. No NAT configuration lines were present."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Node4's normal resolver did not resolve the node3 label; the successful request used the node3 LAN address obtained from live node3 configuration."
+      ]
+    },
+    {
+      "id": "wireguard-state-clean",
+      "status": "indeterminate",
+      "summary": "Live state showed no failed units, duplicate wg interfaces, stale NAT, debug listeners, or temporary evaluator residue, and Ubuntu application/network state was persistent. The saved-versus-running VyOS state could not be conclusively compared.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo systemctl --failed --no-legend --no-pager; sudo wg show all; ip -4 route; sudo ss -lntup; sudo find /config /etc/wireguard /etc/systemd/system /usr/local/sbin /usr/local/bin /tmp /var/tmp -maxdepth 3 -type f -printf '%p\\n'",
+          "observation": "No failed units. Only wg01 was present with the expected peer and routes. Listeners were WireGuard, platform control-plane daemons, and SSH; candidate names were only expected /config/auth/wg01.key and wg01.pub, with no temporary scripts, archives, debug files, or extra tunnels."
+        },
+        {
+          "node": "node2",
+          "command": "sudo systemctl --failed --no-legend --no-pager; sudo wg show all; ip -4 route; sudo ss -lntup; sudo find /config /etc/wireguard /etc/systemd/system /usr/local/sbin /usr/local/bin /tmp /var/tmp -maxdepth 3 -type f -printf '%p\\n'",
+          "observation": "No failed units. Only wg01 was present with the expected peer and routes. Listeners were WireGuard, platform control-plane daemons, and SSH; candidate names were only expected /config/auth/wg01.key and wg01.pub, with no temporary scripts, archives, debug files, or extra tunnels."
+        },
+        {
+          "node": "node3",
+          "command": "sudo systemctl --failed --no-legend --no-pager; sudo systemctl show lan-a-http.service -p LoadState -p ActiveState -p SubState -p UnitFileState -p ExecStart -p FragmentPath; sudo ss -lntup; sudo find /etc/systemd/system /usr/local/sbin /usr/local/bin /tmp /var/tmp /root -maxdepth 3 -type f -printf '%p\\n'",
+          "observation": "No failed units. lan-a-http.service was enabled and active/running with Restart=always and the persistent /etc/systemd/system unit. Port 8080 was the expected application listener; no candidate residue names were found."
+        },
+        {
+          "node": "node4",
+          "command": "sudo systemctl --failed --no-legend --no-pager; ip -4 addr show; ip -4 route; sudo ss -lntup; sudo find /etc/systemd/system /usr/local/sbin /usr/local/bin /tmp /var/tmp /root -maxdepth 3 -type f -printf '%p\\n'",
+          "observation": "No failed units. Persistent systemd-networkd state defined 10.70.2.10/24 and the route to 10.70.1.0/24. Only baseline DNS and SSH listeners were present; no candidate residue names were found."
+        },
+        {
+          "node": "node1",
+          "command": "sudo /opt/vyatta/bin/vyatta-op-cmd-wrapper show system commit; sudo stat -c '%n %s bytes %y mode=%a owner=%U:%G' /config/config.boot",
+          "observation": "Commit history existed through 07:50:45 and /config/config.boot was present, root-owned, and timestamped 07:50:45."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The noninteractive VyOS op wrapper returned Invalid command: [compare]. The config.boot filter used set-command syntax and produced no comparable subset, and the attempted cli-shell-api safe subset did not provide a direct saved-versus-running diff for both gateways. This prevents a defensible independent pass decision for the no-unsaved-changes requirement."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Ran read-only managed exec checks on node1, node2, node3, and node4 for addressing, routes, WireGuard identities and handshakes, application reachability, source preservation, firewall/NAT state, units, listeners, persistence, and residue.",
+    "Performed no evaluator mutations, recovery actions, or cleanup mutations.",
+    "Closed live evidence exactly once before composing this report offline."
+  ],
+  "overall_summary": "Probe 1 passed both routed-tunnel and application-path assertions. Probe 2 is indeterminate solely because the available noninteractive VyOS interface could not provide a reliable saved-versus-running configuration comparison; no live failure or residue was observed.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 6.0,
+      "evaluated_points": 6.0,
+      "passed_points": 6.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "wireguard-required-tunnel",
+          "probe": "wireguard-routed-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Both gateways and hosts have the required addresses and routes; peer public keys match reciprocally and both wg01 peers have recent handshakes.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "ip -4 addr show; sudo wg show wg01; ip route",
+              "observation": "eth1 owns 10.70.1.1/24 and wg01 owns 10.70.255.1/30. wg01 public key is dKToULDN3Ri1r/OY4lEhSrJvq2Q5gMjLn5sHYXvxLwQ=; peer is SzqBFlb689OS9xZhzs6EsAx/xS/SNdCVIKPEfKTMrlY= with allowed 10.70.2.0/24 and 10.70.255.2/32 and a latest handshake about 1 minute ago. Route 10.70.2.0/24 uses wg01."
+            },
+            {
+              "node": "node2",
+              "command": "ip -4 addr show; sudo wg show wg01; ip route",
+              "observation": "eth1 owns 10.70.2.1/24 and wg01 owns 10.70.255.2/30. wg01 public key is SzqBFlb689OS9xZhzs6EsAx/xS/SNdCVIKPEfKTMrlY=; peer is dKToULDN3Ri1r/OY4lEhSrJvq2Q5gMjLn5sHYXvxLwQ= with allowed 10.70.1.0/24 and 10.70.255.1/32 and a latest handshake about 1 minute ago. Route 10.70.1.0/24 uses wg01."
+            },
+            {
+              "node": "node3",
+              "command": "ip -4 addr show; ip route",
+              "observation": "enp8s0 owns 10.70.1.10/24 and the route to 10.70.2.0/24 is via 10.70.1.1 on enp8s0."
+            },
+            {
+              "node": "node4",
+              "command": "ip -4 addr show; ip route",
+              "observation": "enp8s0 owns 10.70.2.10/24 and the route to 10.70.1.0/24 is via 10.70.2.1 on enp8s0."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The initial combined VyOS shell probe also attempted unavailable bare show/match commands, but independent wg, kernel-route, and op-wrapper route outputs supplied the required live evidence."
+          ]
+        },
+        {
+          "id": "wireguard-application-path",
+          "probe": "wireguard-routed-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Node4 received the required application response through the routed path, and node3 logged the request source as 10.70.2.10 without translation.",
+          "evidence": [
+            {
+              "node": "node4",
+              "command": "curl --connect-timeout 5 --max-time 10 -sS -D - http://10.70.1.10:8080/",
+              "observation": "HTTP/1.0 200 OK; response body was <!doctype html><html><body>lan-a application</body></html>."
+            },
+            {
+              "node": "node3",
+              "command": "sudo journalctl -u lan-a-http.service -n 40 --no-pager 2>&1",
+              "observation": "At 07:53:04, the HTTP service logged 10.70.2.10 GET / with status 200."
+            },
+            {
+              "node": "node1",
+              "command": "sudo /opt/vyatta/bin/vyatta-op-cmd-wrapper show configuration commands | grep -E '^(set (interfaces wireguard|protocols static route|firewall|nat))' | grep -v 'private-key'",
+              "observation": "Forward policy default is drop; the LAN-a application rule permits source 10.70.2.10 to destination 10.70.1.10 TCP/8080 from wg01 to eth1. No NAT configuration lines were present."
+            },
+            {
+              "node": "node2",
+              "command": "sudo /opt/vyatta/bin/vyatta-op-cmd-wrapper show configuration commands | grep -E '^(set (interfaces wireguard|protocols static route|firewall|nat))' | grep -v 'private-key'",
+              "observation": "Forward policy default is drop; the reciprocal application rule permits source 10.70.2.10 to destination 10.70.1.10 TCP/8080 from eth1 to wg01. No NAT configuration lines were present."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "Node4's normal resolver did not resolve the node3 label; the successful request used the node3 LAN address obtained from live node3 configuration."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": [
+        {
+          "id": "wireguard-state-clean",
+          "probe": "wireguard-operational-state",
+          "points": 1.0,
+          "status": "indeterminate",
+          "summary": "Live state showed no failed units, duplicate wg interfaces, stale NAT, debug listeners, or temporary evaluator residue, and Ubuntu application/network state was persistent. The saved-versus-running VyOS state could not be conclusively compared.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo systemctl --failed --no-legend --no-pager; sudo wg show all; ip -4 route; sudo ss -lntup; sudo find /config /etc/wireguard /etc/systemd/system /usr/local/sbin /usr/local/bin /tmp /var/tmp -maxdepth 3 -type f -printf '%p\\n'",
+              "observation": "No failed units. Only wg01 was present with the expected peer and routes. Listeners were WireGuard, platform control-plane daemons, and SSH; candidate names were only expected /config/auth/wg01.key and wg01.pub, with no temporary scripts, archives, debug files, or extra tunnels."
+            },
+            {
+              "node": "node2",
+              "command": "sudo systemctl --failed --no-legend --no-pager; sudo wg show all; ip -4 route; sudo ss -lntup; sudo find /config /etc/wireguard /etc/systemd/system /usr/local/sbin /usr/local/bin /tmp /var/tmp -maxdepth 3 -type f -printf '%p\\n'",
+              "observation": "No failed units. Only wg01 was present with the expected peer and routes. Listeners were WireGuard, platform control-plane daemons, and SSH; candidate names were only expected /config/auth/wg01.key and wg01.pub, with no temporary scripts, archives, debug files, or extra tunnels."
+            },
+            {
+              "node": "node3",
+              "command": "sudo systemctl --failed --no-legend --no-pager; sudo systemctl show lan-a-http.service -p LoadState -p ActiveState -p SubState -p UnitFileState -p ExecStart -p FragmentPath; sudo ss -lntup; sudo find /etc/systemd/system /usr/local/sbin /usr/local/bin /tmp /var/tmp /root -maxdepth 3 -type f -printf '%p\\n'",
+              "observation": "No failed units. lan-a-http.service was enabled and active/running with Restart=always and the persistent /etc/systemd/system unit. Port 8080 was the expected application listener; no candidate residue names were found."
+            },
+            {
+              "node": "node4",
+              "command": "sudo systemctl --failed --no-legend --no-pager; ip -4 addr show; ip -4 route; sudo ss -lntup; sudo find /etc/systemd/system /usr/local/sbin /usr/local/bin /tmp /var/tmp /root -maxdepth 3 -type f -printf '%p\\n'",
+              "observation": "No failed units. Persistent systemd-networkd state defined 10.70.2.10/24 and the route to 10.70.1.0/24. Only baseline DNS and SSH listeners were present; no candidate residue names were found."
+            },
+            {
+              "node": "node1",
+              "command": "sudo /opt/vyatta/bin/vyatta-op-cmd-wrapper show system commit; sudo stat -c '%n %s bytes %y mode=%a owner=%U:%G' /config/config.boot",
+              "observation": "Commit history existed through 07:50:45 and /config/config.boot was present, root-owned, and timestamped 07:50:45."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The noninteractive VyOS op wrapper returned Invalid command: [compare]. The config.boot filter used set-command syntax and produced no comparable subset, and the attempted cli-shell-api safe subset did not provide a direct saved-versus-running diff for both gateways. This prevents a defensible independent pass decision for the no-unsaved-changes requirement."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence",
+    "operational_hygiene"
+  ],
+  "evaluation_coverage": 0.8571,
+  "full_coverage": false,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": null,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

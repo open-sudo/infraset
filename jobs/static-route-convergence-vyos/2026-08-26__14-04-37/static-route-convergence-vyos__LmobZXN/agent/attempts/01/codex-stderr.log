@@ -1,0 +1,241 @@
+Reading additional input from stdin...
+OpenAI Codex v0.147.0
+--------
+workdir: /home/antrieb-studio/infraset/jobs/static-route-convergence-vyos/2026-08-26__14-04-37/static-route-convergence-vyos__LmobZXN/agent/attempts/01
+model: gpt-5.6-luna
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: max
+reasoning summaries: none
+session id: 01a03f3e-fbd8-7ee1-8a64-31c85111057c
+--------
+user
+Use only the mcp__infraset__exec tool. Its node and command arguments are the complete managed-cluster control surface; the Harbor session is injected by the bridge, so do not supply or discover a session ID. Do not use any other MCP server or built-in tool.
+
+You are the executor for an infrastructure-agent benchmark.
+The benchmark machines are an InfraSet managed cluster backed by Antrieb. You run
+outside that cluster and must use only the InfraSet exec tool to inspect or modify
+it. Address each node directly through the tool; do not use one node as the control
+plane for another.
+Do not provision, replace, save, or delete the cluster. Do not install the agent,
+agent credentials, or harness tooling on any managed node. Do not reboot nodes or
+inject failures; the independent evaluator owns disruptive persistence and recovery
+tests. Configure the requested state so it will survive those tests.
+Generate credentials on the managed nodes. Pass sensitive values through secret_env
+when a command needs them; do not put literal credentials in tool commands or your
+final report.
+
+Managed nodes: node1, node2, node3
+
+Provider-maintained platform references follow. Use their platform contracts and
+current appliance syntax, but ignore any lifecycle or task instructions that
+conflict with the benchmark rules above:
+<platform-reference fq_name='antrieb/primer'>
+## What this is
+
+Start-of-session primer for any LLM working with Antrieb. Read before your first `provision`. These are the platform's contracts — follow them and commands work; ignore them and you'll rediscover the same issues every session.
+
+## Research before theorizing
+
+Your mental model of the platform is probably wrong in subtle ways. Before proposing a cause, gather evidence:
+
+1. Run a diagnostic command on the actual VM.
+2. Paste the output.
+3. Let the evidence confirm or contradict your theory.
+
+Cheap high-value commands: `ip -4 addr`, `ip route`, `ip neigh`, `ss -tlnp`, `systemctl is-active <svc>`, `journalctl -u <svc> -n 30 --no-pager`, `curl -v localhost:<port>`, `tcpdump -i <iface> -nn -c 10 <filter>`.
+
+*"The platform is filtering my packets"* is a theory. *"Here is what `ip route` shows"* is evidence. Never propose an architectural fix before you've pasted the output that supports it.
+
+## Research the appliance — use web_search / WebFetch
+
+For specialized images (vyos, opnsense, sonic, helm-k3s, vault, terraform-aws, cloudformation-aws, ansible-controller), **fetch current docs before writing non-trivial commands**. Your training data is often 6–24 months behind. A 30-second doc fetch prevents a 10-turn debug loop of hallucinated CLI.
+
+Workflow: look at the image's `reference` field → `web_search` for the specific topic (*"VyOS 1.5 nat source rule"*) → `WebFetch` the top result → write commands grounded in what you read.
+
+Skip only for stable base Linux (ubuntu, alma, arch, centos, alpine). If you don't have web tools in this client, say so up front.
+
+## Falsify before committing
+
+When you add a rule (firewall, NAT, route, sysctl) because you think it fixes something, **prove it by removing it and confirming the issue returns**. If the problem doesn't come back without the rule, the rule was cargo-cult — delete it.
+
+- **Start with the minimum config** that could plausibly work.
+- When it doesn't work, debug with `tcpdump`/`ip route`/`conntrack -L` — don't stack more rules hoping one matches.
+- For every added rule, state *why* and what evidence proves it. If you can't, it shouldn't be there.
+
+## Fetch order for runbooks
+
+1. `@antrieb/primer` — always (this document, fetched at session start).
+2. `@antrieb/<category>-primer` — `@antrieb/networking-primer` for networking, future `@antrieb/database-primer` for DBs.
+3. `search type=runbook keywords=<task>` — apply any specific-scenario match.
+4. No specific match → `@antrieb/<image>-reference` for each specialized image in the topology. Won't be your exact scenario; will have current, correct syntax. **Adapt values, keep syntax.**
+
+When the task is to create or revise an image intentionally published in the `antrieb` namespace, also fetch `@antrieb/managed-image-contract`. It is a build-time standard, not a runtime fact about similarly named images.
+
+Never skip step 4 if step 3 matches. Never skip 1 or 2.
+
+## Shell is POSIX sh, not bash
+
+Every `exec` runs in `/bin/sh`. Bashisms fail, sometimes silently:
+
+- `. /path` — not `source /path`
+- `[ ... ]` — not `[[ ... ]]`
+- No arrays, `${var,,}`, process substitution `<(cmd)`, `$'...'`, `set -o pipefail`
+- `printf` over `echo -e`
+
+If you genuinely need bash, write to a tempfile and invoke `bash /tmp/script.sh` explicitly.
+
+## No TTY/PTTY
+
+`exec` does not allocate a TTY/PTTY. Do not run commands that require an interactive terminal or automate terminal prompts through stdin. Use non-interactive alternatives: `sudo -u USER -- COMMAND` instead of interactive `su`, `chpasswd` instead of `passwd`, and package-manager flags such as `DEBIAN_FRONTEND=noninteractive` and `-y`.
+
+Normal stdin use for pipes, heredocs, and base64 content transfer is supported.
+
+## Cluster env vars — already set
+
+Every exec pre-exports these. Don't re-discover:
+
+- `NODE_NAME`, `NODE_INDEX`, `NODE_IP`
+- `CLUSTER_HOSTS` — multiline `IP NAME` for every node. Drop into `/etc/hosts`:
+  `echo "$CLUSTER_HOSTS" | sudo tee -a /etc/hosts`
+- `CLUSTER_SSH_PUBKEY` / `CLUSTER_SSH_PRIVKEY` — per-cluster keypair for passwordless inter-node SSH:
+  ```
+  printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+  printf '%s\n' "$CLUSTER_SSH_PUBKEY" >> ~/.ssh/authorized_keys
+  ```
+
+## Image interfaces are exact-ANI facts
+
+Credential files, startup scripts, helper commands, execution privilege, predefined users, and passwords are **not universal platform facts**. They apply only when the exact image returned by `search type=image` declares them in `image_interface`.
+
+- Match the provisioned node's full ANI, including namespace and version.
+- If `image_interface.credentials` exists, load its declared `path` with POSIX `.` and use only the variables listed there. Do not print secret values.
+- If `image_interface.startup` exists, its declared path is the supported allocation-time helper.
+- If `image_interface.execution.privilegeEscalation` is `sudo-noninteractive`, use a trusted non-interactive sudo wrapper for privileged operations. Do not infer sudo support from the operating-system name.
+- If a field is absent, inspect the VM and its exact image description. Do not infer a path from a technology name such as MariaDB, PostgreSQL, Cassandra, or Vault.
+- `antrieb.managed-image/v1` is a **build-time contract** for creating managed images. Its conventions are not evidence that a user-owned or otherwise undeclared image implements them.
+
+Example: `antrieb:mariadb:v1` may declare `/etc/profile.d/antrieb-app.sh`; a user-created MariaDB image does not inherit that declaration merely because it also runs MariaDB.
+
+## Shipping long content through exec
+
+Anything beyond one line with quotes/newlines/metacharacters eventually breaks escaping. Use one of:
+
+1. **Base64** (preferred): `echo <BASE64> | base64 -d > /tmp/myfile`
+2. **Heredoc, unique delimiter**:
+   ```
+   cat > /tmp/cfg <<'ANTRIEB_EOF'
+   ...
+   ANTRIEB_EOF
+   ```
+3. **Serve between nodes**: one node runs `python3 -m http.server`, another `curl`s it.
+
+## Streaming / long-running commands
+
+`exec` is a synchronous await, capped at ~2 MB output. For commands that stream (`dhclient -v`, `tail -f`), run for minutes (`apt install`), or may hang, **redirect + background + poll** — the standard UNIX pattern:
+
+```
+# Launch, capture PID
+exec: cmd > /tmp/out.log 2>&1 & echo $! > /tmp/cmd.pid
+
+# Poll in subsequent exec calls (as often as you need to decide)
+exec: tail -30 /tmp/
+...[TRUNCATED 26292 CHARACTERS]...
+ (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"The evidence confirms the two Ubuntu data NICs are enp8s0 (primary-transit) and enp9s0 (standby LAN), while management remains enp1s0. Both endpoint hosts already use loose reverse-path filtering and have no active host firewall; node1 forwarding is enabled. I’m now applying persistent static routes with endpoint source selection and the VyOS transit addresses/routes.","actions_performed":["Inspected persisted systemd-networkd files, systemd version, sysctls, UFW state, and VyOS baseline config via mcp__infraset__exec"]}
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"The persistent address definitions applied correctly on all three nodes, and VyOS saved its interface and endpoint routes. Verification exposed a problem: the endpoint route entries are not consistently installed by networkd, so I’m diagnosing the exact networkd rejection before proceeding.","actions_performed":["Applied and persisted VyOS LAN addresses/routes","Created persistent systemd-networkd definitions for both data NICs and loopback endpoint addresses","Reloaded/reconfigured systemd-networkd on node2 and node3","Verified current addresses and initial route state"]}
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"The route definitions are now present on both endpoints after networkd finished asynchronous reconfiguration: primary metric 10 and standby metric 200, both with the stable loopback source. I’m validating actual bidirectional reachability and the router’s forwarding/security behavior before final hardening and persistence checks.","actions_performed":["Diagnosed asynchronous networkd route installation","Re-applied endpoint route configuration and confirmed both primary and standby routes on node2/node3"]}
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"Bidirectional endpoint pings succeed over the primary transit path, and both endpoint route lookups select the primary metric-10 route with the stable /32 source. To cover a path blackhole as well as a carrier-down event, I’m adding a small persistent health watcher that only changes the metrics of these static routes; it will demote the primary within a few seconds and restore it automatically after two successful probes.","actions_performed":["Verified endpoint-to-endpoint reachability in both directions","Verified router-to-endpoint reachability and LAN neighbor resolution","Verified primary route selection and stable endpoint source addresses"]}
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"The health watchers are enabled and active on both endpoints, and they have not disturbed the healthy state: each endpoint still selects the primary route (metric 10) with the stable /32 source, while retaining the standby metric-200 route. I’m doing a final persistence/syntax audit and preserving the kernel routes explicitly as static routes.","actions_performed":["Installed hardened, persistent route-health services on node2 and node3","Enabled and started both services","Verified healthy primary selection after watcher startup"]}
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"Both endpoint watchers now preserve the routes as proto static, and the healthy route table is exactly the intended state: metric 10 direct, metric 200 standby, with no data-plane default route. I’m running the final audit of saved VyOS state, enabled boot units, source selection, reachability, and unchanged host security settings.","actions_performed":["Updated health-watcher route replacements to retain proto static","Restarted both watchers and confirmed active primary/standby route metrics"]}
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"The final audit confirms addresses, route metrics, source selection, saved VyOS routes, enabled watchers, endpoint pings, loose reverse-path filtering, and unchanged UFW state. One remaining hardening step is needed for the standby path: I’m adding an explicit VyOS forward policy that permits only the two endpoint flows across eth1↔eth2 and keeps the forward default deny, then I’ll verify and save it.","actions_performed":["Completed all-node persistence and security audit","Confirmed management remains the only default-route network","Confirmed no host firewall changes on Ubuntu endpoints"]}
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"The first firewall commit exposed a VyOS syntax difference: this release rejected the documented `state ... enable` form, and I’m checking the applied rules before correcting it so no unintended broad accept rule remains.","actions_performed":["Attempted native VyOS forward firewall configuration","Detected and halted on invalid state-condition syntax before treating the firewall as complete"]}
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"VyOS now has a saved default-deny forward filter with only the two required endpoint flows allowed between eth1 and eth2; the unintended broad rule from the rejected state syntax was removed and verified absent. I’m performing one last end-to-end read-only check after that firewall commit.","actions_performed":["Configured and saved explicit VyOS forward security policy","Removed the unintended unconditioned accept rule","Verified active and saved firewall rules, forwarding, and reverse-path settings"]}
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+mcp: infraset/exec started
+mcp: infraset/exec (completed)
+codex
+{"status":"completed","summary":"Configured persistent resilient static routing. Primary routes use the direct transit with metric 10; standby routes use node1 with metric 200 and preserve endpoint /32 sources. Health watchers automatically switch and restore preference. VyOS routes/firewall are saved, management remains separate, and bidirectional endpoint reachability was verified.","actions_performed":["Configured node1 LAN addresses, static endpoint routes, forwarding, and default-deny endpoint firewall rules","Configured persistent Ubuntu data-plane addresses, loopback endpoint /32s, and static primary/standby routes","Enabled persistent primary-transit health watchers on node2 and node3","Verified route preference, stable source selection, enabled services, saved VyOS state, and bidirectional ping reachability"]}
+tokens used
+122,954

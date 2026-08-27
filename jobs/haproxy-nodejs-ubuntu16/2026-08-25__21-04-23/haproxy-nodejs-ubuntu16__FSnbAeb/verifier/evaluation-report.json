@@ -1,0 +1,276 @@
+{
+  "probes": [
+    {
+      "id": "web-service-contract",
+      "summary": "HAProxy and Node.js were active; both endpoints returned HTTP 200 with the exact required body, and routing configuration was validated.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "web-persistent-state",
+      "summary": "Both services were enabled with durable configuration paths; UFW was inactive and AppArmor active.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "web-operational-state",
+      "summary": "Ubuntu 16.04.7 was confirmed with no failed units, package issues, debug processes, or temporary/backup residue.",
+      "cleanup_completed": true,
+      "limitations": []
+    }
+  ],
+  "assertions": [
+    {
+      "id": "haproxy-response",
+      "status": "pass",
+      "summary": "HAProxy returned HTTP 200 and exact body infraset-nodejs for /.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "curl --noproxy '*' --max-time 5 --silent --show-error -D - http://127.0.0.1/",
+          "observation": "HTTP/1.1 200 OK; Content-Length: 15; body: infraset-nodejs."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "nodejs-backend-response",
+      "status": "pass",
+      "summary": "The loopback Node.js backend returned HTTP 200 and exact body infraset-nodejs.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "curl --noproxy '*' --max-time 5 --silent --show-error -D - http://127.0.0.1:3000/",
+          "observation": "HTTP/1.1 200 OK; Content-Length: 15; body: infraset-nodejs."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "proxy-forwards-to-backend",
+      "status": "pass",
+      "summary": "Listener ownership and HAProxy configuration prove forwarding from port 80 to the loopback Node.js backend.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n ss -ltnp | grep -E ':(80|3000)[[:space:]]'",
+          "observation": "*:80 is owned by haproxy; 127.0.0.1:3000 is owned by nodejs."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n haproxy -c -f /etc/haproxy/haproxy.cfg; sudo -n grep -nE '^[[:space:]]*(frontend|backend|bind|default_backend|server)[[:space:]]' /etc/haproxy/haproxy.cfg",
+          "observation": "Configuration file is valid; frontend binds *:80, selects backend infraset_nodejs, and server nodejs targets 127.0.0.1:3000."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "web-startup-durable",
+      "status": "pass",
+      "summary": "Both services are enabled, use durable systemd/configuration paths, and platform states were inspected.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n systemctl is-enabled haproxy.service; sudo -n systemctl is-enabled infraset-nodejs.service; sudo -n systemctl cat haproxy.service; sudo -n systemctl cat infraset-nodejs.service; sudo -n stat -c '%n %F %U:%G %a' /etc/haproxy/haproxy.cfg /etc/systemd/system/infraset-nodejs.service /etc/systemd/system/multi-user.target.wants/haproxy.service /etc/systemd/system/multi-user.target.wants/infraset-nodejs.service",
+          "observation": "Both services report enabled. HAProxy uses /etc/haproxy/haproxy.cfg; Node.js uses /etc/systemd/system/infraset-nodejs.service and /usr/local/lib/infraset-nodejs/app.js. Configuration and enablement paths are durable root-owned files/symlinks."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n ufw status verbose; sudo -n systemctl is-active apparmor.service; sudo -n aa-status",
+          "observation": "UFW is durably inactive. AppArmor is active, loaded, and has 13 profiles in enforce mode."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "web-state-clean",
+      "status": "pass",
+      "summary": "The expected Ubuntu release and required web stack remain operational without failed, duplicate, conflicting, debug, package-failure, temporary, or backup state.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": ". /etc/os-release; printf 'PRETTY_NAME=%s\\nVERSION_ID=%s\\n' \"$PRETTY_NAME\" \"$VERSION_ID\"; sudo -n systemctl --failed --no-legend --no-pager; sudo -n systemctl list-unit-files --type=service --no-legend | grep -Ei 'haproxy|node|nginx|apache|httpd|lighttpd|caddy'; ps -eo pid=,user=,comm=,args= --sort=pid | grep -Ei 'haproxy|node(js)?|nginx|apache2|httpd|lighttpd|caddy|http.server|[[:space:]](curl|wget)[[:space:]]' | grep -v grep; sudo -n ss -ltnp | grep -E ':(80|3000)[[:space:]]'",
+          "observation": "Ubuntu 16.04.7 LTS confirmed; no failed units. Only enabled HAProxy and infraset-nodejs web services and their expected processes/listeners were present."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n dpkg --audit; sudo -n dpkg-query -W -f='${Package} ${Status} ${Version}\\n' haproxy nodejs; find /etc/haproxy /etc/systemd/system /usr/local/lib/infraset-nodejs -xdev -maxdepth 3 -type f \\( -name '*~' -o -name '*.bak' -o -name '*.backup' -o -name '*.orig' -o -name '*.old' -o -name '*.tmp' -o -name '*.swp' \\) -print; find /tmp /var/tmp -xdev -maxdepth 1 \\( -iname '*haproxy*' -o -iname '*nodejs*' -o -iname '*infraset*' \\) -print; ps -eo pid=,user=,comm=,args= --sort=pid | grep -Ei 'tcpdump|strace|gdb|socat|nc[[:space:]]|netcat|python([0-9.]*)?[[:space:]].*(-m[[:space:]]+http\\.server|http\\.server)|node([[:space:]]|js[[:space:]])' | grep -v -E '(/usr/bin/nodejs /usr/local/lib/infraset-nodejs/app\\.js|grep)'",
+          "observation": "haproxy and nodejs packages are install ok installed; dpkg audit and residue searches produced no findings; debug-process search produced no findings."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    }
+  ],
+  "actions_performed": [
+    "Executed all three authored probes on node1 using managed exec only.",
+    "Performed no mutations; all probes were read-only and required no cleanup.",
+    "Closed live evidence exactly once with complete_evidence."
+  ],
+  "overall_summary": "All authored assertions passed. HAProxy persistently serves port 80 and forwards / to the loopback Node.js service on port 3000, which returns HTTP 200 with body infraset-nodejs.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 3.0,
+      "evaluated_points": 3.0,
+      "passed_points": 3.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "haproxy-response",
+          "probe": "web-service-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "HAProxy returned HTTP 200 and exact body infraset-nodejs for /.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "curl --noproxy '*' --max-time 5 --silent --show-error -D - http://127.0.0.1/",
+              "observation": "HTTP/1.1 200 OK; Content-Length: 15; body: infraset-nodejs."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "nodejs-backend-response",
+          "probe": "web-service-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "The loopback Node.js backend returned HTTP 200 and exact body infraset-nodejs.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "curl --noproxy '*' --max-time 5 --silent --show-error -D - http://127.0.0.1:3000/",
+              "observation": "HTTP/1.1 200 OK; Content-Length: 15; body: infraset-nodejs."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "proxy-forwards-to-backend",
+          "probe": "web-service-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Listener ownership and HAProxy configuration prove forwarding from port 80 to the loopback Node.js backend.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n ss -ltnp | grep -E ':(80|3000)[[:space:]]'",
+              "observation": "*:80 is owned by haproxy; 127.0.0.1:3000 is owned by nodejs."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n haproxy -c -f /etc/haproxy/haproxy.cfg; sudo -n grep -nE '^[[:space:]]*(frontend|backend|bind|default_backend|server)[[:space:]]' /etc/haproxy/haproxy.cfg",
+              "observation": "Configuration file is valid; frontend binds *:80, selects backend infraset_nodejs, and server nodejs targets 127.0.0.1:3000."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 1.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "web-startup-durable",
+          "probe": "web-persistent-state",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Both services are enabled, use durable systemd/configuration paths, and platform states were inspected.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n systemctl is-enabled haproxy.service; sudo -n systemctl is-enabled infraset-nodejs.service; sudo -n systemctl cat haproxy.service; sudo -n systemctl cat infraset-nodejs.service; sudo -n stat -c '%n %F %U:%G %a' /etc/haproxy/haproxy.cfg /etc/systemd/system/infraset-nodejs.service /etc/systemd/system/multi-user.target.wants/haproxy.service /etc/systemd/system/multi-user.target.wants/infraset-nodejs.service",
+              "observation": "Both services report enabled. HAProxy uses /etc/haproxy/haproxy.cfg; Node.js uses /etc/systemd/system/infraset-nodejs.service and /usr/local/lib/infraset-nodejs/app.js. Configuration and enablement paths are durable root-owned files/symlinks."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n ufw status verbose; sudo -n systemctl is-active apparmor.service; sudo -n aa-status",
+              "observation": "UFW is durably inactive. AppArmor is active, loaded, and has 13 profiles in enforce mode."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "operational_hygiene": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 1.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "web-state-clean",
+          "probe": "web-operational-state",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "The expected Ubuntu release and required web stack remain operational without failed, duplicate, conflicting, debug, package-failure, temporary, or backup state.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": ". /etc/os-release; printf 'PRETTY_NAME=%s\\nVERSION_ID=%s\\n' \"$PRETTY_NAME\" \"$VERSION_ID\"; sudo -n systemctl --failed --no-legend --no-pager; sudo -n systemctl list-unit-files --type=service --no-legend | grep -Ei 'haproxy|node|nginx|apache|httpd|lighttpd|caddy'; ps -eo pid=,user=,comm=,args= --sort=pid | grep -Ei 'haproxy|node(js)?|nginx|apache2|httpd|lighttpd|caddy|http.server|[[:space:]](curl|wget)[[:space:]]' | grep -v grep; sudo -n ss -ltnp | grep -E ':(80|3000)[[:space:]]'",
+              "observation": "Ubuntu 16.04.7 LTS confirmed; no failed units. Only enabled HAProxy and infraset-nodejs web services and their expected processes/listeners were present."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n dpkg --audit; sudo -n dpkg-query -W -f='${Package} ${Status} ${Version}\\n' haproxy nodejs; find /etc/haproxy /etc/systemd/system /usr/local/lib/infraset-nodejs -xdev -maxdepth 3 -type f \\( -name '*~' -o -name '*.bak' -o -name '*.backup' -o -name '*.orig' -o -name '*.old' -o -name '*.tmp' -o -name '*.swp' \\) -print; find /tmp /var/tmp -xdev -maxdepth 1 \\( -iname '*haproxy*' -o -iname '*nodejs*' -o -iname '*infraset*' \\) -print; ps -eo pid=,user=,comm=,args= --sort=pid | grep -Ei 'tcpdump|strace|gdb|socat|nc[[:space:]]|netcat|python([0-9.]*)?[[:space:]].*(-m[[:space:]]+http\\.server|http\\.server)|node([[:space:]]|js[[:space:]])' | grep -v -E '(/usr/bin/nodejs /usr/local/lib/infraset-nodejs/app\\.js|grep)'",
+              "observation": "haproxy and nodejs packages are install ok installed; dpkg audit and residue searches produced no findings; debug-process search produced no findings."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "persistence",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": 1.0,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

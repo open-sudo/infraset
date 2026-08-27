@@ -1,0 +1,305 @@
+{
+  "probes": [
+    {
+      "id": "static-route-contract",
+      "summary": "Read-only validation of addresses, forwarding, saved routes, route preference, source preservation, and NAT state.",
+      "cleanup_completed": true,
+      "limitations": [
+        "No outage or reboot was authorized, so failover timing and reboot behavior were not directly exercised."
+      ]
+    },
+    {
+      "id": "static-route-operational-state",
+      "summary": "Read-only inspection of duplicate state, routing daemons, NAT, failed units, SSH, helper services, processes, and residue.",
+      "cleanup_completed": true,
+      "limitations": []
+    }
+  ],
+  "assertions": [
+    {
+      "id": "static-route-required-topology",
+      "status": "pass",
+      "summary": "All required data-plane and stable /32 addresses exist; node1 forwards standby traffic; persistent direct-preferred and lower-preference standby routes are present in both endpoint configurations and saved VyOS configuration.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "ip -4 -o addr show; ip route show; sysctl net.ipv4.ip_forward; sudo -n grep -E '(^|[[:space:]])(address|route|forwarding|primary-transit|lan-a|lan-b)' /config/config.boot 2>/dev/null || true",
+          "observation": "node1 has 10.84.1.254/24 on eth1 and 10.84.2.254/24 on eth2, forwarding is 1, live static routes reach 10.84.10.2 via 10.84.1.10 and 10.84.10.3 via 10.84.2.10, and /config/config.boot contains the endpoint addresses and static route blocks."
+        },
+        {
+          "node": "node2",
+          "command": "ip -4 -o addr show; ip -details route show table main; ip route get 10.84.10.3 from 10.84.10.2; ip rule show",
+          "observation": "node2 has 10.84.0.2/24, 10.84.1.10/24, and 10.84.10.2/32. Routes to 10.84.10.3 use enp8s0 via 10.84.0.3 metric 10 and enp9s0 via 10.84.1.254 metric 200; route lookup selects the metric-10 primary path."
+        },
+        {
+          "node": "node3",
+          "command": "ip -4 -o addr show; ip -details route show table main; ip route get 10.84.10.2 from 10.84.10.3; ip rule show",
+          "observation": "node3 has 10.84.0.3/24, 10.84.2.10/24, and 10.84.10.3/32. Routes to 10.84.10.2 use enp8s0 via 10.84.0.2 metric 10 and enp9s0 via 10.84.2.254 metric 200; route lookup selects the metric-10 primary path."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show ip route 2>&1 || true; sudo -n grep -n -A7 -B2 -E '10[.]84[.]10[.]2|10[.]84[.]10[.]3|nat|forwarding' /config/config.boot 2>/dev/null || true",
+          "observation": "VyOS shows both endpoint static routes as installed, and the saved configuration contains routes to 10.84.10.2/32 via 10.84.1.10 and 10.84.10.3/32 via 10.84.2.10."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n sed -n '1,160p' /etc/systemd/network/10-data-primary.network; sudo -n sed -n '1,160p' /etc/systemd/network/11-data-standby.network; sudo -n sed -n '1,120p' /etc/systemd/network/20-endpoint-loopback.network",
+          "observation": "Persistent networkd configuration assigns node2's primary route metric 10 via 10.84.0.3, standby metric 200 via 10.84.1.254, preferred source 10.84.10.2, and the loopback /32."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n sed -n '1,160p' /etc/systemd/network/10-data-primary.network; sudo -n sed -n '1,160p' /etc/systemd/network/11-data-standby.network; sudo -n sed -n '1,120p' /etc/systemd/network/20-endpoint-loopback.network",
+          "observation": "Persistent networkd configuration assigns node3's primary route metric 10 via 10.84.0.2, standby metric 200 via 10.84.2.254, preferred source 10.84.10.3, and the loopback /32."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The authored read-only plan did not directly test outage recovery or reboot persistence."
+      ]
+    },
+    {
+      "id": "static-route-direct-path-works",
+      "status": "pass",
+      "summary": "Bidirectional sourced probes succeed over the primary-transit interfaces with stable endpoint source and destination addresses unchanged; primary route metric 10 is selected over standby metric 200 and VyOS has no NAT configured.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "ping -I 10.84.10.2 -c 3 -W 1 10.84.10.3; sudo -n timeout 4 tcpdump -i \"$iface\" -nn -l 'icmp and (host 10.84.10.2 or host 10.84.10.3)'; ip -s route show 10.84.10.3",
+          "observation": "3/3 pings succeeded with 0% loss. Capture on derived primary interface enp8s0 showed 10.84.10.2\u219210.84.10.3 requests and 10.84.10.3\u219210.84.10.2 replies. Route counters showed primary via enp8s0 metric 10 and standby via enp9s0 metric 200."
+        },
+        {
+          "node": "node3",
+          "command": "ping -I 10.84.10.3 -c 3 -W 1 10.84.10.2; sudo -n timeout 4 tcpdump -i \"$iface\" -nn -l 'icmp and (host 10.84.10.2 or host 10.84.10.3)'; ip -s route show 10.84.10.2",
+          "observation": "3/3 reverse pings succeeded with 0% loss. Capture on derived primary interface enp8s0 showed 10.84.10.3\u219210.84.10.2 requests and 10.84.10.2\u219210.84.10.3 replies. Route counters showed primary via enp8s0 metric 10 and standby via enp9s0 metric 200."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show nat source rules 2>&1 || true; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show nat destination rules 2>&1 || true",
+          "observation": "Both VyOS NAT views reported 'NAT is not configured'."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The authored read-only plan did not directly test outage recovery or the 10-second failover bound."
+      ]
+    },
+    {
+      "id": "static-route-state-clean",
+      "status": "fail",
+      "summary": "Address, route, dynamic-daemon, NAT, and failed-unit checks were otherwise clean, but an enabled and running route-watcher helper remains on the Ubuntu endpoints.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "ip -4 route show table all; sudo -n /opt/vyatta/bin/vyata-op-cmd-wrapper show nat source rules 2>&1 || true; sudo -n /opt/vyatta/bin/vyata-op-cmd-wrapper show nat destination rules 2>&1 || true; systemctl --failed --no-legend --no-pager",
+          "observation": "Node1 had only the management default route plus the expected data routes; no failed units were listed and VyOS reported no NAT. (The executed wrapper path was /opt/vyatta/bin/vyatta-op-cmd-wrapper.)"
+        },
+        {
+          "node": "node2",
+          "command": "ip -4 -o addr show; ip route show table main; ip -4 -o addr show | awk '{print $4}' | sort | uniq -d; ip route show table all | sort | uniq -d; systemctl is-active frr bird quagga keepalived 2>&1 || true; systemctl --failed --no-legend --no-pager; sudo -n nft list ruleset 2>&1 | sed -n '1,240p'; ps -eo pid=,comm=,args= | grep -Ei 'tcpdump|route-watch|primary-transit|probe|debug|capture|frr|bird|quagga|keepalived' | grep -v grep || true",
+          "observation": "No duplicate address or route lines, dynamic routing daemons were inactive, failed-unit output was empty, and the nft ruleset was empty. However, primary-transit-route-watch.service was enabled and process 1444 was running."
+        },
+        {
+          "node": "node3",
+          "command": "ip -4 -o addr show; ip route show table main; ip -4 -o addr show | awk '{print $4}' | sort | uniq -d; ip route show table all | sort | uniq -d; systemctl is-active frr bird quagga keepalived 2>&1 || true; systemctl --failed --no-legend --no-pager; sudo -n nft list ruleset 2>&1 | sed -n '1,240p'; ps -eo pid=,comm=,args= | grep -Ei 'tcpdump|route-watch|primary-transit|probe|debug|capture|frr|bird|quagga|keepalived' | grep -v grep || true",
+          "observation": "No duplicate address or route lines, dynamic routing daemons were inactive, failed-unit output was empty, and the nft ruleset was empty. However, primary-transit-route-watch.service was enabled and process 1379 was running."
+        },
+        {
+          "node": "node2",
+          "command": "systemctl show primary-transit-route-watch.service -p LoadState -p ActiveState -p SubState -p UnitFileState -p ExecStart 2>&1 || true; sudo -n systemctl cat primary-transit-route-watch.service 2>&1 || true; sudo -n sed -n '1,260p' /usr/local/sbin/primary-transit-route-watch 2>&1 || true",
+          "observation": "The service was loaded, active/running, enabled, and executed as root from /usr/local/sbin/primary-transit-route-watch. The script continuously pings the primary peer and uses ip route replace to change primary/standby metrics, confirming persistent helper state beyond declarative static-routing configuration."
+        }
+      ],
+      "failures": [
+        "An enabled, running primary-transit-route-watch service and route-mutating script remain on node2 and node3; this is concrete transient/helper residue and violates the clean-state pass condition."
+      ],
+      "limitations": []
+    }
+  ],
+  "actions_performed": [
+    "Executed all 10 Probe 1 managed read-only command calls in authored order.",
+    "Executed all 4 Probe 2 managed read-only command calls in authored order.",
+    "Removed the temporary tcpdump capture files created by the read-only traffic checks.",
+    "Called complete_evidence exactly once after all live checks were complete."
+  ],
+  "overall_summary": "static-route-required-topology: pass. static-route-direct-path-works: pass. static-route-state-clean: fail because the enabled and running primary-transit-route-watch helper remains on both Ubuntu endpoints. No outage or reboot was performed because the authored probes were read-only.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 5.0,
+      "evaluated_points": 5.0,
+      "passed_points": 5.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "static-route-required-topology",
+          "probe": "static-route-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "All required data-plane and stable /32 addresses exist; node1 forwards standby traffic; persistent direct-preferred and lower-preference standby routes are present in both endpoint configurations and saved VyOS configuration.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "ip -4 -o addr show; ip route show; sysctl net.ipv4.ip_forward; sudo -n grep -E '(^|[[:space:]])(address|route|forwarding|primary-transit|lan-a|lan-b)' /config/config.boot 2>/dev/null || true",
+              "observation": "node1 has 10.84.1.254/24 on eth1 and 10.84.2.254/24 on eth2, forwarding is 1, live static routes reach 10.84.10.2 via 10.84.1.10 and 10.84.10.3 via 10.84.2.10, and /config/config.boot contains the endpoint addresses and static route blocks."
+            },
+            {
+              "node": "node2",
+              "command": "ip -4 -o addr show; ip -details route show table main; ip route get 10.84.10.3 from 10.84.10.2; ip rule show",
+              "observation": "node2 has 10.84.0.2/24, 10.84.1.10/24, and 10.84.10.2/32. Routes to 10.84.10.3 use enp8s0 via 10.84.0.3 metric 10 and enp9s0 via 10.84.1.254 metric 200; route lookup selects the metric-10 primary path."
+            },
+            {
+              "node": "node3",
+              "command": "ip -4 -o addr show; ip -details route show table main; ip route get 10.84.10.2 from 10.84.10.3; ip rule show",
+              "observation": "node3 has 10.84.0.3/24, 10.84.2.10/24, and 10.84.10.3/32. Routes to 10.84.10.2 use enp8s0 via 10.84.0.2 metric 10 and enp9s0 via 10.84.2.254 metric 200; route lookup selects the metric-10 primary path."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show ip route 2>&1 || true; sudo -n grep -n -A7 -B2 -E '10[.]84[.]10[.]2|10[.]84[.]10[.]3|nat|forwarding' /config/config.boot 2>/dev/null || true",
+              "observation": "VyOS shows both endpoint static routes as installed, and the saved configuration contains routes to 10.84.10.2/32 via 10.84.1.10 and 10.84.10.3/32 via 10.84.2.10."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n sed -n '1,160p' /etc/systemd/network/10-data-primary.network; sudo -n sed -n '1,160p' /etc/systemd/network/11-data-standby.network; sudo -n sed -n '1,120p' /etc/systemd/network/20-endpoint-loopback.network",
+              "observation": "Persistent networkd configuration assigns node2's primary route metric 10 via 10.84.0.3, standby metric 200 via 10.84.1.254, preferred source 10.84.10.2, and the loopback /32."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n sed -n '1,160p' /etc/systemd/network/10-data-primary.network; sudo -n sed -n '1,160p' /etc/systemd/network/11-data-standby.network; sudo -n sed -n '1,120p' /etc/systemd/network/20-endpoint-loopback.network",
+              "observation": "Persistent networkd configuration assigns node3's primary route metric 10 via 10.84.0.2, standby metric 200 via 10.84.2.254, preferred source 10.84.10.3, and the loopback /32."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The authored read-only plan did not directly test outage recovery or reboot persistence."
+          ]
+        },
+        {
+          "id": "static-route-direct-path-works",
+          "probe": "static-route-contract",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Bidirectional sourced probes succeed over the primary-transit interfaces with stable endpoint source and destination addresses unchanged; primary route metric 10 is selected over standby metric 200 and VyOS has no NAT configured.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "ping -I 10.84.10.2 -c 3 -W 1 10.84.10.3; sudo -n timeout 4 tcpdump -i \"$iface\" -nn -l 'icmp and (host 10.84.10.2 or host 10.84.10.3)'; ip -s route show 10.84.10.3",
+              "observation": "3/3 pings succeeded with 0% loss. Capture on derived primary interface enp8s0 showed 10.84.10.2\u219210.84.10.3 requests and 10.84.10.3\u219210.84.10.2 replies. Route counters showed primary via enp8s0 metric 10 and standby via enp9s0 metric 200."
+            },
+            {
+              "node": "node3",
+              "command": "ping -I 10.84.10.3 -c 3 -W 1 10.84.10.2; sudo -n timeout 4 tcpdump -i \"$iface\" -nn -l 'icmp and (host 10.84.10.2 or host 10.84.10.3)'; ip -s route show 10.84.10.2",
+              "observation": "3/3 reverse pings succeeded with 0% loss. Capture on derived primary interface enp8s0 showed 10.84.10.3\u219210.84.10.2 requests and 10.84.10.2\u219210.84.10.3 replies. Route counters showed primary via enp8s0 metric 10 and standby via enp9s0 metric 200."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show nat source rules 2>&1 || true; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show nat destination rules 2>&1 || true",
+              "observation": "Both VyOS NAT views reported 'NAT is not configured'."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The authored read-only plan did not directly test outage recovery or the 10-second failover bound."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "static-route-state-clean",
+          "probe": "static-route-operational-state",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "Address, route, dynamic-daemon, NAT, and failed-unit checks were otherwise clean, but an enabled and running route-watcher helper remains on the Ubuntu endpoints.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "ip -4 route show table all; sudo -n /opt/vyatta/bin/vyata-op-cmd-wrapper show nat source rules 2>&1 || true; sudo -n /opt/vyatta/bin/vyata-op-cmd-wrapper show nat destination rules 2>&1 || true; systemctl --failed --no-legend --no-pager",
+              "observation": "Node1 had only the management default route plus the expected data routes; no failed units were listed and VyOS reported no NAT. (The executed wrapper path was /opt/vyatta/bin/vyatta-op-cmd-wrapper.)"
+            },
+            {
+              "node": "node2",
+              "command": "ip -4 -o addr show; ip route show table main; ip -4 -o addr show | awk '{print $4}' | sort | uniq -d; ip route show table all | sort | uniq -d; systemctl is-active frr bird quagga keepalived 2>&1 || true; systemctl --failed --no-legend --no-pager; sudo -n nft list ruleset 2>&1 | sed -n '1,240p'; ps -eo pid=,comm=,args= | grep -Ei 'tcpdump|route-watch|primary-transit|probe|debug|capture|frr|bird|quagga|keepalived' | grep -v grep || true",
+              "observation": "No duplicate address or route lines, dynamic routing daemons were inactive, failed-unit output was empty, and the nft ruleset was empty. However, primary-transit-route-watch.service was enabled and process 1444 was running."
+            },
+            {
+              "node": "node3",
+              "command": "ip -4 -o addr show; ip route show table main; ip -4 -o addr show | awk '{print $4}' | sort | uniq -d; ip route show table all | sort | uniq -d; systemctl is-active frr bird quagga keepalived 2>&1 || true; systemctl --failed --no-legend --no-pager; sudo -n nft list ruleset 2>&1 | sed -n '1,240p'; ps -eo pid=,comm=,args= | grep -Ei 'tcpdump|route-watch|primary-transit|probe|debug|capture|frr|bird|quagga|keepalived' | grep -v grep || true",
+              "observation": "No duplicate address or route lines, dynamic routing daemons were inactive, failed-unit output was empty, and the nft ruleset was empty. However, primary-transit-route-watch.service was enabled and process 1379 was running."
+            },
+            {
+              "node": "node2",
+              "command": "systemctl show primary-transit-route-watch.service -p LoadState -p ActiveState -p SubState -p UnitFileState -p ExecStart 2>&1 || true; sudo -n systemctl cat primary-transit-route-watch.service 2>&1 || true; sudo -n sed -n '1,260p' /usr/local/sbin/primary-transit-route-watch 2>&1 || true",
+              "observation": "The service was loaded, active/running, enabled, and executed as root from /usr/local/sbin/primary-transit-route-watch. The script continuously pings the primary peer and uses ip route replace to change primary/standby metrics, confirming persistent helper state beyond declarative static-routing configuration."
+            }
+          ],
+          "failures": [
+            "An enabled, running primary-transit-route-watch service and route-mutating script remain on node2 and node3; this is concrete transient/helper residue and violates the clean-state pass condition."
+          ],
+          "limitations": []
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 75.0,
+    "reward": 0.75,
+    "provisional_reward": 0.75,
+    "caps_applied": []
+  }
+}

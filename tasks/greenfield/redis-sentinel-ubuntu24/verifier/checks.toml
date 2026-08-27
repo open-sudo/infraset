@@ -1,0 +1,129 @@
+schema_version = 1
+
+[[probes]]
+id = "redis-sentinel-contract"
+level = 1
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 8
+procedure = "Use protected administrative access without printing secrets. Query every Redis and Sentinel TLS endpoint and establish node1 as the sole writable primary, node2/node3 as synchronized read-only replicas, three Sentinels agreeing on infra-primary, and infra:proof equal to ready."
+
+[[probes]]
+id = "redis-sentinel-security"
+level = 2
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 7
+procedure = "Verify node-name-validating TLS and authentication on 6379 and 26379; test plaintext, unauthenticated, default, and invalid access. Inspect network scope, ACL/protected mode, secret/key modes, service privilege, AppArmor, persistent firewall, listeners, and SSH state."
+
+[[probes]]
+id = "redis-sentinel-operational-state"
+level = 5
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 4
+procedure = "Inspect failed units, duplicate Redis stacks, stale Sentinel topology, plaintext/debug listeners, abandoned downloads/scripts/credentials, conflicting configuration, unnecessary services/openings, and executor-created residue."
+
+[[probes]]
+id = "redis-primary-loss"
+level = 6
+targets = ["node1", "node2", "node3"]
+effect = "controlled_failure"
+max_exec_calls = 13
+procedure = "Stop node1's actual Redis service, require Sentinels to agree on exactly one promoted primary, discover it through Sentinel, write a unique evaluator key there, and prove the remaining replica receives it. Restore node1 and require it to rejoin as a synchronized read-only replica without automatic failback or split brain."
+cleanup = "Restore node1, leave exactly one primary and two synchronized replicas, and delete evaluator keys from the current primary."
+
+[[probes]]
+id = "redis-representative-reboots"
+level = 8
+targets = ["node1", "node2"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities, reboot node1 and node2 sequentially with Sentinel convergence, and retest roles, replication, discovery, retained/fresh data, TLS, and authentication."
+cleanup = "Wait for one primary and two replicas and remove evaluator keys."
+
+[[probes]]
+id = "redis-final-reboot"
+level = 10
+targets = ["node3"]
+effect = "reboot"
+max_exec_calls = 5
+procedure = "Record node3's boot identity, reboot it, and verify automatic return of Redis and Sentinel with consistent topology, retained data, and fresh replicated writes."
+cleanup = "Wait for full convergence and remove evaluator keys."
+
+[[assertions]]
+id = "redis-required-topology"
+probe = "redis-sentinel-contract"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "Exactly one writable node1 primary, two synchronized read-only replicas, and three Sentinels consistently monitor infra-primary."
+fail_condition = "Authenticated live state confirms wrong roles, split/no primary, unsynchronized replica, missing Sentinel, or inconsistent monitored topology."
+
+[[assertions]]
+id = "redis-required-data"
+probe = "redis-sentinel-contract"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "infra:proof is readable through authenticated TLS and equals ready on the primary and replicas."
+fail_condition = "Healthy authenticated endpoints confirm the required key missing, wrong, or not replicated."
+
+[[assertions]]
+id = "redis-tls-auth-effective"
+probe = "redis-sentinel-security"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "Redis and Sentinel require node-name-validating TLS and authentication; plaintext, unauthenticated, default, and invalid access fail."
+fail_condition = "A controlled probe confirms plaintext, invalid identity, or unauthorized access succeeds."
+
+[[assertions]]
+id = "redis-host-boundary"
+probe = "redis-sentinel-security"
+dimension = "security"
+points = 1
+pass_condition = "Traffic and secrets are confined to intended cache peers and effective ACL, AppArmor, firewall, listener, and SSH controls remain sound."
+fail_condition = "Concrete evidence confirms broad exposure, weak ACL/protected mode, exposed secrets, disabled host controls, or unnecessary listeners."
+
+[[assertions]]
+id = "redis-state-clean"
+probe = "redis-sentinel-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only coherent required Redis, Sentinel, persistence, PKI, log, and protected configuration state remains."
+fail_condition = "Concrete failed, duplicate, stale, plaintext, debug, unsafe, temporary, or abandoned executor state remains."
+
+[[assertions]]
+id = "redis-failover-writable"
+probe = "redis-primary-loss"
+dimension = "resilience"
+points = 3
+critical = true
+pass_condition = "With node1 stopped, Sentinels select exactly one new primary, clients discover it, and a new write reaches the remaining replica."
+fail_condition = "The confirmed node1 outage yields no/multiple primaries, failed discovery/write, or missing survivor replication."
+
+[[assertions]]
+id = "redis-node1-rejoins-replica"
+probe = "redis-primary-loss"
+dimension = "resilience"
+points = 2
+critical = true
+requires = ["redis-failover-writable"]
+pass_condition = "Restored node1 automatically rejoins current as a read-only replica without failback or split brain."
+fail_condition = "Restored node1 needs repair, remains stale/writable, triggers failback, or creates split brain."
+
+[[assertions]]
+id = "redis-two-nodes-persist"
+probe = "redis-representative-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1 and node2 change boot identities and valid roles, replication, Sentinel discovery, data, TLS, and authentication recover automatically."
+fail_condition = "A completed representative reboot loses required topology, data, discovery, replication, or secure client access."
+
+[[assertions]]
+id = "redis-all-nodes-persist"
+probe = "redis-final-reboot"
+dimension = "persistence"
+points = 1
+critical = true
+pass_condition = "Node3 changes boot identity and the complete one-primary/two-replica, three-Sentinel service returns with retained and fresh data."
+fail_condition = "Node3's completed reboot leaves invalid topology, missing data, failed Sentinel, or broken replication."

@@ -1,0 +1,289 @@
+{
+  "probes": [
+    {
+      "id": "thanos-metrics-contract",
+      "summary": "Read-only Probe 1 completed successfully across all four nodes.",
+      "cleanup_completed": true,
+      "limitations": [
+        "No AWS or mc client was installed; authenticated object-store validation used the configured Thanos S3 client."
+      ]
+    },
+    {
+      "id": "thanos-operational-state",
+      "summary": "Probe 2 was partially executed before the managed-cluster lease expired.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Lease expired during the node2 check; node2 through node4 operational-state checks could not be completed."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "thanos-two-replicas-scrape-all-hosts",
+      "status": "pass",
+      "summary": "Both Prometheus replicas were active, had unique replica labels, and actively scraped all four node-exporter targets.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "curl -sS --max-time 8 http://127.0.0.1:9090/api/v1/targets 2>/dev/null | jq -c 'if .status==\"success\" then {active: [.data.activeTargets[] | {health,lastScrape,scrapeUrl,labels,discoveredLabels}], dropped:(.data.droppedTargets|length)} else . end' 2>/dev/null || true",
+          "observation": "Prometheus active; config external_labels replica=node1; four targets node1-node4 were health=up with recent lastScrape values."
+        },
+        {
+          "node": "node2",
+          "command": "curl -sS --max-time 8 http://127.0.0.1:9090/api/v1/targets 2>/dev/null | jq -c 'if .status==\"success\" then {active: [.data.activeTargets[] | {health,lastScrape,scrapeUrl,labels,discoveredLabels}], dropped:(.data.droppedTargets|length)} else . end' 2>/dev/null || true",
+          "observation": "Prometheus active; config external_labels replica=node2; four targets node1-node4 were health=up with recent lastScrape values."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "thanos-query-deduplicates-and-retains",
+      "status": "pass",
+      "summary": "Node3 exposed two sidecars and one store, deduplicated current host metrics to one series per host, and returned historical samples while Thanos successfully inspected authenticated blocks in the node4-backed bucket.",
+      "evidence": [
+        {
+          "node": "node3",
+          "command": "curl -sS --max-time 8 http://127.0.0.1:10902/api/v1/stores 2>/dev/null | jq -c 'if .status==\"success\" then {sidecarCount:(.data.sidecar|length),storeCount:(.data.store|length),sidecar:(.data.sidecar|map({labelSet,minTime,maxTime,lastCheck,lastCheckSuccess,error})),store:(.data.store|map({labelSet,minTime,maxTime,lastCheck,lastCheckSuccess,error}))} else . end' 2>/dev/null || true",
+          "observation": "Node3 Query API reported sidecarCount=2 and storeCount=1; Query, Store, and Compactor readiness endpoints all returned OK."
+        },
+        {
+          "node": "node3",
+          "command": "curl -sS --max-time 8 --get --data-urlencode 'query=count by (host,instance) (node_uname_info{job=\"node\"})' http://127.0.0.1:10902/api/v1/query 2>/dev/null | jq -c 'if .status==\"success\" then {resultType:.data.resultType,resultCount:(.data.result|length),results:[.data.result[]|{metric,value}]} else . end' 2>/dev/null || true",
+          "observation": "Query returned exactly four results for node1, node2, node3, and node4; each value was 1, demonstrating replica deduplication."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n sed -E 's/(access_key|secret_key|password|token|secret):.*/\\1: [REDACTED]/I; /type:|endpoint:|bucket:|insecure:|signature_version:|ca_file:|aws_sdk_auth:|http_config:/ p' /etc/thanos/objstore.yml 2>/dev/null",
+          "observation": "Thanos used S3 bucket thanos-metrics at endpoint node4:9000 with credentials configured, insecure=false, CA verification enabled, and /etc/thanos/s3-ca.crt."
+        },
+        {
+          "node": "node3",
+          "command": "timeout 25s sudo -n -H -u thanos /usr/local/bin/thanos tools bucket inspect --objstore.config-file=/etc/thanos/objstore.yml --output=table --log.level=warn 2>&1 | sed -n '1,120p'",
+          "observation": "Authenticated Thanos bucket inspection succeeded and listed 12 healthy sidecar blocks in thanos-metrics, covering 18:49 through 19:00 with replica=node1 and replica=node2 labels and COMP-FAILED=false."
+        },
+        {
+          "node": "node3",
+          "command": "curl -sS --max-time 10 --get --data-urlencode 'query=count(node_uname_info{job=\"node\"})' --data-urlencode \"time=$t\" http://127.0.0.1:10902/api/v1/query 2>/dev/null | jq -c 'if .status==\"success\" then {resultType:.data.resultType,results:[.data.result[]|{metric,value}]} else . end' 2>/dev/null || true",
+          "observation": "Historical instant queries at 1787784721 and 1787784781 each returned value 4; the historical range query returned four host series with four points each."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n stat -c 'mode=%a owner=%U group=%G path=%n' /root/thanos-objectstore.env 2>/dev/null",
+          "observation": "The required environment file existed with mode 600, owned by root:root."
+        },
+        {
+          "node": "node4",
+          "command": "curl -k -sS --max-time 8 -o /tmp/objectstore_probe -w 'https-localhost-9000 http=%{http_code} type=%{content_type}\\n' https://127.0.0.1:9000/ 2>/dev/null || true",
+          "observation": "MinIO was active on TCP 9000 and returned HTTP 403 without credentials over TLS; node4 contained /srv/thanos-objectstore/thanos-metrics with object-block directories."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "thanos-state-clean",
+      "status": "indeterminate",
+      "summary": "Node1 showed no failed units or obvious temporary residue, but the cluster-wide operational-state assertion could not be decided after lease expiry.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "systemctl --failed --no-pager --plain 2>/dev/null || true",
+          "observation": "No failed systemd units were listed."
+        },
+        {
+          "node": "node1",
+          "command": "for s in ssh sshd; do printf '%s enabled=' \"$s\"; systemctl is-enabled \"$s\" 2>/dev/null; printf ' active='; systemctl is-active \"$s\" 2>/dev/null; printf '\\n'; done",
+          "observation": "SSH was disabled and inactive; sshd was not found and inactive."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n find /etc/prometheus /etc/thanos /usr/local/bin /tmp /var/tmp /root /home -maxdepth 2 -type f -printf '%m %u %g %p\\n' 2>/dev/null | grep -E '(prometheus|thanos|objstore|\\.ya?ml$|\\.env$|\\.(pem|key|crt)$|\\.tar|\\.zip|\\.bak|\\.old|\\.orig|/tmp/|/var/tmp/)' | sed -n '1,80p'",
+          "observation": "Only maintained Prometheus/Thanos files were shown; /tmp, /var/tmp, /root, and /home had no matching residue."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The managed cluster lease expired before the node2 command executed. Node2, node3, and node4 state-clean checks therefore remain unverified."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Executed all nine read-only Probe 1 evidence calls.",
+    "Executed the node1 read-only portion of Probe 2.",
+    "Performed no mutations, recovery actions, or evaluator cleanup.",
+    "Called complete_evidence exactly once after lease expiration and composed this report offline."
+  ],
+  "overall_summary": "Probe 1 passed both assertions. Probe 2 assertion thanos-state-clean is indeterminate because the managed-cluster lease expired during its node2 check.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 6.0,
+      "evaluated_points": 6.0,
+      "passed_points": 6.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "thanos-two-replicas-scrape-all-hosts",
+          "probe": "thanos-metrics-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Both Prometheus replicas were active, had unique replica labels, and actively scraped all four node-exporter targets.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "curl -sS --max-time 8 http://127.0.0.1:9090/api/v1/targets 2>/dev/null | jq -c 'if .status==\"success\" then {active: [.data.activeTargets[] | {health,lastScrape,scrapeUrl,labels,discoveredLabels}], dropped:(.data.droppedTargets|length)} else . end' 2>/dev/null || true",
+              "observation": "Prometheus active; config external_labels replica=node1; four targets node1-node4 were health=up with recent lastScrape values."
+            },
+            {
+              "node": "node2",
+              "command": "curl -sS --max-time 8 http://127.0.0.1:9090/api/v1/targets 2>/dev/null | jq -c 'if .status==\"success\" then {active: [.data.activeTargets[] | {health,lastScrape,scrapeUrl,labels,discoveredLabels}], dropped:(.data.droppedTargets|length)} else . end' 2>/dev/null || true",
+              "observation": "Prometheus active; config external_labels replica=node2; four targets node1-node4 were health=up with recent lastScrape values."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "thanos-query-deduplicates-and-retains",
+          "probe": "thanos-metrics-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Node3 exposed two sidecars and one store, deduplicated current host metrics to one series per host, and returned historical samples while Thanos successfully inspected authenticated blocks in the node4-backed bucket.",
+          "evidence": [
+            {
+              "node": "node3",
+              "command": "curl -sS --max-time 8 http://127.0.0.1:10902/api/v1/stores 2>/dev/null | jq -c 'if .status==\"success\" then {sidecarCount:(.data.sidecar|length),storeCount:(.data.store|length),sidecar:(.data.sidecar|map({labelSet,minTime,maxTime,lastCheck,lastCheckSuccess,error})),store:(.data.store|map({labelSet,minTime,maxTime,lastCheck,lastCheckSuccess,error}))} else . end' 2>/dev/null || true",
+              "observation": "Node3 Query API reported sidecarCount=2 and storeCount=1; Query, Store, and Compactor readiness endpoints all returned OK."
+            },
+            {
+              "node": "node3",
+              "command": "curl -sS --max-time 8 --get --data-urlencode 'query=count by (host,instance) (node_uname_info{job=\"node\"})' http://127.0.0.1:10902/api/v1/query 2>/dev/null | jq -c 'if .status==\"success\" then {resultType:.data.resultType,resultCount:(.data.result|length),results:[.data.result[]|{metric,value}]} else . end' 2>/dev/null || true",
+              "observation": "Query returned exactly four results for node1, node2, node3, and node4; each value was 1, demonstrating replica deduplication."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n sed -E 's/(access_key|secret_key|password|token|secret):.*/\\1: [REDACTED]/I; /type:|endpoint:|bucket:|insecure:|signature_version:|ca_file:|aws_sdk_auth:|http_config:/ p' /etc/thanos/objstore.yml 2>/dev/null",
+              "observation": "Thanos used S3 bucket thanos-metrics at endpoint node4:9000 with credentials configured, insecure=false, CA verification enabled, and /etc/thanos/s3-ca.crt."
+            },
+            {
+              "node": "node3",
+              "command": "timeout 25s sudo -n -H -u thanos /usr/local/bin/thanos tools bucket inspect --objstore.config-file=/etc/thanos/objstore.yml --output=table --log.level=warn 2>&1 | sed -n '1,120p'",
+              "observation": "Authenticated Thanos bucket inspection succeeded and listed 12 healthy sidecar blocks in thanos-metrics, covering 18:49 through 19:00 with replica=node1 and replica=node2 labels and COMP-FAILED=false."
+            },
+            {
+              "node": "node3",
+              "command": "curl -sS --max-time 10 --get --data-urlencode 'query=count(node_uname_info{job=\"node\"})' --data-urlencode \"time=$t\" http://127.0.0.1:10902/api/v1/query 2>/dev/null | jq -c 'if .status==\"success\" then {resultType:.data.resultType,results:[.data.result[]|{metric,value}]} else . end' 2>/dev/null || true",
+              "observation": "Historical instant queries at 1787784721 and 1787784781 each returned value 4; the historical range query returned four host series with four points each."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n stat -c 'mode=%a owner=%U group=%G path=%n' /root/thanos-objectstore.env 2>/dev/null",
+              "observation": "The required environment file existed with mode 600, owned by root:root."
+            },
+            {
+              "node": "node4",
+              "command": "curl -k -sS --max-time 8 -o /tmp/objectstore_probe -w 'https-localhost-9000 http=%{http_code} type=%{content_type}\\n' https://127.0.0.1:9000/ 2>/dev/null || true",
+              "observation": "MinIO was active on TCP 9000 and returned HTTP 403 without credentials over TLS; node4 contained /srv/thanos-objectstore/thanos-metrics with object-block directories."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": [
+        {
+          "id": "thanos-state-clean",
+          "probe": "thanos-operational-state",
+          "points": 1.0,
+          "status": "indeterminate",
+          "summary": "Node1 showed no failed units or obvious temporary residue, but the cluster-wide operational-state assertion could not be decided after lease expiry.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "systemctl --failed --no-pager --plain 2>/dev/null || true",
+              "observation": "No failed systemd units were listed."
+            },
+            {
+              "node": "node1",
+              "command": "for s in ssh sshd; do printf '%s enabled=' \"$s\"; systemctl is-enabled \"$s\" 2>/dev/null; printf ' active='; systemctl is-active \"$s\" 2>/dev/null; printf '\\n'; done",
+              "observation": "SSH was disabled and inactive; sshd was not found and inactive."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n find /etc/prometheus /etc/thanos /usr/local/bin /tmp /var/tmp /root /home -maxdepth 2 -type f -printf '%m %u %g %p\\n' 2>/dev/null | grep -E '(prometheus|thanos|objstore|\\.ya?ml$|\\.env$|\\.(pem|key|crt)$|\\.tar|\\.zip|\\.bak|\\.old|\\.orig|/tmp/|/var/tmp/)' | sed -n '1,80p'",
+              "observation": "Only maintained Prometheus/Thanos files were shown; /tmp, /var/tmp, /root, and /home had no matching residue."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The managed cluster lease expired before the node2 command executed. Node2, node3, and node4 state-clean checks therefore remain unverified."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence",
+    "operational_hygiene"
+  ],
+  "evaluation_coverage": 0.8571,
+  "full_coverage": false,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": null,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

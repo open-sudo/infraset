@@ -1,0 +1,140 @@
+schema_version = 1
+
+[[probes]]
+id = "postgres-ha-topology"
+level = 1
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 8
+procedure = "Inspect VyOS routing and each database node directly. Establish node2 as the sole writable primary, node3/node4 as streaming replicas, appdb present, and PostgreSQL replication plus HA coordination using LAN addresses through node1 rather than management."
+
+[[probes]]
+id = "postgres-replication-data"
+level = 2
+targets = ["node2", "node3", "node4"]
+effect = "evaluator_owned_data"
+max_exec_calls = 7
+procedure = "Discover protected local PostgreSQL administrative access, create a uniquely named evaluator schema/table in appdb on the primary, commit distinct rows, and read identical ordered data from both replicas."
+cleanup = "Drop only the evaluator schema from the current primary, then use independent managed exec calls on node3 and node4 to confirm removal has replicated. Do not use SSH or another nested remote shell between nodes."
+
+[[probes]]
+id = "postgres-ha-security"
+level = 2
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 8
+procedure = "Inspect effective VyOS forwarding/NAT, database and HA listeners on LAN and management addresses, PostgreSQL authentication and replication-role privilege, protected secrets, AppArmor, firewall, and SSH state. Establish allowed prerequisites before classifying denied paths."
+
+[[probes]]
+id = "postgres-ha-operational-state"
+level = 5
+targets = ["node1", "node2", "node3", "node4"]
+max_exec_calls = 5
+procedure = "Inspect failed units, duplicate PostgreSQL or HA stacks, abandoned installers and scripts, stale backups, debug settings, broad routes/listeners, unrelated VyOS state, and executor-created residue."
+
+[[probes]]
+id = "postgres-primary-loss"
+level = 6
+targets = ["node2", "node3", "node4"]
+effect = "controlled_failure"
+max_exec_calls = 14
+procedure = "Record and stop node2's actual PostgreSQL/HA stack. Require exactly one of node3/node4 to promote while the other streams from it, commit evaluator data through the promoted primary, verify it on the survivor, restore every stopped component on node2, and require node2 to rejoin as a current replica without failback or split brain."
+cleanup = "Restore node2 fully, leave exactly one primary and two streaming replicas, and drop evaluator data from the current primary."
+
+[[probes]]
+id = "postgres-router-replica-reboots"
+level = 8
+targets = ["node1", "node4"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities, reboot VyOS node1 and replica node4 sequentially, and after each recovery verify saved routing, database path, one-primary/two-replica state, appdb data, and LAN-only replication."
+cleanup = "Wait for routing and database convergence and remove evaluator state."
+
+[[probes]]
+id = "postgres-remaining-reboots"
+level = 10
+targets = ["node2", "node3"]
+effect = "reboot"
+max_exec_calls = 10
+procedure = "Record boot identities, reboot node2 and node3 sequentially, allow automatic promotion/rejoin, then discover the sole primary, commit fresh evaluator data there, and prove both replicas receive it."
+cleanup = "Leave one primary and two current replicas and drop evaluator data."
+
+[[assertions]]
+id = "postgres-required-ha-topology"
+probe = "postgres-ha-topology"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "VyOS routes both LANs and live database state has node2 as sole writable primary with node3/node4 streaming replicas using LAN paths."
+fail_condition = "Live evidence confirms routing absent, wrong initial role, multiple/no writable primary, missing replica, or management-path HA traffic."
+
+[[assertions]]
+id = "postgres-data-replicates"
+probe = "postgres-replication-data"
+dimension = "functionality"
+points = 3
+critical = true
+requires = ["postgres-required-ha-topology"]
+pass_condition = "Committed evaluator rows in appdb are returned identically by both read-only replicas."
+fail_condition = "Healthy authenticated database access confirms a write failure, missing/divergent replica data, or a writable declared replica."
+
+[[assertions]]
+id = "postgres-network-boundary"
+probe = "postgres-ha-security"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "Required HA flows work only among member LAN addresses, unrelated cross-LAN and management exposure is denied, and no cross-LAN NAT is active."
+fail_condition = "Prerequisite-valid probes confirm management exposure, unrelated cross-LAN reachability, required flow blocked, or address translation."
+
+[[assertions]]
+id = "postgres-auth-and-secrets-protected"
+probe = "postgres-ha-security"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "Host authentication is strong, replication uses a least-privileged non-superuser, secrets are protected, and AppArmor/firewall controls remain active."
+fail_condition = "Concrete evidence confirms weak/trust authentication, privileged replication identity, exposed secrets, or disabled host controls."
+
+[[assertions]]
+id = "postgres-ha-state-clean"
+probe = "postgres-ha-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "All nodes retain only coherent required router, PostgreSQL, HA, data, log, and protected configuration state."
+fail_condition = "Concrete failed, duplicate, stale, debug, broad, conflicting, temporary, or abandoned executor state remains."
+
+[[assertions]]
+id = "postgres-failover-remains-writable"
+probe = "postgres-primary-loss"
+dimension = "resilience"
+points = 3
+critical = true
+pass_condition = "With node2 confirmed down, exactly one LAN-B replica promotes, remains writable, and replicates a new commit to the other survivor."
+fail_condition = "The confirmed primary loss causes no/multiple primaries, write unavailability, or failure to replicate new committed data."
+
+[[assertions]]
+id = "postgres-node2-rejoins-current"
+probe = "postgres-primary-loss"
+dimension = "resilience"
+points = 3
+critical = true
+requires = ["postgres-failover-remains-writable"]
+pass_condition = "Restored node2 automatically rejoins as a current replica without failback or split brain and contains pre/post-failure data."
+fail_condition = "Restored node2 needs repair, is stale/writable, triggers failback, or creates split brain."
+
+[[assertions]]
+id = "postgres-router-replica-persist"
+probe = "postgres-router-replica-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1 and node4 change boot identities and saved routing, database service, data, roles, and LAN replication recover automatically."
+fail_condition = "A completed router/replica reboot loses required route, service, data, topology, or replication."
+
+[[assertions]]
+id = "postgres-full-system-persists"
+probe = "postgres-remaining-reboots"
+dimension = "persistence"
+points = 3
+critical = true
+pass_condition = "Node2 and node3 change boot identities and the final system has one primary, two current replicas, intact appdb, and fresh replicated writes."
+fail_condition = "A completed database-node reboot sequence leaves invalid roles, missing data, failed service, or non-replicating fresh writes."

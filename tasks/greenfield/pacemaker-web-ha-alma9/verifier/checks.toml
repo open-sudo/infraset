@@ -1,0 +1,139 @@
+schema_version = 1
+
+[[probes]]
+id = "pacemaker-cluster-service"
+level = 1
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 7
+procedure = "Discover the live Pacemaker resource layout and inspect all members. Establish one healthy three-member infraset-ha cluster, node3 as quorum-only, exactly one service node owning replicated /srv/ha-web, the declared floating address, and Apache 8080, and retrieve infraset-ha through the floating address."
+
+[[probes]]
+id = "pacemaker-replicated-content"
+level = 2
+targets = ["node1", "node2", "node3"]
+effect = "evaluator_owned_data"
+max_exec_calls = 6
+procedure = "Create a unique evaluator file on the currently active /srv/ha-web, read it through the declared floating address on TCP 8080, and inspect resource ordering, colocation, storage ownership, and replication health."
+cleanup = "Remove the evaluator file through the active mounted filesystem and leave resources at a healthy unconstrained placement."
+
+[[probes]]
+id = "pacemaker-security-controls"
+level = 2
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 6
+procedure = "Inspect effective watchdog-backed fencing, cluster authentication material, writable-storage exclusivity, service privilege, SELinux, firewalld scope, listeners, and SSH state without exposing secrets."
+
+[[probes]]
+id = "pacemaker-operational-state"
+level = 5
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 5
+procedure = "Inspect failed actions, stale constraints or standby state, disabled fencing, unmanaged Apache, simultaneous mounts, stale replication, temporary scripts, debug services, broad secrets, and executor-created residue."
+
+[[probes]]
+id = "pacemaker-active-node-loss"
+level = 6
+targets = ["node1", "node2", "node3"]
+effect = "controlled_failure"
+max_exec_calls = 14
+procedure = "Record the active service node and storage state, create an evaluator content marker, then isolate the active member's cluster path sufficiently to exercise watchdog fencing rather than graceful standby. Prove fencing/self-fencing and uninterrupted takeover by the survivor without concurrent writable storage. Restore the member, require current storage and eligibility, then perform one planned move between service nodes and recheck content."
+cleanup = "Remove isolation, temporary constraints, standby state, and evaluator content; restore all members online with fencing enabled and one healthy service placement."
+
+[[probes]]
+id = "pacemaker-representative-reboots"
+level = 8
+targets = ["node1", "node3"]
+effect = "reboot"
+max_exec_calls = 9
+procedure = "Record boot identities, reboot service-capable node1 and quorum node3 sequentially while checking application availability, then verify membership, quorum, fencing readiness, storage health, SELinux, firewalld, and retained content."
+cleanup = "Wait for full cluster convergence and remove evaluator state or constraints."
+
+[[probes]]
+id = "pacemaker-final-reboot"
+level = 10
+targets = ["node2"]
+effect = "reboot"
+max_exec_calls = 6
+procedure = "Record node2's boot identity, reboot it, then move or fail over the application between node1 and node2 and prove original and evaluator-owned persistent content remains available through the floating address."
+cleanup = "Leave all members online, one valid unconstrained application placement, and no evaluator files."
+
+[[assertions]]
+id = "pacemaker-required-cluster"
+probe = "pacemaker-cluster-service"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "One healthy three-member infraset-ha cluster has node3 quorum-only and exactly one of node1/node2 serving replicated storage, the declared VIP, and Apache 8080."
+fail_condition = "Live cluster state confirms wrong membership/role, multiple or absent service placement, missing resource management, or unavailable required endpoint."
+
+[[assertions]]
+id = "pacemaker-content-served-from-replicated-storage"
+probe = "pacemaker-replicated-content"
+dimension = "functionality"
+points = 2
+critical = true
+requires = ["pacemaker-required-cluster"]
+pass_condition = "Evaluator content written on the active replicated mount is served through the VIP and storage/VIP/Apache are safely ordered and colocated."
+fail_condition = "Healthy cluster evidence confirms content is not served from active replicated storage or resources are unsafely independent."
+
+[[assertions]]
+id = "pacemaker-fencing-and-storage-safe"
+probe = "pacemaker-security-controls"
+dimension = "security"
+points = 3
+critical = true
+pass_condition = "Every member has operative watchdog fencing, only one writable storage activation exists, and protected cluster authentication is effective."
+fail_condition = "Concrete evidence confirms dummy/inoperative fencing, missing watchdog readiness, concurrent writable storage, or exposed/default cluster credentials."
+
+[[assertions]]
+id = "pacemaker-host-boundary"
+probe = "pacemaker-security-controls"
+dimension = "security"
+points = 1
+pass_condition = "SELinux is enforcing and persistent firewalld/listener state confines cluster, replication, and application traffic to intended HA peers."
+fail_condition = "Disabled mandatory controls, broad undeclared exposure, or unnecessary SSH/service access is confirmed."
+
+[[assertions]]
+id = "pacemaker-state-clean"
+probe = "pacemaker-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "The cluster has no failed actions, stale constraints, duplicate services, unsafe mounts, debug state, or executor/evaluator residue."
+fail_condition = "Concrete failed, stale, unsafe, conflicting, temporary, or abandoned state remains."
+
+[[assertions]]
+id = "pacemaker-survives-active-loss"
+probe = "pacemaker-active-node-loss"
+dimension = "resilience"
+points = 3
+critical = true
+pass_condition = "The active member is actually fenced/self-fenced and the survivor safely takes storage, VIP, and service while preserving content and availability."
+fail_condition = "Confirmed active-node loss causes service/data loss, no operative fencing, or concurrent writable activation."
+
+[[assertions]]
+id = "pacemaker-member-rejoins-current"
+probe = "pacemaker-active-node-loss"
+dimension = "resilience"
+points = 2
+critical = true
+requires = ["pacemaker-survives-active-loss"]
+pass_condition = "The restored member automatically rejoins with current storage, becomes eligible, and a planned move preserves content."
+fail_condition = "The restored member needs repair, remains stale/ineligible, or a planned move loses content or availability."
+
+[[assertions]]
+id = "pacemaker-two-roles-persist"
+probe = "pacemaker-representative-reboots"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node1 and node3 change boot identities and cluster membership, quorum, fencing, storage, controls, and application availability recover automatically."
+fail_condition = "A completed service/quorum-node reboot loses a required cluster, storage, fencing, control, or availability property."
+
+[[assertions]]
+id = "pacemaker-all-members-persist"
+probe = "pacemaker-final-reboot"
+dimension = "persistence"
+points = 2
+critical = true
+pass_condition = "Node2 changes boot identity and the full cluster plus post-reboot cross-node move returns with original and evaluator content intact."
+fail_condition = "Node2's completed reboot or post-reboot move loses membership, service, replicated content, or safe placement."

@@ -1,0 +1,211 @@
+schema_version = 1
+
+[[probes]]
+id = "directory-service-contract"
+level = 1
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 4
+procedure = "Over validated LDAPS, inspect both suppliers' naming context and declared POSIX identities, then query node3 through normal SSSD system interfaces."
+
+[[probes]]
+id = "directory-replication"
+level = 1
+targets = ["node1", "node2", "node3"]
+effect = "evaluator_owned_data"
+max_exec_calls = 6
+procedure = "Run the authenticated LDAP client on node3, where the task requires the protected opsuser bind password and CA trust to exist; never use inter-node SSH or expose the password. Record opsuser's original description, replace it with a unique evaluator value by targeting node1 directly and confirm convergence on node2, then replace it with a second unique value by targeting node2 directly and confirm convergence on node1."
+cleanup = "From node3, restore opsuser's original description through one supplier and confirm the restored value converges to both suppliers."
+
+[[probes]]
+id = "directory-security"
+level = 2
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 6
+procedure = "Validate both LDAPS identities; test plaintext, anonymous naming-context, authenticated opsuser, allowed self-description, forbidden numeric/group changes, credential modes, SELinux, firewall scope, SSH, and listeners."
+
+[[probes]]
+id = "directory-operational-state"
+level = 5
+targets = ["node1", "node2", "node3"]
+max_exec_calls = 3
+procedure = "Inspect failed units, unrelated directory servers, duplicate local identities, temporary credentials, stale setup artifacts, debug listeners, conflicting SSSD configuration, and residue."
+
+[[probes]]
+id = "supplier-loss"
+level = 6
+targets = ["node1", "node2", "node3"]
+effect = "controlled_failure"
+max_exec_calls = 10
+procedure = "Stop one supplier, test node3 lookup/authentication through the survivor, write evaluator data through the survivor, restore the supplier, and confirm convergence; reverse roles if budget permits."
+cleanup = "Restore both suppliers, remove evaluator changes, and confirm convergence."
+
+[[probes]]
+id = "supplier-reboots"
+level = 8
+targets = ["node1", "node2"]
+effect = "reboot"
+max_exec_calls = 8
+procedure = "Record boot identities, reboot suppliers sequentially, and after each convergence retest LDAPS, data, replication, SSSD, ACLs, TLS, SELinux, and firewall state."
+cleanup = "Wait for both suppliers to converge and remove evaluator changes."
+
+[[probes]]
+id = "directory-client-reboot"
+level = 10
+targets = ["node3"]
+effect = "reboot"
+max_exec_calls = 5
+procedure = "Record node3's boot identity, reboot it, then retest SSSD identities and authenticated LDAPS through both suppliers with protected trust/password files."
+cleanup = "Wait for node3 and SSSD to return fully online."
+
+[[assertions]]
+id = "both-suppliers-serve-naming-context"
+probe = "directory-service-contract"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "Both suppliers serve dc=infra,dc=test over hostname-validating LDAPS."
+fail_condition = "A correctly addressed supplier is confirmed not to serve the required naming context over valid LDAPS."
+
+[[assertions]]
+id = "posix-user-group-correct"
+probe = "directory-service-contract"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "Both suppliers return opsuser/infra-admins with UID/GID 20001, membership, home, and shell exactly as declared."
+fail_condition = "Authenticated directory data confirms a required POSIX attribute or membership absent/incorrect."
+
+[[assertions]]
+id = "sssd-resolves-directory-identity"
+probe = "directory-service-contract"
+dimension = "functionality"
+points = 1
+critical = true
+requires = ["posix-user-group-correct"]
+pass_condition = "Node3 resolves the same user/group attributes through normal system identity interfaces."
+fail_condition = "With a healthy supplier path, node3 is confirmed unable to resolve the declared directory identity through SSSD."
+
+[[assertions]]
+id = "node1-updates-replicate"
+probe = "directory-replication"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "A valid evaluator change originating on node1 appears on node2 within bounded convergence."
+fail_condition = "Both suppliers remain healthy but node1-originated data is confirmed not to converge."
+
+[[assertions]]
+id = "node2-updates-replicate"
+probe = "directory-replication"
+dimension = "functionality"
+points = 1
+critical = true
+pass_condition = "A valid evaluator change originating on node2 appears on node1 within bounded convergence."
+fail_condition = "Both suppliers remain healthy but node2-originated data is confirmed not to converge."
+
+[[assertions]]
+id = "ldaps-identities-valid"
+probe = "directory-security"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "Both LDAPS certificates validate for their intended node identities through the installed CA."
+fail_condition = "Correct independent TLS validation confirms an invalid identity, chain, or lifetime."
+
+[[assertions]]
+id = "anonymous-entries-denied"
+probe = "directory-security"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "Anonymous access is limited to root DSE and cannot read naming-context entries."
+fail_condition = "Anonymous naming-context entry access is confirmed."
+
+[[assertions]]
+id = "plaintext-directory-access-denied"
+probe = "directory-security"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "Sensitive directory operations over plaintext LDAP are unavailable or rejected."
+fail_condition = "A sensitive authenticated or entry operation is confirmed accepted over plaintext."
+
+[[assertions]]
+id = "opsuser-description-self-service"
+probe = "directory-security"
+dimension = "security"
+points = 1
+pass_condition = "opsuser can update and restore only its own description using its protected password."
+fail_condition = "Correct opsuser authentication is confirmed unable to update its own description."
+
+[[assertions]]
+id = "opsuser-privileged-attributes-denied"
+probe = "directory-security"
+dimension = "security"
+points = 1
+critical = true
+requires = ["opsuser-description-self-service"]
+pass_condition = "opsuser attempts to change numeric identity or group membership are rejected without mutation."
+fail_condition = "opsuser is confirmed able to change UID/GID or administrative group membership."
+
+[[assertions]]
+id = "directory-credentials-protected"
+probe = "directory-security"
+dimension = "security"
+points = 1
+critical = true
+pass_condition = "Bind password, CA/private material, and replication credentials are narrowly readable by intended roles."
+fail_condition = "Directory credential or private-key material is confirmed exposed beyond its role."
+
+[[assertions]]
+id = "directory-host-controls-effective"
+probe = "directory-security"
+dimension = "security"
+points = 1
+pass_condition = "SELinux and persistent network policy confine directory/replication traffic to the declared directory network without unnecessary SSH/debug exposure."
+fail_condition = "Disabled SELinux, undeclared broad LDAP/replication exposure, or unnecessary SSH/debug listener is confirmed."
+
+[[assertions]]
+id = "directory-state-clean"
+probe = "directory-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Each node contains only role-appropriate directory, SSSD, trust, log, and protected credential state."
+fail_condition = "Concrete executor-created failed, unrelated-server, duplicate-identity, temporary-secret, stale, debug, or conflicting state remains."
+
+[[assertions]]
+id = "client-survives-supplier-loss"
+probe = "supplier-loss"
+dimension = "resilience"
+points = 1
+critical = true
+pass_condition = "Node3 lookups and authenticated binds continue through the healthy supplier during one supplier outage."
+fail_condition = "One confirmed supplier outage stops required client lookup/authentication despite a healthy survivor."
+
+[[assertions]]
+id = "supplier-rejoins-current"
+probe = "supplier-loss"
+dimension = "resilience"
+points = 1
+critical = true
+requires = ["client-survives-supplier-loss"]
+pass_condition = "The restored supplier automatically receives evaluator data written during its outage."
+fail_condition = "The restored supplier is reachable but cannot converge current data without repair."
+
+[[assertions]]
+id = "suppliers-persist-after-reboot"
+probe = "supplier-reboots"
+dimension = "persistence"
+points = 1
+critical = true
+pass_condition = "Both boot identities change and LDAPS, data, replication, SSSD access, ACLs, trust, SELinux, and firewall state recover."
+fail_condition = "A completed supplier reboot is confirmed to lose required service, data, replication, client access, ACL, trust, or controls."
+
+[[assertions]]
+id = "directory-client-persists"
+probe = "directory-client-reboot"
+dimension = "persistence"
+points = 1
+critical = true
+pass_condition = "Node3 reboots and SSSD identity resolution, supplier failover, LDAPS trust, and protected credentials recover automatically."
+fail_condition = "The completed client reboot is confirmed to lose required directory integration or credential/trust protection."

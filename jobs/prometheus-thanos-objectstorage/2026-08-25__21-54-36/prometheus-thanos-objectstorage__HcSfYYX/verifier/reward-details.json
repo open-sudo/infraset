@@ -1,0 +1,263 @@
+{
+  "probes": [
+    {
+      "id": "thanos-metrics-contract",
+      "summary": "Read-only checks confirmed two active Prometheus replicas, four healthy host targets per replica, healthy Thanos query/store/compactor services, deduplicated current and historical queries, and authenticated TLS object-store block access.",
+      "cleanup_completed": true,
+      "limitations": [
+        "One combined node3 command exited 2 after its successful current-query section because an optional nested parser was malformed; later successful commands independently verified store access, TLS configuration, and bucket blocks."
+      ]
+    },
+    {
+      "id": "thanos-operational-state",
+      "summary": "Read-only audits found no failed monitoring services, duplicate monitoring processes, stale archives, or evaluator residue, but did find an active and enabled SSH socket and Prometheus lifecycle-management exposure.",
+      "cleanup_completed": true,
+      "limitations": []
+    }
+  ],
+  "assertions": [
+    {
+      "id": "thanos-two-replicas-scrape-all-hosts",
+      "status": "pass",
+      "summary": "Both independent Prometheus replicas are active, use unique replica labels, and actively scrape four current host targets.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n systemctl is-active prometheus; sudo -n systemctl is-active prometheus-node-exporter; sudo -n grep -RniE 'external_labels|replica|job_name|static_configs|targets|node_exporter' /etc/prometheus; curl -fsS --max-time 8 http://127.0.0.1:9090/api/v1/targets; curl -fsS --max-time 8 http://127.0.0.1:9090/api/v1/status/config",
+          "observation": "Prometheus and node exporter were active; configuration contained replica=node1 and job=node; target API reported active=4, dropped=0, with all four targets health=up and recent scrapes."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n systemctl is-active prometheus; sudo -n systemctl is-active prometheus-node-exporter; sudo -n grep -RniE 'external_labels|replica|job_name|static_configs|targets|node_exporter' /etc/prometheus; curl -fsS --max-time 8 http://127.0.0.1:9090/api/v1/targets; curl -fsS --max-time 8 http://127.0.0.1:9090/api/v1/status/config",
+          "observation": "Prometheus and node exporter were active; configuration contained replica=node2 and job=node; target API reported active=4, dropped=0, with all four targets health=up and recent scrapes."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "thanos-query-deduplicates-and-retains",
+      "status": "pass",
+      "summary": "Node3 query deduplicated current and historical host series, exposed both replica sidecars and the object-backed store, and authenticated successfully to the HTTPS S3 bucket containing retained blocks.",
+      "evidence": [
+        {
+          "node": "node3",
+          "command": "curl -fsS --max-time 10 --get --data-urlencode 'query=count by (instance) (up{job=\"node\"})' http://127.0.0.1:10902/api/v1/query; curl -sS --max-time 8 http://127.0.0.1:10902/api/v1/stores; sudo -n -H /usr/local/bin/thanos tools bucket ls --objstore.config-file=/etc/thanos/objstore.yml; sudo -n grep -En '^[[:space:]]*(type|bucket|endpoint|http_config|tls_config|ca_file|insecure|access_key|secret_key):' /etc/thanos/objstore.yml | sed -E 's/(access_key|secret_key):.*/\\1: <redacted>/'",
+          "observation": "The current query returned api_status=success with four series, each value=1, proving deduplication. The store API showed two sidecars with replica labels node1/node2 and one healthy object-backed store with lastError=null. Thanos bucket listing succeeded, synchronized 10 blocks with partial=0, and exited 0. Object-store configuration showed S3, bucket thanos-metrics, authenticated access keys, insecure=false, and a CA file."
+        },
+        {
+          "node": "node3",
+          "command": "t=1787709840; curl -fsS --max-time 10 --get --data-urlencode 'query=count by (instance) (up{job=\"node\"})' --data-urlencode \"time=$t\" http://127.0.0.1:10902/api/v1/query; sudo -n -H sh -c '. /root/thanos-objectstore.env; printf \"env_endpoint=%s access_key_set=%s secret_key_set=%s ca=%s\\n\" \"$S3_ENDPOINT\" \"$(test -n \"$S3_ACCESS_KEY\" && echo yes || echo no)\" \"$(test -n \"$S3_SECRET_KEY\" && echo yes || echo no)\" \"$S3_CA_CERT\"; stat -c \"env_owner=%U:%G mode=%a path=%n\" /root/thanos-objectstore.env; test -r \"$S3_CA_CERT\" && printf \"%s\\n\" ca_readable=yes || printf \"%s\\n\" ca_readable=no'",
+          "observation": "At the retained-block timestamp, the query returned api_status=success with four series, each value=1. The root-only environment file was mode 600, contained all required variables, and referenced a readable CA certificate."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n systemctl list-units --type=service --all --no-legend | grep -Ei 'minio|object|s3|thanos'; sudo -n ss -ltnp | grep -E ':9000\\b'; sudo -n stat -c 'root=%U:%G mode=%a path=%n' /srv/thanos-objectstore; sudo -n find /srv/thanos-objectstore -maxdepth 2 -type d -print",
+          "observation": "MinIO was active on TCP 9000; /srv/thanos-objectstore existed with the thanos-metrics bucket directory and retained block directories."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The first combined node3 command had a later evaluator-side parser error, but its current query returned curl_rc=0 and success; subsequent successful commands independently established historical querying and authenticated bucket access."
+      ]
+    },
+    {
+      "id": "thanos-state-clean",
+      "status": "fail",
+      "summary": "Monitoring and storage services are otherwise operational and free of stale or duplicate artifacts, but the authored clean-state condition is violated by enabled SSH socket access and Prometheus lifecycle-management exposure.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n ss -ltnp | grep -E ':(22|9090|9100|10901)\\b'; ps -eo args | grep -E -- '--web.enable-admin-api|--web.enable-lifecycle|--log.level=debug|--debug' | grep -v grep; sudo -n systemctl --failed --no-legend",
+          "observation": "TCP 22 was listening; the single Prometheus process included --web.enable-lifecycle; no failed units were reported and only one Prometheus, exporter, and Thanos sidecar process were present."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n ss -ltnp | grep -E ':(22|9090|9100|10901)\\b'; ps -eo args | grep -E -- '--web.enable-admin-api|--web.enable-lifecycle|--log.level=debug|--debug' | grep -v grep; sudo -n systemctl --failed --no-legend",
+          "observation": "TCP 22 was listening; the single Prometheus process included --web.enable-lifecycle; no failed units were reported and no duplicate monitoring processes or stale-file matches were found."
+        },
+        {
+          "node": "node3",
+          "command": "for u in ssh.socket ssh.service sshd.service; do printf '%s_active=' \"$u\"; sudo -n systemctl is-active \"$u\"; printf '%s_enabled=' \"$u\"; sudo -n systemctl is-enabled \"$u\"; done; sudo -n find /usr/local/bin /usr/local/sbin /opt /root /tmp /var/tmp -maxdepth 3 -type f \\( -iname '*prometheus*' -o -iname '*thanos*' -o -iname '*minio*' -o -iname '*.tar' -o -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.zip' \\) -printf '%M %U:%G %p\\n'",
+          "observation": "ssh.socket was active and enabled; no stale monitoring archives or duplicate monitoring binaries were found. Thanos, query, store, and compactor services were active and enabled."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n ss -ltnp | grep -E ':(22|9000|9001|9100)\\b'; ps -eo user,pid,args | grep -E '[p]rometheus|[t]hanos|[m]inio'; sudo -n find /etc/minio /etc/thanos /srv/thanos-objectstore /var/lib/minio /var/log/minio /etc/systemd/system -type f \\( -name '*.bak' -o -name '*.old' -o -name '*.orig' -o -name '*.tmp' -o -name '*~' -o -name '*.swp' \\) -print",
+          "observation": "TCP 22 was listening; MinIO and node exporter were active with one process each, and no stale or temporary object-store files were found. MinIO was configured with a console address, but no TCP 9001 listener was present."
+        }
+      ],
+      "failures": [
+        "Enabled ssh.socket provides active SSH access on node3, with TCP 22 also observed on the other audited nodes; this is outside the required monitoring, object-store, PKI, data, logs, and maintained-tooling state.",
+        "Prometheus on node1 and node2 runs with --web.enable-lifecycle, exposing lifecycle management functionality contrary to the clean-state requirement."
+      ],
+      "limitations": []
+    }
+  ],
+  "actions_performed": [
+    "Executed eight read-only managed-cluster commands for Probe 1 across node1, node2, node3, and node4.",
+    "Executed five read-only managed-cluster commands for Probe 2 across node1, node2, node3, and node4.",
+    "Performed no mutations, recovery actions, reboots, or evaluator-created cleanup changes.",
+    "Called complete_evidence exactly once after all live checks."
+  ],
+  "overall_summary": "The two Prometheus replicas scrape all four hosts with unique labels, and Thanos provides deduplicated current and retained historical data through authenticated TLS object storage. The operational-state assertion fails because SSH socket access remains enabled and Prometheus lifecycle management is exposed.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 6.0,
+      "evaluated_points": 6.0,
+      "passed_points": 6.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "thanos-two-replicas-scrape-all-hosts",
+          "probe": "thanos-metrics-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Both independent Prometheus replicas are active, use unique replica labels, and actively scrape four current host targets.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n systemctl is-active prometheus; sudo -n systemctl is-active prometheus-node-exporter; sudo -n grep -RniE 'external_labels|replica|job_name|static_configs|targets|node_exporter' /etc/prometheus; curl -fsS --max-time 8 http://127.0.0.1:9090/api/v1/targets; curl -fsS --max-time 8 http://127.0.0.1:9090/api/v1/status/config",
+              "observation": "Prometheus and node exporter were active; configuration contained replica=node1 and job=node; target API reported active=4, dropped=0, with all four targets health=up and recent scrapes."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n systemctl is-active prometheus; sudo -n systemctl is-active prometheus-node-exporter; sudo -n grep -RniE 'external_labels|replica|job_name|static_configs|targets|node_exporter' /etc/prometheus; curl -fsS --max-time 8 http://127.0.0.1:9090/api/v1/targets; curl -fsS --max-time 8 http://127.0.0.1:9090/api/v1/status/config",
+              "observation": "Prometheus and node exporter were active; configuration contained replica=node2 and job=node; target API reported active=4, dropped=0, with all four targets health=up and recent scrapes."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "thanos-query-deduplicates-and-retains",
+          "probe": "thanos-metrics-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Node3 query deduplicated current and historical host series, exposed both replica sidecars and the object-backed store, and authenticated successfully to the HTTPS S3 bucket containing retained blocks.",
+          "evidence": [
+            {
+              "node": "node3",
+              "command": "curl -fsS --max-time 10 --get --data-urlencode 'query=count by (instance) (up{job=\"node\"})' http://127.0.0.1:10902/api/v1/query; curl -sS --max-time 8 http://127.0.0.1:10902/api/v1/stores; sudo -n -H /usr/local/bin/thanos tools bucket ls --objstore.config-file=/etc/thanos/objstore.yml; sudo -n grep -En '^[[:space:]]*(type|bucket|endpoint|http_config|tls_config|ca_file|insecure|access_key|secret_key):' /etc/thanos/objstore.yml | sed -E 's/(access_key|secret_key):.*/\\1: <redacted>/'",
+              "observation": "The current query returned api_status=success with four series, each value=1, proving deduplication. The store API showed two sidecars with replica labels node1/node2 and one healthy object-backed store with lastError=null. Thanos bucket listing succeeded, synchronized 10 blocks with partial=0, and exited 0. Object-store configuration showed S3, bucket thanos-metrics, authenticated access keys, insecure=false, and a CA file."
+            },
+            {
+              "node": "node3",
+              "command": "t=1787709840; curl -fsS --max-time 10 --get --data-urlencode 'query=count by (instance) (up{job=\"node\"})' --data-urlencode \"time=$t\" http://127.0.0.1:10902/api/v1/query; sudo -n -H sh -c '. /root/thanos-objectstore.env; printf \"env_endpoint=%s access_key_set=%s secret_key_set=%s ca=%s\\n\" \"$S3_ENDPOINT\" \"$(test -n \"$S3_ACCESS_KEY\" && echo yes || echo no)\" \"$(test -n \"$S3_SECRET_KEY\" && echo yes || echo no)\" \"$S3_CA_CERT\"; stat -c \"env_owner=%U:%G mode=%a path=%n\" /root/thanos-objectstore.env; test -r \"$S3_CA_CERT\" && printf \"%s\\n\" ca_readable=yes || printf \"%s\\n\" ca_readable=no'",
+              "observation": "At the retained-block timestamp, the query returned api_status=success with four series, each value=1. The root-only environment file was mode 600, contained all required variables, and referenced a readable CA certificate."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n systemctl list-units --type=service --all --no-legend | grep -Ei 'minio|object|s3|thanos'; sudo -n ss -ltnp | grep -E ':9000\\b'; sudo -n stat -c 'root=%U:%G mode=%a path=%n' /srv/thanos-objectstore; sudo -n find /srv/thanos-objectstore -maxdepth 2 -type d -print",
+              "observation": "MinIO was active on TCP 9000; /srv/thanos-objectstore existed with the thanos-metrics bucket directory and retained block directories."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The first combined node3 command had a later evaluator-side parser error, but its current query returned curl_rc=0 and success; subsequent successful commands independently established historical querying and authenticated bucket access."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "thanos-state-clean",
+          "probe": "thanos-operational-state",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "Monitoring and storage services are otherwise operational and free of stale or duplicate artifacts, but the authored clean-state condition is violated by enabled SSH socket access and Prometheus lifecycle-management exposure.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n ss -ltnp | grep -E ':(22|9090|9100|10901)\\b'; ps -eo args | grep -E -- '--web.enable-admin-api|--web.enable-lifecycle|--log.level=debug|--debug' | grep -v grep; sudo -n systemctl --failed --no-legend",
+              "observation": "TCP 22 was listening; the single Prometheus process included --web.enable-lifecycle; no failed units were reported and only one Prometheus, exporter, and Thanos sidecar process were present."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n ss -ltnp | grep -E ':(22|9090|9100|10901)\\b'; ps -eo args | grep -E -- '--web.enable-admin-api|--web.enable-lifecycle|--log.level=debug|--debug' | grep -v grep; sudo -n systemctl --failed --no-legend",
+              "observation": "TCP 22 was listening; the single Prometheus process included --web.enable-lifecycle; no failed units were reported and no duplicate monitoring processes or stale-file matches were found."
+            },
+            {
+              "node": "node3",
+              "command": "for u in ssh.socket ssh.service sshd.service; do printf '%s_active=' \"$u\"; sudo -n systemctl is-active \"$u\"; printf '%s_enabled=' \"$u\"; sudo -n systemctl is-enabled \"$u\"; done; sudo -n find /usr/local/bin /usr/local/sbin /opt /root /tmp /var/tmp -maxdepth 3 -type f \\( -iname '*prometheus*' -o -iname '*thanos*' -o -iname '*minio*' -o -iname '*.tar' -o -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.zip' \\) -printf '%M %U:%G %p\\n'",
+              "observation": "ssh.socket was active and enabled; no stale monitoring archives or duplicate monitoring binaries were found. Thanos, query, store, and compactor services were active and enabled."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n ss -ltnp | grep -E ':(22|9000|9001|9100)\\b'; ps -eo user,pid,args | grep -E '[p]rometheus|[t]hanos|[m]inio'; sudo -n find /etc/minio /etc/thanos /srv/thanos-objectstore /var/lib/minio /var/log/minio /etc/systemd/system -type f \\( -name '*.bak' -o -name '*.old' -o -name '*.orig' -o -name '*.tmp' -o -name '*~' -o -name '*.swp' \\) -print",
+              "observation": "TCP 22 was listening; MinIO and node exporter were active with one process each, and no stale or temporary object-store files were found. MinIO was configured with a console address, but no TCP 9001 listener was present."
+            }
+          ],
+          "failures": [
+            "Enabled ssh.socket provides active SSH access on node3, with TCP 22 also observed on the other audited nodes; this is outside the required monitoring, object-store, PKI, data, logs, and maintained-tooling state.",
+            "Prometheus on node1 and node2 runs with --web.enable-lifecycle, exposing lifecycle management functionality contrary to the clean-state requirement."
+          ],
+          "limitations": []
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 75.0,
+    "reward": 0.75,
+    "provisional_reward": 0.75,
+    "caps_applied": []
+  }
+}

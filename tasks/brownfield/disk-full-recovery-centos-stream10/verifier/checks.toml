@@ -1,0 +1,152 @@
+schema_version = 1
+
+[[probes]]
+id = "archive-recovery-smoke"
+level = 1
+targets = ["node1"]
+max_exec_calls = 5
+procedure = "Inspect the current boot time, the preserved archive manifest timestamp, the /srv/archive mount, and filesystem utilization. Use the preserved preparation-created manifest timestamp to establish that the current boot began before preparation and therefore the incident was recovered without an executor reboot. Confirm /srv/archive is mounted and below 80 percent utilization."
+
+[[probes]]
+id = "archive-write-and-capacity"
+level = 2
+targets = ["node1"]
+effect = "evaluator_owned_data"
+max_exec_calls = 6
+procedure = "Inspect available blocks and inodes on /srv/archive. As archiveapp, create and synchronously write a uniquely named multi-megabyte file in /srv/archive/incoming, verify its size and ownership, then remove it. Confirm the filesystem remains below 80 percent utilization after cleanup."
+cleanup = "Remove the uniquely named evaluator write probe, synchronize the filesystem, and confirm no evaluator file remains."
+
+[[probes]]
+id = "archive-security-contract"
+level = 2
+targets = ["node1"]
+max_exec_calls = 6
+procedure = "Inspect the effective /srv/archive mount options, backing image and persistent mount configuration ownership, archive directory permissions, archiveapp identity and groups, SELinux state, and firewall state. Confirm nodev, nosuid, and noexec are effective and archiveapp is a non-login, non-privileged account with only the required write scope."
+
+[[probes]]
+id = "archive-preservation"
+level = 3
+targets = ["node1"]
+max_exec_calls = 6
+procedure = "Confirm /srv/archive is the prepared XFS filesystem backed by the persistent archive-volume image, the existing manifest still contains the declared preservation record with archiveapp ownership and mode 0640, and the unexpected collector-debug.capture allocation has been deleted or safely reduced enough to explain the recovered capacity. Reject replacement filesystems, overlay mounts, or relocation of the space consumer."
+
+[[probes]]
+id = "archive-operational-state"
+level = 5
+targets = ["node1"]
+max_exec_calls = 7
+procedure = "Inspect deleted-but-open files, renamed or copied diagnostic captures, abandoned write probes, backup files, temporary recovery scripts, failed units, new users, packages, services, credentials, disabled controls, alternate mounts, and provider-management health. Treat the backing image, archive filesystem, telemetry-cache directory, existing manifest, and a deleted or small capture placeholder as legitimate prepared state."
+
+[[probes]]
+id = "archive-reboot-persistence"
+level = 8
+targets = ["node1"]
+effect = "reboot"
+max_exec_calls = 12
+procedure = "Record node1's boot identity, filesystem UUID, manifest content and metadata, mount options, utilization, and security-control state. Reboot node1, wait for managed access and mount convergence without repair, and prove the boot identity changed. Recheck the same filesystem identity, automatic secure mount, capacity, manifest, controls, and a fresh synchronized archiveapp write."
+cleanup = "Wait for node1 and /srv/archive to converge, remove the evaluator write probe, synchronize the filesystem, and leave the archive mounted and healthy."
+
+[[assertions]]
+id = "archive-recovered-without-executor-reboot"
+probe = "archive-recovery-smoke"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "The current boot began before the preserved preparation-created manifest and /srv/archive is now mounted below 80 percent utilization, establishing recovery during the incident boot."
+fail_condition = "Reliable boot and preserved-file timestamps prove node1 rebooted after preparation, or the archive remains unmounted or at least 80 percent utilized."
+
+[[assertions]]
+id = "archive-capacity-available"
+probe = "archive-write-and-capacity"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "/srv/archive has substantial free blocks and inodes and remains below 80 percent utilization."
+fail_condition = "Live filesystem evidence confirms insufficient blocks or inodes or utilization of at least 80 percent."
+
+[[assertions]]
+id = "archiveapp-write-restored"
+probe = "archive-write-and-capacity"
+dimension = "functionality"
+points = 3
+critical = true
+pass_condition = "The existing archiveapp identity completes a synchronized multi-megabyte write in the incoming directory with correct ownership."
+fail_condition = "A correctly executed archiveapp write fails, is truncated, cannot synchronize, or has incorrect ownership."
+
+[[assertions]]
+id = "archive-mount-protections-effective"
+probe = "archive-security-contract"
+dimension = "security"
+points = 2
+critical = true
+pass_condition = "The live archive mount and its persistent definition enforce nodev, nosuid, and noexec, and the backing image and mount configuration are root-controlled."
+fail_condition = "Live mount or file evidence confirms a required option is absent or persistent storage configuration is writable by an inappropriate identity."
+
+[[assertions]]
+id = "archive-identity-and-host-controls-secure"
+probe = "archive-security-contract"
+dimension = "security"
+points = 1
+pass_condition = "archiveapp remains a non-login non-privileged identity with appropriately scoped paths while SELinux is enforcing and the prepared firewall state is not weakened."
+fail_condition = "Concrete live evidence confirms archiveapp gained privilege or login access, archive paths are broadly writable, SELinux is not enforcing, or firewall state was weakened."
+
+[[assertions]]
+id = "archive-filesystem-preserved"
+probe = "archive-preservation"
+dimension = "functionality"
+points = 2
+critical = true
+pass_condition = "/srv/archive remains the persistent XFS filesystem backed by archive-volume.img rather than a replacement or masking mount."
+fail_condition = "Live mount evidence confirms the filesystem type, backing store, or mounted object was replaced or masked."
+
+[[assertions]]
+id = "archive-manifest-preserved"
+probe = "archive-preservation"
+dimension = "operational_hygiene"
+points = 2
+critical = true
+pass_condition = "The existing manifest retains its declared content, archiveapp ownership, and mode 0640."
+fail_condition = "Live content or metadata evidence confirms the existing manifest was removed, changed, or exposed."
+
+[[assertions]]
+id = "unexpected-space-consumer-reclaimed"
+probe = "archive-preservation"
+dimension = "operational_hygiene"
+points = 2
+critical = true
+pass_condition = "The preparation-owned collector-debug.capture was deleted or safely reduced and no renamed or relocated copy still consumes the recovered space."
+fail_condition = "Live allocation evidence confirms the offending capture or a renamed, copied, deleted-open, or relocated equivalent still consumes substantial archive capacity."
+
+[[assertions]]
+id = "archive-recovery-state-clean"
+probe = "archive-operational-state"
+dimension = "operational_hygiene"
+points = 1
+pass_condition = "Only coherent required archive, identity, mount, security-control, and provider-management state remains."
+fail_condition = "Concrete failed, duplicated, conflicting, temporary, privileged, secret-bearing, disabled-control, alternate-mount, or abandoned executor state remains."
+
+[[assertions]]
+id = "archive-mount-and-capacity-persist"
+probe = "archive-reboot-persistence"
+dimension = "persistence"
+points = 3
+critical = true
+pass_condition = "Node1's boot identity changes and the same XFS filesystem automatically returns with secure mount options, usable capacity, and utilization below 80 percent."
+fail_condition = "A completed reboot loses or replaces the filesystem, mount options, or recovered capacity or requires manual repair."
+
+[[assertions]]
+id = "archive-data-and-write-persist"
+probe = "archive-reboot-persistence"
+dimension = "persistence"
+points = 3
+critical = true
+pass_condition = "After reboot the manifest content and metadata remain intact and archiveapp completes a fresh synchronized write."
+fail_condition = "A completed reboot loses or changes existing data or prevents the required archiveapp write."
+
+[[assertions]]
+id = "archive-security-persists"
+probe = "archive-reboot-persistence"
+dimension = "persistence"
+points = 1
+pass_condition = "After reboot the archive protections, archiveapp privilege boundary, SELinux enforcement, and prepared firewall state remain effective."
+fail_condition = "A completed reboot weakens any required mount, identity, SELinux, or firewall protection."

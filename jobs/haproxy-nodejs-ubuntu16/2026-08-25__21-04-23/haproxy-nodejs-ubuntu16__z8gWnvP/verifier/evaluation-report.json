@@ -1,0 +1,280 @@
+{
+  "probes": [
+    {
+      "id": "web-service-contract",
+      "summary": "Read-only listener ownership, HTTP response, and HAProxy routing checks completed on node1.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "web-persistent-state",
+      "summary": "Both services and their durable configuration are enabled; AppArmor is active, while UFW is durably inactive.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "web-operational-state",
+      "summary": "Ubuntu release, units, processes, listeners, package audit, and residue checks completed.",
+      "cleanup_completed": true,
+      "limitations": []
+    }
+  ],
+  "assertions": [
+    {
+      "id": "haproxy-response",
+      "status": "pass",
+      "summary": "HAProxy returned HTTP 200 with the exact required body for /.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== HAProxy port 80 / ==' ; curl -sS --noproxy '*' --max-time 5 -w '\\nSTATUS:%{http_code}\\n' http://127.0.0.1/ ; printf '%s\\n' '== loopback Node.js port 3000 / ==' ; curl -sS --noproxy '*' --max-time 5 -w '\\nSTATUS:%{http_code}\\n' http://127.0.0.1:3000/",
+          "observation": "HAProxy port 80: infraset-nodejs, STATUS:200."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "nodejs-backend-response",
+      "status": "pass",
+      "summary": "The loopback Node.js backend returned HTTP 200 with the exact required body for /.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== HAProxy port 80 / ==' ; curl -sS --noproxy '*' --max-time 5 -w '\\nSTATUS:%{http_code}\\n' http://127.0.0.1/ ; printf '%s\\n' '== loopback Node.js port 3000 / ==' ; curl -sS --noproxy '*' --max-time 5 -w '\\nSTATUS:%{http_code}\\n' http://127.0.0.1:3000/",
+          "observation": "Loopback Node.js port 3000: infraset-nodejs, STATUS:200."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "proxy-forwards-to-backend",
+      "status": "pass",
+      "summary": "Listener ownership and validated HAProxy configuration prove forwarding from port 80 to the loopback Node.js backend on port 3000.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== web-related active units ==' ; systemctl list-units --type=service --all --no-legend | grep -Ei 'haproxy|node|npm|web|http' || true ; printf '%s\\n' '== web-related unit files ==' ; systemctl list-unit-files --type=service --no-legend | grep -Ei 'haproxy|node|npm|web|http' || true ; printf '%s\\n' '== haproxy active ==' ; systemctl is-active haproxy.service 2>&1 ; printf '%s\\n' '== port 80/3000 listeners ==' ; sudo -n ss -ltnp | grep -E ':(80|3000)[[:space:]]' || true",
+          "observation": "*:80 is owned by haproxy; 127.0.0.1:3000 is owned by nodejs."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== HAProxy configuration validation ==' ; sudo -n haproxy -c -f /etc/haproxy/haproxy.cfg ; printf '%s\\n' '== forwarding directives ==' ; sudo -n awk 'BEGIN{IGNORECASE=1} $0 !~ /^[[:space:]]*#/ && $0 ~ /^[[:space:]]*(frontend|backend|listen|bind|default_backend|server|use_backend|mode)[[:space:]]/ {print}' /etc/haproxy/haproxy.cfg ; printf '%s\\n' '== HAProxy unit identity ==' ; systemctl show haproxy.service -p FragmentPath -p MainPID -p ActiveState -p SubState --no-page",
+          "observation": "Configuration file is valid; frontend http_in binds 0.0.0.0:80, selects nodejs_backend, and server nodejs_local targets 127.0.0.1:3000."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "web-startup-durable",
+      "status": "pass",
+      "summary": "Both services are enabled and active with durable systemd units and on-disk configuration; AppArmor is enabled/active and UFW is durably inactive.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== enabled service state ==' ; for svc in haproxy.service infraset-nodejs.service; do printf '%s\\n' \"$svc\" ; systemctl is-enabled \"$svc\" 2>&1 ; systemctl show \"$svc\" -p FragmentPath -p DropInPaths -p ExecStart -p Restart -p ActiveState -p SubState --no-page ; done ; printf '%s\\n' '== UFW policy ==' ; sudo -n ufw status verbose 2>&1 ; printf '%s\\n' '== AppArmor control state ==' ; sudo -n systemctl is-enabled apparmor.service 2>&1 ; sudo -n systemctl is-active apparmor.service 2>&1 ; sudo -n aa-status 2>&1 | head -40",
+          "observation": "haproxy.service and infraset-nodejs.service are enabled, active/running, and configured with Restart=always. UFW reports Status: inactive. AppArmor is enabled and active; its module is loaded with 13 profiles in enforce mode."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== durable file presence ==' ; for p in /etc/haproxy/haproxy.cfg /etc/systemd/system/infraset-nodejs.service /etc/systemd/system/haproxy.service.d/10-infraset-nodejs.conf /opt/infraset-nodejs/server.js; do if [ -e \"$p\" ]; then sudo -n stat -c '%n %U:%G mode=%a size=%s' \"$p\" ; else printf 'MISSING %s\\n' \"$p\" ; fi ; done ; printf '%s\\n' '== Node.js unit directives ==' ; sudo -n awk 'BEGIN{IGNORECASE=1} $0 ~ /^[[:space:]]*(Description|After|Requires|ExecStart|Restart|WorkingDirectory|User|Group|WantedBy|EnvironmentFile)[[:space:]=]/ {print}' /etc/systemd/system/infraset-nodejs.service ; printf '%s\\n' '== HAProxy startup drop-in directives ==' ; sudo -n awk 'BEGIN{IGNORECASE=1} $0 ~ /^[[:space:]]*(Environment|ExecStart|Restart|After|Requires)[[:space:]=]/ {print}' /etc/systemd/system/haproxy.service.d/10-infraset-nodejs.conf ; printf '%s\\n' '== durable HAProxy routing directives ==' ; sudo -n awk 'BEGIN{IGNORECASE=1} $0 !~ /^[[:space:]]*#/ && $0 ~ /^[[:space:]]*(frontend|backend|bind|default_backend|server|mode)[[:space:]]/ {print}' /etc/haproxy/haproxy.cfg",
+          "observation": "Durable files exist: /etc/haproxy/haproxy.cfg, /etc/systemd/system/infraset-nodejs.service, the HAProxy drop-in, and /opt/infraset-nodejs/server.js. The Node.js unit has WantedBy=multi-user.target and ExecStart=/usr/bin/nodejs /opt/infraset-nodejs/server.js; the HAProxy drop-in Requires and orders after infraset-nodejs.service."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "web-state-clean",
+      "status": "fail",
+      "summary": "Expected services are cleanly active with no failed units or package-audit errors, but HAProxy debug/temporary residue remains in /tmp.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== operating system release ==' ; . /etc/os-release ; printf 'PRETTY_NAME=%s\\nVERSION_ID=%s\\n' \"$PRETTY_NAME\" \"$VERSION_ID\" ; printf '%s\\n' '== failed systemd units ==' ; systemctl --failed --no-legend --no-pager 2>&1 ; printf '%s\\n' '== web-related units ==' ; systemctl list-units --type=service --all --no-legend | grep -Ei 'haproxy|infraset-nodejs|nginx|apache2|httpd|caddy|lighttpd|node' || true ; printf '%s\\n' '== web/debug processes ==' ; ps -eo pid,ppid,user,comm,args --sort=pid | grep -Ei 'haproxy|node(js)?|nginx|apache2|httpd|caddy|lighttpd|python.*(http\\.server|flask)|gdb|strace|socat|nc[[:space:]]' | grep -v 'grep -Ei' || true ; printf '%s\\n' '== listening sockets ==' ; sudo -n ss -ltnp 2>&1 ; printf '%s\\n' '== package audit ==' ; dpkg --audit 2>&1",
+          "observation": "Ubuntu 16.04.7 LTS; no failed units and an empty dpkg audit. Only the expected HAProxy and InfraSet Node.js web units/processes listen on the relevant web ports."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '== installed web unit inventory ==' ; systemctl list-unit-files --type=service --no-legend | grep -Ei 'haproxy|infraset-nodejs|nginx|apache2|httpd|caddy|lighttpd|node' || printf '%s\\n' 'none beyond expected units' ; printf '%s\\n' '== durable application files ==' ; sudo -n find /opt/infraset-nodejs -maxdepth 2 -type f -printf '%p\\n' 2>&1 | sort ; printf '%s\\n' '== temporary or backup residue in web configuration ==' ; sudo -n find /etc/haproxy /etc/systemd/system /opt/infraset-nodejs /tmp /var/tmp -maxdepth 3 -type f \\( -name '*~' -o -name '*.bak' -o -name '*.backup' -o -name '*.orig' -o -name '*.tmp' -o -name '*.swp' -o -iname '*debug*' -o -iname '*test*' \\) -print 2>/dev/null | sort || true ; printf '%s\\n' '== HAProxy configuration files ==' ; sudo -n find /etc/haproxy -maxdepth 2 -type f -printf '%p\\n' 2>&1 | sort",
+          "observation": "The residue scan found /tmp/haproxy-debug.log and /tmp/haproxy-debug.pid.launch. These are explicit HAProxy debug/temporary artifacts."
+        }
+      ],
+      "failures": [
+        "Executor-created HAProxy debug/temporary residue remains at /tmp/haproxy-debug.log and /tmp/haproxy-debug.pid.launch."
+      ],
+      "limitations": []
+    }
+  ],
+  "actions_performed": [
+    "Executed the seven authored read-only managed checks on node1.",
+    "Performed no mutating, recovery, or cleanup actions because all probes prohibit evaluator mutation.",
+    "Closed live evidence exactly once with complete_evidence."
+  ],
+  "overall_summary": "HAProxy and the loopback Node.js backend satisfy the HTTP contract and are durably enabled with valid persistent routing. The operational-state assertion fails because two HAProxy debug/temporary files remain under /tmp.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 3.0,
+      "evaluated_points": 3.0,
+      "passed_points": 3.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "haproxy-response",
+          "probe": "web-service-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "HAProxy returned HTTP 200 with the exact required body for /.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== HAProxy port 80 / ==' ; curl -sS --noproxy '*' --max-time 5 -w '\\nSTATUS:%{http_code}\\n' http://127.0.0.1/ ; printf '%s\\n' '== loopback Node.js port 3000 / ==' ; curl -sS --noproxy '*' --max-time 5 -w '\\nSTATUS:%{http_code}\\n' http://127.0.0.1:3000/",
+              "observation": "HAProxy port 80: infraset-nodejs, STATUS:200."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "nodejs-backend-response",
+          "probe": "web-service-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "The loopback Node.js backend returned HTTP 200 with the exact required body for /.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== HAProxy port 80 / ==' ; curl -sS --noproxy '*' --max-time 5 -w '\\nSTATUS:%{http_code}\\n' http://127.0.0.1/ ; printf '%s\\n' '== loopback Node.js port 3000 / ==' ; curl -sS --noproxy '*' --max-time 5 -w '\\nSTATUS:%{http_code}\\n' http://127.0.0.1:3000/",
+              "observation": "Loopback Node.js port 3000: infraset-nodejs, STATUS:200."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "proxy-forwards-to-backend",
+          "probe": "web-service-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Listener ownership and validated HAProxy configuration prove forwarding from port 80 to the loopback Node.js backend on port 3000.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== web-related active units ==' ; systemctl list-units --type=service --all --no-legend | grep -Ei 'haproxy|node|npm|web|http' || true ; printf '%s\\n' '== web-related unit files ==' ; systemctl list-unit-files --type=service --no-legend | grep -Ei 'haproxy|node|npm|web|http' || true ; printf '%s\\n' '== haproxy active ==' ; systemctl is-active haproxy.service 2>&1 ; printf '%s\\n' '== port 80/3000 listeners ==' ; sudo -n ss -ltnp | grep -E ':(80|3000)[[:space:]]' || true",
+              "observation": "*:80 is owned by haproxy; 127.0.0.1:3000 is owned by nodejs."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== HAProxy configuration validation ==' ; sudo -n haproxy -c -f /etc/haproxy/haproxy.cfg ; printf '%s\\n' '== forwarding directives ==' ; sudo -n awk 'BEGIN{IGNORECASE=1} $0 !~ /^[[:space:]]*#/ && $0 ~ /^[[:space:]]*(frontend|backend|listen|bind|default_backend|server|use_backend|mode)[[:space:]]/ {print}' /etc/haproxy/haproxy.cfg ; printf '%s\\n' '== HAProxy unit identity ==' ; systemctl show haproxy.service -p FragmentPath -p MainPID -p ActiveState -p SubState --no-page",
+              "observation": "Configuration file is valid; frontend http_in binds 0.0.0.0:80, selects nodejs_backend, and server nodejs_local targets 127.0.0.1:3000."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 1.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "web-startup-durable",
+          "probe": "web-persistent-state",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Both services are enabled and active with durable systemd units and on-disk configuration; AppArmor is enabled/active and UFW is durably inactive.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== enabled service state ==' ; for svc in haproxy.service infraset-nodejs.service; do printf '%s\\n' \"$svc\" ; systemctl is-enabled \"$svc\" 2>&1 ; systemctl show \"$svc\" -p FragmentPath -p DropInPaths -p ExecStart -p Restart -p ActiveState -p SubState --no-page ; done ; printf '%s\\n' '== UFW policy ==' ; sudo -n ufw status verbose 2>&1 ; printf '%s\\n' '== AppArmor control state ==' ; sudo -n systemctl is-enabled apparmor.service 2>&1 ; sudo -n systemctl is-active apparmor.service 2>&1 ; sudo -n aa-status 2>&1 | head -40",
+              "observation": "haproxy.service and infraset-nodejs.service are enabled, active/running, and configured with Restart=always. UFW reports Status: inactive. AppArmor is enabled and active; its module is loaded with 13 profiles in enforce mode."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== durable file presence ==' ; for p in /etc/haproxy/haproxy.cfg /etc/systemd/system/infraset-nodejs.service /etc/systemd/system/haproxy.service.d/10-infraset-nodejs.conf /opt/infraset-nodejs/server.js; do if [ -e \"$p\" ]; then sudo -n stat -c '%n %U:%G mode=%a size=%s' \"$p\" ; else printf 'MISSING %s\\n' \"$p\" ; fi ; done ; printf '%s\\n' '== Node.js unit directives ==' ; sudo -n awk 'BEGIN{IGNORECASE=1} $0 ~ /^[[:space:]]*(Description|After|Requires|ExecStart|Restart|WorkingDirectory|User|Group|WantedBy|EnvironmentFile)[[:space:]=]/ {print}' /etc/systemd/system/infraset-nodejs.service ; printf '%s\\n' '== HAProxy startup drop-in directives ==' ; sudo -n awk 'BEGIN{IGNORECASE=1} $0 ~ /^[[:space:]]*(Environment|ExecStart|Restart|After|Requires)[[:space:]=]/ {print}' /etc/systemd/system/haproxy.service.d/10-infraset-nodejs.conf ; printf '%s\\n' '== durable HAProxy routing directives ==' ; sudo -n awk 'BEGIN{IGNORECASE=1} $0 !~ /^[[:space:]]*#/ && $0 ~ /^[[:space:]]*(frontend|backend|bind|default_backend|server|mode)[[:space:]]/ {print}' /etc/haproxy/haproxy.cfg",
+              "observation": "Durable files exist: /etc/haproxy/haproxy.cfg, /etc/systemd/system/infraset-nodejs.service, the HAProxy drop-in, and /opt/infraset-nodejs/server.js. The Node.js unit has WantedBy=multi-user.target and ExecStart=/usr/bin/nodejs /opt/infraset-nodejs/server.js; the HAProxy drop-in Requires and orders after infraset-nodejs.service."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "web-state-clean",
+          "probe": "web-operational-state",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "Expected services are cleanly active with no failed units or package-audit errors, but HAProxy debug/temporary residue remains in /tmp.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== operating system release ==' ; . /etc/os-release ; printf 'PRETTY_NAME=%s\\nVERSION_ID=%s\\n' \"$PRETTY_NAME\" \"$VERSION_ID\" ; printf '%s\\n' '== failed systemd units ==' ; systemctl --failed --no-legend --no-pager 2>&1 ; printf '%s\\n' '== web-related units ==' ; systemctl list-units --type=service --all --no-legend | grep -Ei 'haproxy|infraset-nodejs|nginx|apache2|httpd|caddy|lighttpd|node' || true ; printf '%s\\n' '== web/debug processes ==' ; ps -eo pid,ppid,user,comm,args --sort=pid | grep -Ei 'haproxy|node(js)?|nginx|apache2|httpd|caddy|lighttpd|python.*(http\\.server|flask)|gdb|strace|socat|nc[[:space:]]' | grep -v 'grep -Ei' || true ; printf '%s\\n' '== listening sockets ==' ; sudo -n ss -ltnp 2>&1 ; printf '%s\\n' '== package audit ==' ; dpkg --audit 2>&1",
+              "observation": "Ubuntu 16.04.7 LTS; no failed units and an empty dpkg audit. Only the expected HAProxy and InfraSet Node.js web units/processes listen on the relevant web ports."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '== installed web unit inventory ==' ; systemctl list-unit-files --type=service --no-legend | grep -Ei 'haproxy|infraset-nodejs|nginx|apache2|httpd|caddy|lighttpd|node' || printf '%s\\n' 'none beyond expected units' ; printf '%s\\n' '== durable application files ==' ; sudo -n find /opt/infraset-nodejs -maxdepth 2 -type f -printf '%p\\n' 2>&1 | sort ; printf '%s\\n' '== temporary or backup residue in web configuration ==' ; sudo -n find /etc/haproxy /etc/systemd/system /opt/infraset-nodejs /tmp /var/tmp -maxdepth 3 -type f \\( -name '*~' -o -name '*.bak' -o -name '*.backup' -o -name '*.orig' -o -name '*.tmp' -o -name '*.swp' -o -iname '*debug*' -o -iname '*test*' \\) -print 2>/dev/null | sort || true ; printf '%s\\n' '== HAProxy configuration files ==' ; sudo -n find /etc/haproxy -maxdepth 2 -type f -printf '%p\\n' 2>&1 | sort",
+              "observation": "The residue scan found /tmp/haproxy-debug.log and /tmp/haproxy-debug.pid.launch. These are explicit HAProxy debug/temporary artifacts."
+            }
+          ],
+          "failures": [
+            "Executor-created HAProxy debug/temporary residue remains at /tmp/haproxy-debug.log and /tmp/haproxy-debug.pid.launch."
+          ],
+          "limitations": []
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "persistence",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 86.67,
+    "reward": 0.8667,
+    "provisional_reward": 0.8667,
+    "caps_applied": []
+  }
+}

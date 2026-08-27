@@ -1,0 +1,409 @@
+{
+  "probes": [
+    {
+      "id": "heartbeat-service-smoke",
+      "summary": "Read-only smoke checks completed on node1.",
+      "cleanup_completed": true,
+      "limitations": [
+        "An initial exploratory timed loop exited 1 after printing both samples because its trailing conditional returned false; the corrected timed loop exited 0 and supplied complete evidence."
+      ]
+    },
+    {
+      "id": "heartbeat-effective-unit",
+      "summary": "Read-only effective-unit checks completed on node1.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "heartbeat-preservation",
+      "summary": "Read-only program, identity, SELinux, runtime ownership, and restriction checks completed on node1.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "heartbeat-operational-state",
+      "summary": "Read-only operational-state checks completed on node1.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The authored probes did not authorize a reboot; enabled configuration and current operation were verified, but post-reboot continuity was not directly observed."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "heartbeat-service-active-enabled",
+      "status": "pass",
+      "summary": "The service is loaded and enabled, active/running, with stable MainPID 1352 and no restart loop.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "systemctl show telemetry-heartbeat.service --no-pager -p LoadState -p UnitFileState -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus -p ExecMainStartTimestamp -p User -p FragmentPath; printf '%s\\n' '-- is-enabled'; systemctl is-enabled telemetry-heartbeat.service; printf '%s\\n' '-- is-active'; systemctl is-active telemetry-heartbeat.service",
+          "observation": "LoadState=loaded, UnitFileState=enabled, ActiveState=active, SubState=running, MainPID=1352, NRestarts=0, ExecMainStatus=0, User=svc-heartbeat, is-enabled=enabled, and is-active=active."
+        },
+        {
+          "node": "node1",
+          "command": "pid1=$(systemctl show telemetry-heartbeat.service -p MainPID --value); start1=$(systemctl show telemetry-heartbeat.service -p ExecMainStartTimestampMonotonic --value); sleep 2; pid2=$(systemctl show telemetry-heartbeat.service -p MainPID --value); start2=$(systemctl show telemetry-heartbeat.service -p ExecMainStartTimestampMonotonic --value); printf 'pid1=%s\\npid2=%s\\nstart1=%s\\nstart2=%s\\n' \"$pid1\" \"$pid2\" \"$start1\" \"$start2\"; if [ \"$pid1\" = \"$pid2\" ] && [ \"$pid1\" -gt 0 ] 2>/dev/null; then ps -p \"$pid2\" -o pid=,ppid=,user=,group=,stat=,etimes=,args=; else ps -p \"$pid2\" -o pid=,ppid=,user=,group=,stat=,etimes=,args=; fi; systemctl show telemetry-heartbeat.service -p NRestarts -p ActiveState -p SubState -p ExecMainStatus",
+          "observation": "pid1=1352 and pid2=1352; start1=start2=55380097; the process is svc-heartbeat and running; NRestarts=0, ActiveState=active, SubState=running, and ExecMainStatus=0."
+        },
+        {
+          "node": "node1",
+          "command": "systemctl status telemetry-heartbeat.service --no-pager -l; printf '%s\\n' '-- recent journal'; journalctl -u telemetry-heartbeat.service -n 12 --no-pager -o short-iso",
+          "observation": "Current status is active (running) with Main PID 1352. Older 14:04:36 203/EXEC entries precede the successful 14:05:22 start; no current restart loop is present."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "heartbeat-refreshes-on-time",
+      "status": "pass",
+      "summary": "The heartbeat file contained changing parseable UTC timestamps two seconds apart.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "for n in 1 2; do printf '%s\\n' \"-- observation $n\"; date -u '+observer_utc=%Y-%m-%dT%H:%M:%SZ epoch=%s'; if [ -r /run/telemetry-heartbeat/heartbeat ]; then stat -c 'size=%s mtime_epoch=%Y' /run/telemetry-heartbeat/heartbeat; printf 'content='; sed -n '1p' /run/telemetry-heartbeat/heartbeat; else printf '%s\\n' 'heartbeat=ABSENT'; fi; if [ \"$n\" -eq 1 ]; then sleep 2; fi; done",
+          "observation": "Observation 1 at epoch 1787767610 had content 2026-08-26T18:06:50Z and mtime_epoch=1787767610. Observation 2 at epoch 1787767612 had content 2026-08-26T18:06:52Z and mtime_epoch=1787767612. Both timestamps were parseable UTC values and changed within two seconds."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "heartbeat-execstart-repaired",
+      "status": "pass",
+      "summary": "The effective unit directly launches the installed program under svc-heartbeat, and the running MainPID corresponds to that program.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '-- unit file'; systemctl cat telemetry-heartbeat.service; printf '%s\\n' '-- effective properties'; systemctl show telemetry-heartbeat.service --no-pager -p ExecStart -p User -p Group -p FragmentPath -p DropInPaths",
+          "observation": "The unit and effective properties show ExecStart=/usr/local/bin/telemetry-heartbeat, User=svc-heartbeat, Group=svc-heartbeat, FragmentPath=/etc/systemd/system/telemetry-heartbeat.service, and DropInPaths empty."
+        },
+        {
+          "node": "node1",
+          "command": "pid=$(systemctl show telemetry-heartbeat.service -p MainPID --value); printf 'MainPID=%s\\n' \"$pid\"; printf 'exe='; readlink -f \"/proc/$pid/exe\"; printf 'cmdline='; tr '\\000' ' ' < \"/proc/$pid/cmdline\"; printf '\\n'; ps -p \"$pid\" -o pid=,user=,group=,comm=,args=",
+          "observation": "MainPID=1352; cmdline=/bin/sh /usr/local/bin/telemetry-heartbeat; ps shows svc-heartbeat running that installed program."
+        },
+        {
+          "node": "node1",
+          "command": "stat -c 'mode=%A uid=%u gid=%g owner=%U group=%G size=%s path=%n' /usr/local/bin/telemetry-heartbeat; printf 'resolved='; readlink -f /usr/local/bin/telemetry-heartbeat; printf '%s\\n' '-- first lines'; sed -n '1,12p' /usr/local/bin/telemetry-heartbeat",
+          "observation": "The installed path is root-owned executable, resolves to itself, and is a POSIX shell heartbeat loop; the displayed program writes the heartbeat directly."
+        },
+        {
+          "node": "node1",
+          "command": "for p in /usr/local/bin/telemetry-heartbeat /usr/local/bin/telemetry-heartbeat-missing; do if [ -e \"$p\" ]; then printf '%s exists type=' \"$p\"; if [ -L \"$p\" ]; then printf '%s\\n' symlink; else printf '%s\\n' regular-or-other; fi; else printf '%s absent\\n' \"$p\"; fi; done; pid=$(systemctl show telemetry-heartbeat.service -p MainPID --value); printf 'service_cgroup='; systemctl show telemetry-heartbeat.service -p ControlGroup --value; printf 'pid_cgroup='; sed -n '1p' \"/proc/$pid/cgroup\"",
+          "observation": "The installed executable exists and is not a symlink; the prepared missing path is absent. The service and MainPID share /system.slice/telemetry-heartbeat.service."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "heartbeat-program-and-identity-preserved",
+      "status": "pass",
+      "summary": "The root-owned installed program, non-login svc-heartbeat identity, enforcing SELinux state, runtime ownership, and existing service restrictions remain coherent.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "stat -c 'mode=%A uid=%u gid=%g owner=%U group=%G size=%s path=%n' /usr/local/bin/telemetry-heartbeat; file /usr/local/bin/telemetry-heartbeat; getcap /usr/local/bin/telemetry-heartbeat 2>/dev/null || true; printf '%s\\n' '-- program behavior'; sed -n '1,12p' /usr/local/bin/telemetry-heartbeat",
+          "observation": "The program is mode -rwxr-xr-x, uid/gid 0, owner/group root, a POSIX shell executable, with no reported capabilities; its behavior writes UTC timestamps to the required heartbeat path every second."
+        },
+        {
+          "node": "node1",
+          "command": "getent passwd svc-heartbeat; id svc-heartbeat; passwd -S svc-heartbeat 2>/dev/null || true; printf '%s\\n' '-- account metadata'; chage -l svc-heartbeat 2>/dev/null | sed -n '1,6p' || true",
+          "observation": "svc-heartbeat is uid/gid 995, home /nonexistent, shell /sbin/nologin, and has only its own group."
+        },
+        {
+          "node": "node1",
+          "command": "if command -v getenforce >/dev/null 2>&1; then getenforce; else printf '%s\\n' 'getenforce=unavailable'; fi; if command -v sestatus >/dev/null 2>&1; then sestatus | sed -n '1,8p'; else printf '%s\\n' 'sestatus=unavailable'; fi",
+          "observation": "SELinux is enabled and enforcing with the targeted policy."
+        },
+        {
+          "node": "node1",
+          "command": "systemctl show telemetry-heartbeat.service --no-pager -p User -p Group -p NoNewPrivileges -p PrivateTmp -p ProtectSystem -p ProtectHome -p ProtectKernelTunables -p ProtectKernelModules -p ProtectKernelLogs -p ProtectControlGroups -p LockPersonality -p MemoryDenyWriteExecute -p CapabilityBoundingSet -p RestrictAddressFamilies -p ReadWritePaths -p RuntimeDirectory -p RuntimeDirectoryMode",
+          "observation": "Effective restrictions remain set: User/Group svc-heartbeat, NoNewPrivileges=yes, PrivateTmp=yes, ProtectSystem=strict, ProtectHome=yes, kernel/control-group protections=yes, LockPersonality=yes, MemoryDenyWriteExecute=yes, empty CapabilityBoundingSet, RestrictAddressFamilies=AF_UNIX, and ReadWritePaths=/run/telemetry-heartbeat."
+        },
+        {
+          "node": "node1",
+          "command": "stat -c 'mode=%A uid=%u gid=%g owner=%U group=%G path=%n' /run/telemetry-heartbeat /run/telemetry-heartbeat/heartbeat; pid=$(systemctl show telemetry-heartbeat.service -p MainPID --value); ps -p \"$pid\" -o pid=,user=,group=,stat=,args=",
+          "observation": "The runtime directory is svc-heartbeat-owned mode 0750 and the heartbeat file is svc-heartbeat-owned mode 0640; MainPID 1352 runs as svc-heartbeat."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "heartbeat-state-clean",
+      "status": "pass",
+      "summary": "Only the coherent enabled heartbeat service, installed program, existing identity, expected runtime state, and normal host controls remain.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '-- failed units'; systemctl --failed --no-legend --no-pager; printf '%s\\n' '-- heartbeat state'; systemctl show telemetry-heartbeat.service --no-pager -p LoadState -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p NRestarts -p StartLimitIntervalUSec -p StartLimitBurst -p StartLimitAction",
+          "observation": "No failed units were listed. The heartbeat unit is loaded/active/running with Result=success, ExecMainCode=0, ExecMainStatus=0, NRestarts=0, and StartLimitAction=none."
+        },
+        {
+          "node": "node1",
+          "command": "cg=$(systemctl show telemetry-heartbeat.service -p ControlGroup --value); printf 'cgroup=%s\\n' \"$cg\"; cgpath=\"/sys/fs/cgroup$cg\"; if [ -r \"$cgpath/cgroup.procs\" ]; then pids=$(tr '\\n' ' ' < \"$cgpath/cgroup.procs\"); printf 'cgroup_pids=%s\\n' \"$pids\"; for p in $pids; do printf 'pid=%s ' \"$p\"; tr '\\000' ' ' < \"/proc/$p/cmdline\"; printf '\\n'; done; else printf '%s\\n' 'cgroup.procs=unreadable'; fi; ps -eo pid=,ppid=,user=,stat=,args= | awk '$1 != \"\" && $1 ~ /^[0-9]+$/ && $0 ~ /telemetry-heartbeat/ {print}'",
+          "observation": "The service cgroup contains only MainPID 1352 running /bin/sh /usr/local/bin/telemetry-heartbeat and its expected sleep 1 child. The ancillary ps pattern also matched its own diagnostic awk command, which is not in the service cgroup."
+        },
+        {
+          "node": "node1",
+          "command": "for d in /etc/systemd/system /run/systemd/system /usr/local/bin; do if [ -d \"$d\" ]; then printf '%s\\n' \"-- $d\"; find \"$d\" -maxdepth 3 \\( -iname '*telemetry*' -o -iname '*heartbeat*' \\) -printf '%M %u %g %p -> %l\\n' 2>/dev/null; fi; done",
+          "observation": "Related paths are limited to the expected systemd enable symlink, the repaired unit, and the root-owned installed executable; no obsolete wrapper or missing-executable symlink was found."
+        },
+        {
+          "node": "node1",
+          "command": "systemctl show telemetry-heartbeat.service --no-pager -p FragmentPath -p SourcePath -p DropInPaths -p LoadError -p Names; printf '%s\\n' '-- unit-like paths'; for d in /etc/systemd/system /run/systemd/system /run/systemd/generator /run/systemd/generator.early /run/systemd/generator.late; do if [ -d \"$d\" ]; then find \"$d\" -maxdepth 3 \\( -name 'telemetry-heartbeat.service*' -o -path '*/telemetry-heartbeat.service.d/*' \\) -printf '%M %u %g %p -> %l\\n' 2>/dev/null; fi; done; printf '%s\\n' '-- related unit files'; systemctl list-unit-files --no-legend --no-pager | awk '$1 ~ /telemetry|heartbeat/ {print}'",
+          "observation": "LoadError and SourcePath are empty, DropInPaths is empty, and only telemetry-heartbeat.service is listed, enabled with preset disabled. No conflicting drop-in, backup, debug override, or generator unit was found."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '-- related accounts'; getent passwd | awk -F: '$1 ~ /heartbeat|telemetry/ {print $1 \":uid=\" $3 \":home=\" $6 \":shell=\" $7}'; getent group | awk -F: '$1 ~ /heartbeat|telemetry/ {print $1 \":gid=\" $3}'; printf '%s\\n' '-- related packages'; if command -v rpm >/dev/null 2>&1; then rpm -qa | grep -Ei 'telemetry|heartbeat' || true; else printf '%s\\n' 'rpm=unavailable'; fi; printf '%s\\n' '-- related services'; systemctl list-units --all --type=service --no-legend --no-pager | awk '$0 ~ /telemetry|heartbeat/ {print}'; printf '%s\\n' '-- related named files (names and metadata only)'; for d in /etc/systemd/system /etc/sysconfig /etc/default /etc/telemetry /run /tmp; do if [ -d \"$d\" ]; then find \"$d\" -maxdepth 3 \\( -iname '*telemetry*' -o -iname '*heartbeat*' \\) -printf '%M %u %g %p\\n' 2>/dev/null; fi; done",
+          "observation": "Only svc-heartbeat exists among related accounts/groups; no related package was listed; only telemetry-heartbeat.service is active. Named files are the expected unit, enable link, runtime heartbeat, and normal systemd PrivateTmp/invocation artifacts; no evaluator credential contents were printed."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' '-- heartbeat controls'; systemctl is-enabled telemetry-heartbeat.service; systemctl is-active telemetry-heartbeat.service; systemctl show telemetry-heartbeat.service --no-pager -p RefuseManualStart -p RefuseManualStop -p InaccessiblePaths -p ReadOnlyPaths; printf '%s\\n' '-- listening sockets'; ss -lntup 2>/dev/null; ss -lxup 2>/dev/null",
+          "observation": "The service is enabled and active; RefuseManualStart=no, RefuseManualStop=no, InaccessiblePaths and ReadOnlyPaths are empty. Listening sockets belong to chronyd, sshd, and normal system services; no heartbeat listener exists."
+        },
+        {
+          "node": "node1",
+          "command": "start=$(systemctl show telemetry-heartbeat.service -p ExecMainStartTimestamp --value); printf 'main_start=%s\\n' \"$start\"; journalctl -u telemetry-heartbeat.service --since \"$start\" --no-pager -o short-iso; printf '%s\\n' '-- current result'; systemctl show telemetry-heartbeat.service --no-pager -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p NRestarts",
+          "observation": "Since the current main start at 14:05:22, the journal contains only the successful Started message. Current result is success, ActiveState=active, SubState=running, ExecMainCode=0, ExecMainStatus=0, and NRestarts=0."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The process scan's final broad ps pattern matched its own diagnostic awk command; the service-cgroup membership check independently showed only the expected heartbeat process and sleep child.",
+        "No reboot was performed because the authored probes were read-only."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Executed only read-only managed commands on node1; no evaluator mutations, recovery actions, or cleanup changes were performed."
+  ],
+  "overall_summary": "All five authored assertions pass. The repaired unit is enabled and active, directly launches the installed heartbeat program as svc-heartbeat, preserves its restrictions, refreshes the UTC heartbeat within two seconds, and has no current failed or conflicting state. Actual post-reboot continuity was not directly tested by the authored read-only plan.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 9.0,
+      "evaluated_points": 9.0,
+      "passed_points": 9.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "heartbeat-service-active-enabled",
+          "probe": "heartbeat-service-smoke",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "The service is loaded and enabled, active/running, with stable MainPID 1352 and no restart loop.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "systemctl show telemetry-heartbeat.service --no-pager -p LoadState -p UnitFileState -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus -p ExecMainStartTimestamp -p User -p FragmentPath; printf '%s\\n' '-- is-enabled'; systemctl is-enabled telemetry-heartbeat.service; printf '%s\\n' '-- is-active'; systemctl is-active telemetry-heartbeat.service",
+              "observation": "LoadState=loaded, UnitFileState=enabled, ActiveState=active, SubState=running, MainPID=1352, NRestarts=0, ExecMainStatus=0, User=svc-heartbeat, is-enabled=enabled, and is-active=active."
+            },
+            {
+              "node": "node1",
+              "command": "pid1=$(systemctl show telemetry-heartbeat.service -p MainPID --value); start1=$(systemctl show telemetry-heartbeat.service -p ExecMainStartTimestampMonotonic --value); sleep 2; pid2=$(systemctl show telemetry-heartbeat.service -p MainPID --value); start2=$(systemctl show telemetry-heartbeat.service -p ExecMainStartTimestampMonotonic --value); printf 'pid1=%s\\npid2=%s\\nstart1=%s\\nstart2=%s\\n' \"$pid1\" \"$pid2\" \"$start1\" \"$start2\"; if [ \"$pid1\" = \"$pid2\" ] && [ \"$pid1\" -gt 0 ] 2>/dev/null; then ps -p \"$pid2\" -o pid=,ppid=,user=,group=,stat=,etimes=,args=; else ps -p \"$pid2\" -o pid=,ppid=,user=,group=,stat=,etimes=,args=; fi; systemctl show telemetry-heartbeat.service -p NRestarts -p ActiveState -p SubState -p ExecMainStatus",
+              "observation": "pid1=1352 and pid2=1352; start1=start2=55380097; the process is svc-heartbeat and running; NRestarts=0, ActiveState=active, SubState=running, and ExecMainStatus=0."
+            },
+            {
+              "node": "node1",
+              "command": "systemctl status telemetry-heartbeat.service --no-pager -l; printf '%s\\n' '-- recent journal'; journalctl -u telemetry-heartbeat.service -n 12 --no-pager -o short-iso",
+              "observation": "Current status is active (running) with Main PID 1352. Older 14:04:36 203/EXEC entries precede the successful 14:05:22 start; no current restart loop is present."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "heartbeat-refreshes-on-time",
+          "probe": "heartbeat-service-smoke",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "The heartbeat file contained changing parseable UTC timestamps two seconds apart.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "for n in 1 2; do printf '%s\\n' \"-- observation $n\"; date -u '+observer_utc=%Y-%m-%dT%H:%M:%SZ epoch=%s'; if [ -r /run/telemetry-heartbeat/heartbeat ]; then stat -c 'size=%s mtime_epoch=%Y' /run/telemetry-heartbeat/heartbeat; printf 'content='; sed -n '1p' /run/telemetry-heartbeat/heartbeat; else printf '%s\\n' 'heartbeat=ABSENT'; fi; if [ \"$n\" -eq 1 ]; then sleep 2; fi; done",
+              "observation": "Observation 1 at epoch 1787767610 had content 2026-08-26T18:06:50Z and mtime_epoch=1787767610. Observation 2 at epoch 1787767612 had content 2026-08-26T18:06:52Z and mtime_epoch=1787767612. Both timestamps were parseable UTC values and changed within two seconds."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "heartbeat-execstart-repaired",
+          "probe": "heartbeat-effective-unit",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "The effective unit directly launches the installed program under svc-heartbeat, and the running MainPID corresponds to that program.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '-- unit file'; systemctl cat telemetry-heartbeat.service; printf '%s\\n' '-- effective properties'; systemctl show telemetry-heartbeat.service --no-pager -p ExecStart -p User -p Group -p FragmentPath -p DropInPaths",
+              "observation": "The unit and effective properties show ExecStart=/usr/local/bin/telemetry-heartbeat, User=svc-heartbeat, Group=svc-heartbeat, FragmentPath=/etc/systemd/system/telemetry-heartbeat.service, and DropInPaths empty."
+            },
+            {
+              "node": "node1",
+              "command": "pid=$(systemctl show telemetry-heartbeat.service -p MainPID --value); printf 'MainPID=%s\\n' \"$pid\"; printf 'exe='; readlink -f \"/proc/$pid/exe\"; printf 'cmdline='; tr '\\000' ' ' < \"/proc/$pid/cmdline\"; printf '\\n'; ps -p \"$pid\" -o pid=,user=,group=,comm=,args=",
+              "observation": "MainPID=1352; cmdline=/bin/sh /usr/local/bin/telemetry-heartbeat; ps shows svc-heartbeat running that installed program."
+            },
+            {
+              "node": "node1",
+              "command": "stat -c 'mode=%A uid=%u gid=%g owner=%U group=%G size=%s path=%n' /usr/local/bin/telemetry-heartbeat; printf 'resolved='; readlink -f /usr/local/bin/telemetry-heartbeat; printf '%s\\n' '-- first lines'; sed -n '1,12p' /usr/local/bin/telemetry-heartbeat",
+              "observation": "The installed path is root-owned executable, resolves to itself, and is a POSIX shell heartbeat loop; the displayed program writes the heartbeat directly."
+            },
+            {
+              "node": "node1",
+              "command": "for p in /usr/local/bin/telemetry-heartbeat /usr/local/bin/telemetry-heartbeat-missing; do if [ -e \"$p\" ]; then printf '%s exists type=' \"$p\"; if [ -L \"$p\" ]; then printf '%s\\n' symlink; else printf '%s\\n' regular-or-other; fi; else printf '%s absent\\n' \"$p\"; fi; done; pid=$(systemctl show telemetry-heartbeat.service -p MainPID --value); printf 'service_cgroup='; systemctl show telemetry-heartbeat.service -p ControlGroup --value; printf 'pid_cgroup='; sed -n '1p' \"/proc/$pid/cgroup\"",
+              "observation": "The installed executable exists and is not a symlink; the prepared missing path is absent. The service and MainPID share /system.slice/telemetry-heartbeat.service."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 4.0,
+      "evaluated_points": 4.0,
+      "passed_points": 4.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "heartbeat-program-and-identity-preserved",
+          "probe": "heartbeat-preservation",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "The root-owned installed program, non-login svc-heartbeat identity, enforcing SELinux state, runtime ownership, and existing service restrictions remain coherent.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "stat -c 'mode=%A uid=%u gid=%g owner=%U group=%G size=%s path=%n' /usr/local/bin/telemetry-heartbeat; file /usr/local/bin/telemetry-heartbeat; getcap /usr/local/bin/telemetry-heartbeat 2>/dev/null || true; printf '%s\\n' '-- program behavior'; sed -n '1,12p' /usr/local/bin/telemetry-heartbeat",
+              "observation": "The program is mode -rwxr-xr-x, uid/gid 0, owner/group root, a POSIX shell executable, with no reported capabilities; its behavior writes UTC timestamps to the required heartbeat path every second."
+            },
+            {
+              "node": "node1",
+              "command": "getent passwd svc-heartbeat; id svc-heartbeat; passwd -S svc-heartbeat 2>/dev/null || true; printf '%s\\n' '-- account metadata'; chage -l svc-heartbeat 2>/dev/null | sed -n '1,6p' || true",
+              "observation": "svc-heartbeat is uid/gid 995, home /nonexistent, shell /sbin/nologin, and has only its own group."
+            },
+            {
+              "node": "node1",
+              "command": "if command -v getenforce >/dev/null 2>&1; then getenforce; else printf '%s\\n' 'getenforce=unavailable'; fi; if command -v sestatus >/dev/null 2>&1; then sestatus | sed -n '1,8p'; else printf '%s\\n' 'sestatus=unavailable'; fi",
+              "observation": "SELinux is enabled and enforcing with the targeted policy."
+            },
+            {
+              "node": "node1",
+              "command": "systemctl show telemetry-heartbeat.service --no-pager -p User -p Group -p NoNewPrivileges -p PrivateTmp -p ProtectSystem -p ProtectHome -p ProtectKernelTunables -p ProtectKernelModules -p ProtectKernelLogs -p ProtectControlGroups -p LockPersonality -p MemoryDenyWriteExecute -p CapabilityBoundingSet -p RestrictAddressFamilies -p ReadWritePaths -p RuntimeDirectory -p RuntimeDirectoryMode",
+              "observation": "Effective restrictions remain set: User/Group svc-heartbeat, NoNewPrivileges=yes, PrivateTmp=yes, ProtectSystem=strict, ProtectHome=yes, kernel/control-group protections=yes, LockPersonality=yes, MemoryDenyWriteExecute=yes, empty CapabilityBoundingSet, RestrictAddressFamilies=AF_UNIX, and ReadWritePaths=/run/telemetry-heartbeat."
+            },
+            {
+              "node": "node1",
+              "command": "stat -c 'mode=%A uid=%u gid=%g owner=%U group=%G path=%n' /run/telemetry-heartbeat /run/telemetry-heartbeat/heartbeat; pid=$(systemctl show telemetry-heartbeat.service -p MainPID --value); ps -p \"$pid\" -o pid=,user=,group=,stat=,args=",
+              "observation": "The runtime directory is svc-heartbeat-owned mode 0750 and the heartbeat file is svc-heartbeat-owned mode 0640; MainPID 1352 runs as svc-heartbeat."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "heartbeat-state-clean",
+          "probe": "heartbeat-operational-state",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Only the coherent enabled heartbeat service, installed program, existing identity, expected runtime state, and normal host controls remain.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '-- failed units'; systemctl --failed --no-legend --no-pager; printf '%s\\n' '-- heartbeat state'; systemctl show telemetry-heartbeat.service --no-pager -p LoadState -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p NRestarts -p StartLimitIntervalUSec -p StartLimitBurst -p StartLimitAction",
+              "observation": "No failed units were listed. The heartbeat unit is loaded/active/running with Result=success, ExecMainCode=0, ExecMainStatus=0, NRestarts=0, and StartLimitAction=none."
+            },
+            {
+              "node": "node1",
+              "command": "cg=$(systemctl show telemetry-heartbeat.service -p ControlGroup --value); printf 'cgroup=%s\\n' \"$cg\"; cgpath=\"/sys/fs/cgroup$cg\"; if [ -r \"$cgpath/cgroup.procs\" ]; then pids=$(tr '\\n' ' ' < \"$cgpath/cgroup.procs\"); printf 'cgroup_pids=%s\\n' \"$pids\"; for p in $pids; do printf 'pid=%s ' \"$p\"; tr '\\000' ' ' < \"/proc/$p/cmdline\"; printf '\\n'; done; else printf '%s\\n' 'cgroup.procs=unreadable'; fi; ps -eo pid=,ppid=,user=,stat=,args= | awk '$1 != \"\" && $1 ~ /^[0-9]+$/ && $0 ~ /telemetry-heartbeat/ {print}'",
+              "observation": "The service cgroup contains only MainPID 1352 running /bin/sh /usr/local/bin/telemetry-heartbeat and its expected sleep 1 child. The ancillary ps pattern also matched its own diagnostic awk command, which is not in the service cgroup."
+            },
+            {
+              "node": "node1",
+              "command": "for d in /etc/systemd/system /run/systemd/system /usr/local/bin; do if [ -d \"$d\" ]; then printf '%s\\n' \"-- $d\"; find \"$d\" -maxdepth 3 \\( -iname '*telemetry*' -o -iname '*heartbeat*' \\) -printf '%M %u %g %p -> %l\\n' 2>/dev/null; fi; done",
+              "observation": "Related paths are limited to the expected systemd enable symlink, the repaired unit, and the root-owned installed executable; no obsolete wrapper or missing-executable symlink was found."
+            },
+            {
+              "node": "node1",
+              "command": "systemctl show telemetry-heartbeat.service --no-pager -p FragmentPath -p SourcePath -p DropInPaths -p LoadError -p Names; printf '%s\\n' '-- unit-like paths'; for d in /etc/systemd/system /run/systemd/system /run/systemd/generator /run/systemd/generator.early /run/systemd/generator.late; do if [ -d \"$d\" ]; then find \"$d\" -maxdepth 3 \\( -name 'telemetry-heartbeat.service*' -o -path '*/telemetry-heartbeat.service.d/*' \\) -printf '%M %u %g %p -> %l\\n' 2>/dev/null; fi; done; printf '%s\\n' '-- related unit files'; systemctl list-unit-files --no-legend --no-pager | awk '$1 ~ /telemetry|heartbeat/ {print}'",
+              "observation": "LoadError and SourcePath are empty, DropInPaths is empty, and only telemetry-heartbeat.service is listed, enabled with preset disabled. No conflicting drop-in, backup, debug override, or generator unit was found."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '-- related accounts'; getent passwd | awk -F: '$1 ~ /heartbeat|telemetry/ {print $1 \":uid=\" $3 \":home=\" $6 \":shell=\" $7}'; getent group | awk -F: '$1 ~ /heartbeat|telemetry/ {print $1 \":gid=\" $3}'; printf '%s\\n' '-- related packages'; if command -v rpm >/dev/null 2>&1; then rpm -qa | grep -Ei 'telemetry|heartbeat' || true; else printf '%s\\n' 'rpm=unavailable'; fi; printf '%s\\n' '-- related services'; systemctl list-units --all --type=service --no-legend --no-pager | awk '$0 ~ /telemetry|heartbeat/ {print}'; printf '%s\\n' '-- related named files (names and metadata only)'; for d in /etc/systemd/system /etc/sysconfig /etc/default /etc/telemetry /run /tmp; do if [ -d \"$d\" ]; then find \"$d\" -maxdepth 3 \\( -iname '*telemetry*' -o -iname '*heartbeat*' \\) -printf '%M %u %g %p\\n' 2>/dev/null; fi; done",
+              "observation": "Only svc-heartbeat exists among related accounts/groups; no related package was listed; only telemetry-heartbeat.service is active. Named files are the expected unit, enable link, runtime heartbeat, and normal systemd PrivateTmp/invocation artifacts; no evaluator credential contents were printed."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' '-- heartbeat controls'; systemctl is-enabled telemetry-heartbeat.service; systemctl is-active telemetry-heartbeat.service; systemctl show telemetry-heartbeat.service --no-pager -p RefuseManualStart -p RefuseManualStop -p InaccessiblePaths -p ReadOnlyPaths; printf '%s\\n' '-- listening sockets'; ss -lntup 2>/dev/null; ss -lxup 2>/dev/null",
+              "observation": "The service is enabled and active; RefuseManualStart=no, RefuseManualStop=no, InaccessiblePaths and ReadOnlyPaths are empty. Listening sockets belong to chronyd, sshd, and normal system services; no heartbeat listener exists."
+            },
+            {
+              "node": "node1",
+              "command": "start=$(systemctl show telemetry-heartbeat.service -p ExecMainStartTimestamp --value); printf 'main_start=%s\\n' \"$start\"; journalctl -u telemetry-heartbeat.service --since \"$start\" --no-pager -o short-iso; printf '%s\\n' '-- current result'; systemctl show telemetry-heartbeat.service --no-pager -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p NRestarts",
+              "observation": "Since the current main start at 14:05:22, the journal contains only the successful Started message. Current result is success, ActiveState=active, SubState=running, ExecMainCode=0, ExecMainStatus=0, and NRestarts=0."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The process scan's final broad ps pattern matched its own diagnostic awk command; the service-cgroup membership check independently showed only the expected heartbeat process and sleep child.",
+            "No reboot was performed because the authored probes were read-only."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": 1.0,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

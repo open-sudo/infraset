@@ -1,0 +1,389 @@
+{
+  "probes": [
+    {
+      "id": "nfs-service-and-mounts",
+      "summary": "Node1 actively exports /srv/nfs/shared via NFSv4 to 10.40.0.0/24, and node2/node3 have live NFSv4 mounts from that export.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The authored read-only probe did not reboot nodes, so reboot persistence was not directly exercised."
+      ]
+    },
+    {
+      "id": "nfs-cross-client-io",
+      "summary": "Both clients created evaluator files as sharedops; contents, hashes, numeric ownership, and modes matched through the other client and node1. Evaluator files were removed and mounts remained active.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The authored probe sampled visibility after commit; it did not continuously measure propagation latency."
+      ]
+    },
+    {
+      "id": "nfs-operational-state",
+      "summary": "Current role packages, services, exports, mounts, configuration, and failed-unit state were inspected on all nodes. Node2 retains an NFS-specific temporary artifact.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The authored plan did not authorize a reboot. Root-squashed traversal of /mnt/shared failed for root on node2/node3, but cleanup checks as sharedops confirmed the evaluator paths were absent."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "nfs-server-export-live",
+      "status": "pass",
+      "summary": "Node1 is serving the required export over the declared storage network with NFSv4 enabled.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' 'NODE'\nhostname\nprintf '%s\\n' 'ADDRESSES'\nip -4 -o addr show scope global\nprintf '%s\\n' 'ROUTES'\nip -4 route\nprintf '%s\\n' 'NFS SERVICES'\nfor svc in nfs-server nfs-kernel-server; do\n  printf 'service=%s state=' \"$svc\"\n  systemctl is-active \"$svc\" 2>&1\ndone\nprintf '%s\\n' 'ACTIVE EXPORTS'\nsudo -n exportfs -v 2>&1\nprintf '%s\\n' 'NFS VERSIONS'\nsudo -n cat /proc/fs/nfsd/versions 2>&1",
+          "observation": "Node1 had 10.40.0.10/24 and route 10.40.0.0/24. Both nfs-server and nfs-kernel-server were active. exportfs reported /srv/nfs/shared for 10.40.0.0/24 with rw and root_squash. NFS versions reported -3 +4 +4.1 +4.2."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "This is a live-state check; reboot persistence was not directly tested."
+      ]
+    },
+    {
+      "id": "nfs-both-client-mounts-live",
+      "status": "pass",
+      "summary": "Both clients have live read-write NFSv4 mounts backed by node1's required export over 10.40.0.0/24.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "printf '%s\\n' 'NODE'\nhostname\nprintf '%s\\n' 'ADDRESSES'\nip -4 -o addr show scope global\nprintf '%s\\n' 'ROUTES'\nip -4 route\nprintf '%s\\n' 'NODE1 RESOLUTION'\ngetent ahostsv4 node1\nnode1_ip=$(getent ahostsv4 node1 | awk 'NR==1 {print $1}')\nif [ -n \"$node1_ip\" ]; then\n  printf 'ROUTE TO NODE1 (%s)\\n' \"$node1_ip\"\n  ip -4 route get \"$node1_ip\"\nfi\nprintf '%s\\n' 'MOUNTPOINT'\nfindmnt -rn -M /mnt/shared -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1\nprintf '%s\\n' 'MOUNTINFO'\nawk '$5 == \"/mnt/shared\" {print}' /proc/self/mountinfo\nprintf '%s\\n' 'NFS MOUNTS'\nnfsstat -m 2>&1\nprintf '%s\\n' 'CLIENT SERVICES'\nfor svc in nfs-client.target remote-fs.target; do\n  printf 'service=%s state=' \"$svc\"\n  systemctl is-active \"$svc\" 2>&1\ndone",
+          "observation": "Node2 reported /mnt/shared from 10.40.0.10:/srv/nfs/shared, filesystem nfs4, vers=4.2, rw, clientaddr=10.40.0.11, and nfs-client.target/remote-fs.target active. Its storage address and route were 10.40.0.11/24 via 10.40.0.0/24."
+        },
+        {
+          "node": "node3",
+          "command": "printf '%s\\n' 'NODE'\nhostname\nprintf '%s\\n' 'ADDRESSES'\nip -4 -o addr show scope global\nprintf '%s\\n' 'ROUTES'\nip -4 route\nprintf '%s\\n' 'NODE1 RESOLUTION'\ngetent ahostsv4 node1\nnode1_ip=$(getent ahostsv4 node1 | awk 'NR==1 {print $1}')\nif [ -n \"$node1_ip\" ]; then\n  printf 'ROUTE TO NODE1 (%s)\\n' \"$node1_ip\"\n  ip -4 route get \"$node1_ip\"\nfi\nprintf '%s\\n' 'MOUNTPOINT'\nfindmnt -rn -M /mnt/shared -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1\nprintf '%s\\n' 'MOUNTINFO'\nawk '$5 == \"/mnt/shared\" {print}' /proc/self/mountinfo\nprintf '%s\\n' 'NFS MOUNTS'\nnfsstat -m 2>&1\nprintf '%s\\n' 'CLIENT SERVICES'\nfor svc in nfs-client.target remote-fs.target; do\n  printf 'service=%s state=' \"$svc\"\n  systemctl is-active \"$svc\" 2>&1\ndone",
+          "observation": "Node3 reported /mnt/shared from 10.40.0.10:/srv/nfs/shared, filesystem nfs4, vers=4.2, rw, clientaddr=10.40.0.12, and nfs-client.target/remote-fs.target active. Its storage address and route were 10.40.0.12/24 via 10.40.0.0/24."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The normal resolver lookup for node1 returned no lines, but the live mount source and node1's live storage address consistently identified 10.40.0.10."
+      ]
+    },
+    {
+      "id": "nfs-node2-write-visible",
+      "status": "pass",
+      "summary": "The file committed through node2 was immediately readable with identical content and hash through node3 and node1.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "file=/mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nprintf '%s\\n' 'IDENTITY USED FOR CREATE'\nif sudo -n -H -u sharedops id 2>&1; then\n  printf '%s\\n' 'CREATE NODE2 FILE'\n  if sudo -n -H -u sharedops sh -c 'set -e\numask 0007\ntest ! -e /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nprintf \"%s\\n\" \"node2-write-content-t9tb2rd\" > /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nchmod 0640 /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nsync'; then\n    printf '%s\\n' 'NODE2 FILE STAT'\n    sudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' \"$file\" 2>&1\n    printf '%s\\n' 'NODE2 FILE CONTENT'\n    sudo -n -H -u sharedops cat \"$file\" 2>&1\n    printf '%s\\n' 'NODE2 FILE HASH'\n    sudo -n -H -u sharedops sha256sum \"$file\" 2>&1\n  else\n    printf '%s\\n' 'CREATE_FAILED'\n  fi\nelse\n  printf '%s\\n' 'SHAREDOPS_UNAVAILABLE'\nfi",
+          "observation": "Creation ran as uid=4200(sharedops), gid=4200(sharedops). The file had uid=4200 gid=4200 mode=640, content node2-write-content-t9tb2rd, and hash 89a25a4f4494798f6b76f4638e4443397da9fb244d0eb14e80359a9929461fe8."
+        },
+        {
+          "node": "node3",
+          "command": "printf '%s\\n' 'NODE3 MOUNT'\nfindmnt -rn -M /mnt/shared -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1\nprintf '%s\\n' 'NODE3 SHAREDOPS IDENTITY'\ngetent passwd sharedops\ngetent group sharedops\nid sharedops\nprintf '%s\\n' 'NODE2 FILE THROUGH NODE3'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nprintf '%s\\n' 'NODE3 FILE THROUGH NODE3'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1",
+          "observation": "Node3 read node2's file as sharedops with uid=4200 gid=4200 mode=640, identical content node2-write-content-t9tb2rd, and the same hash 89a25a4f4494798f6b76f4638e4443397da9fb244d0eb14e80359a9929461fe8."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' 'NODE1 SHAREDOPS IDENTITY'\ngetent passwd sharedops\ngetent group sharedops\nid sharedops\nprintf '%s\\n' 'EXPORT DIRECTORY'\nsudo -n stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared 2>&1\nprintf '%s\\n' 'NODE2 FILE THROUGH NODE1'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /srv/nfs/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /srv/nfs/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1",
+          "observation": "Node1 read the file with uid=4200 gid=4200 mode=640, identical content node2-write-content-t9tb2rd, and the same hash 89a25a4f4494798f6b76f4638e4443397da9fb244d0eb14e80359a9929461fe8."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "nfs-node3-write-visible",
+      "status": "pass",
+      "summary": "The file committed through node3 was immediately readable with identical content and hash through node2 and node1.",
+      "evidence": [
+        {
+          "node": "node3",
+          "command": "file=/mnt/shared/.infraset-nfs-cross-node3-t9tb2rd\nprintf '%s\\n' 'IDENTITY USED FOR CREATE'\nif sudo -n -H -u sharedops id 2>&1; then\n  printf '%s\\n' 'CREATE NODE3 FILE'\n  if sudo -n -H -u sharedops sh -c 'set -e\numask 0007\ntest ! -e /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd\nprintf \"%s\\n\" \"node3-write-content-t9tb2rd\" > /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd\nchmod 0604 /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd\nsync'; then\n    printf '%s\\n' 'NODE3 FILE STAT'\n    sudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' \"$file\" 2>&1\n    printf '%s\\n' 'NODE3 FILE CONTENT'\n    sudo -n -H -u sharedops cat \"$file\" 2>&1\n    printf '%s\\n' 'NODE3 FILE HASH'\n    sudo -n -H -u sharedops sha256sum \"$file\" 2>&1\n  else\n    printf '%s\\n' 'CREATE_FAILED'\n  fi\nelse\n  printf '%s\\n' 'SHAREDOPS_UNAVAILABLE'\nfi",
+          "observation": "Creation ran as uid=4200(sharedops), gid=4200(sharedops). The file had uid=4200 gid=4200 mode=604, content node3-write-content-t9tb2rd, and hash e4b78336805c35402d5e56330fa1f3fcd9c1f7e59e49c62260630da47f1628e0."
+        },
+        {
+          "node": "node2",
+          "command": "printf '%s\\n' 'NODE2 MOUNT'\nfindmnt -rn -M /mnt/shared -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1\nprintf '%s\\n' 'NODE2 SHAREDOPS IDENTITY'\ngetent passwd sharedops\ngetent group sharedops\nid sharedops\nprintf '%s\\n' 'NODE3 FILE THROUGH NODE2'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nprintf '%s\\n' 'NODE2 FILE THROUGH NODE2'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1",
+          "observation": "Node2 read node3's file as sharedops with uid=4200 gid=4200 mode=604, identical content node3-write-content-t9tb2rd, and the same hash e4b78336805c35402d5e56330fa1f3fcd9c1f7e59e49c62260630da47f1628e0."
+        },
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' 'NODE3 FILE THROUGH NODE1'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /srv/nfs/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /srv/nfs/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nprintf '%s\\n' 'NODE1 ACTIVE NFS SERVICE'\nfor svc in nfs-server nfs-kernel-server; do\n  printf 'service=%s state=' \"$svc\"\n  systemctl is-active \"$svc\" 2>&1\ndone\nprintf '%s\\n' 'NODE1 EXPORT VERSIONS'\nsudo -n cat /proc/fs/nfsd/versions 2>&1",
+          "observation": "Node1 read the file with uid=4200 gid=4200 mode=604, identical content node3-write-content-t9tb2rd, and the same hash e4b78336805c35402d5e56330fa1f3fcd9c1f7e59e49c62260630da47f1628e0."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "nfs-identity-and-modes-preserved",
+      "status": "pass",
+      "summary": "sharedops is UID/GID 4200 on all nodes; the export directory is 4200:4200 mode 2770; both evaluator files retained their authored numeric ownership and modes across all views.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "getent passwd sharedops\ngetent group sharedops\nid sharedops\nsudo -n stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared/.infraset-nfs-cross-node2-t9tb2rd\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared/.infraset-nfs-cross-node3-t9tb2rd",
+          "observation": "Node1 reported sharedops:x:4200:4200 and id uid=4200 gid=4200. /srv/nfs/shared was uid=4200 gid=4200 mode=2770. Node2 file was uid=4200 gid=4200 mode=640 and node3 file was uid=4200 gid=4200 mode=604."
+        },
+        {
+          "node": "node2",
+          "command": "getent passwd sharedops\ngetent group sharedops\nid sharedops\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd",
+          "observation": "Node2 reported sharedops:x:4200:4200 and id uid=4200 gid=4200. Both files through /mnt/shared retained uid=4200 gid=4200; node2 file mode=640 and node3 file mode=604."
+        },
+        {
+          "node": "node3",
+          "command": "getent passwd sharedops\ngetent group sharedops\nid sharedops\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd",
+          "observation": "Node3 reported sharedops:x:4200:4200 and id uid=4200 gid=4200. Both files through /mnt/shared retained uid=4200 gid=4200; node2 file mode=640 and node3 file mode=604."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "nfs-state-clean",
+      "status": "fail",
+      "summary": "The current NFS roles and services are coherent, but node2 retains an NFS-specific temporary artifact at /tmp/nfs-denied.out.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "systemctl --failed --no-legend --plain",
+          "observation": "No failed units were listed on node1."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n find /etc /var/lib /var/log /tmp /var/tmp -xdev -type f \\( -iname '*nfs*' -o -iname '*export*' -o -iname '*shared*' -o -iname '*infraset*' -o -iname '*debug*' -o -iname '*test*' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.orig' \\) -printf '%p\\n' 2>&1",
+          "observation": "The targeted state scan found /tmp/nfs-denied.out. Node2 otherwise showed no failed units, no NFS server package, inactive server services, active nfs-client.target, one desired NFSv4 mount, no targeted scripts, and the desired fstab entry."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n find /etc /var/lib /var/log /tmp /var/tmp -xdev -type f \\( -iname '*nfs*' -o -iname '*export*' -o -iname '*shared*' -o -iname '*infraset*' -o -iname '*debug*' -o -iname '*test*' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.orig' \\) -printf '%p\\n' 2>&1",
+          "observation": "The targeted state scan found no NFS-specific temporary artifact on node3. Node3 showed no failed units, no NFS server package, inactive server services, active nfs-client.target, one desired NFSv4 mount, and no targeted scripts."
+        }
+      ],
+      "failures": [
+        "Node2 retains /tmp/nfs-denied.out, a concrete NFS-specific temporary/denial-output artifact, so the clean-state condition is not met."
+      ],
+      "limitations": [
+        "The scan established the artifact path but did not inspect its contents. Root-squashed traversal of /mnt/shared was denied on node2/node3; the reserved cleanup calls independently confirmed the evaluator-created paths were absent as sharedops."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Executed Probe 1 read-only checks independently on node1, node2, and node3.",
+    "Created two uniquely named evaluator files as sharedops through node2 and node3, then verified content, hashes, ownership, and modes through both clients and node1.",
+    "Removed both evaluator files through node2, node3, and node1 using the three reserved cleanup calls; confirmed both client mountpoints remained active.",
+    "Executed Probe 3 read-only operational-state checks independently on all three nodes.",
+    "Called complete_evidence exactly once after all live checks and cleanup; no live-cluster calls were made afterward."
+  ],
+  "overall_summary": "Five assertions passed. The NFSv4 export, both client mounts, bidirectional cross-client IO, shared identity, directory metadata, and file metadata are correct. nfs-state-clean failed because node2 retains /tmp/nfs-denied.out. Evaluator-created files were removed and live evidence was closed.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 10.0,
+      "evaluated_points": 10.0,
+      "passed_points": 10.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "nfs-server-export-live",
+          "probe": "nfs-service-and-mounts",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Node1 is serving the required export over the declared storage network with NFSv4 enabled.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' 'NODE'\nhostname\nprintf '%s\\n' 'ADDRESSES'\nip -4 -o addr show scope global\nprintf '%s\\n' 'ROUTES'\nip -4 route\nprintf '%s\\n' 'NFS SERVICES'\nfor svc in nfs-server nfs-kernel-server; do\n  printf 'service=%s state=' \"$svc\"\n  systemctl is-active \"$svc\" 2>&1\ndone\nprintf '%s\\n' 'ACTIVE EXPORTS'\nsudo -n exportfs -v 2>&1\nprintf '%s\\n' 'NFS VERSIONS'\nsudo -n cat /proc/fs/nfsd/versions 2>&1",
+              "observation": "Node1 had 10.40.0.10/24 and route 10.40.0.0/24. Both nfs-server and nfs-kernel-server were active. exportfs reported /srv/nfs/shared for 10.40.0.0/24 with rw and root_squash. NFS versions reported -3 +4 +4.1 +4.2."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "This is a live-state check; reboot persistence was not directly tested."
+          ]
+        },
+        {
+          "id": "nfs-both-client-mounts-live",
+          "probe": "nfs-service-and-mounts",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Both clients have live read-write NFSv4 mounts backed by node1's required export over 10.40.0.0/24.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "printf '%s\\n' 'NODE'\nhostname\nprintf '%s\\n' 'ADDRESSES'\nip -4 -o addr show scope global\nprintf '%s\\n' 'ROUTES'\nip -4 route\nprintf '%s\\n' 'NODE1 RESOLUTION'\ngetent ahostsv4 node1\nnode1_ip=$(getent ahostsv4 node1 | awk 'NR==1 {print $1}')\nif [ -n \"$node1_ip\" ]; then\n  printf 'ROUTE TO NODE1 (%s)\\n' \"$node1_ip\"\n  ip -4 route get \"$node1_ip\"\nfi\nprintf '%s\\n' 'MOUNTPOINT'\nfindmnt -rn -M /mnt/shared -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1\nprintf '%s\\n' 'MOUNTINFO'\nawk '$5 == \"/mnt/shared\" {print}' /proc/self/mountinfo\nprintf '%s\\n' 'NFS MOUNTS'\nnfsstat -m 2>&1\nprintf '%s\\n' 'CLIENT SERVICES'\nfor svc in nfs-client.target remote-fs.target; do\n  printf 'service=%s state=' \"$svc\"\n  systemctl is-active \"$svc\" 2>&1\ndone",
+              "observation": "Node2 reported /mnt/shared from 10.40.0.10:/srv/nfs/shared, filesystem nfs4, vers=4.2, rw, clientaddr=10.40.0.11, and nfs-client.target/remote-fs.target active. Its storage address and route were 10.40.0.11/24 via 10.40.0.0/24."
+            },
+            {
+              "node": "node3",
+              "command": "printf '%s\\n' 'NODE'\nhostname\nprintf '%s\\n' 'ADDRESSES'\nip -4 -o addr show scope global\nprintf '%s\\n' 'ROUTES'\nip -4 route\nprintf '%s\\n' 'NODE1 RESOLUTION'\ngetent ahostsv4 node1\nnode1_ip=$(getent ahostsv4 node1 | awk 'NR==1 {print $1}')\nif [ -n \"$node1_ip\" ]; then\n  printf 'ROUTE TO NODE1 (%s)\\n' \"$node1_ip\"\n  ip -4 route get \"$node1_ip\"\nfi\nprintf '%s\\n' 'MOUNTPOINT'\nfindmnt -rn -M /mnt/shared -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1\nprintf '%s\\n' 'MOUNTINFO'\nawk '$5 == \"/mnt/shared\" {print}' /proc/self/mountinfo\nprintf '%s\\n' 'NFS MOUNTS'\nnfsstat -m 2>&1\nprintf '%s\\n' 'CLIENT SERVICES'\nfor svc in nfs-client.target remote-fs.target; do\n  printf 'service=%s state=' \"$svc\"\n  systemctl is-active \"$svc\" 2>&1\ndone",
+              "observation": "Node3 reported /mnt/shared from 10.40.0.10:/srv/nfs/shared, filesystem nfs4, vers=4.2, rw, clientaddr=10.40.0.12, and nfs-client.target/remote-fs.target active. Its storage address and route were 10.40.0.12/24 via 10.40.0.0/24."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The normal resolver lookup for node1 returned no lines, but the live mount source and node1's live storage address consistently identified 10.40.0.10."
+          ]
+        },
+        {
+          "id": "nfs-node2-write-visible",
+          "probe": "nfs-cross-client-io",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "The file committed through node2 was immediately readable with identical content and hash through node3 and node1.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "file=/mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nprintf '%s\\n' 'IDENTITY USED FOR CREATE'\nif sudo -n -H -u sharedops id 2>&1; then\n  printf '%s\\n' 'CREATE NODE2 FILE'\n  if sudo -n -H -u sharedops sh -c 'set -e\numask 0007\ntest ! -e /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nprintf \"%s\\n\" \"node2-write-content-t9tb2rd\" > /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nchmod 0640 /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nsync'; then\n    printf '%s\\n' 'NODE2 FILE STAT'\n    sudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' \"$file\" 2>&1\n    printf '%s\\n' 'NODE2 FILE CONTENT'\n    sudo -n -H -u sharedops cat \"$file\" 2>&1\n    printf '%s\\n' 'NODE2 FILE HASH'\n    sudo -n -H -u sharedops sha256sum \"$file\" 2>&1\n  else\n    printf '%s\\n' 'CREATE_FAILED'\n  fi\nelse\n  printf '%s\\n' 'SHAREDOPS_UNAVAILABLE'\nfi",
+              "observation": "Creation ran as uid=4200(sharedops), gid=4200(sharedops). The file had uid=4200 gid=4200 mode=640, content node2-write-content-t9tb2rd, and hash 89a25a4f4494798f6b76f4638e4443397da9fb244d0eb14e80359a9929461fe8."
+            },
+            {
+              "node": "node3",
+              "command": "printf '%s\\n' 'NODE3 MOUNT'\nfindmnt -rn -M /mnt/shared -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1\nprintf '%s\\n' 'NODE3 SHAREDOPS IDENTITY'\ngetent passwd sharedops\ngetent group sharedops\nid sharedops\nprintf '%s\\n' 'NODE2 FILE THROUGH NODE3'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nprintf '%s\\n' 'NODE3 FILE THROUGH NODE3'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1",
+              "observation": "Node3 read node2's file as sharedops with uid=4200 gid=4200 mode=640, identical content node2-write-content-t9tb2rd, and the same hash 89a25a4f4494798f6b76f4638e4443397da9fb244d0eb14e80359a9929461fe8."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' 'NODE1 SHAREDOPS IDENTITY'\ngetent passwd sharedops\ngetent group sharedops\nid sharedops\nprintf '%s\\n' 'EXPORT DIRECTORY'\nsudo -n stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared 2>&1\nprintf '%s\\n' 'NODE2 FILE THROUGH NODE1'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /srv/nfs/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /srv/nfs/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1",
+              "observation": "Node1 read the file with uid=4200 gid=4200 mode=640, identical content node2-write-content-t9tb2rd, and the same hash 89a25a4f4494798f6b76f4638e4443397da9fb244d0eb14e80359a9929461fe8."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "nfs-node3-write-visible",
+          "probe": "nfs-cross-client-io",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "The file committed through node3 was immediately readable with identical content and hash through node2 and node1.",
+          "evidence": [
+            {
+              "node": "node3",
+              "command": "file=/mnt/shared/.infraset-nfs-cross-node3-t9tb2rd\nprintf '%s\\n' 'IDENTITY USED FOR CREATE'\nif sudo -n -H -u sharedops id 2>&1; then\n  printf '%s\\n' 'CREATE NODE3 FILE'\n  if sudo -n -H -u sharedops sh -c 'set -e\numask 0007\ntest ! -e /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd\nprintf \"%s\\n\" \"node3-write-content-t9tb2rd\" > /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd\nchmod 0604 /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd\nsync'; then\n    printf '%s\\n' 'NODE3 FILE STAT'\n    sudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' \"$file\" 2>&1\n    printf '%s\\n' 'NODE3 FILE CONTENT'\n    sudo -n -H -u sharedops cat \"$file\" 2>&1\n    printf '%s\\n' 'NODE3 FILE HASH'\n    sudo -n -H -u sharedops sha256sum \"$file\" 2>&1\n  else\n    printf '%s\\n' 'CREATE_FAILED'\n  fi\nelse\n  printf '%s\\n' 'SHAREDOPS_UNAVAILABLE'\nfi",
+              "observation": "Creation ran as uid=4200(sharedops), gid=4200(sharedops). The file had uid=4200 gid=4200 mode=604, content node3-write-content-t9tb2rd, and hash e4b78336805c35402d5e56330fa1f3fcd9c1f7e59e49c62260630da47f1628e0."
+            },
+            {
+              "node": "node2",
+              "command": "printf '%s\\n' 'NODE2 MOUNT'\nfindmnt -rn -M /mnt/shared -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1\nprintf '%s\\n' 'NODE2 SHAREDOPS IDENTITY'\ngetent passwd sharedops\ngetent group sharedops\nid sharedops\nprintf '%s\\n' 'NODE3 FILE THROUGH NODE2'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nprintf '%s\\n' 'NODE2 FILE THROUGH NODE2'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd 2>&1",
+              "observation": "Node2 read node3's file as sharedops with uid=4200 gid=4200 mode=604, identical content node3-write-content-t9tb2rd, and the same hash e4b78336805c35402d5e56330fa1f3fcd9c1f7e59e49c62260630da47f1628e0."
+            },
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' 'NODE3 FILE THROUGH NODE1'\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops cat /srv/nfs/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nsudo -n -H -u sharedops sha256sum /srv/nfs/shared/.infraset-nfs-cross-node3-t9tb2rd 2>&1\nprintf '%s\\n' 'NODE1 ACTIVE NFS SERVICE'\nfor svc in nfs-server nfs-kernel-server; do\n  printf 'service=%s state=' \"$svc\"\n  systemctl is-active \"$svc\" 2>&1\ndone\nprintf '%s\\n' 'NODE1 EXPORT VERSIONS'\nsudo -n cat /proc/fs/nfsd/versions 2>&1",
+              "observation": "Node1 read the file with uid=4200 gid=4200 mode=604, identical content node3-write-content-t9tb2rd, and the same hash e4b78336805c35402d5e56330fa1f3fcd9c1f7e59e49c62260630da47f1628e0."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "nfs-identity-and-modes-preserved",
+          "probe": "nfs-cross-client-io",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "sharedops is UID/GID 4200 on all nodes; the export directory is 4200:4200 mode 2770; both evaluator files retained their authored numeric ownership and modes across all views.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "getent passwd sharedops\ngetent group sharedops\nid sharedops\nsudo -n stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared/.infraset-nfs-cross-node2-t9tb2rd\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /srv/nfs/shared/.infraset-nfs-cross-node3-t9tb2rd",
+              "observation": "Node1 reported sharedops:x:4200:4200 and id uid=4200 gid=4200. /srv/nfs/shared was uid=4200 gid=4200 mode=2770. Node2 file was uid=4200 gid=4200 mode=640 and node3 file was uid=4200 gid=4200 mode=604."
+            },
+            {
+              "node": "node2",
+              "command": "getent passwd sharedops\ngetent group sharedops\nid sharedops\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd",
+              "observation": "Node2 reported sharedops:x:4200:4200 and id uid=4200 gid=4200. Both files through /mnt/shared retained uid=4200 gid=4200; node2 file mode=640 and node3 file mode=604."
+            },
+            {
+              "node": "node3",
+              "command": "getent passwd sharedops\ngetent group sharedops\nid sharedops\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node2-t9tb2rd\nsudo -n -H -u sharedops stat -c 'path=%n uid=%u gid=%g mode=%a size=%s' /mnt/shared/.infraset-nfs-cross-node3-t9tb2rd",
+              "observation": "Node3 reported sharedops:x:4200:4200 and id uid=4200 gid=4200. Both files through /mnt/shared retained uid=4200 gid=4200; node2 file mode=640 and node3 file mode=604."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "nfs-state-clean",
+          "probe": "nfs-operational-state",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "The current NFS roles and services are coherent, but node2 retains an NFS-specific temporary artifact at /tmp/nfs-denied.out.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "systemctl --failed --no-legend --plain",
+              "observation": "No failed units were listed on node1."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n find /etc /var/lib /var/log /tmp /var/tmp -xdev -type f \\( -iname '*nfs*' -o -iname '*export*' -o -iname '*shared*' -o -iname '*infraset*' -o -iname '*debug*' -o -iname '*test*' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.orig' \\) -printf '%p\\n' 2>&1",
+              "observation": "The targeted state scan found /tmp/nfs-denied.out. Node2 otherwise showed no failed units, no NFS server package, inactive server services, active nfs-client.target, one desired NFSv4 mount, no targeted scripts, and the desired fstab entry."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n find /etc /var/lib /var/log /tmp /var/tmp -xdev -type f \\( -iname '*nfs*' -o -iname '*export*' -o -iname '*shared*' -o -iname '*infraset*' -o -iname '*debug*' -o -iname '*test*' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.orig' \\) -printf '%p\\n' 2>&1",
+              "observation": "The targeted state scan found no NFS-specific temporary artifact on node3. Node3 showed no failed units, no NFS server package, inactive server services, active nfs-client.target, one desired NFSv4 mount, and no targeted scripts."
+            }
+          ],
+          "failures": [
+            "Node2 retains /tmp/nfs-denied.out, a concrete NFS-specific temporary/denial-output artifact, so the clean-state condition is not met."
+          ],
+          "limitations": [
+            "The scan established the artifact path but did not inspect its contents. Root-squashed traversal of /mnt/shared was denied on node2/node3; the reserved cleanup calls independently confirmed the evaluator-created paths were absent as sharedops."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 80.0,
+    "reward": 0.8,
+    "provisional_reward": 0.8,
+    "caps_applied": []
+  }
+}

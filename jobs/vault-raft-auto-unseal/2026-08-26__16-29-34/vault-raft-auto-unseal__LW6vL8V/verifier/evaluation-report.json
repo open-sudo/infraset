@@ -1,0 +1,325 @@
+{
+  "probes": [
+    {
+      "id": "vault-raft-contract",
+      "summary": "Topology and KV operations succeeded. The evaluator KV value was deleted, but its KV v2 metadata tombstone remained listed.",
+      "cleanup_completed": false,
+      "limitations": [
+        "Reserved cleanup used vault kv delete, which removed the value but not its metadata entry."
+      ]
+    },
+    {
+      "id": "vault-raft-operational-state",
+      "summary": "Current Vault services, processes, listeners, TLS files, policies, and storage state were inspected read-only across all nodes.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Node2 retained historical startup-failure log entries; no current failed unit remained.",
+        "No dedicated share enumeration was collected."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "vault-raft-required-topology",
+      "status": "indeterminate",
+      "summary": "Node1 is an independent file-backed, Shamir-unsealed Vault with a Transit engine and autounseal policy. Nodes2\u20134 share one unsealed Raft cluster with three voters and exactly one leader.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "systemctl is-active vault; sudo -H vault status -format=json; systemctl show vault -p ActiveState -p SubState -p ExecStart; pgrep -a -x vault",
+          "observation": "Service active; initialized=true, sealed=false, type=shamir, storage_type=file, ha_enabled=false; one /usr/bin/vault server process."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -H sh -c 'transit_root=$(jq -r \".root_token // empty\" /root/vault-transit-init.json); export VAULT_ADDR=https://node1:8200 VAULT_CACERT=/etc/vault/pki/ca.crt VAULT_TOKEN=\"$transit_root\"; vault secrets list -format=json; vault policy read autounseal'",
+          "observation": "Authenticated secrets list contained transit/ of type transit. Policy autounseal contained only transit/encrypt/autounseal and transit/decrypt/autounseal with update capability."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault status -format=json; vault operator raft list-peers -format=json'",
+          "observation": "initialized=true, sealed=false, storage_type=raft, ha_enabled=true; cluster_id dbd53fcb-4049-ccd0-e564-fa6a655fec9d; peer_count=3, voter_count=3, leader_count=1; node2 leader and node3/node4 voters."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault status -format=json; vault operator raft list-peers -format=json'",
+          "observation": "Same cluster_id, initialized/unsealed Raft status, three voters, and exactly one leader node2."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault status -format=json; vault operator raft list-peers -format=json'",
+          "observation": "Same cluster_id, initialized/unsealed Raft status, three voters, and exactly one leader node2."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The Transit key-list filtering subcommand produced a jq error because the CLI returned an array; the authenticated Transit mount and restricted autounseal policy were still observed.",
+        "evaluator cleanup for probe 'vault-raft-contract' was not completed"
+      ]
+    },
+    {
+      "id": "vault-raft-kv-service",
+      "status": "indeterminate",
+      "summary": "The proof secret was readable on Raft members, secret/ was KV version 2, and a versioned evaluator value was written, read through another endpoint, and deleted through a third endpoint.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault kv get -field=proof secret/infraset; vault secrets list -format=json'",
+          "observation": "proof returned raft-auto-unseal; secret/ reported type kv with options version=2."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; path=secret/infraset-evaluator-LW6vL8V; value=probe-raft-auto-unseal-LW6vL8V; vault kv put \"$path\" proof=\"$value\"; vault kv get -format=json \"$path\"'",
+          "observation": "Write succeeded at version 1; read returned proof=probe-raft-auto-unseal-LW6vL8V."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault kv get -format=json secret/infraset-evaluator-LW6vL8V'",
+          "observation": "Read through node3 returned the same value at version 1."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault kv delete secret/infraset-evaluator-LW6vL8V; vault kv get -format=json secret/infraset-evaluator-LW6vL8V'",
+          "observation": "Delete succeeded; subsequent read returned data=null with a deletion_time for version 1."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "KV v2 retained the evaluator path as metadata after deletion; the secret value itself was absent.",
+        "evaluator cleanup for probe 'vault-raft-contract' was not completed"
+      ]
+    },
+    {
+      "id": "vault-raft-state-clean",
+      "status": "indeterminate",
+      "summary": "Current services and required files appeared operational and protected, but clean-state classification is prevented by the remaining evaluator KV metadata tombstone and incomplete share-specific evidence.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -H sh -c 'systemctl --failed --no-legend --plain; pgrep -a -x vault; ss -ltnp; find /root /etc/vault /var/lib/vault -maxdepth 4 -type f'",
+          "observation": "No current failed unit; one Vault process; listeners were the Vault API and cluster listeners; protected token, CA key, service key, and Vault state files had restricted ownership/modes; no matching archive, snapshot, or evaluator residue was listed."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; systemctl --failed --no-legend --plain; pgrep -a -x vault; ss -ltnp; vault audit list -format=json; vault policy list -format=json; openssl verify -CAfile /etc/vault/pki/ca.crt /etc/vault/pki/node2.crt'",
+          "observation": "No current failed unit; one Vault process and API/cluster listeners; audit list empty; policies were default, default-ceiling, and root; node2 certificate verified against the CA."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; systemctl --failed --no-legend --plain; pgrep -a -x vault; ss -ltnp; openssl x509 -in /etc/vault/pki/node3.crt -noout -subject -issuer -ext subjectAltName; find /root /etc/vault/pki/private /var/lib/vault -maxdepth 5 -type f'",
+          "observation": "No current failed unit; one Vault process; only API/cluster listeners; node3 certificate was issued by InfraSet Vault CA with DNS SAN node3; root admin env was mode 600 and private key mode 640 root:vault; no matching archive or snapshot."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; systemctl --failed --no-legend --plain; pgrep -a -x vault; ss -ltnp; openssl x509 -in /etc/vault/pki/node4.crt -noout -subject -issuer -ext subjectAltName; find /root /etc/vault/pki/private /var/lib/vault -maxdepth 5 -type f'",
+          "observation": "No current failed unit; one Vault process; only API/cluster listeners; node4 certificate was issued by InfraSet Vault CA with DNS SAN node4; root admin env was mode 600 and private key mode 640 root:vault; no matching archive or snapshot."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; journalctl -u vault -p err..alert -n 30 --no-pager; vault kv list -format=json secret; vault operator raft autopilot state'",
+          "observation": "Autopilot reported Healthy=true and FailureTolerance=1 with node2 leader and three voters. Journal contained three historical Failed to start vault.service entries, although the current unit was active. KV list contained required infraset plus evaluator path infraset-evaluator-LW6vL8V."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The evaluator KV v2 metadata tombstone remained after cleanup, so the authored clean-state condition cannot be decided independently.",
+        "Node2 contained historical startup-failure log entries despite no current failed unit.",
+        "No dedicated exportfs/smbstatus-style share check was collected."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Ran all 11 Probe 1 evidence calls in authored order.",
+    "Created evaluator-owned versioned KV data on node2, read it on node3, deleted it on node4, and ran exactly one reserved cleanup call on each target.",
+    "Ran all five read-only Probe 2 evidence calls.",
+    "Called complete_evidence exactly once; no live-cluster calls were made afterward."
+  ],
+  "overall_summary": "vault-raft-required-topology and vault-raft-kv-service pass. vault-raft-state-clean is indeterminate because evaluator cleanup left KV v2 metadata and the authored read-only checks did not fully establish clean host state.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 5.0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": [
+        {
+          "id": "vault-raft-required-topology",
+          "probe": "vault-raft-contract",
+          "points": 3.0,
+          "status": "indeterminate",
+          "summary": "Node1 is an independent file-backed, Shamir-unsealed Vault with a Transit engine and autounseal policy. Nodes2\u20134 share one unsealed Raft cluster with three voters and exactly one leader.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "systemctl is-active vault; sudo -H vault status -format=json; systemctl show vault -p ActiveState -p SubState -p ExecStart; pgrep -a -x vault",
+              "observation": "Service active; initialized=true, sealed=false, type=shamir, storage_type=file, ha_enabled=false; one /usr/bin/vault server process."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -H sh -c 'transit_root=$(jq -r \".root_token // empty\" /root/vault-transit-init.json); export VAULT_ADDR=https://node1:8200 VAULT_CACERT=/etc/vault/pki/ca.crt VAULT_TOKEN=\"$transit_root\"; vault secrets list -format=json; vault policy read autounseal'",
+              "observation": "Authenticated secrets list contained transit/ of type transit. Policy autounseal contained only transit/encrypt/autounseal and transit/decrypt/autounseal with update capability."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault status -format=json; vault operator raft list-peers -format=json'",
+              "observation": "initialized=true, sealed=false, storage_type=raft, ha_enabled=true; cluster_id dbd53fcb-4049-ccd0-e564-fa6a655fec9d; peer_count=3, voter_count=3, leader_count=1; node2 leader and node3/node4 voters."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault status -format=json; vault operator raft list-peers -format=json'",
+              "observation": "Same cluster_id, initialized/unsealed Raft status, three voters, and exactly one leader node2."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault status -format=json; vault operator raft list-peers -format=json'",
+              "observation": "Same cluster_id, initialized/unsealed Raft status, three voters, and exactly one leader node2."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The Transit key-list filtering subcommand produced a jq error because the CLI returned an array; the authenticated Transit mount and restricted autounseal policy were still observed.",
+            "evaluator cleanup for probe 'vault-raft-contract' was not completed"
+          ]
+        },
+        {
+          "id": "vault-raft-kv-service",
+          "probe": "vault-raft-contract",
+          "points": 2.0,
+          "status": "indeterminate",
+          "summary": "The proof secret was readable on Raft members, secret/ was KV version 2, and a versioned evaluator value was written, read through another endpoint, and deleted through a third endpoint.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault kv get -field=proof secret/infraset; vault secrets list -format=json'",
+              "observation": "proof returned raft-auto-unseal; secret/ reported type kv with options version=2."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; path=secret/infraset-evaluator-LW6vL8V; value=probe-raft-auto-unseal-LW6vL8V; vault kv put \"$path\" proof=\"$value\"; vault kv get -format=json \"$path\"'",
+              "observation": "Write succeeded at version 1; read returned proof=probe-raft-auto-unseal-LW6vL8V."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault kv get -format=json secret/infraset-evaluator-LW6vL8V'",
+              "observation": "Read through node3 returned the same value at version 1."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; vault kv delete secret/infraset-evaluator-LW6vL8V; vault kv get -format=json secret/infraset-evaluator-LW6vL8V'",
+              "observation": "Delete succeeded; subsequent read returned data=null with a deletion_time for version 1."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "KV v2 retained the evaluator path as metadata after deletion; the secret value itself was absent.",
+            "evaluator cleanup for probe 'vault-raft-contract' was not completed"
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": [
+        {
+          "id": "vault-raft-state-clean",
+          "probe": "vault-raft-operational-state",
+          "points": 1.0,
+          "status": "indeterminate",
+          "summary": "Current services and required files appeared operational and protected, but clean-state classification is prevented by the remaining evaluator KV metadata tombstone and incomplete share-specific evidence.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -H sh -c 'systemctl --failed --no-legend --plain; pgrep -a -x vault; ss -ltnp; find /root /etc/vault /var/lib/vault -maxdepth 4 -type f'",
+              "observation": "No current failed unit; one Vault process; listeners were the Vault API and cluster listeners; protected token, CA key, service key, and Vault state files had restricted ownership/modes; no matching archive, snapshot, or evaluator residue was listed."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; systemctl --failed --no-legend --plain; pgrep -a -x vault; ss -ltnp; vault audit list -format=json; vault policy list -format=json; openssl verify -CAfile /etc/vault/pki/ca.crt /etc/vault/pki/node2.crt'",
+              "observation": "No current failed unit; one Vault process and API/cluster listeners; audit list empty; policies were default, default-ceiling, and root; node2 certificate verified against the CA."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; systemctl --failed --no-legend --plain; pgrep -a -x vault; ss -ltnp; openssl x509 -in /etc/vault/pki/node3.crt -noout -subject -issuer -ext subjectAltName; find /root /etc/vault/pki/private /var/lib/vault -maxdepth 5 -type f'",
+              "observation": "No current failed unit; one Vault process; only API/cluster listeners; node3 certificate was issued by InfraSet Vault CA with DNS SAN node3; root admin env was mode 600 and private key mode 640 root:vault; no matching archive or snapshot."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; systemctl --failed --no-legend --plain; pgrep -a -x vault; ss -ltnp; openssl x509 -in /etc/vault/pki/node4.crt -noout -subject -issuer -ext subjectAltName; find /root /etc/vault/pki/private /var/lib/vault -maxdepth 5 -type f'",
+              "observation": "No current failed unit; one Vault process; only API/cluster listeners; node4 certificate was issued by InfraSet Vault CA with DNS SAN node4; root admin env was mode 600 and private key mode 640 root:vault; no matching archive or snapshot."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -H sh -c '. /root/vault-admin.env; export VAULT_CACERT=/etc/vault/pki/ca.crt; journalctl -u vault -p err..alert -n 30 --no-pager; vault kv list -format=json secret; vault operator raft autopilot state'",
+              "observation": "Autopilot reported Healthy=true and FailureTolerance=1 with node2 leader and three voters. Journal contained three historical Failed to start vault.service entries, although the current unit was active. KV list contained required infraset plus evaluator path infraset-evaluator-LW6vL8V."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The evaluator KV v2 metadata tombstone remained after cleanup, so the authored clean-state condition cannot be decided independently.",
+            "Node2 contained historical startup-failure log entries despite no current failed unit.",
+            "No dedicated exportfs/smbstatus-style share check was collected."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [],
+  "unverified_dimensions": [
+    "functionality",
+    "security",
+    "resilience",
+    "persistence",
+    "operational_hygiene"
+  ],
+  "evaluation_coverage": 0.0,
+  "full_coverage": false,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "aggregation": {
+    "weighted_score": 0.0,
+    "reward": null,
+    "provisional_reward": 0.0,
+    "caps_applied": []
+  }
+}

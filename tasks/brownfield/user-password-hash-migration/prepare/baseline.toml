@@ -1,0 +1,144 @@
+timeout_sec = 180
+
+[[observations]]
+id = "source-platform"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+. /etc/os-release
+printf '%s:%s\n' "$ID" "$VERSION_ID"
+test "$ID" = ubuntu
+test "$VERSION_ID" = 16.04
+'''
+required = true
+
+[[observations]]
+id = "destination-platform"
+stage = 10
+node = "node2"
+command = '''
+set -eu
+. /etc/os-release
+printf '%s:%s\n' "$ID" "$VERSION_ID"
+test "$ID" = ubuntu
+test "$VERSION_ID" = 24.04
+'''
+required = true
+
+[[observations]]
+id = "source-account-identities"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+for user in mira niko sana; do
+  getent passwd "$user" | cut -d: -f1,3,4,5,6,7
+done
+for group in legacy-users mira niko sana; do
+  getent group "$group" | cut -d: -f1,3
+done
+for user in mira niko sana; do
+  printf '%s:' "$user"
+  id -nG "$user" | tr ' ' '\n' | sort | paste -sd, -
+done
+'''
+required = true
+
+[[observations]]
+id = "source-shadow-records"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+for user in mira niko sana; do
+  sudo -n getent shadow "$user"
+done
+'''
+required = true
+
+[[observations]]
+id = "source-home-content"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+for user in mira niko sana; do
+  sudo -n find "/home/$user" -xdev -type f -print0 | sort -z | sudo -n xargs -0 sha256sum
+  sudo -n find "/home/$user" -xdev -type l -printf '%p -> %l\n' | sort
+done
+'''
+required = true
+
+[[observations]]
+id = "source-home-metadata"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+for user in mira niko sana; do
+  sudo -n find "/home/$user" -xdev -printf '%p|%y|%u|%g|%m\n' | sort
+done
+'''
+required = true
+
+[[observations]]
+id = "source-password-authentication"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+authenticate() {
+  user="$1"
+  password="$2"
+  record="$(sudo -n getent shadow "$user")"
+  hash="$(printf '%s\n' "$record" | cut -d: -f2)"
+  case "$hash" in ''|'!'*|'*'*) return 1 ;; esac
+  actual="$(INFRASET_PASSWORD="$password" INFRASET_HASH="$hash" perl -e 'print crypt($ENV{INFRASET_PASSWORD}, $ENV{INFRASET_HASH})')"
+  test "$actual" = "$hash"
+  printf '%s\n' "$user"
+}
+command -v perl >/dev/null
+authenticate mira 'Mira-Legacy_42!'
+authenticate niko 'Niko-Legacy_73!'
+authenticate sana 'Sana-Legacy_58!'
+'''
+required = true
+
+[[observations]]
+id = "destination-unrelated-passwd"
+stage = 20
+node = "node2"
+command = "getent passwd | awk -F: '$1 !~ /^(mira|niko|sana)$/' | sha256sum"
+required = true
+
+[[observations]]
+id = "destination-unrelated-groups"
+stage = 20
+node = "node2"
+command = "getent group | awk -F: '$1 !~ /^(legacy-users|mira|niko|sana)$/' | sha256sum"
+required = true
+
+[[observations]]
+id = "source-host-security"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+cat /sys/module/apparmor/parameters/enabled
+systemctl is-active apparmor.service || true
+systemctl is-enabled ssh.service 2>/dev/null || true
+'''
+required = true
+
+[[observations]]
+id = "destination-host-security"
+stage = 20
+node = "node2"
+command = '''
+set -eu
+cat /sys/module/apparmor/parameters/enabled
+systemctl is-active apparmor.service || true
+systemctl is-enabled ssh.service 2>/dev/null || true
+'''
+required = true
