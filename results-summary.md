@@ -1,24 +1,3 @@
----
-pretty_name: InfraSet execution summary
-license: apache-2.0
-language:
-  - en
-tags:
-  - infrastructure
-  - llm-evaluation
-  - linux
-  - systems-administration
-task_categories:
-  - other
-size_categories:
-  - n<1K
-configs:
-  - config_name: summary
-    data_files:
-      - split: summary
-        path: data/summary.jsonl
----
-
 # Execution summary
 
 InfraSet is a collection of system administration tasks attempted by AI agents.
