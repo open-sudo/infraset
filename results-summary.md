@@ -2,6 +2,11 @@
 
 This table summarizes the recorded jobs in `jobs/`. `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials. A missing job means no result has been recorded yet.
 
+`Operational hygiene` measures whether the evaluator found executor-created
+residue, abandoned files, conflicting services, unsafe exposure, or other
+unwanted changes. `100%` means the hygiene checks passed; `0%` means they
+failed. It is independent of the task's functional result.
+
 | Task | Environment | Runs | Full passes | Best score | Evaluation coverage | Operational hygiene | Provisioning time | Mean duration |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | disk-full-recovery-centos-stream10 | centos-stream10 | 1 | 1/1 | 1.00 | 100% | 100% | 0.97 sec | 8.3 min |
@@ -52,4 +57,3 @@ This table summarizes the recorded jobs in `jobs/`. `Full passes` counts trials 
 | vault-raft-auto-unseal | ubuntu24.04 x4 | 3 | 1/3 | 0.75 | 50% | 0% | 1.11 sec | 18.5 min |
 | vyos-dual-lan-kubernetes | vyos; ubuntu24.04 x3 | 2 | 1/2 | 1.00 | 100% | 100% | 1.14 sec | 19.0 min |
 | wireguard-vyos-dual-lan | vyos x2; ubuntu24.04 x2 | 2 | 0/2 | — | 71% | 0% | 1.22 sec | 17.7 min |
-
