@@ -15,7 +15,7 @@ size_categories:
 configs:
   - config_name: summary
     data_files:
-      - split: train
+      - split: summary
         path: data/summary.jsonl
 ---
 
