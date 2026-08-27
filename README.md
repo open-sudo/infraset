@@ -1,43 +1,35 @@
-# Testing LLMs on Enterprise System Administration 
+# Testing LLMs on Infrastructure Work 
 
-I created **InfraSet** because I could not find answers to questions that kept arising as I worked with LLMs on IT infrastructure:
+**InfraSet** is a corpus of LLM traces doing infrastructure work. I created **InfraSet** to share my experience using LLM on infra work and to help answer questions such as:
 
 - How do LLMs behave on end-of-life Linux distributions (e.g. Ubuntu 16)?
 - How do they perform on full-system VMs rather than container-only or MicroVMs?
 - How do they handle distribued environments?
-- How do they operate in brownfield enterprise environments?
+- How do they operate in brownfield environments?
 - How do they handle networks, routers, firewalls, and switches?
-- How do they handle migrations for version to version or from a distro to another distro?
+- How do they handle migrations from version to version or from a distro to distro?
 
-I suppose these questions matter to anyone considering AI agents for real infrastructure. Increasingly, **InfraSet** has also become my scratchpad for infra work. Instead of sending an LLM directly into a live environment, I first express the intended change as an executable InfraSet test case. The LLM works on a disposable twin, and the evaluator checks the resulting state (almost like TDD for LLM-driven infra work).
+I was thinking these questions matter to anyone considering LLM for infrastructure.
 
 ## What makes InfraSet different
 
-Enterprise IT infrastructure is diverse. It includes different operating systems, software versions, existing configurations, multi-node clusters, and complex networks. InfraSet uses LLM as an instrument for exploring this heterogeneity. Each task places the LLM in a realistic infrastructure environment and asks it to set it up, investigate a problem, make changes, and verify the result. The goal is to understand:
-
-- What infra work the LLM can complete
-- Where and how it fails
-- How it handles unfamiliar or legacy infrastructure state
-- How it responds to failed commands and incorrect assumptions
-- Whether its proposed solution actually works when executed
-
-Each task is evaluated against the resulting infrastructure state, not merely the LLM’s final answer.
-
-## Task environments
+Three things:
+- InfraSet is not a leaderboard where LLMs are compared withe ach other. Instead, we take one LLM and test various Infra scenarios. 
+- Richness of the testbed: multiple Linux distros,  multi-node clusters, and support for networking.
+- Richness of the data: InfraSet does not just publish scores. We also publish complete execution traces.
+  
+## Testbed
 
 Tasks run on disposable VMs, clusters, and networks provisioned through [Antrieb](https://antrieb.sh/).
 The environments can include:
 
-- Variety of current and end-of-life Linux distributions
+- Variety of current and end-of-life Linux distributions: RHEL 7 to 10, Alma 9, Alpine, Arch, Debian 13, Ubuntu 24, Ubuntu 16
 - Single-node and multi-node systems
 - Brownfield configurations and existing state
-- Routers, firewalls, and switches
+- Routers, firewalls, and switches:  VyOS, OPNSense, OpenWRT, SONiC
 - Multi-network topologies
-- Real services and application dependencies
 
-No access to your own infrastructure or credentials is required.
-
-## Execution logs
+## Execution Traces
 
 Every published run includes the full observable agent trajectory, including:
 
