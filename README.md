@@ -18,7 +18,7 @@ InfraSet starts with 40 tasks, and we hope the community will help expand it.
 Three things:
 
 - **It is not a leaderboard.** InfraSet does not focus on comparing LLMs with one another. Instead, it uses the LLM to explore infrastructure scenarios.
-- **A rich testbed.** It includes multiple Linux distributions, full-system VMs, multi-node clusters, and networked infrastructure.
+- **A rich and instant testbed.** It includes multiple Linux distributions, full-system VMs, multi-node clusters, and networked infrastructure. Provisioning is in couple of seconds.
 - **Rich execution data.** InfraSet does not publish only scores or final answers. It also publishes execution traces, including what the LLM attempted, what happened, and whether the result worked.
 
 ## Testbed
