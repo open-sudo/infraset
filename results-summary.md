@@ -4,8 +4,10 @@ This table summarizes the recorded jobs in `jobs/`. `Full passes` counts trials 
 
 `Operational hygiene` measures whether the evaluator found executor-created
 residue, abandoned files, conflicting services, unsafe exposure, or other
-unwanted changes. `100%` means the hygiene checks passed; `0%` means they
-failed. It is independent of the task's functional result.
+unwanted changes. `100%` means all applicable hygiene checks passed; `0%` means
+none passed; values between `0%` and `100%` mean some passed and some failed;
+`—` means no hygiene score was recorded. It is independent of the task's
+functional result.
 
 | Task | Environment | Runs | Full passes | Best score | Evaluation coverage | Operational hygiene | Provisioning time | Mean duration |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
