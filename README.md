@@ -14,7 +14,8 @@ These questions matter to anyone considering LLMs for real infrastructure work.
 InfraSet starts with 40 tasks, and we hope the community will help expand it.
 This repository contains the dataset: task definitions, task-building guidance,
 and execution results. [Harbor](https://github.com/harbor-framework/harbor) provides the
-execution framework, while the separate
+execution framework, [Antrieb](https://antrieb.sh/) provides the infrastructure,
+while the separate
 [`harbor-antrieb`](https://github.com/open-sudo/harbor-antrieb) provider connects
 Harbor to Antrieb.
 
