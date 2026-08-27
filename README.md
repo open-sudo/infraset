@@ -144,8 +144,8 @@ analysis tool to investigate:
 For structured analysis, start with `data/trials.jsonl`. It contains one record
 per trial, including the task, environment, model, duration, provisioning time,
 evaluation metrics, and links to the full recorded result. The companion
-`data/evaluation-analysis.jsonl` explains incomplete evaluation dimensions using
-the evaluator's recorded assertion failures, limitations, and summaries.
+`data/evaluation-analysis.jsonl` gives a concise explanation for incomplete or
+unsuccessful evaluations based on the recorded evaluator evidence.
 
 Regenerate these indexes after adding or removing jobs:
 

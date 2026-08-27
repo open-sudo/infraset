@@ -88,13 +88,17 @@ def task_records() -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
         except (OSError, tomllib.TOMLDecodeError):
             continue
         name = task_path.name
+        environment = environment_for(task_path)
         records[name] = {
             "task_name": name,
             "category": task_path.parent.name,
             "instruction_path": str((task_path / "instruction.md").relative_to(ROOT)),
             "task_path": str(task_path.relative_to(ROOT)),
-            "metadata": task_config.get("metadata", {}),
-            "environment": environment_for(task_path),
+            "difficulty": task_config.get("metadata", {}).get("difficulty"),
+            "environment_file": environment.get("file"),
+            "environment_cluster": environment.get("cluster", []),
+            "network_mode": environment.get("network_mode"),
+            "control_node": environment.get("control_node"),
         }
     return records, list(records.values())
 
@@ -208,14 +212,10 @@ def main() -> int:
             "functionality": metrics.get("functionality"),
             "operational_hygiene": metrics.get("operational_hygiene"),
             "publication_eligible": metrics.get("publication_eligible"),
-            "exception_type": exception.get("type") or exception.get("exception_type"),
-            "exception_message": redact(
-                exception.get("message") or exception.get("exception_message")
-            ),
             "result_path": str(result_path.relative_to(ROOT)),
             "instruction_path": task.get("instruction_path"),
-            "environment_file": (task.get("environment") or {}).get("file"),
-            "environment_cluster": (task.get("environment") or {}).get("cluster", []),
+            "environment_file": task.get("environment_file"),
+            "environment_cluster": task.get("environment_cluster", []),
         }
         trials.append(trial)
         task_trial_counts[task_name] += 1
@@ -232,9 +232,18 @@ def main() -> int:
         )
         jobs[key]["trial_count"] += 1
         dimensions = dimension_analysis(report)
-        incomplete = [
-            item for item in dimensions if item.get("status") == "incomplete"
+        incomplete = [item for item in dimensions if item.get("status") == "incomplete"]
+        reasons = [
+            f"{item['dimension']}: {reason}"
+            for item in incomplete
+            for reason in item.get("reasons", [])
         ]
+        reasons = list(dict.fromkeys(reasons))
+        analysis = redact(report.get("overall_summary")) or "No evaluator analysis was recorded."
+        if reasons:
+            analysis = f"{analysis} Reasons for incomplete evaluation: {'; '.join(reasons[:4])}"
+        elif exception:
+            analysis = "The trial ended before a complete evaluator analysis was recorded."
         analyses.append(
             {
                 "task_name": task_name,
@@ -243,15 +252,7 @@ def main() -> int:
                 "trial_name": trial_name,
                 "evaluation_complete": report.get("evaluation_complete"),
                 "evaluation_coverage": report.get("evaluation_coverage"),
-                "overall_summary": redact(report.get("overall_summary")),
-                "incomplete_dimensions": [item["dimension"] for item in incomplete],
-                "incomplete_dimension_reasons": [
-                    f"{item['dimension']}: {reason}"
-                    for item in incomplete
-                    for reason in item.get("reasons", [])
-                ],
-                "exception_type": trial["exception_type"],
-                "exception_message": trial["exception_message"],
+                "analysis": analysis,
                 "report_path": str(report_path.relative_to(ROOT)) if report_path.is_file() else None,
             }
         )
