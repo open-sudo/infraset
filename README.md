@@ -1,7 +1,8 @@
 # Testing LLMs on Infrastructure Work
 
 **InfraSet** is a dataset of executable infrastructure tasks and LLM execution
-traces. It helps answer questions such as:
+traces, published on [Hugging Face](https://huggingface.co/datasets/infraset/infraset).
+It helps answer questions such as:
 
 - How do LLMs behave on end-of-life Linux distributions such as Ubuntu 16.04?
 - How do they perform on full-system VMs and distributed environments?
@@ -53,7 +54,8 @@ Published runs include the observable, redacted agent trajectory:
 
 Each task is evaluated against the resulting infrastructure state, not merely the
 LLM's final answer. Credential values are excluded or redacted from published
-artifacts.
+artifacts. Browse and download the published traces from the
+[InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset).
 
 ## Running a task
 
@@ -98,8 +100,10 @@ files. Run the generated task with:
 
 ## Exploring results
 
-Task definitions are in `tasks/`; execution results are in `jobs/`. Use your
-preferred analysis tool to investigate:
+Task definitions are in `tasks/`; execution results are in `jobs/`. The same
+results are published in the [InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset),
+which is the easiest place to browse or download them. Use your preferred
+analysis tool to investigate:
 
 - What did the LLM try first?
 - Which assumptions were incorrect?
