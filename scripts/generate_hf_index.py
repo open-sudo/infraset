@@ -202,16 +202,20 @@ def main() -> int:
             "provisioning_time_ms": provisioning_time_ms(result_path),
             "model": ((result.get("agent_info") or {}).get("model_info") or {}).get("name"),
             "model_provider": ((result.get("agent_info") or {}).get("model_info") or {}).get("provider"),
-            "metrics": metrics,
-            "exception": {
-                "type": exception.get("type") or exception.get("exception_type"),
-                "message": redact(exception.get("message") or exception.get("exception_message")),
-            }
-            if exception
-            else None,
+            "reward": metrics.get("reward"),
+            "evaluation_coverage": metrics.get("evaluation_coverage"),
+            "evaluation_complete": metrics.get("evaluation_complete"),
+            "functionality": metrics.get("functionality"),
+            "operational_hygiene": metrics.get("operational_hygiene"),
+            "publication_eligible": metrics.get("publication_eligible"),
+            "exception_type": exception.get("type") or exception.get("exception_type"),
+            "exception_message": redact(
+                exception.get("message") or exception.get("exception_message")
+            ),
             "result_path": str(result_path.relative_to(ROOT)),
             "instruction_path": task.get("instruction_path"),
-            "environment": task.get("environment", {}),
+            "environment_file": (task.get("environment") or {}).get("file"),
+            "environment_cluster": (task.get("environment") or {}).get("cluster", []),
         }
         trials.append(trial)
         task_trial_counts[task_name] += 1
@@ -227,6 +231,10 @@ def main() -> int:
             },
         )
         jobs[key]["trial_count"] += 1
+        dimensions = dimension_analysis(report)
+        incomplete = [
+            item for item in dimensions if item.get("status") == "incomplete"
+        ]
         analyses.append(
             {
                 "task_name": task_name,
@@ -236,8 +244,14 @@ def main() -> int:
                 "evaluation_complete": report.get("evaluation_complete"),
                 "evaluation_coverage": report.get("evaluation_coverage"),
                 "overall_summary": redact(report.get("overall_summary")),
-                "dimensions": dimension_analysis(report),
-                "exception": trial["exception"],
+                "incomplete_dimensions": [item["dimension"] for item in incomplete],
+                "incomplete_dimension_reasons": [
+                    f"{item['dimension']}: {reason}"
+                    for item in incomplete
+                    for reason in item.get("reasons", [])
+                ],
+                "exception_type": trial["exception_type"],
+                "exception_message": trial["exception_message"],
                 "report_path": str(report_path.relative_to(ROOT)) if report_path.is_file() else None,
             }
         )

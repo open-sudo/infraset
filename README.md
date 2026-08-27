@@ -12,6 +12,15 @@ task_categories:
   - other
 size_categories:
   - n<1K
+configs:
+  - config_name: trials
+    data_files:
+      - split: train
+        path: data/trials.jsonl
+  - config_name: evaluation-analysis
+    data_files:
+      - split: train
+        path: data/evaluation-analysis.jsonl
 ---
 
 # Testing LLMs on Infrastructure Work
