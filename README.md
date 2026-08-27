@@ -11,7 +11,7 @@
 
 These questions matter to anyone considering LLMs for real infrastructure work.
 
-InfraSet currently contains 40 tasks, and we hope the community will help expand it. The test case defines the environment, the task, and the verification criteria. 
+InfraSet starts with 40 tasks, and we hope the community will help expand it.
 
 ## What makes InfraSet different
 
