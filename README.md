@@ -17,6 +17,8 @@ and execution results. These execution results can also be explored on
 [Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 [A summary of all recorded task executions](results-summary.md) provides a quick
 overview of environments, run counts, scores, durations, and takeaways.
+[Structured JSONL indexes](data/) provide task, job, trial, and evaluation-analysis
+records for filtering and programmatic analysis.
 [Harbor](https://github.com/harbor-framework/harbor) provides the execution
 framework, [Antrieb](https://antrieb.sh/) provides the infrastructure, while
 [`harbor-antrieb`](https://github.com/open-sudo/harbor-antrieb) connects Harbor
@@ -113,6 +115,18 @@ analysis tool to investigate:
 - Where did it recover successfully?
 - Did the final change actually solve the problem?
 - What would a human SRE need to verify before applying the fix?
+
+For structured analysis, start with `data/trials.jsonl`. It contains one record
+per trial, including the task, environment, model, duration, provisioning time,
+evaluation metrics, and links to the full recorded result. The companion
+`data/evaluation-analysis.jsonl` explains incomplete evaluation dimensions using
+the evaluator's recorded assertion failures, limitations, and summaries.
+
+Regenerate these indexes after adding or removing jobs:
+
+```bash
+uv run --with tomli python scripts/generate_hf_index.py
+```
 
 ## Contributing
 
