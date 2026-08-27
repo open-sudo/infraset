@@ -1,3 +1,19 @@
+---
+pretty_name: InfraSet
+license: apache-2.0
+language:
+  - en
+tags:
+  - infrastructure
+  - llm-evaluation
+  - linux
+  - systems-administration
+task_categories:
+  - other
+size_categories:
+  - n<1K
+---
+
 # Testing LLMs on Infrastructure Work
 
 **InfraSet** is a dataset of executable infrastructure tasks and LLM execution
