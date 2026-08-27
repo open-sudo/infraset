@@ -268,7 +268,7 @@ def main() -> int:
         path = OUTPUT / filename
         with path.open("w") as stream:
             for record in records:
-                stream.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
         print(f"wrote {len(records):4d} records to {path.relative_to(ROOT)}")
     print(f"indexed {len(task_map)} tasks and {len(trials)} trials")
     return 0
