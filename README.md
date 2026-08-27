@@ -1,8 +1,7 @@
 # Testing LLMs on Infrastructure Work
 
 **InfraSet** is a dataset of executable infrastructure tasks and LLM execution
-traces, published on [Hugging Face](https://huggingface.co/datasets/infraset/infraset).
-It helps answer questions such as:
+traces. It helps answer questions such as:
 
 - How do LLMs behave on end-of-life Linux distributions such as Ubuntu 16.04?
 - How do they perform on full-system VMs and distributed environments?
@@ -14,17 +13,18 @@ These questions matter to anyone considering LLMs for real infrastructure work.
 
 InfraSet starts with 40 tasks, and we hope the community will help expand it.
 This repository contains the dataset: task definitions, task-building guidance,
-and execution results. [Harbor](https://github.com/harbor-framework/harbor) provides the
-execution framework, [Antrieb](https://antrieb.sh/) provides the infrastructure,
-while the separate
-[`harbor-antrieb`](https://github.com/open-sudo/harbor-antrieb) provider connects
-Harbor to Antrieb.
+and execution results. These execution results can also be explored on
+[Hugging Face](https://huggingface.co/datasets/infraset/infraset).
+[Harbor](https://github.com/harbor-framework/harbor) provides the execution
+framework, [Antrieb](https://antrieb.sh/) provides the infrastructure, while
+[`harbor-antrieb`](https://github.com/open-sudo/harbor-antrieb) connects Harbor
+to Antrieb.
 
 ## What makes InfraSet different
 
 - **It is not a leaderboard.** InfraSet explores infrastructure scenarios rather
   than focusing on comparing LLMs.
-- **A rich and instant testbed.** It includes multiple operating systems,
+- **A rich testbed.** It includes multiple operating systems,
   full-system VMs, multi-node clusters, and networked infrastructure.
 - **Rich execution data.** It publishes traces of what the LLM attempted, what
   happened, whether it recovered, and whether the result worked—not just scores.
@@ -32,7 +32,9 @@ Harbor to Antrieb.
 ## Testbed
 
 Tasks run on disposable VMs, clusters, and networks provisioned through
-[Antrieb](https://antrieb.sh/). No access to your infrastructure is required.
+[Antrieb](https://antrieb.sh/). A key benefit of Antrieb is the exceptionally
+fast provisioning of VM-based testbeds. No access to your infrastructure is
+required.
 
 Environments can include:
 
