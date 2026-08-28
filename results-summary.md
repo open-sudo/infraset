@@ -1,5 +1,13 @@
 # Execution summary
 
+The industry is increasingly using LLMs to operate infrastructure, either
+directly or with a human in the loop. Yet there is little public empirical data
+showing what happens when LLM-generated commands meet real systems. Perhaps LLMs
+perform remarkably well. Perhaps they fail in subtle and consequential ways. We
+do not yet have enough evidence to know either way.
+
+InfraSet exists to create and publish that evidence.
+
 InfraSet is a collection of system administration tasks attempted by AI agents.
 To run these tasks, visit the [InfraSet GitHub repository](https://github.com/open-sudo/infraset).
 
