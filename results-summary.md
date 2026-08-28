@@ -9,10 +9,6 @@ InfraSet is a dataset of executed infrastructure tasks and traces, created to bu
 contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
 [the InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
-Harbor provides the execution framework, Antrieb provides the infrastructure, and harbor-antrieb
-(https://github.com/open-sudo/harbor-antrieb) connects Harbor to Antrieb. To run these tasks, visit the
-InfraSet GitHub repository (https://github.com/open-sudo/infraset).
-
 This table summarizes the recorded jobs in `jobs/`. `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials.
 
 `Operational hygiene` measures whether the evaluator found executor-created residue, abandoned files, conflicting services, unsafe exposure, or other unwanted changes. `100%` means all applicable hygiene checks passed; `0%` means none passed.
