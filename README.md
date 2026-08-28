@@ -9,15 +9,7 @@ do not yet have enough evidence to know either way.
 InfraSet exists to create and publish that evidence.
 
 InfraSet is a dataset of executable infrastructure tasks and LLM execution
-traces. It helps answer questions such as:
-
-- How do LLMs behave on end-of-life Linux distributions such as Ubuntu 16.04?
-- How do they perform on full-system VMs and distributed environments?
-- How do they operate in brownfield environments?
-- How do they handle networks, routers, firewalls, and switches?
-- How do they handle migrations between versions or distributions?
-
-These questions matter to anyone considering LLMs for real infrastructure work.
+traces.
 
 InfraSet currently contains 42 tasks, and we hope the community will help expand it.
 This repository contains the dataset: task definitions, task-building guidance,
