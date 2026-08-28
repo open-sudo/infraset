@@ -2,14 +2,19 @@
 
 The industry is increasingly using LLMs to operate infrastructure, either
 directly or with a human in the loop. Yet there is little public empirical data
-showing what happens when LLM-generated commands meet real systems. Perhaps LLMs
-perform remarkably well. Perhaps they fail in subtle and consequential ways. We
-do not yet have enough evidence to know either way.
+showing what happens when LLMs operate real systems—whether greenfield,
+brownfield, end-of-life, or distributed environments. Perhaps LLMs perform
+remarkably well. Perhaps they fail in subtle and consequential ways. We do not
+yet have enough evidence to know either way.
 
 InfraSet exists to create and publish that evidence.
 
-InfraSet is a collection of system administration tasks attempted by AI agents.
-To run these tasks, visit the [InfraSet GitHub repository](https://github.com/open-sudo/infraset).
+It is a dataset of executable infrastructure tasks and LLM execution traces.
+InfraSet currently contains 42 tasks, and we hope the community will help expand
+it. The execution results can also be explored on [Hugging Face](https://huggingface.co/datasets/infraset/infraset).
+Harbor provides the execution framework, Antrieb provides the infrastructure,
+and [harbor-antrieb](https://github.com/open-sudo/harbor-antrieb) connects Harbor
+to Antrieb. To run these tasks, visit the [InfraSet GitHub repository](https://github.com/open-sudo/infraset).
 
 This table summarizes the recorded jobs in `jobs/`. `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials.
 
