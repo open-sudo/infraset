@@ -2,19 +2,17 @@
 
 The industry is increasingly using LLMs to operate infrastructure, either
 directly or with a human in the loop. Yet there is little public empirical data
-showing what happens when LLMs operate real systems—whether greenfield,
+showing what happens when LLMs operate real systems, whether in greenfield,
 brownfield, end-of-life, or distributed environments. Perhaps LLMs perform
-remarkably well. Perhaps they fail in subtle and consequential ways. We do not
-yet have enough evidence to know either way.
+remarkably well. Perhaps they fail in subtle ways. We do not yet have enough
+evidence to know either way.
 
-InfraSet exists to create and publish that evidence.
+InfraSet is a dataset of executed infrastructure tasks and traces, created to
+build that evidence. It currently contains 42 tasks, and we hope the community
+will join us and help expand it. Results can also be explored on [Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
-It is a dataset of executable infrastructure tasks and LLM execution traces.
-
-InfraSet currently contains 42 tasks, and we hope the community will help expand it.
 This repository contains task definitions, task-building guidance, and execution
-results. The execution results can also be explored on
-[Hugging Face](https://huggingface.co/datasets/infraset/infraset).
+results.
 [A summary of all recorded task executions](results-summary.md) provides a quick
 overview of environments, run counts, scores, and durations.
 [Structured JSONL indexes](data/) provide task, job, trial, and evaluation-analysis
@@ -22,7 +20,7 @@ records for filtering and programmatic analysis.
 [Harbor](https://github.com/harbor-framework/harbor) provides the execution
 framework, [Antrieb](https://antrieb.sh/) provides the infrastructure, and
 [`harbor-antrieb`](https://github.com/open-sudo/harbor-antrieb) connects Harbor
-to Antrieb.
+to Antrieb. To run these tasks, visit the [InfraSet GitHub repository](https://github.com/open-sudo/infraset).
 
 ## What makes InfraSet different
 
