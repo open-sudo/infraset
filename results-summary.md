@@ -7,7 +7,7 @@ they fail in subtle ways. We do not yet have enough evidence to know either way.
 
 InfraSet is a dataset of executed infrastructure tasks and traces, created to build that evidence. It currently
 contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
-Hugging Face (https://huggingface.co/datasets/infraset/infraset).
+[the InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
 Harbor provides the execution framework, Antrieb provides the infrastructure, and harbor-antrieb
 (https://github.com/open-sudo/harbor-antrieb) connects Harbor to Antrieb. To run these tasks, visit the

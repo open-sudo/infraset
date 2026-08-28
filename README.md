@@ -7,7 +7,7 @@ they fail in subtle ways. We do not yet have enough evidence to know either way.
 
 InfraSet is a dataset of executed infrastructure tasks and traces, created to build that evidence. It currently
 contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
-Hugging Face (https://huggingface.co/datasets/infraset/infraset).
+[the InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
 ## What makes InfraSet different
 
