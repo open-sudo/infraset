@@ -9,8 +9,6 @@ InfraSet is a dataset of executed infrastructure tasks and traces, created to bu
 contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
 Hugging Face (https://huggingface.co/datasets/infraset/infraset).
 
-This repository contains task definitions, task-building guidance, and execution
-results.
 [A summary of all recorded task executions](results-summary.md) provides a quick
 overview of environments, run counts, scores, and durations.
 [Structured JSONL indexes](data/) provide task, job, trial, and evaluation-analysis
