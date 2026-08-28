@@ -9,14 +9,6 @@ InfraSet is a dataset of executed infrastructure tasks and traces, created to bu
 contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
 Hugging Face (https://huggingface.co/datasets/infraset/infraset).
 
-[A summary of all recorded task executions](results-summary.md) provides a quick
-overview of environments, run counts, scores, and durations.
-[Structured JSONL indexes](data/) provide task, job, trial, and evaluation-analysis
-records for filtering and programmatic analysis.
-Harbor provides the execution framework, Antrieb provides the infrastructure, and harbor-antrieb
-(https://github.com/open-sudo/harbor-antrieb) connects Harbor to Antrieb. To run these tasks, visit the
-InfraSet GitHub repository (https://github.com/open-sudo/infraset).
-
 ## What makes InfraSet different
 
 - **It is not a leaderboard.** InfraSet explores infrastructure scenarios rather
