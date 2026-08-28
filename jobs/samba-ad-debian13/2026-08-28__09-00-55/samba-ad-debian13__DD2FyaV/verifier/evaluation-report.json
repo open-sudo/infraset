@@ -1,0 +1,485 @@
+{
+  "probes": [
+    {
+      "id": "samba-domain-contract",
+      "summary": "Read-only role, join, identity-network, replication, DNS, SYSVOL, and identity checks completed.",
+      "cleanup_completed": true,
+      "limitations": [
+        "ldbsearch and getfacl were unavailable; equivalent Samba tools and effective configuration checks were used.",
+        "No controller outage, recovery, or reboot was authorized by the authored probes."
+      ]
+    },
+    {
+      "id": "samba-share-contract",
+      "summary": "Canonical fileserver.corp.example identity, DNS, Kerberos credentials, and share configuration were checked; Kerberos SMB session setup failed. Cleanup completed.",
+      "cleanup_completed": true,
+      "limitations": [
+        "No evaluator share file was created because SMB session setup failed.",
+        "getfacl was unavailable; effective share configuration, ownership, modes, and group mapping were inspected instead."
+      ]
+    },
+    {
+      "id": "samba-operational-state",
+      "summary": "Read-only operational-state and residue checks completed on all four nodes.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The read-only probe does not directly establish post-reboot persistence."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "samba-required-domain-roles-and-joins",
+      "status": "pass",
+      "summary": "Both controllers are active writable CORP.EXAMPLE AD DCs; node3 is a joined member server and node4 is a joined client using the identity network.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "hostname -f\nip -br addr\nsudo -n systemctl is-active samba-ad-dc samba smbd winbind bind9 2>&1\nsudo -n testparm -s 2>&1",
+          "observation": "dc1.corp.example has samba-ad-dc active. Effective Samba role is ROLE_ACTIVE_DIRECTORY_DC with realm CORP.EXAMPLE, workgroup CORP, and interfaces limited to lo and the identity interface enp8s0."
+        },
+        {
+          "node": "node2",
+          "command": "hostname -f\nip -br addr\nsudo -n systemctl is-active samba-ad-dc samba smbd winbind bind9 2>&1\nsudo -n testparm -s 2>&1",
+          "observation": "dc2.corp.example has samba-ad-dc active. Effective Samba role is ROLE_ACTIVE_DIRECTORY_DC with realm CORP.EXAMPLE, workgroup CORP, and interfaces limited to lo and the identity interface enp8s0."
+        },
+        {
+          "node": "node3",
+          "command": "hostname -f\nip -br addr\ncat /etc/resolv.conf\nsudo -n testparm -s 2>&1\nsudo -n net ads info 2>&1\nsudo -n net ads testjoin 2>&1\nsudo -n wbinfo -t 2>&1\nsudo -n wbinfo --ping-dc 2>&1",
+          "observation": "fileserver.corp.example is ROLE_DOMAIN_MEMBER, configured for CORP.EXAMPLE/CORP on the identity interface; resolver uses both controller names; net ads reports the CORP.EXAMPLE realm and Join is OK; trust and DC checks succeed."
+        },
+        {
+          "node": "node4",
+          "command": "hostname -f\nip -br addr\ncat /etc/resolv.conf\nsudo -n net ads info 2>&1\nsudo -n net ads testjoin 2>&1\nsudo -n wbinfo -t 2>&1\nsudo -n wbinfo --ping-dc 2>&1",
+          "observation": "client.corp.example resolver uses both controllers; net ads reports CORP.EXAMPLE/CORP, Join is OK, trust-secret validation succeeds, and NETLOGON reaches dc1.corp.example through the identity network."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The join checks select dc1.corp.example as the active DC, while both controller names are present in resolver and Kerberos configuration."
+      ]
+    },
+    {
+      "id": "samba-directory-replication",
+      "status": "pass",
+      "summary": "Both controllers report successful bidirectional replication for the domain, configuration, schema, DomainDnsZones, and ForestDnsZones naming contexts; DNS answers are available through both controllers.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n samba-tool drs showrepl 2>&1\nsudo -n samba-tool dbcheck --cross-ncs --quiet 2>&1\nfor server in dc1.corp.example dc2.corp.example\ndo\n  dig +time=2 +tries=1 @\"$server\" corp.example SOA +short\n  dig +time=2 +tries=1 @\"$server\" _ldap._tcp.dc._msdcs.corp.example SRV +short\n  dig +time=2 +tries=1 @\"$server\" _kerberos._tcp.corp.example SRV +short\ndone",
+          "observation": "Inbound neighbors from DC2 for all required naming contexts show successful last attempts and 0 consecutive failures. dbcheck exits 0 with no reported errors. Queries to both controller names return SOA data and both LDAP/Kerberos SRV targets."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n samba-tool drs showrepl 2>&1\nsudo -n samba-tool dbcheck --cross-ncs --quiet 2>&1\nfor server in dc1.corp.example dc2.corp.example\ndo\n  dig +time=2 +tries=1 @\"$server\" corp.example SOA +short\n  dig +time=2 +tries=1 @\"$server\" _ldap._tcp.dc._msdcs.corp.example SRV +short\n  dig +time=2 +tries=1 @\"$server\" _kerberos._tcp.corp.example SRV +short\ndone",
+          "observation": "Inbound neighbors from DC1 for all required naming contexts show successful last attempts and 0 consecutive failures. dbcheck exits 0 with no reported errors. Queries to both controller names return SOA data and both LDAP/Kerberos SRV targets."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "samba-tool drs showrepl printed the same generic \"Warning: No NC replicated for Connection!\" on both nodes; the individual NC neighbors nevertheless reported successful attempts with zero failures."
+      ]
+    },
+    {
+      "id": "samba-sysvol-health",
+      "status": "fail",
+      "summary": "Node1 has a complete validated SYSVOL; node2 lacks the Policies tree and fails SYSVOL ACL validation.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n samba-tool ntacl sysvolcheck 2>&1\nsudo -n find /var/lib/samba/sysvol/corp.example -maxdepth 3 -type d -print 2>&1 | sort",
+          "observation": "sysvolcheck_rc=0. SYSVOL contains Policies with both required policy GUID trees and MACHINE/USER subtrees, plus scripts."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n samba-tool ntacl sysvolcheck 2>&1\nsudo -n find /var/lib/samba/sysvol/corp.example -maxdepth 3 -type d -print 2>&1 | sort\nsudo -n stat -c '%A %U:%G %n' /var/lib/samba/sysvol /var/lib/samba/sysvol/corp.example /var/lib/samba/sysvol/corp.example/Policies /var/lib/samba/sysvol/corp.example/scripts 2>&1",
+          "observation": "sysvolcheck returns 255 with No data available for /var/lib/samba/sysvol/corp.example. The tree contains only the realm directory and scripts; Policies is absent."
+        }
+      ],
+      "failures": [
+        "Node2 has an incomplete SYSVOL: the required Policies tree is missing and samba-tool ntacl sysvolcheck fails with rc=255."
+      ],
+      "limitations": [
+        "The node1 ACL-summary subcommand also reported getfacl not found, but samba-tool ntacl sysvolcheck independently returned rc=0."
+      ]
+    },
+    {
+      "id": "samba-required-identities",
+      "status": "pass",
+      "summary": "engineering and infrasetuser exist, and infrasetuser is a member of engineering on the converged directory state.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "sudo -n samba-tool group show engineering 2>&1\nsudo -n samba-tool group listmembers engineering 2>&1\nsudo -n samba-tool user show infrasetuser 2>&1\nsudo -n wbinfo --group-info=engineering 2>&1\nsudo -n wbinfo --user-info=infrasetuser 2>&1",
+          "observation": "The engineering group exists and contains CN=infrasetuser,CN=Users,DC=corp,DC=example; group listmembers returns infrasetuser. The user exists with memberOf engineering, and winbind resolves both identities."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n samba-tool drs showrepl 2>&1\nsudo -n samba-tool dbcheck --cross-ncs --quiet 2>&1",
+          "observation": "The controller reports successful replication of the domain naming context from DC2 with 0 consecutive failures and dbcheck exit 0, supporting convergence of the node2 identity state."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The direct node1 ldbsearch attempt was unavailable because ldbsearch is not installed; bidirectional NC replication, dbcheck, and node2's authenticated local AD object output supplied the convergence evidence."
+      ]
+    },
+    {
+      "id": "samba-engineering-share-works",
+      "status": "fail",
+      "summary": "The canonical server identity and Kerberos ticketing are valid, but smbclient cannot establish the required Kerberos SMB session, so share read and evaluator file I/O do not complete.",
+      "evidence": [
+        {
+          "node": "node3",
+          "command": "hostname -f\nsudo -n testparm -s 2>&1\ncanonical=$(hostname -f)\nfor server in dc1.corp.example dc2.corp.example\ndo\n  dig +time=2 +tries=1 @\"$server\" \"$canonical\" A +short\ndone\nsudo -n net ads status -P 2>&1\nsudo -n net ads keytab list 2>&1",
+          "observation": "The implementation-defined canonical name is fileserver.corp.example. It resolves through both controllers, is the machine account dNSHostName, and the effective share path is /srv/corp/engineering. AD status lists the corresponding HOST principals; node4 later obtains kvno 1 for cifs/fileserver.corp.example@CORP.EXAMPLE."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n stat -c '%A %a %U:%G %u:%g %n' /srv/corp/engineering /srv/corp/engineering/welcome.txt 2>&1\nsudo -n sed -n '1,5p' /srv/corp/engineering/welcome.txt 2>&1\nsudo -n wbinfo --group-info=engineering 2>&1\nsudo -n getent group 'CORP\\engineering' 2>&1",
+          "observation": "The backing directory is setgid 2775 root:engineering, welcome.txt is 664 root:engineering, and its content is exactly infraset-samba. Effective share configuration allows CORP Domain Users and places CORP engineering in write list."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n -H sh -c '. /root/corp-user.env\nprintf \"%s\\n\" \"$SAMBA_PASSWORD\" | kinit \"$principal\"\nkvno cifs/fileserver.corp.example@CORP.EXAMPLE'",
+          "observation": "The declared SAMBA_USER and SAMBA_PASSWORD variables are present; kinit succeeds for infrasetuser@CORP.EXAMPLE; the Kerberos TGT is present and kvno for cifs/fileserver.corp.example@CORP.EXAMPLE succeeds with kvno 1."
+        },
+        {
+          "node": "node4",
+          "command": "for server in dc1.corp.example dc2.corp.example\ndo\n  dig +time=2 +tries=1 @\"$server\" fileserver.corp.example A +short\n  dig +time=2 +tries=1 @\"$server\" corp.example SOA +short\n  dig +time=2 +tries=1 @\"$server\" _ldap._tcp.dc._msdcs.corp.example SRV +short\n  dig +time=2 +tries=1 @\"$server\" _kerberos._tcp.corp.example SRV +short\ndone\ngetent hosts fileserver.corp.example\nnc -zvw2 fileserver.corp.example 445 2>&1",
+          "observation": "Both controller DNS endpoints resolve the canonical fileserver name, return the CORP.EXAMPLE SOA and LDAP/Kerberos SRV records, and normal resolution succeeds. TCP/445 on fileserver.corp.example is open."
+        },
+        {
+          "node": "node4",
+          "command": "smbclient --use-kerberos=required --use-krb5-ccache=/tmp/codex-samba-p2-node4.1XPdtw --no-pass -U \"$principal\" //fileserver.corp.example/engineering -c \"get welcome.txt -\" 2>&1\nsmbclient --use-kerberos=required --use-krb5-ccache=/tmp/krb5cc_0 --no-pass -U \"$principal\" //fileserver.corp.example/engineering -c \"get welcome.txt -\" 2>&1",
+          "observation": "Both custom-cache and default-cache Kerberos smbclient attempts fail with gensec_gse_client_prepare_ccache: No password for user principal, Could not find a suitable mechtype, and NT_STATUS_INVALID_PARAMETER. The evaluator create/modify/read/remove sequence was not attempted."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n find /srv/corp/engineering -maxdepth 1 -mindepth 1 -printf '%M %u:%g %p\\n' 2>&1 | sort\nsudo -n smbstatus --brief 2>&1",
+          "observation": "After the failed SMB attempts, only the declared welcome.txt remains and there are no active SMB sessions; no evaluator file was created."
+        }
+      ],
+      "failures": [
+        "The executor's installed smbclient cannot complete required Kerberos SMB session setup against the validated canonical endpoint, so welcome.txt cannot be read through SMB and evaluator file I/O cannot be completed.",
+        "Because no SMB evaluator file was created, post-I/O ownership evidence is unavailable."
+      ],
+      "limitations": [
+        "The custom-cache and authorized default-cache retry both failed at SMB GSSAPI session setup; this is treated as a live share-access failure, not as missing DNS or Kerberos-ticket evidence."
+      ]
+    },
+    {
+      "id": "samba-state-clean",
+      "status": "fail",
+      "summary": "Required Samba/join configuration is mostly coherent, but failed enabled SSH units remain on every node, stale winbind cache backups remain on node3 and node4, and node2 SYSVOL residue is incomplete.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n systemctl --failed --no-legend --no-pager 2>&1\nsudo -n systemctl is-enabled ssh sshd 2>&1",
+          "observation": "ssh.service is loaded failed failed; ssh and its alias are enabled. samba-ad-dc is active and enabled, unrelated directory-service units are not installed, and no provisioning/copy/debug or credential-assignment paths were found in the inspected locations."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n systemctl status ssh --no-pager -l 2>&1 | sed -n '1,60p'\nsudo -n samba-tool ntacl sysvolcheck 2>&1\nsudo -n find /var/lib/samba -maxdepth 2 -type f \\( -name '*.bak' -o -name '*.orig' -o -name '*copy*' -o -name '*provision*' -o -name '*debug*' \\) -printf '%M %u:%g %s %p\\n' 2>&1 | sort",
+          "observation": "ssh.service has remained failed and enabled since 2026-06-15. Node2 SYSVOL validation still returns rc=255. No stale/copy/debug path was returned by the focused Samba path scan."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n systemctl --failed --no-legend --no-pager 2>&1\nsudo -n find /etc/samba /etc/krb5.conf /etc/krb5.conf.d /root /usr/local/sbin /opt /var/tmp /tmp /var/lib/samba -maxdepth 3 \\( -iname '*password*' -o -iname '*passwd*' -o -iname '*secret*' -o -iname '*provision*' -o -iname '*copy*' -o -iname '*.bak' -o -iname '*.orig' -o -iname '*debug*' -o -iname '*.pcap' \\) -print 2>&1 | sort",
+          "observation": "ssh.service is failed and enabled. The scan returns /var/lib/samba/winbindd_cache.tdb.bak, a stale backup/copy artifact; no provisioning, debug, or evaluator temporary artifact was found."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n systemctl --failed --no-legend --no-pager 2>&1\nsudo -n stat -c '%A %a %U:%G %n' /root/corp-user.env /etc/krb5.keytab 2>&1\nsudo -n find /var/lib/samba /etc/samba /etc/krb5.conf /etc/krb5.conf.d /root /usr/local/sbin /opt /var/tmp /tmp -maxdepth 3 \\( -iname '*provision*' -o -iname '*copy*' -o -iname '*.bak' -o -iname '*.orig' -o -iname '*debug*' -o -iname '*.pcap' -o -iname '*password*' -o -iname '*passwd*' \\) -print 2>&1 | sort",
+          "observation": "ssh.service is failed and enabled. Required /root/corp-user.env and /etc/krb5.keytab are root-only mode 600 with the required credential variable names; the inspected residue scan returns /var/lib/samba/winbindd_cache.tdb.bak."
+        }
+      ],
+      "failures": [
+        "ssh.service is concretely failed while enabled on node1, node2, node3, and node4.",
+        "Stale winbindd_cache.tdb.bak artifacts remain on node3 and node4.",
+        "Node2 retains an incomplete SYSVOL and failing SYSVOL ACL validation."
+      ],
+      "limitations": [
+        "The required plaintext credential file on node4 was checked by path, mode, and variable names without exposing its values.",
+        "Some scans emitted harmless diagnostics for the absent /etc/krb5.conf.d directory."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Executed all ten read-only Probe 1 managed checks in authored order.",
+    "Executed all eight Probe 2 evidence checks, including canonical CIFS discovery, DNS validation, Kerberos ticket acquisition, and SMB access attempts.",
+    "Executed the two reserved Probe 2 cleanup calls; removed evaluator custom/default Kerberos caches and temporary paths, with no evaluator share file present.",
+    "Executed all five read-only Probe 3 checks.",
+    "Called complete_evidence exactly once after all live checks and cleanup."
+  ],
+  "overall_summary": "Roles, joins, current bidirectional AD/DNS replication, required identities, and the declared share configuration pass. Node2 SYSVOL health fails. The canonical CIFS name and Kerberos tickets validate, but smbclient Kerberos session setup fails, so SMB share access and evaluator file I/O fail. Operational cleanliness also fails because enabled ssh.service is failed on all four nodes and stale winbind cache backups remain on node3 and node4. No outage, recovery, or reboot persistence test was authorized.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 42.86,
+      "applicable": true,
+      "critical_failure": true,
+      "selected_points": 7.0,
+      "evaluated_points": 7.0,
+      "passed_points": 3.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "samba-required-domain-roles-and-joins",
+          "probe": "samba-domain-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Both controllers are active writable CORP.EXAMPLE AD DCs; node3 is a joined member server and node4 is a joined client using the identity network.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "hostname -f\nip -br addr\nsudo -n systemctl is-active samba-ad-dc samba smbd winbind bind9 2>&1\nsudo -n testparm -s 2>&1",
+              "observation": "dc1.corp.example has samba-ad-dc active. Effective Samba role is ROLE_ACTIVE_DIRECTORY_DC with realm CORP.EXAMPLE, workgroup CORP, and interfaces limited to lo and the identity interface enp8s0."
+            },
+            {
+              "node": "node2",
+              "command": "hostname -f\nip -br addr\nsudo -n systemctl is-active samba-ad-dc samba smbd winbind bind9 2>&1\nsudo -n testparm -s 2>&1",
+              "observation": "dc2.corp.example has samba-ad-dc active. Effective Samba role is ROLE_ACTIVE_DIRECTORY_DC with realm CORP.EXAMPLE, workgroup CORP, and interfaces limited to lo and the identity interface enp8s0."
+            },
+            {
+              "node": "node3",
+              "command": "hostname -f\nip -br addr\ncat /etc/resolv.conf\nsudo -n testparm -s 2>&1\nsudo -n net ads info 2>&1\nsudo -n net ads testjoin 2>&1\nsudo -n wbinfo -t 2>&1\nsudo -n wbinfo --ping-dc 2>&1",
+              "observation": "fileserver.corp.example is ROLE_DOMAIN_MEMBER, configured for CORP.EXAMPLE/CORP on the identity interface; resolver uses both controller names; net ads reports the CORP.EXAMPLE realm and Join is OK; trust and DC checks succeed."
+            },
+            {
+              "node": "node4",
+              "command": "hostname -f\nip -br addr\ncat /etc/resolv.conf\nsudo -n net ads info 2>&1\nsudo -n net ads testjoin 2>&1\nsudo -n wbinfo -t 2>&1\nsudo -n wbinfo --ping-dc 2>&1",
+              "observation": "client.corp.example resolver uses both controllers; net ads reports CORP.EXAMPLE/CORP, Join is OK, trust-secret validation succeeds, and NETLOGON reaches dc1.corp.example through the identity network."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The join checks select dc1.corp.example as the active DC, while both controller names are present in resolver and Kerberos configuration."
+          ]
+        },
+        {
+          "id": "samba-directory-replication",
+          "probe": "samba-domain-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "Both controllers report successful bidirectional replication for the domain, configuration, schema, DomainDnsZones, and ForestDnsZones naming contexts; DNS answers are available through both controllers.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n samba-tool drs showrepl 2>&1\nsudo -n samba-tool dbcheck --cross-ncs --quiet 2>&1\nfor server in dc1.corp.example dc2.corp.example\ndo\n  dig +time=2 +tries=1 @\"$server\" corp.example SOA +short\n  dig +time=2 +tries=1 @\"$server\" _ldap._tcp.dc._msdcs.corp.example SRV +short\n  dig +time=2 +tries=1 @\"$server\" _kerberos._tcp.corp.example SRV +short\ndone",
+              "observation": "Inbound neighbors from DC2 for all required naming contexts show successful last attempts and 0 consecutive failures. dbcheck exits 0 with no reported errors. Queries to both controller names return SOA data and both LDAP/Kerberos SRV targets."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n samba-tool drs showrepl 2>&1\nsudo -n samba-tool dbcheck --cross-ncs --quiet 2>&1\nfor server in dc1.corp.example dc2.corp.example\ndo\n  dig +time=2 +tries=1 @\"$server\" corp.example SOA +short\n  dig +time=2 +tries=1 @\"$server\" _ldap._tcp.dc._msdcs.corp.example SRV +short\n  dig +time=2 +tries=1 @\"$server\" _kerberos._tcp.corp.example SRV +short\ndone",
+              "observation": "Inbound neighbors from DC1 for all required naming contexts show successful last attempts and 0 consecutive failures. dbcheck exits 0 with no reported errors. Queries to both controller names return SOA data and both LDAP/Kerberos SRV targets."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "samba-tool drs showrepl printed the same generic \"Warning: No NC replicated for Connection!\" on both nodes; the individual NC neighbors nevertheless reported successful attempts with zero failures."
+          ]
+        },
+        {
+          "id": "samba-sysvol-health",
+          "probe": "samba-domain-contract",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "Node1 has a complete validated SYSVOL; node2 lacks the Policies tree and fails SYSVOL ACL validation.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n samba-tool ntacl sysvolcheck 2>&1\nsudo -n find /var/lib/samba/sysvol/corp.example -maxdepth 3 -type d -print 2>&1 | sort",
+              "observation": "sysvolcheck_rc=0. SYSVOL contains Policies with both required policy GUID trees and MACHINE/USER subtrees, plus scripts."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n samba-tool ntacl sysvolcheck 2>&1\nsudo -n find /var/lib/samba/sysvol/corp.example -maxdepth 3 -type d -print 2>&1 | sort\nsudo -n stat -c '%A %U:%G %n' /var/lib/samba/sysvol /var/lib/samba/sysvol/corp.example /var/lib/samba/sysvol/corp.example/Policies /var/lib/samba/sysvol/corp.example/scripts 2>&1",
+              "observation": "sysvolcheck returns 255 with No data available for /var/lib/samba/sysvol/corp.example. The tree contains only the realm directory and scripts; Policies is absent."
+            }
+          ],
+          "failures": [
+            "Node2 has an incomplete SYSVOL: the required Policies tree is missing and samba-tool ntacl sysvolcheck fails with rc=255."
+          ],
+          "limitations": [
+            "The node1 ACL-summary subcommand also reported getfacl not found, but samba-tool ntacl sysvolcheck independently returned rc=0."
+          ]
+        },
+        {
+          "id": "samba-required-identities",
+          "probe": "samba-domain-contract",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "engineering and infrasetuser exist, and infrasetuser is a member of engineering on the converged directory state.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "sudo -n samba-tool group show engineering 2>&1\nsudo -n samba-tool group listmembers engineering 2>&1\nsudo -n samba-tool user show infrasetuser 2>&1\nsudo -n wbinfo --group-info=engineering 2>&1\nsudo -n wbinfo --user-info=infrasetuser 2>&1",
+              "observation": "The engineering group exists and contains CN=infrasetuser,CN=Users,DC=corp,DC=example; group listmembers returns infrasetuser. The user exists with memberOf engineering, and winbind resolves both identities."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n samba-tool drs showrepl 2>&1\nsudo -n samba-tool dbcheck --cross-ncs --quiet 2>&1",
+              "observation": "The controller reports successful replication of the domain naming context from DC2 with 0 consecutive failures and dbcheck exit 0, supporting convergence of the node2 identity state."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The direct node1 ldbsearch attempt was unavailable because ldbsearch is not installed; bidirectional NC replication, dbcheck, and node2's authenticated local AD object output supplied the convergence evidence."
+          ]
+        },
+        {
+          "id": "samba-engineering-share-works",
+          "probe": "samba-share-contract",
+          "points": 3.0,
+          "status": "fail",
+          "summary": "The canonical server identity and Kerberos ticketing are valid, but smbclient cannot establish the required Kerberos SMB session, so share read and evaluator file I/O do not complete.",
+          "evidence": [
+            {
+              "node": "node3",
+              "command": "hostname -f\nsudo -n testparm -s 2>&1\ncanonical=$(hostname -f)\nfor server in dc1.corp.example dc2.corp.example\ndo\n  dig +time=2 +tries=1 @\"$server\" \"$canonical\" A +short\ndone\nsudo -n net ads status -P 2>&1\nsudo -n net ads keytab list 2>&1",
+              "observation": "The implementation-defined canonical name is fileserver.corp.example. It resolves through both controllers, is the machine account dNSHostName, and the effective share path is /srv/corp/engineering. AD status lists the corresponding HOST principals; node4 later obtains kvno 1 for cifs/fileserver.corp.example@CORP.EXAMPLE."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n stat -c '%A %a %U:%G %u:%g %n' /srv/corp/engineering /srv/corp/engineering/welcome.txt 2>&1\nsudo -n sed -n '1,5p' /srv/corp/engineering/welcome.txt 2>&1\nsudo -n wbinfo --group-info=engineering 2>&1\nsudo -n getent group 'CORP\\engineering' 2>&1",
+              "observation": "The backing directory is setgid 2775 root:engineering, welcome.txt is 664 root:engineering, and its content is exactly infraset-samba. Effective share configuration allows CORP Domain Users and places CORP engineering in write list."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n -H sh -c '. /root/corp-user.env\nprintf \"%s\\n\" \"$SAMBA_PASSWORD\" | kinit \"$principal\"\nkvno cifs/fileserver.corp.example@CORP.EXAMPLE'",
+              "observation": "The declared SAMBA_USER and SAMBA_PASSWORD variables are present; kinit succeeds for infrasetuser@CORP.EXAMPLE; the Kerberos TGT is present and kvno for cifs/fileserver.corp.example@CORP.EXAMPLE succeeds with kvno 1."
+            },
+            {
+              "node": "node4",
+              "command": "for server in dc1.corp.example dc2.corp.example\ndo\n  dig +time=2 +tries=1 @\"$server\" fileserver.corp.example A +short\n  dig +time=2 +tries=1 @\"$server\" corp.example SOA +short\n  dig +time=2 +tries=1 @\"$server\" _ldap._tcp.dc._msdcs.corp.example SRV +short\n  dig +time=2 +tries=1 @\"$server\" _kerberos._tcp.corp.example SRV +short\ndone\ngetent hosts fileserver.corp.example\nnc -zvw2 fileserver.corp.example 445 2>&1",
+              "observation": "Both controller DNS endpoints resolve the canonical fileserver name, return the CORP.EXAMPLE SOA and LDAP/Kerberos SRV records, and normal resolution succeeds. TCP/445 on fileserver.corp.example is open."
+            },
+            {
+              "node": "node4",
+              "command": "smbclient --use-kerberos=required --use-krb5-ccache=/tmp/codex-samba-p2-node4.1XPdtw --no-pass -U \"$principal\" //fileserver.corp.example/engineering -c \"get welcome.txt -\" 2>&1\nsmbclient --use-kerberos=required --use-krb5-ccache=/tmp/krb5cc_0 --no-pass -U \"$principal\" //fileserver.corp.example/engineering -c \"get welcome.txt -\" 2>&1",
+              "observation": "Both custom-cache and default-cache Kerberos smbclient attempts fail with gensec_gse_client_prepare_ccache: No password for user principal, Could not find a suitable mechtype, and NT_STATUS_INVALID_PARAMETER. The evaluator create/modify/read/remove sequence was not attempted."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n find /srv/corp/engineering -maxdepth 1 -mindepth 1 -printf '%M %u:%g %p\\n' 2>&1 | sort\nsudo -n smbstatus --brief 2>&1",
+              "observation": "After the failed SMB attempts, only the declared welcome.txt remains and there are no active SMB sessions; no evaluator file was created."
+            }
+          ],
+          "failures": [
+            "The executor's installed smbclient cannot complete required Kerberos SMB session setup against the validated canonical endpoint, so welcome.txt cannot be read through SMB and evaluator file I/O cannot be completed.",
+            "Because no SMB evaluator file was created, post-I/O ownership evidence is unavailable."
+          ],
+          "limitations": [
+            "The custom-cache and authorized default-cache retry both failed at SMB GSSAPI session setup; this is treated as a live share-access failure, not as missing DNS or Kerberos-ticket evidence."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "samba-state-clean",
+          "probe": "samba-operational-state",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "Required Samba/join configuration is mostly coherent, but failed enabled SSH units remain on every node, stale winbind cache backups remain on node3 and node4, and node2 SYSVOL residue is incomplete.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n systemctl --failed --no-legend --no-pager 2>&1\nsudo -n systemctl is-enabled ssh sshd 2>&1",
+              "observation": "ssh.service is loaded failed failed; ssh and its alias are enabled. samba-ad-dc is active and enabled, unrelated directory-service units are not installed, and no provisioning/copy/debug or credential-assignment paths were found in the inspected locations."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n systemctl status ssh --no-pager -l 2>&1 | sed -n '1,60p'\nsudo -n samba-tool ntacl sysvolcheck 2>&1\nsudo -n find /var/lib/samba -maxdepth 2 -type f \\( -name '*.bak' -o -name '*.orig' -o -name '*copy*' -o -name '*provision*' -o -name '*debug*' \\) -printf '%M %u:%g %s %p\\n' 2>&1 | sort",
+              "observation": "ssh.service has remained failed and enabled since 2026-06-15. Node2 SYSVOL validation still returns rc=255. No stale/copy/debug path was returned by the focused Samba path scan."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n systemctl --failed --no-legend --no-pager 2>&1\nsudo -n find /etc/samba /etc/krb5.conf /etc/krb5.conf.d /root /usr/local/sbin /opt /var/tmp /tmp /var/lib/samba -maxdepth 3 \\( -iname '*password*' -o -iname '*passwd*' -o -iname '*secret*' -o -iname '*provision*' -o -iname '*copy*' -o -iname '*.bak' -o -iname '*.orig' -o -iname '*debug*' -o -iname '*.pcap' \\) -print 2>&1 | sort",
+              "observation": "ssh.service is failed and enabled. The scan returns /var/lib/samba/winbindd_cache.tdb.bak, a stale backup/copy artifact; no provisioning, debug, or evaluator temporary artifact was found."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n systemctl --failed --no-legend --no-pager 2>&1\nsudo -n stat -c '%A %a %U:%G %n' /root/corp-user.env /etc/krb5.keytab 2>&1\nsudo -n find /var/lib/samba /etc/samba /etc/krb5.conf /etc/krb5.conf.d /root /usr/local/sbin /opt /var/tmp /tmp -maxdepth 3 \\( -iname '*provision*' -o -iname '*copy*' -o -iname '*.bak' -o -iname '*.orig' -o -iname '*debug*' -o -iname '*.pcap' -o -iname '*password*' -o -iname '*passwd*' \\) -print 2>&1 | sort",
+              "observation": "ssh.service is failed and enabled. Required /root/corp-user.env and /etc/krb5.keytab are root-only mode 600 with the required credential variable names; the inspected residue scan returns /var/lib/samba/winbindd_cache.tdb.bak."
+            }
+          ],
+          "failures": [
+            "ssh.service is concretely failed while enabled on node1, node2, node3, and node4.",
+            "Stale winbindd_cache.tdb.bak artifacts remain on node3 and node4.",
+            "Node2 retains an incomplete SYSVOL and failing SYSVOL ACL validation."
+          ],
+          "limitations": [
+            "The required plaintext credential file on node4 was checked by path, mode, and variable names without exposing its values.",
+            "Some scans emitted harmless diagnostics for the absent /etc/krb5.conf.d directory."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 32.14,
+    "reward": 0.3214,
+    "provisional_reward": 0.3214,
+    "caps_applied": [
+      {
+        "reason": "critical confirmed failure",
+        "maximum": 50
+      }
+    ]
+  }
+}

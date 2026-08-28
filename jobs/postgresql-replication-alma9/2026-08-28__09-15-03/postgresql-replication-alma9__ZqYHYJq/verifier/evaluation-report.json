@@ -1,0 +1,357 @@
+{
+  "probes": [
+    {
+      "id": "postgresql-live-topology",
+      "summary": "Discovered and inspected PostgreSQL on all three nodes; node1 is writable and node2/node3 are streaming standbys, but replication uses the only observed management network.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Several initial evaluator SQL queries used unsupported or malformed expressions; corrected queries supplied decisive evidence. Reboot persistence was not tested because no reboot probe was authored."
+      ]
+    },
+    {
+      "id": "postgresql-replication-io",
+      "summary": "Committed evaluator data on node1, confirmed exact convergence and standby write rejection, then removed the evaluator schema and confirmed cleanup on all nodes.",
+      "cleanup_completed": true,
+      "limitations": [
+        "The streaming-topology prerequisite failed due to management-network use, so the dependent assertion is indeterminate by policy."
+      ]
+    },
+    {
+      "id": "postgresql-operational-state",
+      "summary": "Read-only inspection completed on all nodes; persistent validation-table and stale backup artifacts remain.",
+      "cleanup_completed": true,
+      "limitations": [
+        "An initial node1 relation query had a PostgreSQL type ambiguity; a corrected query confirmed the same persistent relation. No cleanup mutation was authorized for these pre-existing artifacts."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "postgresql-primary-writable",
+      "status": "pass",
+      "summary": "Node1 runs a healthy writable PostgreSQL primary.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n systemctl list-unit-files --type=service --no-legend 'postgresql*'; sudo -n systemctl list-units --type=service --all --no-legend 'postgresql*'; sudo -n systemctl is-active postgresql.service",
+          "observation": "postgresql.service is enabled, loaded, active, and running."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'identity|'||current_setting('server_version')||'|'||current_setting('port')||'|'||coalesce(inet_server_addr()::text,'')||'|'||pg_is_in_recovery()||'|'||current_setting('transaction_read_only')||'|'||current_setting('default_transaction_read_only');\"",
+          "observation": "identity|16.14|5432||false|off|off."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "postgresql-two-streaming-standbys",
+      "status": "fail",
+      "summary": "Both standbys are active and streaming, but PostgreSQL replication is using the sole observed management network rather than a dedicated database network.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'replication|'||coalesce(application_name,'')||'|'||coalesce(client_addr::text,'')||'|'||coalesce(client_hostname,'')||'|'||coalesce(state,'')||'|'||coalesce(sync_state,'')||'|'||coalesce(usename,'') FROM pg_stat_replication ORDER BY application_name; SELECT 'slot|'||slot_name||'|'||active||'|'||coalesce(slot_type,'') FROM pg_replication_slots ORDER BY slot_name;\"",
+          "observation": "node2-standby|10.100.237.11/32||streaming|async|replicator; node3-standby|10.100.237.12/32||streaming|async|replicator; both physical slots active."
+        },
+        {
+          "node": "node2",
+          "command": "ip -4 -o addr show; printf '%s\\n' \"$CLUSTER_HOSTS\"; sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'identity|'||current_setting('server_version')||'|'||current_setting('port')||'|'||coalesce(inet_server_addr()::text,'')||'|'||pg_is_in_recovery()||'|'||current_setting('transaction_read_only')||'|'||current_setting('default_transaction_read_only');\"",
+          "observation": "Only eth0=10.100.237.11/24 was present; CLUSTER_HOSTS contains the same node network; identity|16.14|5432||true|on|on."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'wal_receiver|'||coalesce(status,'')||'|'||coalesce(sender_host,'')||'|'||coalesce(sender_port::text,'')||'|'||coalesce(slot_name,'')||'|'||coalesce(written_lsn::text,'')||'|'||coalesce(flushed_lsn::text,'')||'|'||coalesce(latest_end_lsn::text,'') FROM pg_stat_wal_receiver;\"",
+          "observation": "wal_receiver|streaming|10.100.237.10|5432|node2|0/4068108|0/4068108|0/4068108."
+        },
+        {
+          "node": "node3",
+          "command": "ip -4 -o addr show; printf '%s\\n' \"$CLUSTER_HOSTS\"; sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'identity|'||current_setting('server_version')||'|'||current_setting('port')||'|'||coalesce(inet_server_addr()::text,'')||'|'||pg_is_in_recovery()||'|'||current_setting('transaction_read_only')||'|'||current_setting('default_transaction_read_only'); SELECT 'wal_receiver|'||coalesce(status,'')||'|'||coalesce(sender_host,'')||'|'||coalesce(sender_port::text,'')||'|'||coalesce(slot_name,'')||'|'||coalesce(written_lsn::text,'')||'|'||coalesce(flushed_lsn::text,'')||'|'||coalesce(latest_end_lsn::text,'') FROM pg_stat_wal_receiver;\"",
+          "observation": "Only eth0=10.100.237.12/24 was present; identity reports recovery/read-only; wal_receiver|streaming|10.100.237.10|5432|node3|0/4068108|0/4068108|0/4068108."
+        }
+      ],
+      "failures": [
+        "No dedicated database network/interface was observed; PostgreSQL listens on node1's management address and replication clients use the corresponding management addresses."
+      ],
+      "limitations": []
+    },
+    {
+      "id": "postgresql-write-reaches-both-standbys",
+      "status": "indeterminate",
+      "summary": "The exact committed value reached both standbys and both rejected normal writes, but the required streaming-topology prerequisite failed.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n -H -u postgres -- psql -X -d postgres -v ON_ERROR_STOP=1 -Atqc \"BEGIN; CREATE SCHEMA evaluator_pg_repl_zqyhjyq_20260828_0921; CREATE TABLE evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row (id,value) VALUES (1,'harbor_eval_zqYHYJq_20260828_0921_node1'); COMMIT; SELECT 'committed|'||value||'|'||pg_is_in_recovery()||'|'||current_setting('transaction_read_only') FROM evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row WHERE id=1;\"",
+          "observation": "committed|harbor_eval_zqYHYJq_20260828_0921_node1|false|off."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT value FROM evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row WHERE id=1\"",
+          "observation": "Exact evaluator value converged on polling attempt 1; final receive/replay LSN was 0/408C7E8."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT value FROM evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row WHERE id=1\"",
+          "observation": "Exact evaluator value converged on polling attempt 1; final receive/replay LSN was 0/408C7E8."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n -H -u postgres -- psql -X -d postgres -v ON_ERROR_STOP=1 -Atqc \"BEGIN; INSERT INTO evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row (id,value) VALUES (2,'should_not_persist_node2'); ROLLBACK; SELECT 'write_accepted';\"",
+          "observation": "INSERT rejected: ERROR: cannot execute INSERT in a read-only transaction."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n -H -u postgres -- psql -X -d postgres -v ON_ERROR_STOP=1 -Atqc \"BEGIN; INSERT INTO evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row (id,value) VALUES (2,'should_not_persist_node3'); ROLLBACK; SELECT 'write_accepted';\"",
+          "observation": "INSERT rejected: ERROR: cannot execute INSERT in a read-only transaction."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Prerequisite postgresql-two-streaming-standbys failed, so this dependent assertion is indeterminate despite successful functional replication evidence."
+      ]
+    },
+    {
+      "id": "postgresql-state-clean",
+      "status": "fail",
+      "summary": "Services, packages, listeners, and debug settings are otherwise clean, but a persistent validation table and stale backup files remain.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'user_relation|'||n.nspname||'.'||c.relname||'|'||c.relkind::text||'|'||pg_get_userbyid(c.relowner) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname <> 'information_schema' ORDER BY 1;\"",
+          "observation": "public.replication_validation_pkey and public.replication_validation remain. No backup_label.old exists on node1."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n find /var/lib/pgsql /etc/systemd/system /usr/local/bin /root /home /tmp -xdev -type f \\( -iname '*setup*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*test*' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.old' \\) -printf 'artifact|%u|%m|%p\\n'",
+          "observation": "/var/lib/pgsql/data/backup_label.old remains, owned by postgres mode 600; public.replication_validation and its index remain."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n find /var/lib/pgsql /etc/systemd/system /usr/local/bin /root /home /tmp -xdev -type f \\( -iname '*setup*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*test*' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.old' \\) -printf 'artifact|%u|%m|%p\\n'",
+          "observation": "The same /var/lib/pgsql/data/backup_label.old artifact remains, owned by postgres mode 600; public.replication_validation and its index remain."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n systemctl --failed --type=service --no-legend; sudo -n ss -ltnp; rpm -qa | LC_ALL=C sort | grep -Ei '(^|[-_.])(postgresql|pgbouncer|pgpool|haproxy|mysql|mariadb|redis|memcached)([-_.]|$)' || true; sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'setting|'||name||'='||setting FROM pg_settings WHERE name IN ('log_statement','log_min_messages','log_min_duration_statement','debug_print_parse','debug_print_rewritten','debug_print_plan','track_functions','track_io_timing','shared_preload_libraries','session_preload_libraries','local_preload_libraries') ORDER BY name;\"",
+          "observation": "No failed services; only PostgreSQL packages plus normal SSH/PostgreSQL listeners; debug settings are off/normal; postgres-owned .pgpass is mode 600 and is legitimate."
+        }
+      ],
+      "failures": [
+        "public.replication_validation and its primary-key index remain on all three nodes.",
+        "/var/lib/pgsql/data/backup_label.old remains on node2 and node3 as stale backup residue."
+      ],
+      "limitations": [
+        "The probe did not authorize mutation of these pre-existing artifacts."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Discovered protected local PostgreSQL access on all nodes.",
+    "Created and committed evaluator-owned data on node1.",
+    "Confirmed exact convergence and standby write rejection.",
+    "Dropped the evaluator schema on node1 and confirmed its removal on node2 and node3.",
+    "Completed read-only operational-state inspection.",
+    "Closed live evidence after all checks and cleanup."
+  ],
+  "overall_summary": "Functional replication works and node1 is writable. The dedicated database-network requirement fails, so the dependent replication assertion is indeterminate by prerequisite policy. Operational-state cleanliness fails due to the persistent validation table on all nodes and backup_label.old on node2/node3. Reboot persistence was not directly tested because no reboot-authorized probe was included.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 40.0,
+      "applicable": true,
+      "critical_failure": true,
+      "selected_points": 9.0,
+      "evaluated_points": 5.0,
+      "passed_points": 2.0,
+      "coverage": 0.5556,
+      "assertions": [
+        {
+          "id": "postgresql-primary-writable",
+          "probe": "postgresql-live-topology",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Node1 runs a healthy writable PostgreSQL primary.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n systemctl list-unit-files --type=service --no-legend 'postgresql*'; sudo -n systemctl list-units --type=service --all --no-legend 'postgresql*'; sudo -n systemctl is-active postgresql.service",
+              "observation": "postgresql.service is enabled, loaded, active, and running."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'identity|'||current_setting('server_version')||'|'||current_setting('port')||'|'||coalesce(inet_server_addr()::text,'')||'|'||pg_is_in_recovery()||'|'||current_setting('transaction_read_only')||'|'||current_setting('default_transaction_read_only');\"",
+              "observation": "identity|16.14|5432||false|off|off."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "postgresql-two-streaming-standbys",
+          "probe": "postgresql-live-topology",
+          "points": 3.0,
+          "status": "fail",
+          "summary": "Both standbys are active and streaming, but PostgreSQL replication is using the sole observed management network rather than a dedicated database network.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'replication|'||coalesce(application_name,'')||'|'||coalesce(client_addr::text,'')||'|'||coalesce(client_hostname,'')||'|'||coalesce(state,'')||'|'||coalesce(sync_state,'')||'|'||coalesce(usename,'') FROM pg_stat_replication ORDER BY application_name; SELECT 'slot|'||slot_name||'|'||active||'|'||coalesce(slot_type,'') FROM pg_replication_slots ORDER BY slot_name;\"",
+              "observation": "node2-standby|10.100.237.11/32||streaming|async|replicator; node3-standby|10.100.237.12/32||streaming|async|replicator; both physical slots active."
+            },
+            {
+              "node": "node2",
+              "command": "ip -4 -o addr show; printf '%s\\n' \"$CLUSTER_HOSTS\"; sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'identity|'||current_setting('server_version')||'|'||current_setting('port')||'|'||coalesce(inet_server_addr()::text,'')||'|'||pg_is_in_recovery()||'|'||current_setting('transaction_read_only')||'|'||current_setting('default_transaction_read_only');\"",
+              "observation": "Only eth0=10.100.237.11/24 was present; CLUSTER_HOSTS contains the same node network; identity|16.14|5432||true|on|on."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'wal_receiver|'||coalesce(status,'')||'|'||coalesce(sender_host,'')||'|'||coalesce(sender_port::text,'')||'|'||coalesce(slot_name,'')||'|'||coalesce(written_lsn::text,'')||'|'||coalesce(flushed_lsn::text,'')||'|'||coalesce(latest_end_lsn::text,'') FROM pg_stat_wal_receiver;\"",
+              "observation": "wal_receiver|streaming|10.100.237.10|5432|node2|0/4068108|0/4068108|0/4068108."
+            },
+            {
+              "node": "node3",
+              "command": "ip -4 -o addr show; printf '%s\\n' \"$CLUSTER_HOSTS\"; sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'identity|'||current_setting('server_version')||'|'||current_setting('port')||'|'||coalesce(inet_server_addr()::text,'')||'|'||pg_is_in_recovery()||'|'||current_setting('transaction_read_only')||'|'||current_setting('default_transaction_read_only'); SELECT 'wal_receiver|'||coalesce(status,'')||'|'||coalesce(sender_host,'')||'|'||coalesce(sender_port::text,'')||'|'||coalesce(slot_name,'')||'|'||coalesce(written_lsn::text,'')||'|'||coalesce(flushed_lsn::text,'')||'|'||coalesce(latest_end_lsn::text,'') FROM pg_stat_wal_receiver;\"",
+              "observation": "Only eth0=10.100.237.12/24 was present; identity reports recovery/read-only; wal_receiver|streaming|10.100.237.10|5432|node3|0/4068108|0/4068108|0/4068108."
+            }
+          ],
+          "failures": [
+            "No dedicated database network/interface was observed; PostgreSQL listens on node1's management address and replication clients use the corresponding management addresses."
+          ],
+          "limitations": []
+        },
+        {
+          "id": "postgresql-write-reaches-both-standbys",
+          "probe": "postgresql-replication-io",
+          "points": 4.0,
+          "status": "indeterminate",
+          "summary": "The exact committed value reached both standbys and both rejected normal writes, but the required streaming-topology prerequisite failed.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n -H -u postgres -- psql -X -d postgres -v ON_ERROR_STOP=1 -Atqc \"BEGIN; CREATE SCHEMA evaluator_pg_repl_zqyhjyq_20260828_0921; CREATE TABLE evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row (id,value) VALUES (1,'harbor_eval_zqYHYJq_20260828_0921_node1'); COMMIT; SELECT 'committed|'||value||'|'||pg_is_in_recovery()||'|'||current_setting('transaction_read_only') FROM evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row WHERE id=1;\"",
+              "observation": "committed|harbor_eval_zqYHYJq_20260828_0921_node1|false|off."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT value FROM evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row WHERE id=1\"",
+              "observation": "Exact evaluator value converged on polling attempt 1; final receive/replay LSN was 0/408C7E8."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT value FROM evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row WHERE id=1\"",
+              "observation": "Exact evaluator value converged on polling attempt 1; final receive/replay LSN was 0/408C7E8."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n -H -u postgres -- psql -X -d postgres -v ON_ERROR_STOP=1 -Atqc \"BEGIN; INSERT INTO evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row (id,value) VALUES (2,'should_not_persist_node2'); ROLLBACK; SELECT 'write_accepted';\"",
+              "observation": "INSERT rejected: ERROR: cannot execute INSERT in a read-only transaction."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n -H -u postgres -- psql -X -d postgres -v ON_ERROR_STOP=1 -Atqc \"BEGIN; INSERT INTO evaluator_pg_repl_zqyhjyq_20260828_0921.probe_row (id,value) VALUES (2,'should_not_persist_node3'); ROLLBACK; SELECT 'write_accepted';\"",
+              "observation": "INSERT rejected: ERROR: cannot execute INSERT in a read-only transaction."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "Prerequisite postgresql-two-streaming-standbys failed, so this dependent assertion is indeterminate despite successful functional replication evidence."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "postgresql-state-clean",
+          "probe": "postgresql-operational-state",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "Services, packages, listeners, and debug settings are otherwise clean, but a persistent validation table and stale backup files remain.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'user_relation|'||n.nspname||'.'||c.relname||'|'||c.relkind::text||'|'||pg_get_userbyid(c.relowner) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname <> 'information_schema' ORDER BY 1;\"",
+              "observation": "public.replication_validation_pkey and public.replication_validation remain. No backup_label.old exists on node1."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n find /var/lib/pgsql /etc/systemd/system /usr/local/bin /root /home /tmp -xdev -type f \\( -iname '*setup*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*test*' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.old' \\) -printf 'artifact|%u|%m|%p\\n'",
+              "observation": "/var/lib/pgsql/data/backup_label.old remains, owned by postgres mode 600; public.replication_validation and its index remain."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n find /var/lib/pgsql /etc/systemd/system /usr/local/bin /root /home /tmp -xdev -type f \\( -iname '*setup*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*test*' -o -iname '*.bak' -o -iname '*.backup' -o -iname '*.old' \\) -printf 'artifact|%u|%m|%p\\n'",
+              "observation": "The same /var/lib/pgsql/data/backup_label.old artifact remains, owned by postgres mode 600; public.replication_validation and its index remain."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n systemctl --failed --type=service --no-legend; sudo -n ss -ltnp; rpm -qa | LC_ALL=C sort | grep -Ei '(^|[-_.])(postgresql|pgbouncer|pgpool|haproxy|mysql|mariadb|redis|memcached)([-_.]|$)' || true; sudo -n -H -u postgres -- psql -X -d postgres -Atqc \"SELECT 'setting|'||name||'='||setting FROM pg_settings WHERE name IN ('log_statement','log_min_messages','log_min_duration_statement','debug_print_parse','debug_print_rewritten','debug_print_plan','track_functions','track_io_timing','shared_preload_libraries','session_preload_libraries','local_preload_libraries') ORDER BY name;\"",
+              "observation": "No failed services; only PostgreSQL packages plus normal SSH/PostgreSQL listeners; debug settings are off/normal; postgres-owned .pgpass is mode 600 and is legitimate."
+            }
+          ],
+          "failures": [
+            "public.replication_validation and its primary-key index remain on all three nodes.",
+            "/var/lib/pgsql/data/backup_label.old remains on node2 and node3 as stale backup residue."
+          ],
+          "limitations": [
+            "The probe did not authorize mutation of these pre-existing artifacts."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "persistence"
+  ],
+  "evaluation_coverage": 0.6,
+  "full_coverage": false,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "aggregation": {
+    "weighted_score": 32.0,
+    "reward": null,
+    "provisional_reward": 0.32,
+    "caps_applied": [
+      {
+        "reason": "critical confirmed failure",
+        "maximum": 50
+      }
+    ]
+  }
+}

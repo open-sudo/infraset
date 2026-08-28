@@ -1,0 +1,298 @@
+{
+  "probes": [
+    {
+      "id": "wireguard-routed-contract",
+      "summary": "Read-only live checks established the routed WireGuard topology and source-preserving HTTP path.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "wireguard-operational-state",
+      "summary": "Read-only state audits completed on all four nodes; active and saved state appeared coherent, but the VyOS unsaved-change check was unavailable in the noninteractive evaluator shell.",
+      "cleanup_completed": true,
+      "limitations": [
+        "VyOS configure/compare could not be invoked noninteractively as root, so unsaved running-config deltas were not independently established."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "wireguard-required-tunnel",
+      "status": "pass",
+      "summary": "Both gateways and hosts have the expected LAN/tunnel addresses and routes; peer public keys match bidirectionally and handshakes are current.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "sudo -n -H sh -c '\nprintf \"%s\\n\" \"NODE=$(hostname)\"\nprintf \"%s\\n\" \"---ADDR---\"\nip -4 addr show\nprintf \"%s\\n\" \"---ROUTE---\"\nip route show\nprintf \"%s\\n\" \"---WG---\"\nwg show wg01 2>&1\n'",
+          "observation": "eth1=10.10.1.1/24; wg01=10.255.255.1/30; route 10.10.2.0/24 via 10.255.255.2 dev wg01. Interface public key dojua11hNsDvrJpxsllY/8LYYgqPIhbJ2WOM4UP6aWI=; peer 5A4LPaWhX+TZOTwwgGn5PHiEzyY8SsNQFE+Y/SOOdG4=; latest handshake 1 minute 44 seconds ago."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n -H sh -c '\nprintf \"%s\\n\" \"NODE=$(hostname)\"\nprintf \"%s\\n\" \"---ADDR---\"\nip -4 addr show\nprintf \"%s\\n\" \"---ROUTE---\"\nip route show\nprintf \"%s\\n\" \"---WG---\"\nwg show wg01 2>&1\n'",
+          "observation": "eth1=10.10.2.1/24; wg01=10.255.255.2/30; route 10.10.1.0/24 via 10.255.255.1 dev wg01. Interface public key 5A4LPaWhX+TZOTwwgGn5PHiEzyY8SsNQFE+Y/SOOdG4=; peer dojua11hNsDvrJpxsllY/8LYYgqPIhbJ2WOM4UP6aWI=; latest handshake 1 minute 47 seconds ago."
+        },
+        {
+          "node": "node3",
+          "command": "sh -c '\nprintf \"%s\\n\" \"NODE=$(hostname)\"\nprintf \"%s\\n\" \"---ADDR---\"\nip -4 addr show\nprintf \"%s\\n\" \"---ROUTE---\"\nip route show\nprintf \"%s\\n\" \"---LISTEN---\"\nss -ltnp 2>&1 | grep -E \"LISTEN|:8080\" || true\n'",
+          "observation": "enp8s0=10.10.1.10/24; route 10.10.2.0/24 via 10.10.1.1 dev enp8s0; HTTP listener on 10.10.1.10:8080."
+        },
+        {
+          "node": "node4",
+          "command": "sh -c '\nprintf \"%s\\n\" \"NODE=$(hostname)\"\nprintf \"%s\\n\" \"---ADDR---\"\nip -4 addr show\nprintf \"%s\\n\" \"---ROUTE---\"\nip route show\nprintf \"%s\\n\" \"---RESOLUTION---\"\ngetent ahostsv4 node3 node4 2>&1 || true\n'",
+          "observation": "enp8s0=10.10.2.10/24; route 10.10.1.0/24 via 10.10.2.1 dev enp8s0."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "wireguard-application-path",
+      "status": "pass",
+      "summary": "Node4 reached node3:8080 and received the required response; node3 and both gateways observed the untranslated node4 LAN source across wg01.",
+      "evidence": [
+        {
+          "node": "node4",
+          "command": "sh -c '\nprintf \"%s\\n\" \"---ROUTE_TO_NODE3_LAN---\"\nip route get 10.10.1.10\nprintf \"%s\\n\" \"---HTTP---\"\ncurl --noproxy \"*\" --silent --show-error --fail --max-time 5 -w \"\\nstatus=%{http_code} remote=%{remote_ip} local=%{local_ip}\\n\" http://10.10.1.10:8080/\n'",
+          "observation": "Route used 10.10.1.10 via 10.10.2.1 dev enp8s0 src 10.10.2.10. Response body was lan-a application; status=200, remote=10.10.1.10, local=10.10.2.10."
+        },
+        {
+          "node": "node3",
+          "command": "sh -c '\nprintf \"%s\\n\" \"---NODE3_8080_CONNECTIONS_AFTER_NODE4_REQUEST---\"\nss -tnp state all 2>&1 | grep \":8080\" || true\n'",
+          "observation": "TIME-WAIT connection showed 10.10.1.10:8080 <- 10.10.2.10:34822, proving node3 observed the node4 LAN address rather than a translated gateway address."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -n -H sh -c '\nprintf \"%s\\n\" \"---ROUTE_TO_NODE3_LAN---\"\nip route get 10.10.1.10\nprintf \"%s\\n\" \"---CONNTRACK_8080---\"\nconntrack -L -p tcp 2>&1 | grep -E \"10\\.10\\.(1\\.10|2\\.10)|dport=8080|sport=8080\" || true\nprintf \"%s\\n\" \"---NAT_RULE_LINES---\"\nnft list ruleset 2>/dev/null | grep -E \"masquerade|snat|dnat\" || true\nprintf \"%s\\n\" \"---WG_AFTER_HTTP---\"\nwg show wg01\n'",
+          "observation": "Route used wg01 via 10.255.255.1. Conntrack retained src=10.10.2.10 and dst=10.10.1.10; no masquerade/snat/dnat lines were returned; handshake remained current."
+        },
+        {
+          "node": "node1",
+          "command": "sudo -n -H sh -c '\nprintf \"%s\\n\" \"---ROUTE_TO_NODE4_LAN---\"\nip route get 10.10.2.10\nprintf \"%s\\n\" \"---CONNTRACK_8080---\"\nconntrack -L -p tcp 2>&1 | grep -E \"10\\.10\\.(1\\.10|2\\.10)|dport=8080|sport=8080\" || true\nprintf \"%s\\n\" \"---NAT_RULE_LINES---\"\nnft list ruleset 2>/dev/null | grep -E \"masquerade|snat|dnat\" || true\nprintf \"%s\\n\" \"---WG_AFTER_HTTP---\"\nwg show wg01\n'",
+          "observation": "Route used wg01 via 10.255.255.2. Conntrack retained src=10.10.2.10 and dst=10.10.1.10; no masquerade/snat/dnat lines were returned; handshake remained current."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "wireguard-state-clean",
+      "status": "indeterminate",
+      "summary": "Audits found no failed units, duplicate wg links, unexpected temporary artifact names, or stale NAT rules; persistent application/network units were present. The required unsaved VyOS configuration check could not be completed.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "Composite read-only audit: systemctl --failed; redacted VyOS compare; /config/config.boot tunnel/route/firewall scan; wg/ip route/nft/listener inspection; unit flags and artifact-name scan.",
+          "observation": "Failed-unit list empty; saved config contained wg01, tunnel/route and firewall entries; only wg01 was present; no masquerade/snat/dnat lines; artifact scan found only baseline /home/vyos/.ssh/authorized_keys. The compare attempt reported configure/compare unavailable."
+        },
+        {
+          "node": "node2",
+          "command": "Composite read-only audit: systemctl --failed; redacted VyOS compare; /config/config.boot tunnel/route/firewall scan; wg/ip route/nft/listener inspection; unit flags and artifact-name scan.",
+          "observation": "Failed-unit list empty; saved config contained wg01, tunnel/route and firewall entries; only wg01 was present; no masquerade/snat/dnat lines; artifact scan was empty. The compare attempt returned Invalid command for configure and compare."
+        },
+        {
+          "node": "node3",
+          "command": "Composite read-only audit: systemctl --failed; ip/link/route; HTTP process and enabled-unit inspection; listeners; persistent unit/config names and artifact-name scan.",
+          "observation": "Failed-unit list empty; lan-a-http.service enabled; python HTTP server was child of PID 1 and bound to 10.10.1.10:8080; persistent unit files were present; artifact scan empty."
+        },
+        {
+          "node": "node4",
+          "command": "Composite read-only audit: systemctl --failed; ip/link/route; enabled-unit inspection; listeners; persistent unit/config names and artifact-name scan.",
+          "observation": "Failed-unit list empty; expected routed LAN state and baseline DNS/SSH listeners only; no application/debug listener, WireGuard link, or artifact residue found."
+        },
+        {
+          "node": "node1",
+          "command": "timeout 8 sudo -n -H /bin/vbash -ic \"configure; compare; exit\"",
+          "observation": "VyOS warned that configuration mode was being attempted as root and then reported Invalid command: [compare]; the templated variant also failed with vbash/config-interpreter errors. This is an evaluator invocation limitation, not evidence of an unsaved change."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The live-vs-saved VyOS compare could not be run on both gateways because the noninteractive managed shell rejected configure/compare or applied the root configuration guard.",
+        "Artifact checks were bounded name scans of common temporary, home, and configuration paths and did not inspect secret contents."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Ran all authored probes in order using managed exec only.",
+    "Performed read-only checks; no recovery, mutation, or cleanup was required.",
+    "Called complete_evidence exactly once after all live checks."
+  ],
+  "overall_summary": "The routed WireGuard tunnel and source-preserving application path pass. Operational-state cleanliness is indeterminate solely because the evaluator could not execute VyOS unsaved-configuration comparison; other live audits were clean.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 6.0,
+      "evaluated_points": 6.0,
+      "passed_points": 6.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "wireguard-required-tunnel",
+          "probe": "wireguard-routed-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Both gateways and hosts have the expected LAN/tunnel addresses and routes; peer public keys match bidirectionally and handshakes are current.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "sudo -n -H sh -c '\nprintf \"%s\\n\" \"NODE=$(hostname)\"\nprintf \"%s\\n\" \"---ADDR---\"\nip -4 addr show\nprintf \"%s\\n\" \"---ROUTE---\"\nip route show\nprintf \"%s\\n\" \"---WG---\"\nwg show wg01 2>&1\n'",
+              "observation": "eth1=10.10.1.1/24; wg01=10.255.255.1/30; route 10.10.2.0/24 via 10.255.255.2 dev wg01. Interface public key dojua11hNsDvrJpxsllY/8LYYgqPIhbJ2WOM4UP6aWI=; peer 5A4LPaWhX+TZOTwwgGn5PHiEzyY8SsNQFE+Y/SOOdG4=; latest handshake 1 minute 44 seconds ago."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n -H sh -c '\nprintf \"%s\\n\" \"NODE=$(hostname)\"\nprintf \"%s\\n\" \"---ADDR---\"\nip -4 addr show\nprintf \"%s\\n\" \"---ROUTE---\"\nip route show\nprintf \"%s\\n\" \"---WG---\"\nwg show wg01 2>&1\n'",
+              "observation": "eth1=10.10.2.1/24; wg01=10.255.255.2/30; route 10.10.1.0/24 via 10.255.255.1 dev wg01. Interface public key 5A4LPaWhX+TZOTwwgGn5PHiEzyY8SsNQFE+Y/SOOdG4=; peer dojua11hNsDvrJpxsllY/8LYYgqPIhbJ2WOM4UP6aWI=; latest handshake 1 minute 47 seconds ago."
+            },
+            {
+              "node": "node3",
+              "command": "sh -c '\nprintf \"%s\\n\" \"NODE=$(hostname)\"\nprintf \"%s\\n\" \"---ADDR---\"\nip -4 addr show\nprintf \"%s\\n\" \"---ROUTE---\"\nip route show\nprintf \"%s\\n\" \"---LISTEN---\"\nss -ltnp 2>&1 | grep -E \"LISTEN|:8080\" || true\n'",
+              "observation": "enp8s0=10.10.1.10/24; route 10.10.2.0/24 via 10.10.1.1 dev enp8s0; HTTP listener on 10.10.1.10:8080."
+            },
+            {
+              "node": "node4",
+              "command": "sh -c '\nprintf \"%s\\n\" \"NODE=$(hostname)\"\nprintf \"%s\\n\" \"---ADDR---\"\nip -4 addr show\nprintf \"%s\\n\" \"---ROUTE---\"\nip route show\nprintf \"%s\\n\" \"---RESOLUTION---\"\ngetent ahostsv4 node3 node4 2>&1 || true\n'",
+              "observation": "enp8s0=10.10.2.10/24; route 10.10.1.0/24 via 10.10.2.1 dev enp8s0."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "wireguard-application-path",
+          "probe": "wireguard-routed-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Node4 reached node3:8080 and received the required response; node3 and both gateways observed the untranslated node4 LAN source across wg01.",
+          "evidence": [
+            {
+              "node": "node4",
+              "command": "sh -c '\nprintf \"%s\\n\" \"---ROUTE_TO_NODE3_LAN---\"\nip route get 10.10.1.10\nprintf \"%s\\n\" \"---HTTP---\"\ncurl --noproxy \"*\" --silent --show-error --fail --max-time 5 -w \"\\nstatus=%{http_code} remote=%{remote_ip} local=%{local_ip}\\n\" http://10.10.1.10:8080/\n'",
+              "observation": "Route used 10.10.1.10 via 10.10.2.1 dev enp8s0 src 10.10.2.10. Response body was lan-a application; status=200, remote=10.10.1.10, local=10.10.2.10."
+            },
+            {
+              "node": "node3",
+              "command": "sh -c '\nprintf \"%s\\n\" \"---NODE3_8080_CONNECTIONS_AFTER_NODE4_REQUEST---\"\nss -tnp state all 2>&1 | grep \":8080\" || true\n'",
+              "observation": "TIME-WAIT connection showed 10.10.1.10:8080 <- 10.10.2.10:34822, proving node3 observed the node4 LAN address rather than a translated gateway address."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -n -H sh -c '\nprintf \"%s\\n\" \"---ROUTE_TO_NODE3_LAN---\"\nip route get 10.10.1.10\nprintf \"%s\\n\" \"---CONNTRACK_8080---\"\nconntrack -L -p tcp 2>&1 | grep -E \"10\\.10\\.(1\\.10|2\\.10)|dport=8080|sport=8080\" || true\nprintf \"%s\\n\" \"---NAT_RULE_LINES---\"\nnft list ruleset 2>/dev/null | grep -E \"masquerade|snat|dnat\" || true\nprintf \"%s\\n\" \"---WG_AFTER_HTTP---\"\nwg show wg01\n'",
+              "observation": "Route used wg01 via 10.255.255.1. Conntrack retained src=10.10.2.10 and dst=10.10.1.10; no masquerade/snat/dnat lines were returned; handshake remained current."
+            },
+            {
+              "node": "node1",
+              "command": "sudo -n -H sh -c '\nprintf \"%s\\n\" \"---ROUTE_TO_NODE4_LAN---\"\nip route get 10.10.2.10\nprintf \"%s\\n\" \"---CONNTRACK_8080---\"\nconntrack -L -p tcp 2>&1 | grep -E \"10\\.10\\.(1\\.10|2\\.10)|dport=8080|sport=8080\" || true\nprintf \"%s\\n\" \"---NAT_RULE_LINES---\"\nnft list ruleset 2>/dev/null | grep -E \"masquerade|snat|dnat\" || true\nprintf \"%s\\n\" \"---WG_AFTER_HTTP---\"\nwg show wg01\n'",
+              "observation": "Route used wg01 via 10.255.255.2. Conntrack retained src=10.10.2.10 and dst=10.10.1.10; no masquerade/snat/dnat lines were returned; handshake remained current."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": [
+        {
+          "id": "wireguard-state-clean",
+          "probe": "wireguard-operational-state",
+          "points": 1.0,
+          "status": "indeterminate",
+          "summary": "Audits found no failed units, duplicate wg links, unexpected temporary artifact names, or stale NAT rules; persistent application/network units were present. The required unsaved VyOS configuration check could not be completed.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "Composite read-only audit: systemctl --failed; redacted VyOS compare; /config/config.boot tunnel/route/firewall scan; wg/ip route/nft/listener inspection; unit flags and artifact-name scan.",
+              "observation": "Failed-unit list empty; saved config contained wg01, tunnel/route and firewall entries; only wg01 was present; no masquerade/snat/dnat lines; artifact scan found only baseline /home/vyos/.ssh/authorized_keys. The compare attempt reported configure/compare unavailable."
+            },
+            {
+              "node": "node2",
+              "command": "Composite read-only audit: systemctl --failed; redacted VyOS compare; /config/config.boot tunnel/route/firewall scan; wg/ip route/nft/listener inspection; unit flags and artifact-name scan.",
+              "observation": "Failed-unit list empty; saved config contained wg01, tunnel/route and firewall entries; only wg01 was present; no masquerade/snat/dnat lines; artifact scan was empty. The compare attempt returned Invalid command for configure and compare."
+            },
+            {
+              "node": "node3",
+              "command": "Composite read-only audit: systemctl --failed; ip/link/route; HTTP process and enabled-unit inspection; listeners; persistent unit/config names and artifact-name scan.",
+              "observation": "Failed-unit list empty; lan-a-http.service enabled; python HTTP server was child of PID 1 and bound to 10.10.1.10:8080; persistent unit files were present; artifact scan empty."
+            },
+            {
+              "node": "node4",
+              "command": "Composite read-only audit: systemctl --failed; ip/link/route; enabled-unit inspection; listeners; persistent unit/config names and artifact-name scan.",
+              "observation": "Failed-unit list empty; expected routed LAN state and baseline DNS/SSH listeners only; no application/debug listener, WireGuard link, or artifact residue found."
+            },
+            {
+              "node": "node1",
+              "command": "timeout 8 sudo -n -H /bin/vbash -ic \"configure; compare; exit\"",
+              "observation": "VyOS warned that configuration mode was being attempted as root and then reported Invalid command: [compare]; the templated variant also failed with vbash/config-interpreter errors. This is an evaluator invocation limitation, not evidence of an unsaved change."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The live-vs-saved VyOS compare could not be run on both gateways because the noninteractive managed shell rejected configure/compare or applied the root configuration guard.",
+            "Artifact checks were bounded name scans of common temporary, home, and configuration paths and did not inspect secret contents."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence",
+    "operational_hygiene"
+  ],
+  "evaluation_coverage": 0.8571,
+  "full_coverage": false,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": null,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}

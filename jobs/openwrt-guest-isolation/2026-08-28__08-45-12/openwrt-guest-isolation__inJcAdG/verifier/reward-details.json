@@ -1,0 +1,319 @@
+{
+  "probes": [
+    {
+      "id": "openwrt-service-contract",
+      "summary": "Read-only checks confirmed coherent OpenWrt addressing, DHCP/DNS, routing, NAT, application, and guest WAN operation.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Initial node1 inspection used unavailable sudo; it was rerun successfully as uid 0."
+      ]
+    },
+    {
+      "id": "openwrt-operational-state",
+      "summary": "Read-only operational checks found one concrete debug residue file on node3.",
+      "cleanup_completed": true,
+      "limitations": []
+    }
+  ],
+  "assertions": [
+    {
+      "id": "openwrt-addressing-services",
+      "status": "pass",
+      "summary": "Node1 owns both gateway addresses; node2, node3, and node4 have the exact reserved addresses, use node1 for private DNS and routing, and node1 services are active.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "id; printf \"%s\\n\" \"UCI changes\"; uci changes; printf \"%s\\n\" \"effective network\"; uci show network; printf \"%s\\n\" \"effective dhcp\"; uci show dhcp; printf \"%s\\n\" \"effective firewall\"; uci show firewall; printf \"%s\\n\" \"committed network\"; cat /etc/config/network; printf \"%s\\n\" \"committed dhcp\"; cat /etc/config/dhcp; printf \"%s\\n\" \"committed firewall\"; cat /etc/config/firewall; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route",
+          "observation": "Effective and committed UCI agree. Node1 has lan 192.168.10.1/24 and guest 192.168.20.1/24; DHCP reservations are node2 192.168.10.10, node4 192.168.10.11, and node3 192.168.20.10, with gateway/DNS options pointing to the corresponding node1 gateway."
+        },
+        {
+          "node": "node1",
+          "command": "printf \"%s\\n\" \"network status\"; /etc/init.d/network status 2>&1; printf \"%s\\n\" \"dnsmasq status\"; /etc/init.d/dnsmasq status 2>&1; printf \"%s\\n\" \"firewall status\"; /etc/init.d/firewall status 2>&1; printf \"%s\\n\" \"interface runtime\"; ubus call network.interface dump; printf \"%s\\n\" \"DHCP leases\"; cat /tmp/dhcp.leases; printf \"%s\\n\" \"listeners\"; (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) | sed -n '1,80p'; printf \"%s\\n\" \"forwarding\"; sysctl net.ipv4.ip_forward 2>&1; printf \"%s\\n\" \"nft NAT/forward\"; if command -v nft >/dev/null 2>&1; then nft list ruleset 2>/dev/null | grep -Ei 'masquerade|snat|dnat|forward' || true; else printf \"%s\\n\" \"nft unavailable\"; fi; printf \"%s\\n\" \"iptables NAT\"; if command -v iptables-save >/dev/null 2>&1; then iptables-save -t nat 2>/dev/null | grep -Ei 'MASQUERADE|SNAT|DNAT' || true; else printf \"%s\\n\" \"iptables-save unavailable\"; fi",
+          "observation": "network and dnsmasq are running; DHCP leases match all three reservations; dnsmasq listens on both gateway addresses; IPv4 forwarding is 1; nftables has lan-to-wan and guest-to-wan forwarding plus WAN masquerade."
+        },
+        {
+          "node": "node2",
+          "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"resolver\"; cat /etc/resolv.conf; printf \"%s\\n\" \"app DNS\"; getent ahostsv4 app.home.test; printf \"%s\\n\" \"listeners\"; ss -ltnp 2>/dev/null | grep -E '(:8080|:80[[:space:]])' || true; printf \"%s\\n\" \"local app\"; curl -fsS --max-time 10 -w \"\\nhttp_code=%{http_code}\\n\" http://127.0.0.1:8080/; printf \"%s\\n\" \"candidate services\"; systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'http|web|8080|app' || true",
+          "observation": "node2 has reserved 192.168.10.10/24 and preferred default route via 192.168.10.1."
+        },
+        {
+          "node": "node2",
+          "command": "printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"trusted service enabled\"; systemctl is-enabled infraset-trusted.service; printf \"is_enabled_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"trusted service active\"; systemctl is-active infraset-trusted.service; printf \"is_active_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"service status\"; systemctl status infraset-trusted.service --no-pager -l 2>&1 | sed -n '1,18p'",
+          "observation": "node2 uses 192.168.10.1 as its enp8s0 DNS server with search domain lan ~., and infraset-trusted.service is enabled and active."
+        },
+        {
+          "node": "node3",
+          "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"selected WAN route\"; ip route get 1.1.1.1; printf \"%s\\n\" \"resolver file\"; cat /etc/resolv.conf; printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"DNS test\"; getent ahostsv4 example.com; printf \"getent_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"HTTPS test\"; curl -fsS --max-time 15 -o /dev/null -w \"http_code=%{http_code} remote_ip=%{remote_ip}\\n\" https://example.com; printf \"curl_exit=%s\\n\" \"$?\"",
+          "observation": "node3 has reserved 192.168.20.10/24, preferred route via 192.168.20.1, and guest-link DNS server 192.168.20.1."
+        },
+        {
+          "node": "node4",
+          "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"selected private route\"; ip route get 192.168.10.10; printf \"%s\\n\" \"resolver file\"; cat /etc/resolv.conf; printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"app DNS\"; getent ahostsv4 app.home.test; printf \"getent_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"application request\"; curl -fsS --max-time 10 -w \"\\nhttp_code=%{http_code}\\n\" http://app.home.test:8080/; printf \"curl_exit=%s\\n\" \"$?\"",
+          "observation": "node4 has reserved 192.168.10.11/24, preferred route and DNS server via 192.168.10.1."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The initial sudo-wrapped node1 command failed because sudo is absent; complete node1 evidence was obtained in a subsequent root execution."
+      ]
+    },
+    {
+      "id": "openwrt-application-and-wan",
+      "status": "pass",
+      "summary": "app.home.test resolves to node2, node4 receives infraset-trusted over TCP 8080, and node3 successfully performs DNS resolution and HTTPS through the guest gateway.",
+      "evidence": [
+        {
+          "node": "node4",
+          "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"selected private route\"; ip route get 192.168.10.10; printf \"%s\\n\" \"resolver file\"; cat /etc/resolv.conf; printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"app DNS\"; getent ahostsv4 app.home.test; printf \"getent_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"application request\"; curl -fsS --max-time 10 -w \"\\nhttp_code=%{http_code}\\n\" http://app.home.test:8080/; printf \"curl_exit=%s\\n\" \"$?\"",
+          "observation": "getent resolves app.home.test to 192.168.10.10; the node4 request returns infraset-trusted with HTTP 200."
+        },
+        {
+          "node": "node2",
+          "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"resolver\"; cat /etc/resolv.conf; printf \"%s\\n\" \"app DNS\"; getent ahostsv4 app.home.test; printf \"%s\\n\" \"listeners\"; ss -ltnp 2>/dev/null | grep -E '(:8080|:80[[:space:]])' || true; printf \"%s\\n\" \"local app\"; curl -fsS --max-time 10 -w \"\\nhttp_code=%{http_code}\\n\" http://127.0.0.1:8080/; printf \"%s\\n\" \"candidate services\"; systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'http|web|8080|app' || true",
+          "observation": "node2 listens on 0.0.0.0:8080 via python3 and its local root response is infraset-trusted with HTTP 200."
+        },
+        {
+          "node": "node2",
+          "command": "printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"trusted service enabled\"; systemctl is-enabled infraset-trusted.service; printf \"is_enabled_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"trusted service active\"; systemctl is-active infraset-trusted.service; printf \"is_active_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"service status\"; systemctl status infraset-trusted.service --no-pager -l 2>&1 | sed -n '1,18p'",
+          "observation": "The HTTP service is enabled and active under systemd."
+        },
+        {
+          "node": "node3",
+          "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"selected WAN route\"; ip route get 1.1.1.1; printf \"%s\\n\" \"resolver file\"; cat /etc/resolv.conf; printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"DNS test\"; getent ahostsv4 example.com; printf \"getent_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"HTTPS test\"; curl -fsS --max-time 15 -o /dev/null -w \"http_code=%{http_code} remote_ip=%{remote_ip}\\n\" https://example.com; printf \"curl_exit=%s\\n\" \"$?\"",
+          "observation": "node3 selects 192.168.20.1 for 1.1.1.1, uses 192.168.20.1 DNS with ~. routing, resolves example.com successfully, and HTTPS returns HTTP 200."
+        },
+        {
+          "node": "node1",
+          "command": "printf \"%s\\n\" \"network status\"; /etc/init.d/network status 2>&1; printf \"%s\\n\" \"dnsmasq status\"; /etc/init.d/dnsmasq status 2>&1; printf \"%s\\n\" \"firewall status\"; /etc/init.d/firewall status 2>&1; printf \"%s\\n\" \"interface runtime\"; ubus call network.interface dump; printf \"%s\\n\" \"DHCP leases\"; cat /tmp/dhcp.leases; printf \"%s\\n\" \"listeners\"; (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) | sed -n '1,80p'; printf \"%s\\n\" \"forwarding\"; sysctl net.ipv4.ip_forward 2>&1; printf \"%s\\n\" \"nft NAT/forward\"; if command -v nft >/dev/null 2>&1; then nft list ruleset 2>/dev/null | grep -Ei 'masquerade|snat|dnat|forward' || true; else printf \"%s\\n\" \"nft unavailable\"; fi; printf \"%s\\n\" \"iptables NAT\"; if command -v iptables-save >/dev/null 2>&1; then iptables-save -t nat 2>/dev/null | grep -Ei 'MASQUERADE|SNAT|DNAT' || true; else printf \"%s\\n\" \"iptables-save unavailable\"; fi",
+          "observation": "Live nftables state contains guest-to-wan and wan masquerade handling; forwarding is enabled, and node1's dnsmasq/network services are running."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "openwrt-state-clean",
+      "status": "fail",
+      "summary": "A concrete debug residue remains on node3.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf \"%s\\n\" \"uci changes\"; uci changes; printf \"%s\\n\" \"required UCI section inventory\"; uci show network | grep -E '^network\\.(lan|guest|wan|loopback|globals)='; uci show dhcp | grep -E '^dhcp\\.(lan|guest|wan)=|^dhcp\\.@host|^dhcp\\.@domain'; printf \"%s\\n\" \"custom firewall inventory\"; uci show firewall | grep -Ei 'redirect|script|debug|capture|private|test|\\.name=' || true; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"listeners\"; (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) | sed -n '1,100p'; printf \"%s\\n\" \"suspicious processes\"; ps w | grep -Ei 'tcpdump|tshark|nc |socat|http.server|curl |wget |ssh ' | grep -v grep || true; printf \"%s\\n\" \"candidate residue files\"; find /tmp /var/tmp /usr/local/sbin /etc/rc.local.d -maxdepth 2 -type f 2>/dev/null | sort; printf \"%s\\n\" \"recent log\"; logread | tail -40",
+          "observation": "No UCI changes, duplicate sections, abandoned redirects/scripts, capture/debug processes, or unexpected listeners were found; listed /tmp files were standard OpenWrt runtime state."
+        },
+        {
+          "node": "node2",
+          "command": "id; printf \"%s\\n\" \"failed services\"; systemctl --failed --no-legend --plain 2>&1; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"network links\"; networkctl list --no-legend 2>&1; printf \"%s\\n\" \"listeners\"; ss -lntup 2>&1; printf \"%s\\n\" \"custom systemd units\"; find /etc/systemd/system -maxdepth 2 -type f -print 2>/dev/null | sort; printf \"%s\\n\" \"suspicious processes\"; ps -ef | grep -Ei 'tcpdump|tshark|nc |socat|http.server|curl |wget |ssh ' | grep -v grep || true; printf \"%s\\n\" \"candidate residue files\"; find /tmp /var/tmp -maxdepth 2 -type f -print 2>/dev/null | sort",
+          "observation": "No failed services or candidate residue files; only expected infraset-trusted.service and vsock-agent.service are present, with platform-management socat processes."
+        },
+        {
+          "node": "node3",
+          "command": "id; printf \"%s\\n\" \"failed services\"; systemctl --failed --no-legend --plain 2>&1; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"network links\"; networkctl list --no-legend 2>&1; printf \"%s\\n\" \"listeners\"; ss -lntup 2>&1; printf \"%s\\n\" \"custom systemd units\"; find /etc/systemd/system -maxdepth 2 -type f -print 2>/dev/null | sort; printf \"%s\\n\" \"suspicious processes\"; ps -ef | grep -Ei 'tcpdump|tshark|nc |socat|http.server|curl |wget |ssh ' | grep -v grep || true; printf \"%s\\n\" \"candidate residue files\"; find /tmp /var/tmp -maxdepth 2 -type f -print 2>/dev/null | sort",
+          "observation": "No failed services or active capture processes were found, but /tmp/guest-isolation.out remains."
+        },
+        {
+          "node": "node3",
+          "command": "printf \"%s\\n\" \"guest-isolation residue metadata\"; ls -l /tmp/guest-isolation.out; file /tmp/guest-isolation.out 2>&1; printf \"%s\\n\" \"guest-isolation residue content\"; sed -n '1,120p' /tmp/guest-isolation.out",
+          "observation": "The file is a 94-byte root-owned ASCII file containing `curl: (7) Failed to connect to 192.168.10.10 port 8080 after 0 ms: Couldn't connect to server`, which is concrete stale debug/test residue."
+        },
+        {
+          "node": "node4",
+          "command": "id; printf \"%s\\n\" \"failed services\"; systemctl --failed --no-legend --plain 2>&1; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"network links\"; networkctl list --no-legend 2>&1; printf \"%s\\n\" \"listeners\"; ss -lntup 2>&1; printf \"%s\\n\" \"custom systemd units\"; find /etc/systemd/system -maxdepth 2 -type f -print 2>/dev/null | sort; printf \"%s\\n\" \"suspicious processes\"; ps -ef | grep -Ei 'tcpdump|tshark|nc |socat|http.server|curl |wget |ssh ' | grep -v grep || true; printf \"%s\\n\" \"candidate residue files\"; find /tmp /var/tmp -maxdepth 2 -type f -print 2>/dev/null | sort",
+          "observation": "No failed services or candidate residue files; only the expected vsock-agent.service and platform-management process are present."
+        }
+      ],
+      "failures": [
+        "node3 retains /tmp/guest-isolation.out, a stale debug/test output file."
+      ],
+      "limitations": []
+    }
+  ],
+  "actions_performed": [
+    "Executed all authored checks using managed node-local read-only commands in probe order.",
+    "Performed no evaluator mutations, recovery actions, or cleanup mutations.",
+    "Called complete_evidence exactly once after live checks were complete."
+  ],
+  "overall_summary": "openwrt-addressing-services and openwrt-application-and-wan pass. openwrt-state-clean fails because node3 retains stale debug residue at /tmp/guest-isolation.out.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 5.0,
+      "evaluated_points": 5.0,
+      "passed_points": 5.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "openwrt-addressing-services",
+          "probe": "openwrt-service-contract",
+          "points": 2.0,
+          "status": "pass",
+          "summary": "Node1 owns both gateway addresses; node2, node3, and node4 have the exact reserved addresses, use node1 for private DNS and routing, and node1 services are active.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "id; printf \"%s\\n\" \"UCI changes\"; uci changes; printf \"%s\\n\" \"effective network\"; uci show network; printf \"%s\\n\" \"effective dhcp\"; uci show dhcp; printf \"%s\\n\" \"effective firewall\"; uci show firewall; printf \"%s\\n\" \"committed network\"; cat /etc/config/network; printf \"%s\\n\" \"committed dhcp\"; cat /etc/config/dhcp; printf \"%s\\n\" \"committed firewall\"; cat /etc/config/firewall; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route",
+              "observation": "Effective and committed UCI agree. Node1 has lan 192.168.10.1/24 and guest 192.168.20.1/24; DHCP reservations are node2 192.168.10.10, node4 192.168.10.11, and node3 192.168.20.10, with gateway/DNS options pointing to the corresponding node1 gateway."
+            },
+            {
+              "node": "node1",
+              "command": "printf \"%s\\n\" \"network status\"; /etc/init.d/network status 2>&1; printf \"%s\\n\" \"dnsmasq status\"; /etc/init.d/dnsmasq status 2>&1; printf \"%s\\n\" \"firewall status\"; /etc/init.d/firewall status 2>&1; printf \"%s\\n\" \"interface runtime\"; ubus call network.interface dump; printf \"%s\\n\" \"DHCP leases\"; cat /tmp/dhcp.leases; printf \"%s\\n\" \"listeners\"; (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) | sed -n '1,80p'; printf \"%s\\n\" \"forwarding\"; sysctl net.ipv4.ip_forward 2>&1; printf \"%s\\n\" \"nft NAT/forward\"; if command -v nft >/dev/null 2>&1; then nft list ruleset 2>/dev/null | grep -Ei 'masquerade|snat|dnat|forward' || true; else printf \"%s\\n\" \"nft unavailable\"; fi; printf \"%s\\n\" \"iptables NAT\"; if command -v iptables-save >/dev/null 2>&1; then iptables-save -t nat 2>/dev/null | grep -Ei 'MASQUERADE|SNAT|DNAT' || true; else printf \"%s\\n\" \"iptables-save unavailable\"; fi",
+              "observation": "network and dnsmasq are running; DHCP leases match all three reservations; dnsmasq listens on both gateway addresses; IPv4 forwarding is 1; nftables has lan-to-wan and guest-to-wan forwarding plus WAN masquerade."
+            },
+            {
+              "node": "node2",
+              "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"resolver\"; cat /etc/resolv.conf; printf \"%s\\n\" \"app DNS\"; getent ahostsv4 app.home.test; printf \"%s\\n\" \"listeners\"; ss -ltnp 2>/dev/null | grep -E '(:8080|:80[[:space:]])' || true; printf \"%s\\n\" \"local app\"; curl -fsS --max-time 10 -w \"\\nhttp_code=%{http_code}\\n\" http://127.0.0.1:8080/; printf \"%s\\n\" \"candidate services\"; systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'http|web|8080|app' || true",
+              "observation": "node2 has reserved 192.168.10.10/24 and preferred default route via 192.168.10.1."
+            },
+            {
+              "node": "node2",
+              "command": "printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"trusted service enabled\"; systemctl is-enabled infraset-trusted.service; printf \"is_enabled_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"trusted service active\"; systemctl is-active infraset-trusted.service; printf \"is_active_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"service status\"; systemctl status infraset-trusted.service --no-pager -l 2>&1 | sed -n '1,18p'",
+              "observation": "node2 uses 192.168.10.1 as its enp8s0 DNS server with search domain lan ~., and infraset-trusted.service is enabled and active."
+            },
+            {
+              "node": "node3",
+              "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"selected WAN route\"; ip route get 1.1.1.1; printf \"%s\\n\" \"resolver file\"; cat /etc/resolv.conf; printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"DNS test\"; getent ahostsv4 example.com; printf \"getent_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"HTTPS test\"; curl -fsS --max-time 15 -o /dev/null -w \"http_code=%{http_code} remote_ip=%{remote_ip}\\n\" https://example.com; printf \"curl_exit=%s\\n\" \"$?\"",
+              "observation": "node3 has reserved 192.168.20.10/24, preferred route via 192.168.20.1, and guest-link DNS server 192.168.20.1."
+            },
+            {
+              "node": "node4",
+              "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"selected private route\"; ip route get 192.168.10.10; printf \"%s\\n\" \"resolver file\"; cat /etc/resolv.conf; printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"app DNS\"; getent ahostsv4 app.home.test; printf \"getent_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"application request\"; curl -fsS --max-time 10 -w \"\\nhttp_code=%{http_code}\\n\" http://app.home.test:8080/; printf \"curl_exit=%s\\n\" \"$?\"",
+              "observation": "node4 has reserved 192.168.10.11/24, preferred route and DNS server via 192.168.10.1."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The initial sudo-wrapped node1 command failed because sudo is absent; complete node1 evidence was obtained in a subsequent root execution."
+          ]
+        },
+        {
+          "id": "openwrt-application-and-wan",
+          "probe": "openwrt-service-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "app.home.test resolves to node2, node4 receives infraset-trusted over TCP 8080, and node3 successfully performs DNS resolution and HTTPS through the guest gateway.",
+          "evidence": [
+            {
+              "node": "node4",
+              "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"selected private route\"; ip route get 192.168.10.10; printf \"%s\\n\" \"resolver file\"; cat /etc/resolv.conf; printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"app DNS\"; getent ahostsv4 app.home.test; printf \"getent_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"application request\"; curl -fsS --max-time 10 -w \"\\nhttp_code=%{http_code}\\n\" http://app.home.test:8080/; printf \"curl_exit=%s\\n\" \"$?\"",
+              "observation": "getent resolves app.home.test to 192.168.10.10; the node4 request returns infraset-trusted with HTTP 200."
+            },
+            {
+              "node": "node2",
+              "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"resolver\"; cat /etc/resolv.conf; printf \"%s\\n\" \"app DNS\"; getent ahostsv4 app.home.test; printf \"%s\\n\" \"listeners\"; ss -ltnp 2>/dev/null | grep -E '(:8080|:80[[:space:]])' || true; printf \"%s\\n\" \"local app\"; curl -fsS --max-time 10 -w \"\\nhttp_code=%{http_code}\\n\" http://127.0.0.1:8080/; printf \"%s\\n\" \"candidate services\"; systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'http|web|8080|app' || true",
+              "observation": "node2 listens on 0.0.0.0:8080 via python3 and its local root response is infraset-trusted with HTTP 200."
+            },
+            {
+              "node": "node2",
+              "command": "printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"trusted service enabled\"; systemctl is-enabled infraset-trusted.service; printf \"is_enabled_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"trusted service active\"; systemctl is-active infraset-trusted.service; printf \"is_active_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"service status\"; systemctl status infraset-trusted.service --no-pager -l 2>&1 | sed -n '1,18p'",
+              "observation": "The HTTP service is enabled and active under systemd."
+            },
+            {
+              "node": "node3",
+              "command": "id; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"selected WAN route\"; ip route get 1.1.1.1; printf \"%s\\n\" \"resolver file\"; cat /etc/resolv.conf; printf \"%s\\n\" \"resolved status\"; resolvectl status 2>&1 || printf \"resolvectl_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"DNS test\"; getent ahostsv4 example.com; printf \"getent_exit=%s\\n\" \"$?\"; printf \"%s\\n\" \"HTTPS test\"; curl -fsS --max-time 15 -o /dev/null -w \"http_code=%{http_code} remote_ip=%{remote_ip}\\n\" https://example.com; printf \"curl_exit=%s\\n\" \"$?\"",
+              "observation": "node3 selects 192.168.20.1 for 1.1.1.1, uses 192.168.20.1 DNS with ~. routing, resolves example.com successfully, and HTTPS returns HTTP 200."
+            },
+            {
+              "node": "node1",
+              "command": "printf \"%s\\n\" \"network status\"; /etc/init.d/network status 2>&1; printf \"%s\\n\" \"dnsmasq status\"; /etc/init.d/dnsmasq status 2>&1; printf \"%s\\n\" \"firewall status\"; /etc/init.d/firewall status 2>&1; printf \"%s\\n\" \"interface runtime\"; ubus call network.interface dump; printf \"%s\\n\" \"DHCP leases\"; cat /tmp/dhcp.leases; printf \"%s\\n\" \"listeners\"; (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) | sed -n '1,80p'; printf \"%s\\n\" \"forwarding\"; sysctl net.ipv4.ip_forward 2>&1; printf \"%s\\n\" \"nft NAT/forward\"; if command -v nft >/dev/null 2>&1; then nft list ruleset 2>/dev/null | grep -Ei 'masquerade|snat|dnat|forward' || true; else printf \"%s\\n\" \"nft unavailable\"; fi; printf \"%s\\n\" \"iptables NAT\"; if command -v iptables-save >/dev/null 2>&1; then iptables-save -t nat 2>/dev/null | grep -Ei 'MASQUERADE|SNAT|DNAT' || true; else printf \"%s\\n\" \"iptables-save unavailable\"; fi",
+              "observation": "Live nftables state contains guest-to-wan and wan masquerade handling; forwarding is enabled, and node1's dnsmasq/network services are running."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "openwrt-state-clean",
+          "probe": "openwrt-operational-state",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "A concrete debug residue remains on node3.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf \"%s\\n\" \"uci changes\"; uci changes; printf \"%s\\n\" \"required UCI section inventory\"; uci show network | grep -E '^network\\.(lan|guest|wan|loopback|globals)='; uci show dhcp | grep -E '^dhcp\\.(lan|guest|wan)=|^dhcp\\.@host|^dhcp\\.@domain'; printf \"%s\\n\" \"custom firewall inventory\"; uci show firewall | grep -Ei 'redirect|script|debug|capture|private|test|\\.name=' || true; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"listeners\"; (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) | sed -n '1,100p'; printf \"%s\\n\" \"suspicious processes\"; ps w | grep -Ei 'tcpdump|tshark|nc |socat|http.server|curl |wget |ssh ' | grep -v grep || true; printf \"%s\\n\" \"candidate residue files\"; find /tmp /var/tmp /usr/local/sbin /etc/rc.local.d -maxdepth 2 -type f 2>/dev/null | sort; printf \"%s\\n\" \"recent log\"; logread | tail -40",
+              "observation": "No UCI changes, duplicate sections, abandoned redirects/scripts, capture/debug processes, or unexpected listeners were found; listed /tmp files were standard OpenWrt runtime state."
+            },
+            {
+              "node": "node2",
+              "command": "id; printf \"%s\\n\" \"failed services\"; systemctl --failed --no-legend --plain 2>&1; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"network links\"; networkctl list --no-legend 2>&1; printf \"%s\\n\" \"listeners\"; ss -lntup 2>&1; printf \"%s\\n\" \"custom systemd units\"; find /etc/systemd/system -maxdepth 2 -type f -print 2>/dev/null | sort; printf \"%s\\n\" \"suspicious processes\"; ps -ef | grep -Ei 'tcpdump|tshark|nc |socat|http.server|curl |wget |ssh ' | grep -v grep || true; printf \"%s\\n\" \"candidate residue files\"; find /tmp /var/tmp -maxdepth 2 -type f -print 2>/dev/null | sort",
+              "observation": "No failed services or candidate residue files; only expected infraset-trusted.service and vsock-agent.service are present, with platform-management socat processes."
+            },
+            {
+              "node": "node3",
+              "command": "id; printf \"%s\\n\" \"failed services\"; systemctl --failed --no-legend --plain 2>&1; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"network links\"; networkctl list --no-legend 2>&1; printf \"%s\\n\" \"listeners\"; ss -lntup 2>&1; printf \"%s\\n\" \"custom systemd units\"; find /etc/systemd/system -maxdepth 2 -type f -print 2>/dev/null | sort; printf \"%s\\n\" \"suspicious processes\"; ps -ef | grep -Ei 'tcpdump|tshark|nc |socat|http.server|curl |wget |ssh ' | grep -v grep || true; printf \"%s\\n\" \"candidate residue files\"; find /tmp /var/tmp -maxdepth 2 -type f -print 2>/dev/null | sort",
+              "observation": "No failed services or active capture processes were found, but /tmp/guest-isolation.out remains."
+            },
+            {
+              "node": "node3",
+              "command": "printf \"%s\\n\" \"guest-isolation residue metadata\"; ls -l /tmp/guest-isolation.out; file /tmp/guest-isolation.out 2>&1; printf \"%s\\n\" \"guest-isolation residue content\"; sed -n '1,120p' /tmp/guest-isolation.out",
+              "observation": "The file is a 94-byte root-owned ASCII file containing `curl: (7) Failed to connect to 192.168.10.10 port 8080 after 0 ms: Couldn't connect to server`, which is concrete stale debug/test residue."
+            },
+            {
+              "node": "node4",
+              "command": "id; printf \"%s\\n\" \"failed services\"; systemctl --failed --no-legend --plain 2>&1; printf \"%s\\n\" \"addresses\"; ip -4 addr; printf \"%s\\n\" \"routes\"; ip route; printf \"%s\\n\" \"network links\"; networkctl list --no-legend 2>&1; printf \"%s\\n\" \"listeners\"; ss -lntup 2>&1; printf \"%s\\n\" \"custom systemd units\"; find /etc/systemd/system -maxdepth 2 -type f -print 2>/dev/null | sort; printf \"%s\\n\" \"suspicious processes\"; ps -ef | grep -Ei 'tcpdump|tshark|nc |socat|http.server|curl |wget |ssh ' | grep -v grep || true; printf \"%s\\n\" \"candidate residue files\"; find /tmp /var/tmp -maxdepth 2 -type f -print 2>/dev/null | sort",
+              "observation": "No failed services or candidate residue files; only the expected vsock-agent.service and platform-management process are present."
+            }
+          ],
+          "failures": [
+            "node3 retains /tmp/guest-isolation.out, a stale debug/test output file."
+          ],
+          "limitations": []
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 77.78,
+    "reward": 0.7778,
+    "provisional_reward": 0.7778,
+    "caps_applied": []
+  }
+}

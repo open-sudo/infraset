@@ -1,0 +1,335 @@
+{
+  "probes": [
+    {
+      "id": "postgres-ha-topology",
+      "summary": "Topology, routing, PostgreSQL roles, streaming state, and LAN-bound Patroni/etcd coordination were inspected successfully.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "postgres-replication-data",
+      "summary": "Evaluator rows replicated identically to both replicas; the evaluator schema was dropped and independently confirmed absent on node3 and node4.",
+      "cleanup_completed": true,
+      "limitations": []
+    },
+    {
+      "id": "postgres-ha-operational-state",
+      "summary": "Read-only operational inspection completed. Failed and temporary/stale state was found on database nodes.",
+      "cleanup_completed": true,
+      "limitations": []
+    }
+  ],
+  "assertions": [
+    {
+      "id": "postgres-required-ha-topology",
+      "status": "pass",
+      "summary": "node1 routes both private LANs with forwarding enabled; node2 is the sole primary, node3 and node4 are streaming standbys, and PostgreSQL/Patroni/etcd traffic uses LAN addresses.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "hostname; ip -br -4 addr; ip route show",
+          "observation": "node1 has management eth0 10.100.187.10/24, LAN interfaces eth1 10.100.206.254/24 and eth2 10.100.138.254/24, with connected routes for both LANs."
+        },
+        {
+          "node": "node1",
+          "command": "sysctl net.ipv4.ip_forward; ip route get 10.100.206.11; ip route get 10.100.138.11; ip neigh show",
+          "observation": "IPv4 forwarding is 1; 10.100.206.11 routes via eth1/src 10.100.206.254 and 10.100.138.11 routes via eth2/src 10.100.138.254; both database peers are REACHABLE."
+        },
+        {
+          "node": "node2",
+          "command": "hostname; ip -br -4 addr; ip route show; systemctl is-active postgresql; sudo -n -H -u postgres psql -XAtqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'primary' END; SELECT 'appdb|' || datname || '|' || datallowconn FROM pg_database WHERE datname='appdb'; SELECT 'listen|' || current_setting('listen_addresses'); SELECT 'replica|' || coalesce(client_addr::text,'') || '|' || coalesce(application_name,'') || '|' || coalesce(state,'') || '|' || coalesce(sync_state,'') FROM pg_stat_replication ORDER BY client_addr;\"",
+          "observation": "node2 LAN is 10.100.206.11/24 with route 10.100.138.0/24 via 10.100.206.254; SQL reported role|primary, appdb|appdb|true, listen|10.100.206.11, and streaming replicas node3 at 10.100.138.11/32 and node4 at 10.100.138.12/32."
+        },
+        {
+          "node": "node3",
+          "command": "hostname; ip -br -4 addr; ip route show; sudo -n -H -u postgres psql -XAtqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'primary' END; SELECT 'appdb|' || datname || '|' || datallowconn FROM pg_database WHERE datname='appdb'; SELECT 'listen|' || current_setting('listen_addresses'); SELECT 'walreceiver|' || coalesce(status,'') || '|' || coalesce(sender_host,'') || '|' || coalesce(sender_port::text,'') || '|' || coalesce(slot_name,'') FROM pg_stat_wal_receiver; SELECT 'replay|' || coalesce(pg_last_wal_receive_lsn()::text,'') || '|' || coalesce(pg_last_wal_replay_lsn()::text,'');\"",
+          "observation": "node3 LAN is 10.100.138.11/24 with route 10.100.206.0/24 via 10.100.138.254; SQL reported role|standby, appdb present, listen|10.100.138.11, and walreceiver|streaming|10.100.206.11|5432|node3."
+        },
+        {
+          "node": "node4",
+          "command": "hostname; ip -br -4 addr; ip route show; sudo -n -H -u postgres psql -XAtqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'primary' END; SELECT 'appdb|' || datname || '|' || datallowconn FROM pg_database WHERE datname='appdb'; SELECT 'listen|' || current_setting('listen_addresses'); SELECT 'walreceiver|' || coalesce(status,'') || '|' || coalesce(sender_host,'') || '|' || coalesce(sender_port::text,'') || '|' || coalesce(slot_name,'') FROM pg_stat_wal_receiver; SELECT 'replay|' || coalesce(pg_last_wal_receive_lsn()::text,'') || '|' || coalesce(pg_last_wal_replay_lsn()::text,'');\"",
+          "observation": "node4 LAN is 10.100.138.12/24 with route 10.100.206.0/24 via 10.100.138.254; SQL reported role|standby, appdb present, listen|10.100.138.12, and walreceiver|streaming|10.100.206.11|5432|node4."
+        },
+        {
+          "node": "node2",
+          "command": "systemctl list-units --type=service --all --no-legend | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg-auto' || true; ps -eo user=,comm= --sort=comm | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg_auto' | grep -v grep || true; ss -tnp",
+          "observation": "etcd.service and patroni.service are active. Patroni connects to 10.100.138.11/12:2379; etcd peer connections use 10.100.206.11 and 10.100.138.11/12; PostgreSQL connections use LAN addresses."
+        },
+        {
+          "node": "node3",
+          "command": "systemctl is-active patroni etcd; ss -tnp | grep -E '(:2379|:2380|:5432)' || true",
+          "observation": "patroni and etcd are active; node3 shows etcd connections to 10.100.206.11 and 10.100.138.12, Patroni to LAN etcd endpoints, and PostgreSQL to 10.100.206.11:5432."
+        },
+        {
+          "node": "node4",
+          "command": "systemctl is-active patroni etcd; ss -tnp | grep -E '(:2379|:2380|:5432)' || true",
+          "observation": "patroni and etcd are active; node4 shows etcd connections to 10.100.206.11 and 10.100.138.11, Patroni to LAN etcd endpoints, and PostgreSQL to 10.100.206.11:5432."
+        },
+        {
+          "node": "node2",
+          "command": "ss -lntp | grep -E '(:5432|:2379|:2380|:8008)' || true; curl -fsS http://10.100.206.11:8008/cluster",
+          "observation": "Patroni /cluster reported exactly one leader, node2 at 10.100.206.11, plus node3 at 10.100.138.11 and node4 at 10.100.138.12 in streaming states; PostgreSQL, Patroni, and etcd listeners are bound to node2's LAN address."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "postgres-data-replicates",
+      "status": "pass",
+      "summary": "Committed evaluator rows created on the primary were returned identically and in order by both read-only replicas.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "sudo -n -H -u postgres psql -X -v ON_ERROR_STOP=1 -d appdb -Atqc \"BEGIN; CREATE SCHEMA evaluator_gfxqwl; CREATE TABLE evaluator_gfxqwl.replication_rows (seq integer PRIMARY KEY, payload text NOT NULL); INSERT INTO evaluator_gfxqwl.replication_rows (seq, payload) VALUES (1, 'evaluator-alpha'), (2, 'evaluator-beta'), (3, 'evaluator-gamma'); COMMIT; SELECT seq || '|' || payload FROM evaluator_gfxqwl.replication_rows ORDER BY seq;\"",
+          "observation": "Command committed and returned 1|evaluator-alpha, 2|evaluator-beta, 3|evaluator-gamma."
+        },
+        {
+          "node": "node3",
+          "command": "sudo -n -H -u postgres psql -X -v ON_ERROR_STOP=1 -d appdb -Atqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'writable' END; SELECT 'data|' || seq || '|' || payload FROM evaluator_gfxqwl.replication_rows ORDER BY seq;\"",
+          "observation": "Returned role|standby and data|1|evaluator-alpha, data|2|evaluator-beta, data|3|evaluator-gamma."
+        },
+        {
+          "node": "node4",
+          "command": "sudo -n -H -u postgres psql -X -v ON_ERROR_STOP=1 -d appdb -Atqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'writable' END; SELECT 'data|' || seq || '|' || payload FROM evaluator_gfxqwl.replication_rows ORDER BY seq;\"",
+          "observation": "Returned role|standby and data|1|evaluator-alpha, data|2|evaluator-beta, data|3|evaluator-gamma."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "postgres-ha-state-clean",
+      "status": "fail",
+      "summary": "Required services were active and debug settings were off, but the cluster retained a failed unit and temporary/stale installer or backup artifacts.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "printf '%s\\n' FAILED_UNITS; systemctl --failed --no-legend --no-pager || true; printf '%s\\n' RELEVANT_UNITS; systemctl list-unit-files --type=service --no-legend | grep -Ei 'vyos|postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul' || true; printf '%s\\n' ADDR_ROUTE; ip -br -4 addr; ip route show; printf '%s\\n' LISTENERS; ss -lntup; printf '%s\\n' TEMP_RESIDUE; find /tmp /var/tmp -maxdepth 2 -type f \\( -name '*install*' -o -name '*.sh' -o -name '*.sql' -o -name '*.bak' -o -name '*.dump' \\) -print 2>/dev/null | sort",
+          "observation": "No failed units or matching temporary residue were reported on node1. VyOS routing services and expected LAN/management interfaces were present."
+        },
+        {
+          "node": "node2",
+          "command": "printf '%s\\n' FAILED_UNITS; systemctl --failed --no-legend --no-pager || true; printf '%s\\n' RELEVANT_SERVICES; systemctl list-units --type=service --all --no-legend | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg-auto' || true; printf '%s\\n' PROCESSES; ps -eo comm= | sort | uniq -c | grep -E '(^| )(postgres|patroni|etcd)( |$)' || true; printf '%s\\n' LISTENERS; ss -lntup; printf '%s\\n' PG_SETTINGS; sudo -n -H -u postgres psql -XAtqc \"SELECT name || '|' || setting FROM pg_settings WHERE name IN ('listen_addresses','port','wal_level','hot_standby','synchronous_standby_names','log_statement','log_min_messages','debug_print_parse','debug_print_rewritten','debug_print_plan','client_min_messages') ORDER BY name;\"; printf '%s\\n' PATHS; for p in /etc/patroni /etc/etcd /etc/postgresql /var/lib/postgresql /var/log/postgresql /var/log/patroni /var/log/etcd /var/backups /tmp /var/tmp; do if [ -e \"$p\" ]; then stat -c '%U:%G|%a|%F|%n' \"$p\"; fi; done; printf '%s\\n' RESIDUE; find /tmp /var/tmp /var/backups /var/lib/postgresql -maxdepth 4 -type f \\( -name '*install*' -o -name '*.sh' -o -name '*.sql' -o -name '*.bak' -o -name '*.old' -o -name '*.dump' -o -name '*backup*' \\) -print 2>/dev/null | sort",
+          "observation": "systemctl --failed reported fwupd-refresh.service loaded failed. Required etcd and patroni were active; debug_print_* were off and log_statement was none. Residue included /tmp/ha-install.log, /tmp/ha-install.rc, and PostgreSQL *.backup files under /var/lib/postgresql/16/ha."
+        },
+        {
+          "node": "node3",
+          "command": "printf '%s\\n' FAILED_UNITS; systemctl --failed --no-legend --no-pager || true; printf '%s\\n' RELEVANT_SERVICES; systemctl list-units --type=service --all --no-legend | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg-auto' || true; printf '%s\\n' PROCESSES; ps -eo comm= | sort | uniq -c | grep -E '(^| )(postgres|patroni|etcd)( |$)' || true; printf '%s\\n' LISTENERS; ss -lntup; printf '%s\\n' PG_SETTINGS; sudo -n -H -u postgres psql -XAtqc \"SELECT name || '|' || setting FROM pg_settings WHERE name IN ('listen_addresses','port','wal_level','hot_standby','synchronous_standby_names','log_statement','log_min_messages','debug_print_parse','debug_print_rewritten','debug_print_plan','client_min_messages') ORDER BY name;\"; printf '%s\\n' PATHS; for p in /etc/patroni /etc/etcd /etc/postgresql /var/lib/postgresql /var/log/postgresql /var/log/patroni /var/log/etcd /var/backups /tmp /var/tmp; do if [ -e \"$p\" ]; then stat -c '%U:%G|%a|%F|%n' \"$p\"; fi; done; printf '%s\\n' RESIDUE; find /tmp /var/tmp /var/backups /var/lib/postgresql -maxdepth 4 -type f \\( -name '*install*' -o -name '*.sh' -o -name '*.sql' -o -name '*.bak' -o -name '*.old' -o -name '*.dump' -o -name '*backup*' \\) -print 2>/dev/null | sort",
+          "observation": "No failed units were reported; etcd and patroni were active and debug settings were off. Residue included /tmp/ha-install.log, /tmp/ha-install.rc, backup_label.old, backup_manifest, and PostgreSQL *.backup files under /var/lib/postgresql/16/ha."
+        },
+        {
+          "node": "node4",
+          "command": "printf '%s\\n' FAILED_UNITS; systemctl --failed --no-legend --no-pager || true; printf '%s\\n' RELEVANT_SERVICES; systemctl list-units --type=service --all --no-legend | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg-auto' || true; printf '%s\\n' PROCESSES; ps -eo comm= | sort | uniq -c | grep -E '(^| )(postgres|patroni|etcd)( |$)' || true; printf '%s\\n' LISTENERS; ss -lntup; printf '%s\\n' PG_SETTINGS; sudo -n -H -u postgres psql -XAtqc \"SELECT name || '|' || setting FROM pg_settings WHERE name IN ('listen_addresses','port','wal_level','hot_standby','synchronous_standby_names','log_statement','log_min_messages','debug_print_parse','debug_print_rewritten','debug_print_plan','client_min_messages') ORDER BY name;\"; printf '%s\\n' PATHS; for p in /etc/patroni /etc/etcd /etc/postgresql /var/lib/postgresql /var/log/postgresql /var/log/patroni /var/log/etcd /var/backups /tmp /var/tmp; do if [ -e \"$p\" ]; then stat -c '%U:%G|%a|%F|%n' \"$p\"; fi; done; printf '%s\\n' RESIDUE; find /tmp /var/tmp /var/backups /var/lib/postgresql -maxdepth 4 -type f \\( -name '*install*' -o -name '*.sh' -o -name '*.sql' -o -name '*.bak' -o -name '*.old' -o -name '*.dump' -o -name '*backup*' \\) -print 2>/dev/null | sort",
+          "observation": "No failed units were reported; etcd and patroni were active and debug settings were off. Residue included /tmp/ha-install.log, /tmp/ha-install.rc, backup_label.old, backup_manifest, and PostgreSQL *.backup files under /var/lib/postgresql/16/ha."
+        }
+      ],
+      "failures": [
+        "node2 retained failed unit fwupd-refresh.service.",
+        "node2-node4 retained temporary /tmp/ha-install.log and /tmp/ha-install.rc files plus PostgreSQL backup artifacts."
+      ],
+      "limitations": []
+    }
+  ],
+  "actions_performed": [
+    "Completed Probe 1 read-only topology checks on node1-node4.",
+    "Created evaluator-owned schema evaluator_gfxqwl and committed three distinct rows on node2.",
+    "Read the evaluator rows from node3 and node4.",
+    "Dropped evaluator_gfxqwl on node2 and independently confirmed its removal on node3 and node4.",
+    "Completed Probe 3 read-only operational-state checks.",
+    "Called complete_evidence exactly once; no live tools were called afterward."
+  ],
+  "overall_summary": "The authored topology and data-replication assertions pass. The operational-state cleanliness assertion fails because node2 has a failed fwupd-refresh.service and node2-node4 retain temporary installer and stale/backup artifacts. No controlled failover, outage, or reboot was authorized by the authored evidence plan.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 6.0,
+      "evaluated_points": 6.0,
+      "passed_points": 6.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "postgres-required-ha-topology",
+          "probe": "postgres-ha-topology",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "node1 routes both private LANs with forwarding enabled; node2 is the sole primary, node3 and node4 are streaming standbys, and PostgreSQL/Patroni/etcd traffic uses LAN addresses.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "hostname; ip -br -4 addr; ip route show",
+              "observation": "node1 has management eth0 10.100.187.10/24, LAN interfaces eth1 10.100.206.254/24 and eth2 10.100.138.254/24, with connected routes for both LANs."
+            },
+            {
+              "node": "node1",
+              "command": "sysctl net.ipv4.ip_forward; ip route get 10.100.206.11; ip route get 10.100.138.11; ip neigh show",
+              "observation": "IPv4 forwarding is 1; 10.100.206.11 routes via eth1/src 10.100.206.254 and 10.100.138.11 routes via eth2/src 10.100.138.254; both database peers are REACHABLE."
+            },
+            {
+              "node": "node2",
+              "command": "hostname; ip -br -4 addr; ip route show; systemctl is-active postgresql; sudo -n -H -u postgres psql -XAtqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'primary' END; SELECT 'appdb|' || datname || '|' || datallowconn FROM pg_database WHERE datname='appdb'; SELECT 'listen|' || current_setting('listen_addresses'); SELECT 'replica|' || coalesce(client_addr::text,'') || '|' || coalesce(application_name,'') || '|' || coalesce(state,'') || '|' || coalesce(sync_state,'') FROM pg_stat_replication ORDER BY client_addr;\"",
+              "observation": "node2 LAN is 10.100.206.11/24 with route 10.100.138.0/24 via 10.100.206.254; SQL reported role|primary, appdb|appdb|true, listen|10.100.206.11, and streaming replicas node3 at 10.100.138.11/32 and node4 at 10.100.138.12/32."
+            },
+            {
+              "node": "node3",
+              "command": "hostname; ip -br -4 addr; ip route show; sudo -n -H -u postgres psql -XAtqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'primary' END; SELECT 'appdb|' || datname || '|' || datallowconn FROM pg_database WHERE datname='appdb'; SELECT 'listen|' || current_setting('listen_addresses'); SELECT 'walreceiver|' || coalesce(status,'') || '|' || coalesce(sender_host,'') || '|' || coalesce(sender_port::text,'') || '|' || coalesce(slot_name,'') FROM pg_stat_wal_receiver; SELECT 'replay|' || coalesce(pg_last_wal_receive_lsn()::text,'') || '|' || coalesce(pg_last_wal_replay_lsn()::text,'');\"",
+              "observation": "node3 LAN is 10.100.138.11/24 with route 10.100.206.0/24 via 10.100.138.254; SQL reported role|standby, appdb present, listen|10.100.138.11, and walreceiver|streaming|10.100.206.11|5432|node3."
+            },
+            {
+              "node": "node4",
+              "command": "hostname; ip -br -4 addr; ip route show; sudo -n -H -u postgres psql -XAtqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'primary' END; SELECT 'appdb|' || datname || '|' || datallowconn FROM pg_database WHERE datname='appdb'; SELECT 'listen|' || current_setting('listen_addresses'); SELECT 'walreceiver|' || coalesce(status,'') || '|' || coalesce(sender_host,'') || '|' || coalesce(sender_port::text,'') || '|' || coalesce(slot_name,'') FROM pg_stat_wal_receiver; SELECT 'replay|' || coalesce(pg_last_wal_receive_lsn()::text,'') || '|' || coalesce(pg_last_wal_replay_lsn()::text,'');\"",
+              "observation": "node4 LAN is 10.100.138.12/24 with route 10.100.206.0/24 via 10.100.138.254; SQL reported role|standby, appdb present, listen|10.100.138.12, and walreceiver|streaming|10.100.206.11|5432|node4."
+            },
+            {
+              "node": "node2",
+              "command": "systemctl list-units --type=service --all --no-legend | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg-auto' || true; ps -eo user=,comm= --sort=comm | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg_auto' | grep -v grep || true; ss -tnp",
+              "observation": "etcd.service and patroni.service are active. Patroni connects to 10.100.138.11/12:2379; etcd peer connections use 10.100.206.11 and 10.100.138.11/12; PostgreSQL connections use LAN addresses."
+            },
+            {
+              "node": "node3",
+              "command": "systemctl is-active patroni etcd; ss -tnp | grep -E '(:2379|:2380|:5432)' || true",
+              "observation": "patroni and etcd are active; node3 shows etcd connections to 10.100.206.11 and 10.100.138.12, Patroni to LAN etcd endpoints, and PostgreSQL to 10.100.206.11:5432."
+            },
+            {
+              "node": "node4",
+              "command": "systemctl is-active patroni etcd; ss -tnp | grep -E '(:2379|:2380|:5432)' || true",
+              "observation": "patroni and etcd are active; node4 shows etcd connections to 10.100.206.11 and 10.100.138.11, Patroni to LAN etcd endpoints, and PostgreSQL to 10.100.206.11:5432."
+            },
+            {
+              "node": "node2",
+              "command": "ss -lntp | grep -E '(:5432|:2379|:2380|:8008)' || true; curl -fsS http://10.100.206.11:8008/cluster",
+              "observation": "Patroni /cluster reported exactly one leader, node2 at 10.100.206.11, plus node3 at 10.100.138.11 and node4 at 10.100.138.12 in streaming states; PostgreSQL, Patroni, and etcd listeners are bound to node2's LAN address."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "postgres-data-replicates",
+          "probe": "postgres-replication-data",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "Committed evaluator rows created on the primary were returned identically and in order by both read-only replicas.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "sudo -n -H -u postgres psql -X -v ON_ERROR_STOP=1 -d appdb -Atqc \"BEGIN; CREATE SCHEMA evaluator_gfxqwl; CREATE TABLE evaluator_gfxqwl.replication_rows (seq integer PRIMARY KEY, payload text NOT NULL); INSERT INTO evaluator_gfxqwl.replication_rows (seq, payload) VALUES (1, 'evaluator-alpha'), (2, 'evaluator-beta'), (3, 'evaluator-gamma'); COMMIT; SELECT seq || '|' || payload FROM evaluator_gfxqwl.replication_rows ORDER BY seq;\"",
+              "observation": "Command committed and returned 1|evaluator-alpha, 2|evaluator-beta, 3|evaluator-gamma."
+            },
+            {
+              "node": "node3",
+              "command": "sudo -n -H -u postgres psql -X -v ON_ERROR_STOP=1 -d appdb -Atqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'writable' END; SELECT 'data|' || seq || '|' || payload FROM evaluator_gfxqwl.replication_rows ORDER BY seq;\"",
+              "observation": "Returned role|standby and data|1|evaluator-alpha, data|2|evaluator-beta, data|3|evaluator-gamma."
+            },
+            {
+              "node": "node4",
+              "command": "sudo -n -H -u postgres psql -X -v ON_ERROR_STOP=1 -d appdb -Atqc \"SELECT 'role|' || CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'writable' END; SELECT 'data|' || seq || '|' || payload FROM evaluator_gfxqwl.replication_rows ORDER BY seq;\"",
+              "observation": "Returned role|standby and data|1|evaluator-alpha, data|2|evaluator-beta, data|3|evaluator-gamma."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "resilience": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 0.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "postgres-ha-state-clean",
+          "probe": "postgres-ha-operational-state",
+          "points": 1.0,
+          "status": "fail",
+          "summary": "Required services were active and debug settings were off, but the cluster retained a failed unit and temporary/stale installer or backup artifacts.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "printf '%s\\n' FAILED_UNITS; systemctl --failed --no-legend --no-pager || true; printf '%s\\n' RELEVANT_UNITS; systemctl list-unit-files --type=service --no-legend | grep -Ei 'vyos|postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul' || true; printf '%s\\n' ADDR_ROUTE; ip -br -4 addr; ip route show; printf '%s\\n' LISTENERS; ss -lntup; printf '%s\\n' TEMP_RESIDUE; find /tmp /var/tmp -maxdepth 2 -type f \\( -name '*install*' -o -name '*.sh' -o -name '*.sql' -o -name '*.bak' -o -name '*.dump' \\) -print 2>/dev/null | sort",
+              "observation": "No failed units or matching temporary residue were reported on node1. VyOS routing services and expected LAN/management interfaces were present."
+            },
+            {
+              "node": "node2",
+              "command": "printf '%s\\n' FAILED_UNITS; systemctl --failed --no-legend --no-pager || true; printf '%s\\n' RELEVANT_SERVICES; systemctl list-units --type=service --all --no-legend | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg-auto' || true; printf '%s\\n' PROCESSES; ps -eo comm= | sort | uniq -c | grep -E '(^| )(postgres|patroni|etcd)( |$)' || true; printf '%s\\n' LISTENERS; ss -lntup; printf '%s\\n' PG_SETTINGS; sudo -n -H -u postgres psql -XAtqc \"SELECT name || '|' || setting FROM pg_settings WHERE name IN ('listen_addresses','port','wal_level','hot_standby','synchronous_standby_names','log_statement','log_min_messages','debug_print_parse','debug_print_rewritten','debug_print_plan','client_min_messages') ORDER BY name;\"; printf '%s\\n' PATHS; for p in /etc/patroni /etc/etcd /etc/postgresql /var/lib/postgresql /var/log/postgresql /var/log/patroni /var/log/etcd /var/backups /tmp /var/tmp; do if [ -e \"$p\" ]; then stat -c '%U:%G|%a|%F|%n' \"$p\"; fi; done; printf '%s\\n' RESIDUE; find /tmp /var/tmp /var/backups /var/lib/postgresql -maxdepth 4 -type f \\( -name '*install*' -o -name '*.sh' -o -name '*.sql' -o -name '*.bak' -o -name '*.old' -o -name '*.dump' -o -name '*backup*' \\) -print 2>/dev/null | sort",
+              "observation": "systemctl --failed reported fwupd-refresh.service loaded failed. Required etcd and patroni were active; debug_print_* were off and log_statement was none. Residue included /tmp/ha-install.log, /tmp/ha-install.rc, and PostgreSQL *.backup files under /var/lib/postgresql/16/ha."
+            },
+            {
+              "node": "node3",
+              "command": "printf '%s\\n' FAILED_UNITS; systemctl --failed --no-legend --no-pager || true; printf '%s\\n' RELEVANT_SERVICES; systemctl list-units --type=service --all --no-legend | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg-auto' || true; printf '%s\\n' PROCESSES; ps -eo comm= | sort | uniq -c | grep -E '(^| )(postgres|patroni|etcd)( |$)' || true; printf '%s\\n' LISTENERS; ss -lntup; printf '%s\\n' PG_SETTINGS; sudo -n -H -u postgres psql -XAtqc \"SELECT name || '|' || setting FROM pg_settings WHERE name IN ('listen_addresses','port','wal_level','hot_standby','synchronous_standby_names','log_statement','log_min_messages','debug_print_parse','debug_print_rewritten','debug_print_plan','client_min_messages') ORDER BY name;\"; printf '%s\\n' PATHS; for p in /etc/patroni /etc/etcd /etc/postgresql /var/lib/postgresql /var/log/postgresql /var/log/patroni /var/log/etcd /var/backups /tmp /var/tmp; do if [ -e \"$p\" ]; then stat -c '%U:%G|%a|%F|%n' \"$p\"; fi; done; printf '%s\\n' RESIDUE; find /tmp /var/tmp /var/backups /var/lib/postgresql -maxdepth 4 -type f \\( -name '*install*' -o -name '*.sh' -o -name '*.sql' -o -name '*.bak' -o -name '*.old' -o -name '*.dump' -o -name '*backup*' \\) -print 2>/dev/null | sort",
+              "observation": "No failed units were reported; etcd and patroni were active and debug settings were off. Residue included /tmp/ha-install.log, /tmp/ha-install.rc, backup_label.old, backup_manifest, and PostgreSQL *.backup files under /var/lib/postgresql/16/ha."
+            },
+            {
+              "node": "node4",
+              "command": "printf '%s\\n' FAILED_UNITS; systemctl --failed --no-legend --no-pager || true; printf '%s\\n' RELEVANT_SERVICES; systemctl list-units --type=service --all --no-legend | grep -Ei 'postgres|patroni|repmgr|keepalived|pacemaker|corosync|etcd|consul|pg-auto' || true; printf '%s\\n' PROCESSES; ps -eo comm= | sort | uniq -c | grep -E '(^| )(postgres|patroni|etcd)( |$)' || true; printf '%s\\n' LISTENERS; ss -lntup; printf '%s\\n' PG_SETTINGS; sudo -n -H -u postgres psql -XAtqc \"SELECT name || '|' || setting FROM pg_settings WHERE name IN ('listen_addresses','port','wal_level','hot_standby','synchronous_standby_names','log_statement','log_min_messages','debug_print_parse','debug_print_rewritten','debug_print_plan','client_min_messages') ORDER BY name;\"; printf '%s\\n' PATHS; for p in /etc/patroni /etc/etcd /etc/postgresql /var/lib/postgresql /var/log/postgresql /var/log/patroni /var/log/etcd /var/backups /tmp /var/tmp; do if [ -e \"$p\" ]; then stat -c '%U:%G|%a|%F|%n' \"$p\"; fi; done; printf '%s\\n' RESIDUE; find /tmp /var/tmp /var/backups /var/lib/postgresql -maxdepth 4 -type f \\( -name '*install*' -o -name '*.sh' -o -name '*.sql' -o -name '*.bak' -o -name '*.old' -o -name '*.dump' -o -name '*backup*' \\) -print 2>/dev/null | sort",
+              "observation": "No failed units were reported; etcd and patroni were active and debug settings were off. Residue included /tmp/ha-install.log, /tmp/ha-install.rc, backup_label.old, backup_manifest, and PostgreSQL *.backup files under /var/lib/postgresql/16/ha."
+            }
+          ],
+          "failures": [
+            "node2 retained failed unit fwupd-refresh.service.",
+            "node2-node4 retained temporary /tmp/ha-install.log and /tmp/ha-install.rc files plus PostgreSQL backup artifacts."
+          ],
+          "limitations": []
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "resilience",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 71.43,
+    "reward": 0.7143,
+    "provisional_reward": 0.7143,
+    "caps_applied": []
+  }
+}

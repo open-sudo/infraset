@@ -1,0 +1,320 @@
+{
+  "probes": [
+    {
+      "id": "kubernetes-routed-contract",
+      "summary": "VyOS routing, LAN gateway ownership, Kubernetes membership, node roles, LAN node addresses, host routes, and LAN-selected CNI/control-plane paths were verified.",
+      "cleanup_completed": true,
+      "limitations": [
+        "No reboot was performed because the authored probe did not authorize one; persistence is inferred from saved/enabled configuration and current static routes."
+      ]
+    },
+    {
+      "id": "kubernetes-cross-lan-workload",
+      "summary": "An evaluator DaemonSet and ClusterIP service succeeded across all three Kubernetes nodes; direct pod HTTP, ClusterIP access, DNS, and VyOS VXLAN traversal were verified, then all evaluator state was removed.",
+      "cleanup_completed": true,
+      "limitations": [
+        "One initial test wrapper emitted an evaluator-only dash printf formatting error; the HTTP commands still returned exit 0, and clean follow-up service/DNS tests plus packet captures independently confirmed success."
+      ]
+    },
+    {
+      "id": "kubernetes-operational-state",
+      "summary": "Current Kubernetes, CNI, runtime, route, manifest, and VyOS state is coherent with no active failed units, duplicate installations, evaluator residue, or conflicting tested paths.",
+      "cleanup_completed": true,
+      "limitations": [
+        "Historical startup Warning events remain in Kubernetes event history; their corresponding nodes and pods were current Ready/Running. The retained flannel source manifest matched the active DaemonSet and was not classified as abandoned."
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "kubernetes-required-routed-topology",
+      "status": "pass",
+      "summary": "The router owns both LAN gateways; node2 is the Ready control plane, node3/node4 are Ready workers, all use LAN InternalIP values, host routes use node1, and Kubernetes control/CNI underlay traffic uses the LAN interfaces.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "ip -4 addr show; ip route show; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show interfaces; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show ip route",
+          "observation": "eth1 has 10.100.57.254/24 and eth2 has 10.100.113.254/24. VyOS shows both interfaces up and directly connected routes for the two LANs."
+        },
+        {
+          "node": "node1",
+          "command": "sysctl net.ipv4.ip_forward net.ipv4.conf.eth1.forwarding net.ipv4.conf.eth2.forwarding; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show configuration commands 2>/dev/null | grep -E 'set interfaces ethernet eth[12] address|set protocols static route|set service'",
+          "observation": "IPv4 forwarding and forwarding on eth1/eth2 are 1; saved configuration contains the two LAN addresses."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl cluster-info",
+          "observation": "node2 Ready/control-plane InternalIP 10.100.57.11; node3 Ready/worker InternalIP 10.100.113.11; node4 Ready/worker InternalIP 10.100.113.12. The control plane is at https://10.100.57.11:6443."
+        },
+        {
+          "node": "node2",
+          "command": "for peer in 10.100.113.11 10.100.113.12; do ip route get \"$peer\"; done; ps -eo pid,args | grep '[k]ubelet'; ip -d link show flannel.1; bridge fdb show dev flannel.1",
+          "observation": "Routes to both workers use 10.100.57.254 via enp8s0; kubelet uses --node-ip=10.100.57.11; flannel VXLAN local underlay is enp8s0 at 10.100.57.11 with remote LAN VTEPs."
+        },
+        {
+          "node": "node3",
+          "command": "api=$(sudo -n awk '/^[[:space:]]*server:/{print $2; exit}' /etc/kubernetes/kubelet.conf | sed 's#https://##; s#:[0-9][0-9]*$##'); [ -n \"$api\" ] && ip route get \"$api\"; ps -eo pid,args | grep '[k]ubelet'; ip -d link show flannel.1; bridge fdb show dev flannel.1",
+          "observation": "The kubelet API endpoint is 10.100.57.11 and routes via 10.100.113.254 on enp8s0; kubelet uses --node-ip=10.100.113.11; flannel VXLAN local underlay is enp8s0 with LAN VTEPs."
+        },
+        {
+          "node": "node4",
+          "command": "api=$(sudo -n awk '/^[[:space:]]*server:/{print $2; exit}' /etc/kubernetes/kubelet.conf | sed 's#https://##; s#:[0-9][0-9]*$##'); [ -n \"$api\" ] && ip route get \"$api\"; ps -eo pid,args | grep '[k]ubelet'; ip -d link show flannel.1; bridge fdb show dev flannel.1",
+          "observation": "The kubelet API endpoint is 10.100.57.11 and routes via 10.100.113.254 on enp8s0; kubelet uses --node-ip=10.100.113.12; flannel VXLAN local underlay is enp8s0 with LAN VTEPs."
+        }
+      ],
+      "failures": [],
+      "limitations": []
+    },
+    {
+      "id": "kubernetes-cross-lan-networking",
+      "status": "pass",
+      "summary": "One pod ran on each Kubernetes node; direct pod HTTP, ClusterIP access, service DNS, cluster DNS, and cross-LAN VXLAN traffic through both VyOS LAN interfaces all succeeded.",
+      "evidence": [
+        {
+          "node": "node2",
+          "command": "sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n evaluator-routed-hnptwx2-1787924375 rollout status daemonset/routed-echo --timeout=90s; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n evaluator-routed-hnptwx2-1787924375 get pods -l app=routed-echo -o wide",
+          "observation": "DaemonSet rolled out with Running pods on node2 at 10.244.0.5, node3 at 10.244.1.3, and node4 at 10.244.2.3."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n evaluator-routed-hnptwx2-1787924375 get service routed-echo -o wide; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n evaluator-routed-hnptwx2-1787924375 get endpoints routed-echo -o wide",
+          "observation": "The service is ClusterIP 10.111.21.5:8080 with endpoints 10.244.0.5, 10.244.1.3, and 10.244.2.3."
+        },
+        {
+          "node": "node2",
+          "command": "$kc -n \"$ns\" exec \"$pod\" -- wget -qO- -T 5 \"$url\"; $kc -n \"$ns\" exec \"$pod\" -- nslookup \"$name\"",
+          "observation": "Clean follow-up tests from pods on node2, node3, and node4 returned exit=0 for ClusterIP HTTP. Service DNS resolved to 10.111.21.5 from all three pods, and kubernetes.default.svc.cluster.local resolved through 10.96.0.10 to 10.96.0.1 from all three pods."
+        },
+        {
+          "node": "node1",
+          "command": "sed -n '1,80p' /tmp/evaluator-routed-hnptwx2-eth1.txt; sed -n '1,80p' /tmp/evaluator-routed-hnptwx2-eth2.txt; ip -s link show eth1; ip -s link show eth2",
+          "observation": "Both pinned interface captures showed UDP/8472 VXLAN/OTV between 10.100.57.11 and 10.100.113.11/.12 carrying inner pod HTTP, including HTTP/1.1 200 responses. Captures were present on both eth1 and eth2, proving traversal of node1."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The initial direct-test wrapper printed `printf: Illegal option --`; the captured inner HTTP exchanges and clean ClusterIP/DNS tests provided independent confirmation."
+      ]
+    },
+    {
+      "id": "kubernetes-state-clean",
+      "status": "pass",
+      "summary": "All current required services and workloads are healthy, package/runtime/CNI inventories are coherent, routes and saved VyOS configuration are consistent, and no concrete duplicate, abandoned, credential-copy, temporary, or evaluator residue was found.",
+      "evidence": [
+        {
+          "node": "node1",
+          "command": "systemctl --failed --no-legend; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show nat source rules; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show nat destination rules; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show firewall; find /tmp /var/tmp -maxdepth 2 -type f \\( -iname '*installer*' -o -iname '*debug*' -o -iname '*backup*' -o -iname '*kube*' -o -iname '*cni*' -o -iname '*evaluator*' \\) -print",
+          "observation": "No failed units; native VyOS reports NAT not configured and default-accept forward/input filters; no suspicious temporary files were found. Saved /config/config.boot exists."
+        },
+        {
+          "node": "node2",
+          "command": "systemctl --failed --no-legend; for s in kubelet containerd docker ufw firewalld; do systemctl is-enabled \"$s\"; systemctl is-active \"$s\"; done; dpkg -l kubeadm kubelet kubectl; find /tmp /var/tmp /root /home -maxdepth 3 -type f \\( -iname '*installer*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*backup*' -o -iname '*manifest*' \\) -print",
+          "observation": "No failed units; kubelet/containerd are enabled and active, Docker is absent, and kubeadm/kubelet/kubectl are package-owned expected binaries. No suspicious files were found in the searched paths."
+        },
+        {
+          "node": "node3",
+          "command": "systemctl --failed --no-legend; dpkg -l 2>/dev/null | grep -E '^ii[[:space:]]+(kube|containerd|docker|cri|cni|flannel)' || true; find /tmp /var/tmp /root /home -maxdepth 3 -type f \\( -iname '*installer*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*backup*' -o -iname '*manifest*' \\) -print; find /root /home -maxdepth 4 -type f \\( -name 'admin.conf' -o -iname '*kubeconfig*' -o -iname '*token*' -o -name '*.key' -o -name '*.pem' \\) -print",
+          "observation": "No failed units, duplicate runtime packages, suspicious installer/debug/backup files, or credential-like files in the searched user paths. Expected containerd, kubernetes-cni, kubelet, and flannel state is present."
+        },
+        {
+          "node": "node4",
+          "command": "systemctl --failed --no-legend; dpkg -l 2>/dev/null | grep -E '^ii[[:space:]]+(kube|containerd|docker|cri|cni|flannel)' || true; find /tmp /var/tmp /root /home -maxdepth 3 -type f \\( -iname '*installer*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*backup*' -o -iname '*manifest*' \\) -print; find /root /home -maxdepth 4 -type f \\( -name 'admin.conf' -o -iname '*kubeconfig*' -o -iname '*token*' -o -name '*.key' -o -name '*.pem' \\) -print",
+          "observation": "No failed units, duplicate runtime packages, suspicious installer/debug/backup files, or credential-like files in the searched user paths. Expected containerd, kubernetes-cni, kubelet, and flannel state is present."
+        },
+        {
+          "node": "node2",
+          "command": "sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods,daemonsets,deployments,services -A -o wide; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl get namespaces; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp --no-headers",
+          "observation": "Only expected kube-flannel, kube-proxy, CoreDNS, control-plane, and Kubernetes service resources remain; the evaluator namespace is absent. Current nodes/pods are Ready/Running. Warning entries are historical startup events, not current failed workloads. /root/kube-flannel.yml matches the active flannel namespace/DaemonSet, image, hostNetwork, and enp8s0 interface."
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Ubuntu UFW was enabled/active on the three Ubuntu nodes; tested Kubernetes paths were healthy and no concrete conflict was observed, but a complete rule-by-rule UFW inventory was outside the authored five-command budget."
+      ]
+    }
+  ],
+  "actions_performed": [
+    "Executed all authored read-only topology and operational-state checks directly on node1, node2, node3, and node4.",
+    "Created evaluator namespace evaluator-routed-hnptwx2-1787924375 with one HTTP pod per Kubernetes node and a ClusterIP service; tested direct pod HTTP, ClusterIP, DNS, and VyOS interface captures.",
+    "Deleted the evaluator namespace and confirmed no evaluator Kubernetes resources remained; stopped and removed temporary capture files and confirmed no worker-local evaluator residue.",
+    "Called complete_evidence exactly once after all live checks and cleanup."
+  ],
+  "overall_summary": "All three authored assertions pass. The three-node Kubernetes cluster is Ready with LAN-based control and CNI paths routed through VyOS; cross-LAN pod, service, and DNS traffic succeeded; cleanup completed and live evidence was closed.",
+  "evaluator": "semantic-ai",
+  "verification_level": 5,
+  "minimum_coverage": 1.0,
+  "dimensions": {
+    "functionality": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 7.0,
+      "evaluated_points": 7.0,
+      "passed_points": 7.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "kubernetes-required-routed-topology",
+          "probe": "kubernetes-routed-contract",
+          "points": 3.0,
+          "status": "pass",
+          "summary": "The router owns both LAN gateways; node2 is the Ready control plane, node3/node4 are Ready workers, all use LAN InternalIP values, host routes use node1, and Kubernetes control/CNI underlay traffic uses the LAN interfaces.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "ip -4 addr show; ip route show; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show interfaces; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show ip route",
+              "observation": "eth1 has 10.100.57.254/24 and eth2 has 10.100.113.254/24. VyOS shows both interfaces up and directly connected routes for the two LANs."
+            },
+            {
+              "node": "node1",
+              "command": "sysctl net.ipv4.ip_forward net.ipv4.conf.eth1.forwarding net.ipv4.conf.eth2.forwarding; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show configuration commands 2>/dev/null | grep -E 'set interfaces ethernet eth[12] address|set protocols static route|set service'",
+              "observation": "IPv4 forwarding and forwarding on eth1/eth2 are 1; saved configuration contains the two LAN addresses."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl cluster-info",
+              "observation": "node2 Ready/control-plane InternalIP 10.100.57.11; node3 Ready/worker InternalIP 10.100.113.11; node4 Ready/worker InternalIP 10.100.113.12. The control plane is at https://10.100.57.11:6443."
+            },
+            {
+              "node": "node2",
+              "command": "for peer in 10.100.113.11 10.100.113.12; do ip route get \"$peer\"; done; ps -eo pid,args | grep '[k]ubelet'; ip -d link show flannel.1; bridge fdb show dev flannel.1",
+              "observation": "Routes to both workers use 10.100.57.254 via enp8s0; kubelet uses --node-ip=10.100.57.11; flannel VXLAN local underlay is enp8s0 at 10.100.57.11 with remote LAN VTEPs."
+            },
+            {
+              "node": "node3",
+              "command": "api=$(sudo -n awk '/^[[:space:]]*server:/{print $2; exit}' /etc/kubernetes/kubelet.conf | sed 's#https://##; s#:[0-9][0-9]*$##'); [ -n \"$api\" ] && ip route get \"$api\"; ps -eo pid,args | grep '[k]ubelet'; ip -d link show flannel.1; bridge fdb show dev flannel.1",
+              "observation": "The kubelet API endpoint is 10.100.57.11 and routes via 10.100.113.254 on enp8s0; kubelet uses --node-ip=10.100.113.11; flannel VXLAN local underlay is enp8s0 with LAN VTEPs."
+            },
+            {
+              "node": "node4",
+              "command": "api=$(sudo -n awk '/^[[:space:]]*server:/{print $2; exit}' /etc/kubernetes/kubelet.conf | sed 's#https://##; s#:[0-9][0-9]*$##'); [ -n \"$api\" ] && ip route get \"$api\"; ps -eo pid,args | grep '[k]ubelet'; ip -d link show flannel.1; bridge fdb show dev flannel.1",
+              "observation": "The kubelet API endpoint is 10.100.57.11 and routes via 10.100.113.254 on enp8s0; kubelet uses --node-ip=10.100.113.12; flannel VXLAN local underlay is enp8s0 with LAN VTEPs."
+            }
+          ],
+          "failures": [],
+          "limitations": []
+        },
+        {
+          "id": "kubernetes-cross-lan-networking",
+          "probe": "kubernetes-cross-lan-workload",
+          "points": 4.0,
+          "status": "pass",
+          "summary": "One pod ran on each Kubernetes node; direct pod HTTP, ClusterIP access, service DNS, cluster DNS, and cross-LAN VXLAN traffic through both VyOS LAN interfaces all succeeded.",
+          "evidence": [
+            {
+              "node": "node2",
+              "command": "sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n evaluator-routed-hnptwx2-1787924375 rollout status daemonset/routed-echo --timeout=90s; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n evaluator-routed-hnptwx2-1787924375 get pods -l app=routed-echo -o wide",
+              "observation": "DaemonSet rolled out with Running pods on node2 at 10.244.0.5, node3 at 10.244.1.3, and node4 at 10.244.2.3."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n evaluator-routed-hnptwx2-1787924375 get service routed-echo -o wide; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n evaluator-routed-hnptwx2-1787924375 get endpoints routed-echo -o wide",
+              "observation": "The service is ClusterIP 10.111.21.5:8080 with endpoints 10.244.0.5, 10.244.1.3, and 10.244.2.3."
+            },
+            {
+              "node": "node2",
+              "command": "$kc -n \"$ns\" exec \"$pod\" -- wget -qO- -T 5 \"$url\"; $kc -n \"$ns\" exec \"$pod\" -- nslookup \"$name\"",
+              "observation": "Clean follow-up tests from pods on node2, node3, and node4 returned exit=0 for ClusterIP HTTP. Service DNS resolved to 10.111.21.5 from all three pods, and kubernetes.default.svc.cluster.local resolved through 10.96.0.10 to 10.96.0.1 from all three pods."
+            },
+            {
+              "node": "node1",
+              "command": "sed -n '1,80p' /tmp/evaluator-routed-hnptwx2-eth1.txt; sed -n '1,80p' /tmp/evaluator-routed-hnptwx2-eth2.txt; ip -s link show eth1; ip -s link show eth2",
+              "observation": "Both pinned interface captures showed UDP/8472 VXLAN/OTV between 10.100.57.11 and 10.100.113.11/.12 carrying inner pod HTTP, including HTTP/1.1 200 responses. Captures were present on both eth1 and eth2, proving traversal of node1."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "The initial direct-test wrapper printed `printf: Illegal option --`; the captured inner HTTP exchanges and clean ClusterIP/DNS tests provided independent confirmation."
+          ]
+        }
+      ]
+    },
+    "security": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "persistence": {
+      "score": 0.0,
+      "applicable": false,
+      "critical_failure": false,
+      "selected_points": 0,
+      "evaluated_points": 0,
+      "passed_points": 0,
+      "coverage": 0.0,
+      "assertions": []
+    },
+    "operational_hygiene": {
+      "score": 100.0,
+      "applicable": true,
+      "critical_failure": false,
+      "selected_points": 1.0,
+      "evaluated_points": 1.0,
+      "passed_points": 1.0,
+      "coverage": 1.0,
+      "assertions": [
+        {
+          "id": "kubernetes-state-clean",
+          "probe": "kubernetes-operational-state",
+          "points": 1.0,
+          "status": "pass",
+          "summary": "All current required services and workloads are healthy, package/runtime/CNI inventories are coherent, routes and saved VyOS configuration are consistent, and no concrete duplicate, abandoned, credential-copy, temporary, or evaluator residue was found.",
+          "evidence": [
+            {
+              "node": "node1",
+              "command": "systemctl --failed --no-legend; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show nat source rules; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show nat destination rules; sudo -n /opt/vyatta/bin/vyatta-op-cmd-wrapper show firewall; find /tmp /var/tmp -maxdepth 2 -type f \\( -iname '*installer*' -o -iname '*debug*' -o -iname '*backup*' -o -iname '*kube*' -o -iname '*cni*' -o -iname '*evaluator*' \\) -print",
+              "observation": "No failed units; native VyOS reports NAT not configured and default-accept forward/input filters; no suspicious temporary files were found. Saved /config/config.boot exists."
+            },
+            {
+              "node": "node2",
+              "command": "systemctl --failed --no-legend; for s in kubelet containerd docker ufw firewalld; do systemctl is-enabled \"$s\"; systemctl is-active \"$s\"; done; dpkg -l kubeadm kubelet kubectl; find /tmp /var/tmp /root /home -maxdepth 3 -type f \\( -iname '*installer*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*backup*' -o -iname '*manifest*' \\) -print",
+              "observation": "No failed units; kubelet/containerd are enabled and active, Docker is absent, and kubeadm/kubelet/kubectl are package-owned expected binaries. No suspicious files were found in the searched paths."
+            },
+            {
+              "node": "node3",
+              "command": "systemctl --failed --no-legend; dpkg -l 2>/dev/null | grep -E '^ii[[:space:]]+(kube|containerd|docker|cri|cni|flannel)' || true; find /tmp /var/tmp /root /home -maxdepth 3 -type f \\( -iname '*installer*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*backup*' -o -iname '*manifest*' \\) -print; find /root /home -maxdepth 4 -type f \\( -name 'admin.conf' -o -iname '*kubeconfig*' -o -iname '*token*' -o -name '*.key' -o -name '*.pem' \\) -print",
+              "observation": "No failed units, duplicate runtime packages, suspicious installer/debug/backup files, or credential-like files in the searched user paths. Expected containerd, kubernetes-cni, kubelet, and flannel state is present."
+            },
+            {
+              "node": "node4",
+              "command": "systemctl --failed --no-legend; dpkg -l 2>/dev/null | grep -E '^ii[[:space:]]+(kube|containerd|docker|cri|cni|flannel)' || true; find /tmp /var/tmp /root /home -maxdepth 3 -type f \\( -iname '*installer*' -o -iname '*install*' -o -iname '*debug*' -o -iname '*backup*' -o -iname '*manifest*' \\) -print; find /root /home -maxdepth 4 -type f \\( -name 'admin.conf' -o -iname '*kubeconfig*' -o -iname '*token*' -o -name '*.key' -o -name '*.pem' \\) -print",
+              "observation": "No failed units, duplicate runtime packages, suspicious installer/debug/backup files, or credential-like files in the searched user paths. Expected containerd, kubernetes-cni, kubelet, and flannel state is present."
+            },
+            {
+              "node": "node2",
+              "command": "sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods,daemonsets,deployments,services -A -o wide; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl get namespaces; sudo -H env KUBECONFIG=/etc/kubernetes/admin.conf kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp --no-headers",
+              "observation": "Only expected kube-flannel, kube-proxy, CoreDNS, control-plane, and Kubernetes service resources remain; the evaluator namespace is absent. Current nodes/pods are Ready/Running. Warning entries are historical startup events, not current failed workloads. /root/kube-flannel.yml matches the active flannel namespace/DaemonSet, image, hostNetwork, and enp8s0 interface."
+            }
+          ],
+          "failures": [],
+          "limitations": [
+            "Ubuntu UFW was enabled/active on the three Ubuntu nodes; tested Kubernetes paths were healthy and no concrete conflict was observed, but a complete rule-by-rule UFW inventory was outside the authored five-command budget."
+          ]
+        }
+      ]
+    }
+  },
+  "evaluated_dimensions": [
+    "functionality",
+    "operational_hygiene"
+  ],
+  "unverified_dimensions": [
+    "security",
+    "persistence"
+  ],
+  "evaluation_coverage": 1.0,
+  "full_coverage": true,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "aggregation": {
+    "weighted_score": 100.0,
+    "reward": 1.0,
+    "provisional_reward": 1.0,
+    "caps_applied": []
+  }
+}
