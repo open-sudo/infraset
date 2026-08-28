@@ -1,15 +1,13 @@
 # Testing LLMs on Infrastructure Work
 
-The industry is increasingly using LLMs to operate infrastructure, either
-directly or with a human in the loop. Yet there is little public empirical data
-showing what happens when LLMs operate real systems, whether in greenfield,
-brownfield, end-of-life, or distributed environments. Perhaps LLMs perform
-remarkably well. Perhaps they fail in subtle ways. We do not yet have enough
-evidence to know either way.
+The industry is increasingly using LLMs to operate infrastructure, either directly or with a human in the loop.
+Yet there is little public empirical data showing what happens when LLMs operate real systems, whether in
+greenfield, brownfield, end-of-life, or distributed environments. Perhaps LLMs perform remarkably well. Perhaps
+they fail in subtle ways. We do not yet have enough evidence to know either way.
 
-InfraSet is a dataset of executed infrastructure tasks and traces, created to
-build that evidence. It currently contains 42 tasks, and we hope the community
-will join us and help expand it. Results can also be explored on [Hugging Face](https://huggingface.co/datasets/infraset/infraset).
+InfraSet is a dataset of executed infrastructure tasks and traces, created to build that evidence. It currently
+contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
+Hugging Face (https://huggingface.co/datasets/infraset/infraset).
 
 This repository contains task definitions, task-building guidance, and execution
 results.
@@ -17,10 +15,9 @@ results.
 overview of environments, run counts, scores, and durations.
 [Structured JSONL indexes](data/) provide task, job, trial, and evaluation-analysis
 records for filtering and programmatic analysis.
-[Harbor](https://github.com/harbor-framework/harbor) provides the execution
-framework, [Antrieb](https://antrieb.sh/) provides the infrastructure, and
-[`harbor-antrieb`](https://github.com/open-sudo/harbor-antrieb) connects Harbor
-to Antrieb. To run these tasks, visit the [InfraSet GitHub repository](https://github.com/open-sudo/infraset).
+Harbor provides the execution framework, Antrieb provides the infrastructure, and harbor-antrieb
+(https://github.com/open-sudo/harbor-antrieb) connects Harbor to Antrieb. To run these tasks, visit the
+InfraSet GitHub repository (https://github.com/open-sudo/infraset).
 
 ## What makes InfraSet different
 

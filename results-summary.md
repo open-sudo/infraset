@@ -1,19 +1,17 @@
 # Execution summary
 
-The industry is increasingly using LLMs to operate infrastructure, either
-directly or with a human in the loop. Yet there is little public empirical data
-showing what happens when LLMs operate real systems, whether in greenfield,
-brownfield, end-of-life, or distributed environments. Perhaps LLMs perform
-remarkably well. Perhaps they fail in subtle ways. We do not yet have enough
-evidence to know either way.
+The industry is increasingly using LLMs to operate infrastructure, either directly or with a human in the loop.
+Yet there is little public empirical data showing what happens when LLMs operate real systems, whether in
+greenfield, brownfield, end-of-life, or distributed environments. Perhaps LLMs perform remarkably well. Perhaps
+they fail in subtle ways. We do not yet have enough evidence to know either way.
 
-InfraSet is a dataset of executed infrastructure tasks and traces, created to
-build that evidence. It currently contains 42 tasks, and we hope the community
-will join us and help expand it. Results can also be explored on [Hugging Face](https://huggingface.co/datasets/infraset/infraset).
+InfraSet is a dataset of executed infrastructure tasks and traces, created to build that evidence. It currently
+contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
+Hugging Face (https://huggingface.co/datasets/infraset/infraset).
 
-Harbor provides the execution framework, Antrieb provides the infrastructure,
-and [harbor-antrieb](https://github.com/open-sudo/harbor-antrieb) connects Harbor
-to Antrieb. To run these tasks, visit the [InfraSet GitHub repository](https://github.com/open-sudo/infraset).
+Harbor provides the execution framework, Antrieb provides the infrastructure, and harbor-antrieb
+(https://github.com/open-sudo/harbor-antrieb) connects Harbor to Antrieb. To run these tasks, visit the
+InfraSet GitHub repository (https://github.com/open-sudo/infraset).
 
 This table summarizes the recorded jobs in `jobs/`. `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials.
 
