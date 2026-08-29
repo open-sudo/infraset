@@ -57,37 +57,3 @@ This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/
 | 40 | vault-raft-auto-unseal | ubuntu24.04 x4 | 3 | 1/3 | 0.75 | 50% | 0% | 1.1 sec | 18.5 min |
 | 41 | vyos-dual-lan-kubernetes | vyos + ubuntu24.04 x3 | 2 | 2/2 | 1.00 | 100% | 100% | 1.1 sec | 20.5 min |
 | 42 | wireguard-vyos-dual-lan | vyos x2 + ubuntu24.04 x2 | 2 | 0/2 | — | 86% | — | 1.3 sec | 11.8 min |
-
-## How InfraSet Works
-
-### Architecture
-
-InfraSet combines three components:
-
-- [**Harbor**](https://github.com/harbor-framework/harbor) provides the
-  execution framework and records the agent trace.
-- [**Antrieb**](https://antrieb.sh) provides disposable VMs, clusters, and
-  networks.
-- [**harbor-antrieb**](https://github.com/open-sudo/harbor-antrieb) connects
-  Harbor to Antrieb.
-
-### Concepts
-
-- A **task** defines the scenario, environment, preparation, and verification
-  checks.
-- A **job** is one recorded execution of a task.
-- The **preparer** creates the starting state, including brownfield data or
-  configuration drift.
-- The **executor** runs the task and coordinates Harbor, Antrieb, and the AI
-  agent.
-- The **verifier** evaluates the final infrastructure state and produces the
-  recorded result and score.
-
-### Workflow
-
-![InfraSet workflow](docs/infraset-workflow.svg)
-
-An idea becomes a task, the preparer creates its starting state, and the
-executor runs it in an Antrieb environment. The verifier evaluates the final
-state before the resulting job is recorded, validated, and published in the
-[InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
