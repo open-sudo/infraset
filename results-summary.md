@@ -60,54 +60,36 @@ This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/
 
 ## How InfraSet Works
 
-### The three-part architecture
+### Architecture
 
-InfraSet has three main pieces:
+InfraSet combines three components:
 
-- **Harbor** is the execution framework. It runs the AI agent, coordinates the
-  task lifecycle, records the agent trace, and runs the evaluator.
-- **Antrieb** provides disposable virtual machines, clusters, and networks for
-  each task execution.
-- **harbor-antrieb** is the bridge between Harbor and Antrieb. It lets Harbor
-  provision the required environment and gives the agent and evaluator managed
-  access to the systems through their node names.
+- **Harbor** runs the AI agent, records its trace, and coordinates evaluation.
+- **Antrieb** provides disposable VMs, clusters, and networks.
+- **harbor-antrieb** connects Harbor to Antrieb.
 
-### The building blocks
+### Concepts
 
-- A **task** is a reusable infrastructure scenario. It contains the candidate
-  instructions, environment and topology definition, optional preparation, and
-  evaluation logic.
-- A **job** is one execution of a task. It records the agent trace, commands,
-  outputs, evaluation results, and result artifacts.
-- The **preparer** is the optional setup stage. It creates the initial state the
-  task requires before the AI agent starts, such as installed software,
-  application data, or intentional configuration drift.
-- The **evaluator** determines whether the resulting systems satisfy the task's
-  requirements. It inspects the live environment and runs relevant probes or
-  commands to collect evidence.
-- The **verifier** is Harbor's evaluation component. It coordinates the
-  evaluation process and converts the evaluator's findings into scores and
-  recorded results.
+- A **task** defines the scenario, environment, preparation, and checks.
+- A **job** is one recorded execution of a task.
+- The **preparer** creates the starting state before the agent runs.
+- The **evaluator** tests the resulting infrastructure and collects evidence.
+- The **verifier** turns that evidence into recorded results and scores.
 
-### From idea to published data
+### Workflow
 
 ```mermaid
 flowchart LR
-    A[Infrastructure idea] --> B[Task definition]
-    B --> C[Harbor]
-    C --> D[harbor-antrieb]
-    D --> E[Antrieb environment]
-    E --> F[AI agent operates systems]
-    F --> G[Evaluator collects evidence]
-    G --> H[Verifier produces scores]
-    H --> I[Job records trace and results]
-    I --> J[Validated dataset]
+    idea[Idea] --> task[Task]
+    task --> harbor[Harbor]
+    harbor <-->|provisions and connects| bridge[harbor-antrieb]
+    bridge --> antrieb[Antrieb]
+    antrieb --> agent[AI agent]
+    agent --> evaluate[Evaluate]
+    evaluate --> job[Job and trace]
+    job --> publish[Validated data]
 ```
 
-An infrastructure idea becomes a task with candidate instructions, an
-environment definition, optional preparation, and evaluation checks. Harbor
-uses `harbor-antrieb` to provision the disposable environment through Antrieb.
-The AI agent then operates the systems, while the evaluator tests the resulting
-state and the verifier records the evidence and scores. The complete job is
-finally validated, summarized, and published in the
+An idea becomes a task, Harbor runs it in an Antrieb environment, and the
+resulting job is evaluated, recorded, validated, and published in the
 [InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
