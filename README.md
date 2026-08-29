@@ -103,17 +103,6 @@ analysis tool to investigate:
 - Did the final change actually solve the problem?
 - What would a human SRE need to verify before applying the fix?
 
-## Contributing
-
-Contributions may include task definitions, environment configurations,
-preparation and evaluation code, execution traces, result artifacts, and
-accompanying analysis.
-
-InfraSet reviews the task and evaluator, validates submitted traces, reproduces
-executions when necessary, and calculates published metrics from the validated
-artifacts. Contributor-reported results remain provisional until this process
-is complete.
-
 ## How InfraSet Works
 
 ### Architecture
@@ -139,3 +128,14 @@ InfraSet combines three components:
 An idea becomes a task, Harbor runs it in an Antrieb environment, and the
 resulting job is evaluated, recorded, validated, and published in the
 [InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
+
+## Contributing
+
+Contributions may include task definitions, environment configurations,
+preparation and evaluation code, execution traces, result artifacts, and
+accompanying analysis.
+
+InfraSet reviews the task and evaluator, validates submitted traces, reproduces
+executions when necessary, and calculates published metrics from the validated
+artifacts. Contributor-reported results remain provisional until this process
+is complete.
