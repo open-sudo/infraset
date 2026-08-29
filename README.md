@@ -95,23 +95,13 @@ results are published in the [InfraSet Hugging Face dataset](https://huggingface
 which is the easiest place to browse or download them. Use your preferred
 analysis tool to investigate:
 
+- How are LLMs performing on version X of your distribution?
+- Which system components are most LLM-friendly?
 - What did the LLM try first?
 - Which assumptions were incorrect?
 - Where did it recover successfully?
 - Did the final change actually solve the problem?
 - What would a human SRE need to verify before applying the fix?
-
-For structured analysis, use the indexes in `data/`: `summary.jsonl` provides
-the task-level overview, `tasks.jsonl` describes task definitions, `jobs.jsonl`
-describes recorded jobs, and `evaluation-analysis.jsonl` gives concise
-explanations for incomplete or unsuccessful evaluations based on recorded
-evaluator evidence.
-
-Regenerate these indexes after adding or removing jobs:
-
-```bash
-uv run --with tomli python scripts/generate_hf_index.py
-```
 
 ## Contributing
 
