@@ -78,17 +78,7 @@ InfraSet combines three components:
 
 ### Workflow
 
-```mermaid
-flowchart LR
-    idea[Idea] --> task[Task]
-    task --> harbor[Harbor]
-    harbor <-->|provisions and connects| bridge[harbor-antrieb]
-    bridge --> antrieb[Antrieb]
-    antrieb --> agent[AI agent]
-    agent --> evaluate[Evaluate]
-    evaluate --> job[Job and trace]
-    job --> publish[Validated data]
-```
+![InfraSet workflow](docs/infraset-workflow.svg)
 
 An idea becomes a task, Harbor runs it in an Antrieb environment, and the
 resulting job is evaluated, recorded, validated, and published in the
