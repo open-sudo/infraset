@@ -9,51 +9,6 @@ InfraSet is an open dataset of executed infrastructure tasks and traces, created
 contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
 [the InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
-## How InfraSet Works
-
-InfraSet has three main pieces:
-
-- **Harbor** is the execution framework. It runs the AI agent, coordinates the
-  task lifecycle, records the agent trace, and runs the evaluator.
-- **Antrieb** provides disposable virtual machines, clusters, and networks for
-  each task execution.
-- **harbor-antrieb** is the bridge between Harbor and Antrieb. It lets Harbor
-  provision the required environment and gives the agent and evaluator managed
-  access to the systems through their node names.
-
-The main concepts are:
-
-- A **task** is a reusable infrastructure scenario. It contains the candidate
-  instructions, environment and topology definition, optional preparation, and
-  evaluation logic.
-- A **job** is one execution of a task. It records what happened during that
-  run, including the agent trace, commands, outputs, evaluation results, and
-  result artifacts.
-- The **preparer** is the optional setup stage. It creates the initial state the
-  task requires before the AI agent starts, such as installed software,
-  application data, or intentional configuration drift.
-- The **evaluator** determines whether the resulting systems satisfy the task's
-  requirements. It collects evidence by inspecting the live environment and
-  running relevant probes or commands.
-- The **verifier** is Harbor's evaluation component. It runs the task's
-  evaluation process, coordinates evidence collection, and converts the
-  evaluator's findings into scores and recorded results.
-
-The process from an idea to complete data is:
-
-1. An infrastructure scenario is turned into a task with candidate instructions,
-   an environment definition, any required preparation, and evaluation checks.
-2. Harbor uses `harbor-antrieb` to provision the task's disposable environment
-   through Antrieb.
-3. The AI agent receives the task and operates the systems through Harbor's
-   managed execution interface.
-4. The evaluator inspects the resulting systems, tests the required behavior,
-   and records evidence, scores, and any limitations.
-5. Harbor stores the complete execution data, including the agent trace,
-   commands, outputs, evaluator evidence, and result artifacts.
-6. The validated results are summarized and published in the
-   [InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
-
 This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/tree/main/jobs). `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials.
 
 `Operational hygiene` measures whether the evaluator found executor-created residue, abandoned files, conflicting services, unsafe exposure, or other unwanted changes. `100%` means all applicable hygiene checks passed; `0%` means none passed.
@@ -102,3 +57,57 @@ This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/
 | 40 | vault-raft-auto-unseal | ubuntu24.04 x4 | 3 | 1/3 | 0.75 | 50% | 0% | 1.1 sec | 18.5 min |
 | 41 | vyos-dual-lan-kubernetes | vyos + ubuntu24.04 x3 | 2 | 2/2 | 1.00 | 100% | 100% | 1.1 sec | 20.5 min |
 | 42 | wireguard-vyos-dual-lan | vyos x2 + ubuntu24.04 x2 | 2 | 0/2 | — | 86% | — | 1.3 sec | 11.8 min |
+
+## How InfraSet Works
+
+### The three-part architecture
+
+InfraSet has three main pieces:
+
+- **Harbor** is the execution framework. It runs the AI agent, coordinates the
+  task lifecycle, records the agent trace, and runs the evaluator.
+- **Antrieb** provides disposable virtual machines, clusters, and networks for
+  each task execution.
+- **harbor-antrieb** is the bridge between Harbor and Antrieb. It lets Harbor
+  provision the required environment and gives the agent and evaluator managed
+  access to the systems through their node names.
+
+### The building blocks
+
+- A **task** is a reusable infrastructure scenario. It contains the candidate
+  instructions, environment and topology definition, optional preparation, and
+  evaluation logic.
+- A **job** is one execution of a task. It records the agent trace, commands,
+  outputs, evaluation results, and result artifacts.
+- The **preparer** is the optional setup stage. It creates the initial state the
+  task requires before the AI agent starts, such as installed software,
+  application data, or intentional configuration drift.
+- The **evaluator** determines whether the resulting systems satisfy the task's
+  requirements. It inspects the live environment and runs relevant probes or
+  commands to collect evidence.
+- The **verifier** is Harbor's evaluation component. It coordinates the
+  evaluation process and converts the evaluator's findings into scores and
+  recorded results.
+
+### From idea to published data
+
+```mermaid
+flowchart LR
+    A[Infrastructure idea] --> B[Task definition]
+    B --> C[Harbor]
+    C --> D[harbor-antrieb]
+    D --> E[Antrieb environment]
+    E --> F[AI agent operates systems]
+    F --> G[Evaluator collects evidence]
+    G --> H[Verifier produces scores]
+    H --> I[Job records trace and results]
+    I --> J[Validated dataset]
+```
+
+An infrastructure idea becomes a task with candidate instructions, an
+environment definition, optional preparation, and evaluation checks. Harbor
+uses `harbor-antrieb` to provision the disposable environment through Antrieb.
+The AI agent then operates the systems, while the evaluator tests the resulting
+state and the verifier records the evidence and scores. The complete job is
+finally validated, summarized, and published in the
+[InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
