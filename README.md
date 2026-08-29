@@ -139,8 +139,9 @@ state before the resulting job is recorded, validated, and published in the
 
 ## Contributing
 
-Contributions may include task definitions, environment configurations,
-preparation and evaluation code, execution traces, result artifacts, and
+We warmly welcome contributions, including new operating systems, network
+topologies, clustered environments, brownfield scenarios, troubleshooting
+tasks, evaluation improvements, execution traces, result artifacts, and
 accompanying analysis.
 
 InfraSet reviews the task and verifier, validates submitted traces, reproduces
