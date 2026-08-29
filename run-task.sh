@@ -74,18 +74,18 @@ if [[ -n "${HARBOR_DIR:-}" ]]; then
       printf 'Harbor Antrieb provider does not exist: %s\n' "$INFRASET_PROVIDER_DIR" >&2
       exit 2
     fi
-    runner=(uv run --directory "$HARBOR_DIR" --with "$HARBOR_DIR" --with "$INFRASET_PROVIDER_DIR" harbor run)
+    runner=(uv run --isolated --directory "$HARBOR_DIR" --with-editable "$HARBOR_DIR" --with-editable "$INFRASET_PROVIDER_DIR" harbor run)
   else
-    runner=(uv run --directory "$HARBOR_DIR" --with "$HARBOR_DIR" --with "$provider_requirement" harbor run)
+    runner=(uv run --isolated --refresh-package harbor-antrieb --directory "$HARBOR_DIR" --with-editable "$HARBOR_DIR" --with "$provider_requirement" harbor run)
   fi
 elif [[ -n "${INFRASET_PROVIDER_DIR:-}" ]]; then
   if [[ ! -f "$INFRASET_PROVIDER_DIR/pyproject.toml" ]]; then
     printf 'Harbor Antrieb provider does not exist: %s\n' "$INFRASET_PROVIDER_DIR" >&2
     exit 2
   fi
-  runner=(uv run --no-project --with "$harbor_requirement" --with "$INFRASET_PROVIDER_DIR" harbor run)
+  runner=(uv run --isolated --no-project --refresh-package harbor --with "$harbor_requirement" --with-editable "$INFRASET_PROVIDER_DIR" harbor run)
 else
-  runner=(uv run --no-project --with "$harbor_requirement" --with "$provider_requirement" harbor run)
+  runner=(uv run --isolated --no-project --refresh-package harbor --refresh-package harbor-antrieb --with "$harbor_requirement" --with "$provider_requirement" harbor run)
 fi
 
 exec "${runner[@]}" \
