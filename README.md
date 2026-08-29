@@ -109,9 +109,12 @@ analysis tool to investigate:
 
 InfraSet combines three components:
 
-- **Harbor** runs the AI agent, records its trace, and coordinates evaluation.
-- **Antrieb** provides disposable VMs, clusters, and networks.
-- **harbor-antrieb** connects Harbor to Antrieb.
+- [**Harbor**](https://github.com/harbor-framework/harbor) runs the AI agent,
+  records its trace, and coordinates evaluation.
+- [**Antrieb**](https://antrieb.sh) provides disposable VMs, clusters, and
+  networks.
+- [**harbor-antrieb**](https://github.com/open-sudo/harbor-antrieb) connects
+  Harbor to Antrieb.
 
 ### Concepts
 
