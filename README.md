@@ -90,7 +90,7 @@ files. Run the generated task with:
 
 ## Exploring results
 
-Task definitions are in `tasks/`; execution results are in `jobs/`. The same
+Task definitions are in the [tasks directory](https://github.com/open-sudo/infraset/tree/main/tasks); execution results are in the [jobs directory](https://github.com/open-sudo/infraset/tree/main/jobs). The same
 results are published in the [InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset),
 which is the easiest place to browse or download them. Use your preferred
 analysis tool to investigate:
@@ -101,11 +101,11 @@ analysis tool to investigate:
 - Did the final change actually solve the problem?
 - What would a human SRE need to verify before applying the fix?
 
-For structured analysis, start with `data/trials.jsonl`. It contains one record
-per trial, including the task, environment, model, duration, provisioning time,
-evaluation metrics, and links to the full recorded result. The companion
-`data/evaluation-analysis.jsonl` gives a concise explanation for incomplete or
-unsuccessful evaluations based on the recorded evaluator evidence.
+For structured analysis, use the indexes in `data/`: `summary.jsonl` provides
+the task-level overview, `tasks.jsonl` describes task definitions, `jobs.jsonl`
+describes recorded jobs, and `evaluation-analysis.jsonl` gives concise
+explanations for incomplete or unsuccessful evaluations based on recorded
+evaluator evidence.
 
 Regenerate these indexes after adding or removing jobs:
 

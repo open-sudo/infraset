@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import re
 import sys
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -49,14 +48,6 @@ def parse_time(value: Any) -> datetime | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-
-
-def duration_seconds(start: Any, finish: Any) -> float | None:
-    begin = parse_time(start)
-    end = parse_time(finish)
-    if begin is None or end is None:
-        return None
-    return round((end - begin).total_seconds(), 3)
 
 
 def environment_for(task_path: Path) -> dict[str, Any]:
@@ -147,23 +138,6 @@ def dimension_analysis(report: dict[str, Any]) -> list[dict[str, Any]]:
     return analyses
 
 
-def provisioning_time_ms(trial_path: Path) -> int | None:
-    payload = load_json(trial_path.parent / "provision-response.json")
-    content = payload.get("content", [])
-    if not isinstance(content, list):
-        return None
-    for item in content:
-        if not isinstance(item, dict):
-            continue
-        try:
-            response = json.loads(item.get("text", ""))
-        except (TypeError, json.JSONDecodeError):
-            continue
-        if isinstance(response, dict) and isinstance(response.get("provision_time_ms"), (int, float)):
-            return int(response["provision_time_ms"])
-    return None
-
-
 def summary_records() -> list[dict[str, Any]]:
     path = ROOT / "results-summary.md"
     records = []
@@ -200,9 +174,7 @@ def summary_records() -> list[dict[str, Any]]:
 def main() -> int:
     task_map, tasks = task_records()
     jobs: dict[tuple[str, str], dict[str, Any]] = {}
-    trials: list[dict[str, Any]] = []
     analyses: list[dict[str, Any]] = []
-    task_trial_counts: defaultdict[str, int] = defaultdict(int)
 
     for result_path in sorted(JOBS.glob("*/*/*/result.json")):
         task_name = result_path.parts[-4]
@@ -210,48 +182,11 @@ def main() -> int:
         trial_name = result_path.parts[-2]
         result = load_json(result_path)
         task = task_map.get(task_name, {})
-        rewards = ((result.get("verifier_result") or {}).get("rewards") or {})
         report_path = result_path.parent / "verifier" / "evaluation-report.json"
         report = load_json(report_path)
         exception = result.get("exception_info") or {}
         if not isinstance(exception, dict):
             exception = {"message": str(exception)}
-        metrics = {
-            key: rewards.get(key)
-            for key in (
-                "reward",
-                "evaluation_coverage",
-                "evaluation_complete",
-                "functionality",
-                "operational_hygiene",
-                "publication_eligible",
-            )
-            if key in rewards
-        }
-        trial = {
-            "task_name": task_name,
-            "category": task.get("category"),
-            "job_name": job_name,
-            "trial_name": trial_name,
-            "started_at": result.get("started_at"),
-            "finished_at": result.get("finished_at"),
-            "duration_seconds": duration_seconds(result.get("started_at"), result.get("finished_at")),
-            "provisioning_time_ms": provisioning_time_ms(result_path),
-            "model": ((result.get("agent_info") or {}).get("model_info") or {}).get("name"),
-            "model_provider": ((result.get("agent_info") or {}).get("model_info") or {}).get("provider"),
-            "reward": metrics.get("reward"),
-            "evaluation_coverage": metrics.get("evaluation_coverage"),
-            "evaluation_complete": metrics.get("evaluation_complete"),
-            "functionality": metrics.get("functionality"),
-            "operational_hygiene": metrics.get("operational_hygiene"),
-            "publication_eligible": metrics.get("publication_eligible"),
-            "result_path": str(result_path.relative_to(ROOT)),
-            "instruction_path": task.get("instruction_path"),
-            "environment_file": task.get("environment_file"),
-            "environment_cluster": task.get("environment_cluster", []),
-        }
-        trials.append(trial)
-        task_trial_counts[task_name] += 1
         key = (task_name, job_name)
         jobs.setdefault(
             key,
@@ -295,7 +230,6 @@ def main() -> int:
         "summary.jsonl": summary_records(),
         "tasks.jsonl": tasks,
         "jobs.jsonl": sorted(jobs.values(), key=lambda item: (item["task_name"], item["job_name"])),
-        "trials.jsonl": sorted(trials, key=lambda item: (item["task_name"], item["job_name"], item["trial_name"])),
         "evaluation-analysis.jsonl": sorted(analyses, key=lambda item: (item["task_name"], item["job_name"], item["trial_name"])),
     }
     for filename, records in outputs.items():
@@ -304,7 +238,7 @@ def main() -> int:
             for record in records:
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
         print(f"wrote {len(records):4d} records to {path.relative_to(ROOT)}")
-    print(f"indexed {len(task_map)} tasks and {len(trials)} trials")
+    print(f"indexed {len(task_map)} tasks, {len(jobs)} jobs, and {len(analyses)} evaluations")
     return 0
 
 
