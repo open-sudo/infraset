@@ -4,12 +4,25 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 provider_requirement="${INFRASET_PROVIDER_REQUIREMENT:-harbor-antrieb @ git+https://github.com/open-sudo/harbor-antrieb.git}"
+harbor_requirement="${HARBOR_REQUIREMENT:-harbor @ git+https://github.com/open-sudo/harbor.git}"
 model="${INFRASET_MODEL:-gpt-5.6-sol}"
 reasoning_effort="${INFRASET_REASONING_EFFORT:-max}"
 service_tier="${INFRASET_SERVICE_TIER:-fast}"
 agent_name="${INFRASET_AGENT_NAME:-codex}"
 verification_level="${INFRASET_VERIFICATION_LEVEL:-5}"
 jobs_root="${INFRASET_JOBS_DIR:-$script_dir/jobs}"
+
+# Development checkouts are authoritative when Harbor, the provider, and this
+# runner are cloned next to one another. This keeps local task runs on the same
+# coordinated revisions instead of silently mixing GitHub and PyPI releases.
+workspace_dir="$(dirname "$script_dir")"
+if [[ -z "${HARBOR_DIR:-}" \
+  && -z "${INFRASET_PROVIDER_DIR:-}" \
+  && -f "$workspace_dir/harbor/pyproject.toml" \
+  && -f "$workspace_dir/harbor-antrieb/pyproject.toml" ]]; then
+  HARBOR_DIR="$workspace_dir/harbor"
+  INFRASET_PROVIDER_DIR="$workspace_dir/harbor-antrieb"
+fi
 
 if [[ $# -ne 1 ]]; then
   printf 'Usage: %s /path/to/harbor_antrieb/task\n' "$0" >&2
@@ -70,9 +83,9 @@ elif [[ -n "${INFRASET_PROVIDER_DIR:-}" ]]; then
     printf 'Harbor Antrieb provider does not exist: %s\n' "$INFRASET_PROVIDER_DIR" >&2
     exit 2
   fi
-  runner=(uv run --no-project --with "$INFRASET_PROVIDER_DIR" harbor run)
+  runner=(uv run --no-project --with "$harbor_requirement" --with "$INFRASET_PROVIDER_DIR" harbor run)
 else
-  runner=(uv run --no-project --with "$provider_requirement" harbor run)
+  runner=(uv run --no-project --with "$harbor_requirement" --with "$provider_requirement" harbor run)
 fi
 
 exec "${runner[@]}" \
@@ -96,5 +109,5 @@ exec "${runner[@]}" \
   --verifier-kwarg service_tier="$service_tier" \
   --verifier-kwarg level="$verification_level" \
   --verifier-kwarg minimum_coverage=1.0 \
-  --n-attempts 1 \
+  --n-attempts 3 \
   --n-concurrent 1
