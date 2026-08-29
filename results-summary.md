@@ -5,7 +5,7 @@ Yet there is little public empirical data showing what happens when LLMs operate
 greenfield, brownfield, end-of-life, or distributed environments. Perhaps LLMs perform remarkably well. Perhaps
 they fail in subtle ways. We do not yet have enough evidence to know either way.
 
-InfraSet is a dataset of executed infrastructure tasks and traces, created to build that evidence. It currently
+InfraSet is an open dataset of executed infrastructure tasks and traces, created to build that evidence. It currently
 contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
 [the InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
