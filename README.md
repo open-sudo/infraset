@@ -105,6 +105,11 @@ analysis tool to investigate:
 
 ## Contributing
 
-Contributions are welcome, including new operating systems, network topologies,
-clustered environments, brownfield scenarios, troubleshooting tasks, evaluation
-improvements, and analysis of existing execution traces.
+Contributions may include task definitions, environment configurations,
+preparation and evaluation code, execution traces, result artifacts, and
+accompanying analysis.
+
+InfraSet reviews the task and evaluator, validates submitted traces, reproduces
+executions when necessary, and calculates published metrics from the validated
+artifacts. Contributor-reported results remain provisional until this process
+is complete.
