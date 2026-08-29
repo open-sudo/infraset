@@ -146,5 +146,4 @@ accompanying analysis.
 
 InfraSet reviews the task and verifier, validates submitted traces, reproduces
 executions when necessary, and calculates published metrics from the validated
-artifacts. Contributor-reported results remain provisional until this process
-is complete.
+artifacts.
