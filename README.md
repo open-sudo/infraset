@@ -41,9 +41,9 @@ Published runs include the observable, redacted agent trajectory:
 - Agent messages and tool calls
 - Commands, output, and errors
 - Failed and recovery attempts
-- Final response and evaluator result
+- Final response and verifier result
 
-Each task is evaluated against the resulting infrastructure state, not merely the
+Each task is verified against the resulting infrastructure state, not merely the
 LLM's final answer. Browse and download the published traces from the
 [InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset).
 
@@ -109,8 +109,8 @@ analysis tool to investigate:
 
 InfraSet combines three components:
 
-- [**Harbor**](https://github.com/harbor-framework/harbor) runs the AI agent,
-  records its trace, and coordinates evaluation.
+- [**Harbor**](https://github.com/harbor-framework/harbor) provides the
+  execution framework and records the agent trace.
 - [**Antrieb**](https://antrieb.sh) provides disposable VMs, clusters, and
   networks.
 - [**harbor-antrieb**](https://github.com/open-sudo/harbor-antrieb) connects
@@ -118,18 +118,23 @@ InfraSet combines three components:
 
 ### Concepts
 
-- A **task** defines the scenario, environment, preparation, and checks.
+- A **task** defines the scenario, environment, preparation, and verification
+  checks.
 - A **job** is one recorded execution of a task.
-- The **preparer** creates the starting state before the agent runs.
-- The **evaluator** tests the resulting infrastructure and collects evidence.
-- The **verifier** turns that evidence into recorded results and scores.
+- The **preparer** creates the starting state, including brownfield data or
+  configuration drift.
+- The **executor** runs the task and coordinates Harbor, Antrieb, and the AI
+  agent.
+- The **verifier** evaluates the final infrastructure state and produces the
+  recorded result and score.
 
 ### Workflow
 
 ![InfraSet workflow](docs/infraset-workflow.svg)
 
-An idea becomes a task, Harbor runs it in an Antrieb environment, and the
-resulting job is evaluated, recorded, validated, and published in the
+An idea becomes a task, the preparer creates its starting state, and the
+executor runs it in an Antrieb environment. The verifier evaluates the final
+state before the resulting job is recorded, validated, and published in the
 [InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
 ## Contributing
@@ -138,7 +143,7 @@ Contributions may include task definitions, environment configurations,
 preparation and evaluation code, execution traces, result artifacts, and
 accompanying analysis.
 
-InfraSet reviews the task and evaluator, validates submitted traces, reproduces
+InfraSet reviews the task and verifier, validates submitted traces, reproduces
 executions when necessary, and calculates published metrics from the validated
 artifacts. Contributor-reported results remain provisional until this process
 is complete.

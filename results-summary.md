@@ -11,7 +11,7 @@ contains 42 tasks, and we hope the community will join us and help expand it. Re
 
 This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/tree/main/jobs). `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials.
 
-`Operational hygiene` measures whether the evaluator found executor-created residue, abandoned files, conflicting services, unsafe exposure, or other unwanted changes. `100%` means all applicable hygiene checks passed; `0%` means none passed.
+`Operational hygiene` measures whether the verifier found executor-created residue, abandoned files, conflicting services, unsafe exposure, or other unwanted changes. `100%` means all applicable hygiene checks passed; `0%` means none passed.
 
 | # | Task | Environment | Runs | Full passes | Best score | Evaluation coverage | Operational hygiene | Provisioning time | Mean duration |
 |---:|---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -64,8 +64,8 @@ This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/
 
 InfraSet combines three components:
 
-- [**Harbor**](https://github.com/harbor-framework/harbor) runs the AI agent,
-  records its trace, and coordinates evaluation.
+- [**Harbor**](https://github.com/harbor-framework/harbor) provides the
+  execution framework and records the agent trace.
 - [**Antrieb**](https://antrieb.sh) provides disposable VMs, clusters, and
   networks.
 - [**harbor-antrieb**](https://github.com/open-sudo/harbor-antrieb) connects
@@ -73,16 +73,21 @@ InfraSet combines three components:
 
 ### Concepts
 
-- A **task** defines the scenario, environment, preparation, and checks.
+- A **task** defines the scenario, environment, preparation, and verification
+  checks.
 - A **job** is one recorded execution of a task.
-- The **preparer** creates the starting state before the agent runs.
-- The **evaluator** tests the resulting infrastructure and collects evidence.
-- The **verifier** turns that evidence into recorded results and scores.
+- The **preparer** creates the starting state, including brownfield data or
+  configuration drift.
+- The **executor** runs the task and coordinates Harbor, Antrieb, and the AI
+  agent.
+- The **verifier** evaluates the final infrastructure state and produces the
+  recorded result and score.
 
 ### Workflow
 
 ![InfraSet workflow](docs/infraset-workflow.svg)
 
-An idea becomes a task, Harbor runs it in an Antrieb environment, and the
-resulting job is evaluated, recorded, validated, and published in the
+An idea becomes a task, the preparer creates its starting state, and the
+executor runs it in an Antrieb environment. The verifier evaluates the final
+state before the resulting job is recorded, validated, and published in the
 [InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
