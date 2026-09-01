@@ -117,13 +117,10 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
     exceptions = 0
     execution_durations: list[float] = []
     provisioning: list[float] = []
-    analysis = ""
-    lowest_reward = 2.0
 
     for directory, result in trials:
         rewards = result.get("verifier_result", {}).get("rewards", {})
         rewards = rewards if isinstance(rewards, dict) else {}
-        reward = metric(rewards, "reward")
         for name in (
             "reward",
             "confidence",
@@ -152,20 +149,6 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
             provisioning.append(provisioned)
 
         report = read_json(directory / "verifier" / "evaluation-report.json") or {}
-        if reward < lowest_reward and reward < 1.0:
-            summary = report.get("overall_summary")
-            if isinstance(summary, str) and summary.strip():
-                analysis = summary.strip()
-            else:
-                exception = result.get("exception_info", {})
-                exception = exception if isinstance(exception, dict) else {}
-                exception_type = exception.get("exception_type")
-                analysis = (
-                    f"The trial ended with {exception_type}."
-                    if isinstance(exception_type, str)
-                    else "The recorded evidence did not support a full outcome."
-                )
-            lowest_reward = reward
         command_stats = report.get("command_stats", {})
         command_stats = command_stats if isinstance(command_stats, dict) else {}
         successful_commands += int(command_stats.get("successful", 0) or 0)
@@ -180,7 +163,6 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
         **{name: mean(values) for name, values in metrics.items()},
         "provisioning_seconds": mean(provisioning) / 1000,
         "execution_seconds": mean(execution_durations),
-        "analysis": analysis,
     }
 
 
@@ -205,8 +187,8 @@ def read_intro() -> str:
 
 def summary_table(values: list[dict[str, Any]]) -> str:
     lines = [
-        "| Task | Environment | Trials | Exceptions | Commands | Reward | Confidence | Evaluation complete | Coverage | Functionality | Hygiene | Publishable | Provisioning time | Execution time | Analysis |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| Task | Environment | Trials | Exceptions | Commands | Reward | Confidence | Evaluation complete | Coverage | Functionality | Hygiene | Publishable | Provisioning time | Execution time |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for record in values:
         lines.append(
@@ -215,10 +197,9 @@ def summary_table(values: list[dict[str, Any]]) -> str:
             "{reward:.3f} | {confidence:.3f} | {evaluation_complete:.3f} | "
             "{evaluation_coverage:.3f} | {functionality:.3f} | "
             "{operational_hygiene:.3f} | {publication_eligible:.3f} | "
-            "{provisioning_seconds:.2f}s | {execution_time} | {analysis_text} |".format(
+            "{provisioning_seconds:.2f}s | {execution_time} |".format(
                 **record,
                 execution_time=format_duration(record["execution_seconds"]),
-                analysis_text=(record["analysis"] or "—").replace("|", "\\|"),
             )
         )
     return "\n".join(lines)

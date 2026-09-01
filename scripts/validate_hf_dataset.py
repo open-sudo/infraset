@@ -30,7 +30,6 @@ SUMMARY_KEYS = {
     "publication_eligible",
     "provisioning_seconds",
     "execution_seconds",
-    "analysis",
 }
 COLLECTOR_KEYS = {
     "task",
