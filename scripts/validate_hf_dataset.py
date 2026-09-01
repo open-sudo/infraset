@@ -25,7 +25,6 @@ SUMMARY_KEYS = {
     "evaluation_coverage",
     "functionality",
     "operational_hygiene",
-    "publication_eligible",
     "provisioning_seconds",
     "execution_seconds",
 }

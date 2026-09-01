@@ -126,7 +126,6 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
             "evaluation_coverage",
             "functionality",
             "operational_hygiene",
-            "publication_eligible",
         ):
             metrics[name].append(metric(rewards, name))
 
@@ -181,8 +180,8 @@ def read_intro() -> str:
 
 def summary_table(values: list[dict[str, Any]]) -> str:
     lines = [
-        "| Task | Environment | Trials | Commands | Reward | Evaluation complete | Coverage | Functionality | Hygiene | Publishable | Provisioning time | Execution time |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Task | Environment | Trials | Commands | Reward | Evaluation complete | Coverage | Functionality | Hygiene | Provisioning time | Execution time |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for record in values:
         lines.append(
@@ -190,7 +189,7 @@ def summary_table(values: list[dict[str, Any]]) -> str:
             "{commands} | "
             "{reward:.3f} | {evaluation_complete:.3f} | "
             "{evaluation_coverage:.3f} | {functionality:.3f} | "
-            "{operational_hygiene:.3f} | {publication_eligible:.3f} | "
+            "{operational_hygiene:.3f} | "
             "{provisioning_seconds:.2f}s | {execution_time} |".format(
                 **record,
                 execution_time=format_duration(record["execution_seconds"]),
