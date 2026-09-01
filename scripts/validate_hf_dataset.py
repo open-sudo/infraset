@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,7 @@ SUMMARY_KEYS = {
     "environment",
     "trials",
     "exceptions",
-    "commands_successful",
-    "commands_failed",
-    "commands_indeterminate",
+    "commands",
     "reward",
     "confidence",
     "evaluation_complete",
@@ -30,7 +29,7 @@ SUMMARY_KEYS = {
     "operational_hygiene",
     "publication_eligible",
     "provisioning_seconds",
-    "duration_seconds",
+    "execution_seconds",
     "analysis",
 }
 COLLECTOR_KEYS = {
@@ -98,6 +97,17 @@ def main() -> int:
     collector = rows(COLLECTOR, COLLECTOR_KEYS)
     validate_column_types(SUMMARY, summary)
     validate_column_types(COLLECTOR, collector)
+
+    invalid_commands = [
+        row["commands"]
+        for row in summary
+        if not isinstance(row["commands"], str)
+        or re.fullmatch(r"\d+/\d+", row["commands"]) is None
+    ]
+    if invalid_commands:
+        raise ValueError(
+            "execution-summary commands must use successful/failed integer pairs"
+        )
 
     summary_tasks = [str(row["task"]) for row in summary]
     if len(summary_tasks) != len(set(summary_tasks)):

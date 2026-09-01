@@ -114,9 +114,8 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
     metrics: dict[str, list[float]] = defaultdict(list)
     successful_commands = 0
     failed_commands = 0
-    indeterminate_commands = 0
     exceptions = 0
-    durations: list[float] = []
+    execution_durations: list[float] = []
     provisioning: list[float] = []
     analysis = ""
     lowest_reward = 2.0
@@ -139,10 +138,14 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
         if result.get("exception_info") is not None:
             exceptions += 1
 
-        started = timestamp(result.get("started_at"))
-        finished = timestamp(result.get("finished_at"))
+        agent_execution = result.get("agent_execution", {})
+        agent_execution = (
+            agent_execution if isinstance(agent_execution, dict) else {}
+        )
+        started = timestamp(agent_execution.get("started_at"))
+        finished = timestamp(agent_execution.get("finished_at"))
         if started is not None and finished is not None:
-            durations.append((finished - started).total_seconds())
+            execution_durations.append((finished - started).total_seconds())
 
         provisioned = provision_time_ms(directory)
         if provisioned is not None:
@@ -167,19 +170,16 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
         command_stats = command_stats if isinstance(command_stats, dict) else {}
         successful_commands += int(command_stats.get("successful", 0) or 0)
         failed_commands += int(command_stats.get("failed", 0) or 0)
-        indeterminate_commands += int(command_stats.get("indeterminate", 0) or 0)
 
     return {
         "task": task_dir.name,
         "environment": environment(jobs[-1]),
         "trials": len(trials),
         "exceptions": exceptions,
-        "commands_successful": successful_commands,
-        "commands_failed": failed_commands,
-        "commands_indeterminate": indeterminate_commands,
+        "commands": f"{successful_commands}/{failed_commands}",
         **{name: mean(values) for name, values in metrics.items()},
         "provisioning_seconds": mean(provisioning) / 1000,
-        "duration_seconds": mean(durations),
+        "execution_seconds": mean(execution_durations),
         "analysis": analysis,
     }
 
@@ -205,19 +205,19 @@ def read_intro() -> str:
 
 def summary_table(values: list[dict[str, Any]]) -> str:
     lines = [
-        "| Task | Environment | Trials | Exceptions | Commands successful | Commands failed | Commands indeterminate | Reward | Confidence | Evaluation complete | Coverage | Functionality | Hygiene | Publishable | Provisioning | Mean duration | Analysis |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| Task | Environment | Trials | Exceptions | Commands | Reward | Confidence | Evaluation complete | Coverage | Functionality | Hygiene | Publishable | Provisioning time | Execution time | Analysis |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for record in values:
         lines.append(
             "| {task} | {environment} | {trials} | {exceptions} | "
-            "{commands_successful} | {commands_failed} | {commands_indeterminate} | "
+            "{commands} | "
             "{reward:.3f} | {confidence:.3f} | {evaluation_complete:.3f} | "
             "{evaluation_coverage:.3f} | {functionality:.3f} | "
             "{operational_hygiene:.3f} | {publication_eligible:.3f} | "
-            "{provisioning_seconds:.2f}s | {duration} | {analysis_text} |".format(
+            "{provisioning_seconds:.2f}s | {execution_time} | {analysis_text} |".format(
                 **record,
-                duration=format_duration(record["duration_seconds"]),
+                execution_time=format_duration(record["execution_seconds"]),
                 analysis_text=(record["analysis"] or "—").replace("|", "\\|"),
             )
         )
@@ -227,18 +227,17 @@ def summary_table(values: list[dict[str, Any]]) -> str:
 def main() -> int:
     values = records()
     trials = sum(record["trials"] for record in values)
-    successful = sum(record["commands_successful"] for record in values)
-    failed = sum(record["commands_failed"] for record in values)
-    indeterminate = sum(record["commands_indeterminate"] for record in values)
+    successful = sum(int(record["commands"].split("/", 1)[0]) for record in values)
+    failed = sum(int(record["commands"].split("/", 1)[1]) for record in values)
     content = f"""{read_intro()}
 
 ## Execution summary
 
-This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/tree/main/jobs). Metrics are averages across recorded trials. Command counts come from the provider-captured executor audit. A failed command records an unsuccessful attempt; it does not by itself mean that the final task outcome failed.
+This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/tree/main/jobs). Metrics and times are averages across recorded trials. `Commands` reports successful/failed executor commands from the provider-captured audit. Unfinished or indeterminate command records are excluded from both values. A failed command records an unsuccessful attempt; it does not by itself mean that the final task outcome failed.
 
 `Reward` measures the supported outcome, while `Confidence` reflects the completeness and quality of its evidence. `Operational hygiene` measures attributable residue or unrelated regression found by applicable global checks. A hygiene score of `1.000` means all applicable checks passed; `0.000` means none passed.
 
-The current dataset contains {len(values)} tasks, {trials} trials, and {successful + failed + indeterminate} recorded executor commands: {successful} successful, {failed} failed, and {indeterminate} indeterminate.
+The current dataset contains {len(values)} tasks, {trials} trials, and {successful + failed} completed executor commands: {successful} successful and {failed} failed.
 
 {summary_table(values)}
 """
