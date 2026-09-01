@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -50,7 +51,11 @@ def environment(job_dir: Path) -> str:
         return "—"
     if not isinstance(value, list):
         return "—"
-    clusters = [str(item) for item in value]
+    clusters = []
+    for item in value:
+        label = str(item)
+        match = re.fullmatch(r"(.+?)\s+x(\d+)", label)
+        clusters.append(f"{match.group(2)} {match.group(1)}" if match else label)
     return " + ".join(clusters) if clusters else "—"
 
 
