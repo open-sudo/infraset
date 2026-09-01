@@ -155,7 +155,6 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
     return {
         "task": task_dir.name,
         "environment": environment(jobs[-1]),
-        "trials": len(trials),
         "commands": f"{successful_commands}/{failed_commands}",
         **{name: mean(values) for name, values in metrics.items()},
         "provisioning_seconds": mean(provisioning) / 1000,
@@ -184,12 +183,12 @@ def read_intro() -> str:
 
 def summary_table(values: list[dict[str, Any]]) -> str:
     lines = [
-        "| Task | Environment | Trials | Commands | Reward | Coverage | Functionality | Hygiene | Provisioning time | Execution time |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Task | Environment | Commands | Reward | Coverage | Functionality | Hygiene | Provisioning time | Execution time |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for record in values:
         lines.append(
-            "| {task} | {environment} | {trials} | "
+            "| {task} | {environment} | "
             "{commands} | "
             "{reward:.3f} | {evaluation_coverage:.3f} | {functionality:.3f} | "
             "{operational_hygiene:.3f} | "
@@ -203,7 +202,6 @@ def summary_table(values: list[dict[str, Any]]) -> str:
 
 def main() -> int:
     values = records()
-    trials = sum(record["trials"] for record in values)
     successful = sum(int(record["commands"].split("/", 1)[0]) for record in values)
     failed = sum(int(record["commands"].split("/", 1)[1]) for record in values)
     content = f"""{read_intro()}
@@ -214,7 +212,7 @@ This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/
 
 `Reward` measures the supported outcome. `Operational hygiene` measures attributable residue or unrelated regression found by applicable global checks. A hygiene score of `1.000` means all applicable checks passed; `0.000` means none passed.
 
-The current dataset contains {len(values)} tasks, {trials} trials, and {successful + failed} completed executor commands: {successful} successful and {failed} failed.
+The current dataset contains {len(values)} tasks and {successful + failed} completed executor commands: {successful} successful and {failed} failed.
 
 {summary_table(values)}
 """

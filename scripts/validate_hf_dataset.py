@@ -18,7 +18,6 @@ DEFAULT_CARD = Path("/tmp/infraset-hf-card.md")
 SUMMARY_KEYS = {
     "task",
     "environment",
-    "trials",
     "commands",
     "reward",
     "evaluation_coverage",
