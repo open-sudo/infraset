@@ -122,7 +122,6 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
         rewards = rewards if isinstance(rewards, dict) else {}
         for name in (
             "reward",
-            "evaluation_complete",
             "evaluation_coverage",
             "functionality",
             "operational_hygiene",
@@ -180,15 +179,14 @@ def read_intro() -> str:
 
 def summary_table(values: list[dict[str, Any]]) -> str:
     lines = [
-        "| Task | Environment | Trials | Commands | Reward | Evaluation complete | Coverage | Functionality | Hygiene | Provisioning time | Execution time |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Task | Environment | Trials | Commands | Reward | Coverage | Functionality | Hygiene | Provisioning time | Execution time |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for record in values:
         lines.append(
             "| {task} | {environment} | {trials} | "
             "{commands} | "
-            "{reward:.3f} | {evaluation_complete:.3f} | "
-            "{evaluation_coverage:.3f} | {functionality:.3f} | "
+            "{reward:.3f} | {evaluation_coverage:.3f} | {functionality:.3f} | "
             "{operational_hygiene:.3f} | "
             "{provisioning_seconds:.2f}s | {execution_time} |".format(
                 **record,

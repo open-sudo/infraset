@@ -21,7 +21,6 @@ SUMMARY_KEYS = {
     "trials",
     "commands",
     "reward",
-    "evaluation_complete",
     "evaluation_coverage",
     "functionality",
     "operational_hygiene",
