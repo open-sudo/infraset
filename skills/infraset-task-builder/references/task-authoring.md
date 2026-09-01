@@ -1,78 +1,118 @@
-# Candidate Task Authoring
+# Workplace Task Authoring
+
+## Contents
+
+- Goal
+- Public requirements
+- Professional expectations
+- Evidence-ready outcomes
+- Excluded content
+- Fair scoring boundary
+- Self-review
+- Example
 
 ## Goal
 
-Write a concise performance-based certification task. Measure whether the executor
-can administer infrastructure, not whether it can translate a supplied recipe into
-commands.
+Write an infrastructure request as a human operator, manager, or customer would
+assign it. InfraSet measures how an LLM handles human requests on real systems; it
+does not measure translation of a supplied acceptance checklist into commands.
 
-## State publicly
+Avoid over-contracting. State the job and the facts a human would actually supply.
+The verifier scores the public problem using executor-collected evidence, topology,
+preparation baselines, and universal static observations. There is no private list of
+task-specific acceptance commands.
 
-- Required operational end state.
-- Node topology and service roles.
+## Public requirements
+
+Include:
+
+- The requested operational outcome.
+- The systems and roles a human would identify.
 - Exact identities, names, ports, paths, protocols, content, and data when they are
-  genuine product requirements.
-- Intended clients or access boundary when reachability matters.
-- Availability or failure-tolerance outcome when it is part of the service contract.
-- Explicit persistence: the configuration and service must remain operational after
-  reboot.
+  genuine business requirements.
+- The intended client or access boundary when reachability matters.
+- Unusual availability, migration, compatibility, or preservation behavior when it
+  materially defines the request.
 
-Use short positive requirements. Describe what must be true, not how to make it true.
+Use concise ordinary language. Describe what the human wants, not how to implement
+or verify it. Include a constraint only when it distinguishes this scenario from
+competent normal administration or materially changes the requested outcome.
 
-## Leave implicit
+Refer to managed systems as `node1`, `node2`, and so on. These are stable task-facing
+selectors, not promises about hostnames or internal DNS. Never include literal IP
+addresses; transient addresses are discovered at execution time.
 
-A competent administrator must independently handle:
+## Professional expectations
+
+A competent administrator normally handles:
 
 - Distribution-appropriate packages, repositories, and service management.
-- Boot enablement and persistent configuration.
-- SELinux, AppArmor, firewalld, UFW, or the platform's applicable controls.
+- Boot enablement and persistence.
+- Applicable SELinux, AppArmor, firewall, and host-security controls.
 - Authentication, authorization, ownership, permissions, and least privilege.
-- Necessary network exposure and removal of unintended listeners.
+- Necessary exposure and removal of unintended listeners.
 - Validation, troubleshooting, safe recovery, and cleanup.
 - Preservation of unrelated state.
 
-Do not turn these expectations into candidate instructions. Test them privately.
+Do not restate all of these as task requirements. The global verifier may consider
+documented platform invariants and universal hygiene observations. An implicit
+professional expectation may affect hygiene or confidence, but it must not smuggle
+an arbitrary business value into the score.
 
-## Exclude from the public task
+## Evidence-ready outcomes
+
+Write requirements whose effects can be demonstrated through normal final validation
+by the executor. Good evidence comes from service clients, effective configuration,
+service managers, protocol responses, data queries, and other externally observable
+state. Do not force a particular proof command or implementation representation.
+
+The executor is globally instructed to collect evidence after completing the work.
+Do not add evidence-collection instructions to `instruction.md`.
+
+For brownfield preservation requirements, ensure preparation records the exact facts
+needed for a fair before-and-after comparison. If a fact cannot be reconstructed from
+the public task, live environment, or baseline, leave it unscored rather than hiding
+it from the executor.
+
+## Excluded content
 
 - Commands, procedural steps, package-manager instructions, and verification recipes.
-- Implementation-specific configuration directives unless the implementation itself
-  is the requested product requirement.
+- Implementation-specific directives unless that implementation is itself required.
 - Lists of prohibited actions or cleanup hints.
-- Harbor, InfraSet, Antrieb, MCP, credentials, lifecycle, or evaluator mechanics.
-- Details copied from private checks.
+- Harbor, InfraSet, Antrieb, MCP, evidence IDs, credentials, lifecycle, or scoring
+  mechanics.
+- Values introduced only to make evaluation convenient.
 
-The shared executor prompt and restricted bridge enforce harness boundaries. They do
-not belong in `instruction.md`.
+## Fair scoring boundary
 
-## Fair hiddenness
+Every task-specific fact that can affect functionality must be traceable to the
+public request, topology, or preparation baseline. The global verifier may additionally
+apply documented platform invariants and baseline-relative hygiene checks.
 
-Hide professional implications, not arbitrary business requirements.
+It is fair to expect an administrator to preserve enforcing SELinux on a RHEL system,
+enable a requested persistent service, avoid unrelated failed units, and clean up its
+own troubleshooting residue. It is not fair to require a hidden database name,
+username, address, algorithm, mount point, or serialization choice.
 
-It is fair to require an administrator to infer that a nonstandard HTTP port needs an
-SELinux label, an effective firewall rule, boot enablement, safe permissions, and no
-unnecessary default listener. It is not fair to secretly require a particular
-database name, username, network, algorithm, or mount point unless the public outcome
-defines it.
-
-State failure behavior when it changes the promised service. For example, a
-load-balanced service that must remain available after one backend fails needs that
-availability outcome in the task. Recovery mechanics and secure implementation can
-remain private checks.
+Real workplace requests can be incomplete. Let the executor discover facts that a
+human would discover from the systems. State facts that require a business decision,
+or leave the corresponding outcome indeterminate and unscored.
 
 ## Self-review
 
-Before finalizing `instruction.md`, confirm:
+Confirm that:
 
-1. A candidate cannot pass merely by copying implementation bullets into commands.
-2. Multiple secure implementations can satisfy the wording.
-3. Every exact value in the prompt affects an observable business outcome.
-4. Every hidden requirement is either normal platform competence or publicly implied
-   by the requested outcome.
-5. Persistence is explicit.
-6. The text contains no harness instructions or prohibition list.
+1. The text sounds like a plausible human request.
+2. It states the job rather than an acceptance checklist.
+3. Multiple competent and secure implementations can satisfy it.
+4. Every exact value affects a real observable outcome.
+5. Every task-specific scored fact is public or baseline-backed.
+6. The outcome can be demonstrated without assuming a private implementation shape.
+7. Brownfield preservation claims have sufficient baseline evidence.
+8. The text contains no harness or evidence-collection instructions.
+9. It uses node selectors rather than literal IP addresses.
 
-## Example abstraction
+## Example
 
 Too procedural:
 
@@ -81,6 +121,5 @@ Too procedural:
 
 Appropriate:
 
-> Configure the distribution-supported Nginx service on node1 and node2. Each node
-> must provide a successful HTTP response at `/` over TCP port 6700. The configuration
-> and service must remain operational after both nodes are rebooted.
+> Configure Nginx on node1 and node2 to serve the application at `/` over TCP port
+> 6700.

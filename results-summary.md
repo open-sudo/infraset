@@ -5,55 +5,59 @@ Yet there is little public empirical data showing what happens when LLMs operate
 greenfield, brownfield, end-of-life, or distributed environments. Perhaps LLMs perform remarkably well. Perhaps
 they fail in subtle ways. We do not yet have enough evidence to know either way.
 
-InfraSet is an open dataset of executed infrastructure tasks and traces, created to build that evidence. It currently
+InfraSet is a dataset of executed infrastructure tasks and traces, created to build that evidence. It currently
 contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
 [the InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
-This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/tree/main/jobs). `Full passes` counts trials with complete evaluation coverage and successful functional behavior. `Evaluation coverage` and `Operational hygiene` are per-trial averages. `Best score` is the highest per-trial reward; `Provisioning time` and `Mean duration` are averages across recorded trials.
+## Execution summary
 
-`Operational hygiene` measures whether the verifier found executor-created residue, abandoned files, conflicting services, unsafe exposure, or other unwanted changes. `100%` means all applicable hygiene checks passed; `0%` means none passed.
+This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/tree/main/jobs). Metrics are averages across recorded trials. Command counts come from the provider-captured executor audit. A failed command records an unsuccessful attempt; it does not by itself mean that the final task outcome failed.
 
-| # | Task | Environment | Runs | Full passes | Best score | Evaluation coverage | Operational hygiene | Provisioning time | Mean duration |
-|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
-| 1 | disk-full-recovery-centos-stream10 | centos-stream10 | 1 | 1/1 | 1.00 | 100% | 100% | 1.0 sec | 8.3 min |
-| 2 | kernel-network-stack-migration | ubuntu16.04 + ubuntu24.04 | 2 | 2/2 | 1.00 | 100% | 100% | 0.8 sec | 14.9 min |
-| 3 | loki-cascading-failure-ubuntu24 | ubuntu24.04 x4 | 2 | 1/2 | 1.00 | 100% | 100% | 1.0 sec | 8.6 min |
-| 4 | mariadb-migration-ubuntu16-ubuntu24 | ubuntu16.04 + ubuntu24.04 | 1 | 1/1 | 1.00 | 100% | 100% | 1.0 sec | 15.8 min |
-| 5 | nginx-tls-certificate-rotation-debian13 | debian13 x2 | 2 | 2/2 | 0.75 | 100% | 0% | 0.8 sec | 8.6 min |
-| 6 | rhel9-drift-remediation | rhel9.8 x4 | 3 | 2/3 | 1.00 | 100% | 50% | 1.0 sec | 9.3 min |
-| 7 | rhel9-ssh-hardening-jumpbox | rhel9.8 + almalinux9 x2 | 2 | 1/2 | 1.00 | 100% | 100% | 0.9 sec | 4.8 min |
-| 8 | sudoers-rescue-alma9 | almalinux9 | 1 | 1/1 | 1.00 | 100% | 100% | 0.7 sec | 6.2 min |
-| 9 | systemd-broken-execstart-alma9 | almalinux9 | 1 | 1/1 | 1.00 | 100% | 100% | 0.7 sec | 7.5 min |
-| 10 | user-password-hash-migration | ubuntu16.04 + ubuntu24.04 | 1 | 1/1 | 1.00 | 100% | 100% | 0.9 sec | 16.8 min |
-| 11 | bind-dnssec-alma9 | almalinux9 x4 | 1 | 1/1 | 1.00 | 100% | 100% | 1.3 sec | 14.3 min |
-| 12 | etcd-mtls-centos-stream10 | centos-stream10 x4 | 2 | 0/2 | — | 50% | 100% | 1.5 sec | 22.3 min |
-| 13 | haproxy-nodejs-ubuntu16 | ubuntu16.04 | 5 | 3/5 | 1.00 | 92% | 40% | 0.6 sec | 6.5 min |
-| 14 | mariadb-galera-ubuntu16 | ubuntu16.04 x3 | 2 | 1/2 | 0.88 | 80% | 0% | 0.7 sec | 33.8 min |
-| 15 | mariadb-galera-ubuntu24 | ubuntu24.04 x3 | 1 | 1/1 | 0.88 | 100% | 0% | 1.1 sec | 14.2 min |
-| 16 | minio-distributed-ubuntu24 | ubuntu24.04 x4 | 1 | 1/1 | 0.75 | 100% | 0% | 1.0 sec | 19.6 min |
-| 17 | nfs-ubuntu24 | ubuntu24.04 x3 | 2 | 1/2 | 1.00 | 73% | 100% | 1.1 sec | 14.4 min |
-| 18 | nginx-alma-alpine | almalinux9 x2 + alpine x2 | 1 | 1/1 | 0.92 | 100% | 0% | 1.1 sec | 9.2 min |
-| 19 | nginx-haproxy | ubuntu24.04 x4 | 1 | 1/1 | 1.00 | 100% | 100% | 1.0 sec | 9.3 min |
-| 20 | nginx-rhel10-port-6700 | rhel10.0 | 1 | 1/1 | 1.00 | 100% | 100% | 0.9 sec | 7.0 min |
-| 21 | nginx-rhel7-port-6700 | rhel7.9 | 3 | 1/3 | 0.90 | 100% | 0% | 0.7 sec | 3.1 min |
-| 22 | nginx-rhel8-port-6700 | rhel8.8 | 1 | 1/1 | 1.00 | 100% | 100% | 0.7 sec | 7.7 min |
-| 23 | nginx-rhel9-port-6500 | rhel9.8 | 1 | 1/1 | 0.90 | 100% | 0% | 0.7 sec | 5.6 min |
-| 24 | nginx-ubuntu24-cluster | ubuntu24.04 x3 | 5 | 3/5 | 1.00 | 90% | 100% | 1.3 sec | 4.8 min |
-| 25 | nodejs-rootless-podman-centos-stream10 | centos-stream10 | 1 | 1/1 | 1.00 | 100% | 100% | 0.9 sec | 10.9 min |
-| 26 | opentelemetry-collector-routing | ubuntu24.04 x3 | 1 | 1/1 | 0.78 | 100% | 0% | 0.8 sec | 22.2 min |
-| 27 | openwrt-guest-isolation | openwrt + ubuntu24.04 x3 | 1 | 1/1 | 0.78 | 100% | 0% | 1.2 sec | 12.4 min |
-| 28 | opnsense-three-zone | opnsense + ubuntu24.04 x3 | 1 | 1/1 | 0.78 | 100% | 0% | 1.7 sec | 12.7 min |
-| 29 | postgresql-ha-vyos-dual-lan | vyos + ubuntu24.04 x3 | 3 | 1/3 | 0.71 | 62% | 0% | 1.4 sec | 21.2 min |
-| 30 | postgresql-replication-alma9 | almalinux9 x3 | 2 | 0/2 | — | 75% | 0% | 1.0 sec | 15.3 min |
-| 31 | prometheus-node-exporter-ubuntu24 | ubuntu24.04 x4 | 3 | 1/3 | 1.00 | 77% | 50% | 0.9 sec | 14.6 min |
-| 32 | prometheus-thanos-objectstorage | ubuntu24.04 x4 | 6 | 1/6 | 0.75 | 68% | 0% | 1.4 sec | 25.0 min |
-| 33 | redis-sentinel-ubuntu24 | ubuntu24.04 x3 | 1 | 1/1 | 1.00 | 100% | 100% | 0.9 sec | 15.8 min |
-| 34 | rhel8-offline-package-repository | rhel8.8 x2 | 1 | 1/1 | 1.00 | 100% | — | 0.7 sec | 15.8 min |
-| 35 | rsyslog-rhel7-rhel10-tls | rhel7.9 + rhel8.8 + rhel9.8 + rhel10.0 | 3 | 0/3 | — | 52% | 0% | 1.0 sec | 20.7 min |
-| 36 | samba-ad-debian13 | debian13 x4 | 1 | 0/1 | 0.32 | 100% | 0% | 1.1 sec | 23.8 min |
-| 37 | sonic-frr-bgp-transit | sonic + ubuntu24.04 x2 | 1 | 1/1 | 0.73 | 100% | 0% | 2.5 sec | 22.3 min |
-| 38 | ssh-auth-ubuntu24 | ubuntu24.04 x3 | 5 | 4/5 | 1.00 | 90% | 25% | 1.4 sec | 10.5 min |
-| 39 | static-route-convergence-vyos | vyos + ubuntu24.04 x2 | 1 | 1/1 | 1.00 | 100% | 100% | 1.1 sec | 13.0 min |
-| 40 | vault-raft-auto-unseal | ubuntu24.04 x4 | 3 | 1/3 | 0.75 | 50% | 0% | 1.1 sec | 18.5 min |
-| 41 | vyos-dual-lan-kubernetes | vyos + ubuntu24.04 x3 | 2 | 2/2 | 1.00 | 100% | 100% | 1.1 sec | 20.5 min |
-| 42 | wireguard-vyos-dual-lan | vyos x2 + ubuntu24.04 x2 | 2 | 0/2 | — | 86% | — | 1.3 sec | 11.8 min |
+`Reward` measures the supported outcome, while `Confidence` reflects the completeness and quality of its evidence. `Operational hygiene` measures attributable residue or unrelated regression found by applicable global checks. A hygiene score of `1.000` means all applicable checks passed; `0.000` means none passed.
+
+The current dataset contains 42 tasks, 84 trials, and 4025 recorded executor commands: 3840 successful, 174 failed, and 11 indeterminate.
+
+| Task | Environment | Trials | Exceptions | Commands successful | Commands failed | Commands indeterminate | Reward | Confidence | Evaluation complete | Coverage | Functionality | Hygiene | Publishable | Provisioning | Mean duration | Analysis |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| bind-dnssec-alma9 | almalinux9 x4 | 2 | 0 | 104 | 4 | 0 | 1.000 | 0.985 | 1.000 | 1.000 | 1.000 | 0.945 | 1.000 | 1.24s | 9m 03s | — |
+| disk-full-recovery-centos-stream10 | centos-stream10 | 2 | 0 | 17 | 1 | 0 | 1.000 | 0.975 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0.95s | 3m 02s | — |
+| etcd-mtls-centos-stream10 | centos-stream10 x4 | 2 | 0 | 111 | 1 | 1 | 1.000 | 0.980 | 1.000 | 1.000 | 1.000 | 0.980 | 1.000 | 1.64s | 10m 41s | — |
+| haproxy-nodejs-ubuntu16 | ubuntu16.04 | 2 | 0 | 33 | 3 | 0 | 1.000 | 0.985 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0.67s | 4m 37s | — |
+| kernel-network-stack-migration | ubuntu16.04 + ubuntu24.04 | 2 | 0 | 70 | 3 | 0 | 0.929 | 0.955 | 1.000 | 1.000 | 0.929 | 1.000 | 1.000 | 0.90s | 9m 33s | The migration's concrete service, networking, firewall, failover, and retirement outcomes are satisfied. Node2 serves the preserved endpoint through two SO_REUSEPORT workers only on its application LAN, and node1 is cleanly retired while retaining its source. The sole evidence gap is that preservation of all unrelated configuration was sampled rather than exhaustively compared. |
+| loki-cascading-failure-ubuntu24 | ubuntu24.04 x4 | 2 | 0 | 55 | 3 | 0 | 0.964 | 0.970 | 1.000 | 1.000 | 0.964 | 1.000 | 1.000 | 1.04s | 6m 59s | INC-042's originating fault was correctly identified and repaired, all three tiers and the full node1 request path were directly demonstrated as recovered, the required report was recorded, and incident/catalog data were preserved. Only the broad preservation of all unrelated configuration lacks exhaustive direct comparison evidence. |
+| mariadb-galera-ubuntu16 | ubuntu16.04 x3 | 2 | 0 | 174 | 9 | 0 | 1.000 | 0.985 | 1.000 | 1.000 | 1.000 | 0.950 | 1.000 | 0.85s | 11m 56s | — |
+| mariadb-galera-ubuntu24 | ubuntu24.04 x3 | 2 | 0 | 120 | 0 | 4 | 1.000 | 0.990 | 1.000 | 1.000 | 1.000 | 0.950 | 1.000 | 0.91s | 25m 15s | — |
+| mariadb-migration-ubuntu16-ubuntu24 | ubuntu16.04 + ubuntu24.04 | 2 | 1 | 28 | 4 | 0 | 0.500 | 0.485 | 0.500 | 0.500 | 0.500 | 0.750 | 0.500 | 1.00s | 25m 28s | All material outcomes are indeterminate. The evidence thoroughly describes the prepared source baseline but contains no executor observations or verifiable final state; post-execution collection failed because the managed cluster lease expired. |
+| minio-distributed-ubuntu24 | ubuntu24.04 x4 | 2 | 0 | 158 | 5 | 0 | 1.000 | 0.985 | 1.000 | 1.000 | 1.000 | 0.910 | 1.000 | 1.09s | 8m 24s | — |
+| nfs-ubuntu24 | ubuntu24.04 x3 | 2 | 0 | 57 | 2 | 0 | 1.000 | 0.985 | 1.000 | 1.000 | 1.000 | 0.940 | 1.000 | 1.02s | 4m 19s | — |
+| nginx-alma-alpine | almalinux9 x2 + alpine x2 | 2 | 0 | 84 | 2 | 0 | 1.000 | 0.980 | 1.000 | 1.000 | 1.000 | 0.850 | 1.000 | 1.04s | 4m 20s | — |
+| nginx-haproxy | ubuntu24.04 x4 | 2 | 0 | 69 | 0 | 0 | 1.000 | 0.955 | 1.000 | 1.000 | 1.000 | 0.850 | 1.000 | 0.98s | 4m 25s | — |
+| nginx-rhel10-port-6700 | rhel10.0 | 2 | 0 | 20 | 0 | 0 | 1.000 | 0.995 | 1.000 | 1.000 | 1.000 | 0.930 | 1.000 | 0.71s | 3m 58s | — |
+| nginx-rhel7-port-6700 | rhel7.9 | 2 | 1 | 33 | 5 | 0 | 0.500 | 0.950 | 1.000 | 1.000 | 0.500 | 0.975 | 1.000 | 0.65s | 13m 19s | The task was not satisfied. In the final captured state, node1 was not listening on TCP port 6700 and therefore could not serve the requested endpoint. |
+| nginx-rhel8-port-6700 | rhel8.8 | 2 | 0 | 20 | 0 | 0 | 1.000 | 0.985 | 1.000 | 1.000 | 1.000 | 0.890 | 1.000 | 0.65s | 3m 14s | — |
+| nginx-rhel9-port-6500 | rhel9.8 | 2 | 0 | 25 | 0 | 0 | 1.000 | 0.990 | 1.000 | 1.000 | 1.000 | 0.900 | 1.000 | 0.69s | 2m 49s | — |
+| nginx-tls-certificate-rotation-debian13 | debian13 x2 | 2 | 0 | 21 | 1 | 0 | 0.917 | 0.945 | 1.000 | 1.000 | 0.917 | 0.900 | 1.000 | 0.79s | 5m 24s | The certificate replacement and content-preservation outcomes are directly satisfied. Continuous availability is only partially demonstrated because the purported rotation probe completed before the certificate swap and Nginx reload began. Operational state is otherwise healthy, with minor temporary-file residue. |
+| nginx-ubuntu24-cluster | ubuntu24.04 x3 | 2 | 1 | 21 | 0 | 0 | 0.500 | 0.965 | 1.000 | 1.000 | 0.500 | 1.000 | 1.000 | 0.88s | 6m 20s | The task was not completed. At the final observation, none of the three nodes was listening on the standard HTTP port, so none could provide the required Nginx response. |
+| nodejs-rootless-podman-centos-stream10 | centos-stream10 | 2 | 0 | 45 | 5 | 0 | 1.000 | 0.985 | 1.000 | 1.000 | 1.000 | 0.965 | 1.000 | 0.89s | 7m 56s | — |
+| opentelemetry-collector-routing | ubuntu24.04 x3 | 2 | 0 | 141 | 2 | 0 | 1.000 | 0.980 | 1.000 | 1.000 | 1.000 | 0.800 | 1.000 | 0.90s | 9m 58s | — |
+| openwrt-guest-isolation | openwrt + ubuntu24.04 x3 | 2 | 0 | 116 | 11 | 0 | 1.000 | 0.980 | 1.000 | 1.000 | 1.000 | 0.835 | 1.000 | 1.01s | 10m 26s | — |
+| opnsense-three-zone | opnsense + ubuntu24.04 x3 | 2 | 0 | 134 | 1 | 0 | 1.000 | 0.960 | 1.000 | 1.000 | 1.000 | 0.685 | 1.000 | 1.65s | 9m 55s | — |
+| postgresql-ha-vyos-dual-lan | vyos + ubuntu24.04 x3 | 2 | 0 | 176 | 7 | 0 | 1.000 | 0.965 | 1.000 | 1.000 | 1.000 | 0.930 | 1.000 | 1.19s | 14m 06s | — |
+| postgresql-replication-alma9 | almalinux9 x3 | 2 | 0 | 132 | 2 | 0 | 0.938 | 0.960 | 1.000 | 1.000 | 0.938 | 0.940 | 1.000 | 1.05s | 9m 43s | The PostgreSQL role topology and end-to-end replication behavior are directly demonstrated: node1 is writable, both standbys are read-only, and a committed change reaches both. The network contract is only partially met because PostgreSQL endpoints are isolated behind overlay addresses while the overlay itself traverses the management-address network. |
+| prometheus-node-exporter-ubuntu24 | ubuntu24.04 x4 | 2 | 0 | 136 | 1 | 0 | 1.000 | 0.990 | 1.000 | 1.000 | 1.000 | 0.950 | 1.000 | 1.31s | 7m 37s | — |
+| prometheus-thanos-objectstorage | ubuntu24.04 x4 | 2 | 0 | 153 | 7 | 0 | 1.000 | 0.985 | 1.000 | 1.000 | 1.000 | 0.940 | 1.000 | 0.94s | 15m 14s | — |
+| redis-sentinel-ubuntu24 | ubuntu24.04 x3 | 2 | 0 | 110 | 3 | 0 | 1.000 | 0.980 | 1.000 | 1.000 | 1.000 | 0.960 | 1.000 | 0.98s | 9m 29s | — |
+| rhel8-offline-package-repository | rhel8.8 x2 | 2 | 0 | 49 | 3 | 0 | 1.000 | 0.980 | 1.000 | 1.000 | 1.000 | 0.900 | 1.000 | 0.68s | 8m 42s | — |
+| rhel9-drift-remediation | rhel9.8 x4 | 2 | 0 | 77 | 1 | 5 | 1.000 | 0.985 | 1.000 | 1.000 | 1.000 | 0.960 | 1.000 | 1.03s | 23m 53s | — |
+| rhel9-ssh-hardening-jumpbox | rhel9.8 + almalinux9 x2 | 2 | 0 | 71 | 1 | 0 | 1.000 | 0.975 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.08s | 8m 41s | — |
+| rsyslog-rhel7-rhel10-tls | rhel7.9 + rhel8.8 + rhel9.8 + rhel10.0 | 2 | 0 | 183 | 26 | 0 | 1.000 | 0.960 | 1.000 | 1.000 | 1.000 | 0.905 | 1.000 | 0.94s | 14m 50s | — |
+| samba-ad-debian13 | debian13 x4 | 2 | 0 | 235 | 18 | 1 | 1.000 | 0.980 | 1.000 | 1.000 | 1.000 | 0.930 | 1.000 | 0.87s | 22m 58s | — |
+| sonic-frr-bgp-transit | sonic + ubuntu24.04 x2 | 2 | 0 | 107 | 4 | 0 | 1.000 | 0.980 | 1.000 | 1.000 | 1.000 | 0.940 | 1.000 | 1.75s | 7m 31s | — |
+| ssh-auth-ubuntu24 | ubuntu24.04 x3 | 2 | 0 | 113 | 19 | 0 | 1.000 | 0.975 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0.96s | 8m 15s | — |
+| static-route-convergence-vyos | vyos + ubuntu24.04 x2 | 2 | 0 | 108 | 3 | 0 | 1.000 | 0.950 | 1.000 | 1.000 | 1.000 | 0.905 | 1.000 | 1.35s | 8m 25s | — |
+| sudoers-rescue-alma9 | almalinux9 | 2 | 0 | 29 | 0 | 0 | 1.000 | 0.995 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0.75s | 3m 32s | — |
+| systemd-broken-execstart-alma9 | almalinux9 | 2 | 0 | 19 | 2 | 0 | 0.950 | 0.965 | 1.000 | 1.000 | 0.950 | 1.000 | 1.000 | 0.87s | 2m 24s | The service repair, runtime identity, heartbeat frequency, and security restrictions are directly demonstrated. Program preservation is strongly supported but only partially verified because no final checksum was captured. |
+| user-password-hash-migration | ubuntu16.04 + ubuntu24.04 | 2 | 0 | 64 | 7 | 0 | 1.000 | 0.965 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0.79s | 11m 18s | — |
+| vault-raft-auto-unseal | ubuntu24.04 x4 | 2 | 0 | 163 | 5 | 0 | 1.000 | 0.975 | 1.000 | 1.000 | 1.000 | 0.920 | 1.000 | 1.40s | 10m 45s | — |
+| vyos-dual-lan-kubernetes | vyos + ubuntu24.04 x3 | 2 | 0 | 144 | 0 | 0 | 1.000 | 0.970 | 1.000 | 1.000 | 1.000 | 0.875 | 1.000 | 1.18s | 8m 17s | — |
+| wireguard-vyos-dual-lan | vyos x2 + ubuntu24.04 x2 | 2 | 0 | 115 | 3 | 0 | 1.000 | 0.980 | 1.000 | 1.000 | 1.000 | 0.975 | 1.000 | 1.26s | 7m 30s | — |

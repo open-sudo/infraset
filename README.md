@@ -41,11 +41,29 @@ Published runs include the observable, redacted agent trajectory:
 - Agent messages and tool calls
 - Commands, output, and errors
 - Failed and recovery attempts
+- Fixed system snapshots before preparation, after preparation, and after execution
 - Final response and verifier result
 
-Each task is verified against the resulting infrastructure state, not merely the
-LLM's final answer. Browse and download the published traces from the
+Each task is evaluated from evidence captured during execution: the complete
+command trace and outputs, preparation baselines, and fixed system snapshots
+taken before preparation, after preparation, and after execution. The LLM's
+final response is not evidence by itself. Browse and download the published traces from the
 [InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset).
+The `execution-summary` dataset configuration provides one row per task with its
+outcome, confidence, coverage, hygiene, command counts, provisioning time, and
+duration. The `collector` configuration exposes lifecycle observations as flat
+JSONL records suitable for filtering and analysis. Jobs recorded before lifecycle
+collection are retained as `legacy` after-prepare and after-executor observations.
+
+Dataset maintainers regenerate the summary, structured records, collector split,
+and Hugging Face card after changing recorded jobs with:
+
+```bash
+python3 scripts/generate_results_summary.py
+python3 scripts/generate_collector_dataset.py
+python3 scripts/generate_hf_card.py
+python3 scripts/validate_hf_dataset.py
+```
 
 ## Running a task
 
@@ -62,6 +80,22 @@ Run a task from the repository root:
 ```bash
 ./run-task.sh ./tasks/greenfield/haproxy-nodejs-ubuntu16
 ```
+
+Run every task below a folder with a shared concurrency budget:
+
+```bash
+./run-task.sh --parallel 5 ./tasks/greenfield
+```
+
+To repeat every task, set both the number of attempts and the concurrency allowed
+inside one task. Each active task consumes that many slots from the shared budget:
+
+```bash
+./run-task.sh --parallel 6 --n-attempts 3 --task-parallel 2 ./tasks/greenfield
+```
+
+This example runs three task processes at a time, with two concurrent trials in
+each process. Run `./run-task.sh --help` for the equivalent environment variables.
 
 The runner fetches Harbor and `harbor-antrieb` automatically. Results are stored
 under `jobs/<task-name>/`.
@@ -118,23 +152,27 @@ InfraSet combines three components:
 
 ### Concepts
 
-- A **task** defines the scenario, environment, preparation, and verification
-  checks.
+- A **task** defines the scenario, requested outcome, environment, and optional
+  preparation.
 - A **job** is one recorded execution of a task.
 - The **preparer** creates the starting state, including brownfield data or
   configuration drift.
-- The **executor** runs the task and coordinates Harbor, Antrieb, and the AI
-  agent.
-- The **verifier** evaluates the final infrastructure state and produces the
-  recorded result and score.
+- The **collector** records the same bounded system observations before
+  preparation, after preparation, and after execution. If no preparer runs, the
+  first two boundaries are represented by one snapshot.
+- The **executor** coordinates Harbor, Antrieb, and the AI agent while recording
+  commands and final evidence.
+- The **verifier** scores the captured evidence and fixed before-and-after system
+  observations. It has no live system access.
 
 ### Workflow
 
 ![InfraSet workflow](docs/infraset-workflow.svg)
 
 An idea becomes a task, the preparer creates its starting state, and the
-executor runs it in an Antrieb environment. The verifier evaluates the final
-state before the resulting job is recorded, validated, and published in the
+executor runs it in an Antrieb environment. The collector records each lifecycle
+boundary, and the verifier evaluates those snapshots and the executor evidence
+before the resulting job is recorded, validated, and published in the
 [InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
 ## Contributing
@@ -144,6 +182,6 @@ topologies, clustered environments, brownfield scenarios, troubleshooting
 tasks, evaluation improvements, execution traces, result artifacts, and
 accompanying analysis.
 
-InfraSet reviews the task and verifier, validates submitted traces, reproduces
+InfraSet reviews the task and evidence, validates submitted traces, reproduces
 executions when necessary, and calculates published metrics from the validated
 artifacts.

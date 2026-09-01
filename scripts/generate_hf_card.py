@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Create the Hugging Face README from the clean GitHub execution summary."""
+"""Create the Hugging Face dataset card from the execution summary."""
 
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path("/tmp/infraset-hf-card.md")
 METADATA = """---
-pretty_name: InfraSet execution summary
+pretty_name: InfraSet
 license: apache-2.0
 language:
   - en
@@ -21,10 +20,14 @@ task_categories:
 size_categories:
   - n<1K
 configs:
-  - config_name: summary
+  - config_name: execution-summary
     data_files:
-      - split: summary
-        path: data/summary.jsonl
+      - split: tasks
+        path: data/execution-summary.jsonl
+  - config_name: collector
+    data_files:
+      - split: observations
+        path: data/collector-observations.jsonl
 ---
 
 """

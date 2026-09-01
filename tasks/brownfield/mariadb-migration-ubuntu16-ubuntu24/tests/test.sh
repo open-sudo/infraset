@@ -1,3 +1,3 @@
 #!/bin/sh
-echo "This task must be run with an InfraSet semantic verifier." >&2
-exit 2
+echo "InfraSet requires the configured Harbor-Antrieb verifier." >&2
+exit 1

@@ -1,4 +1,3 @@
 #!/bin/sh
-# Harbor task-validation sentinel. The configured custom verifier replaces it.
-echo "Tasks must run with an infraset verifier" >&2
-exit 2
+echo "InfraSet requires the configured Harbor-Antrieb verifier." >&2
+exit 1

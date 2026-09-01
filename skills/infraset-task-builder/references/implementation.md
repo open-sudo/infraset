@@ -1,38 +1,34 @@
 # InfraSet Task Implementation
 
-## Standard layout
+## Contents
 
-Choose the directory from the task's initial state and complexity:
+- Layout
+- Antrieb references and topology
+- Preparation and baselines
+- Runtime integration
+- Validation
+
+## Layout
+
+Choose a directory from the initial state and complexity:
 
 ```text
-../infraset/tasks/greenfield/infraset-<slug>/
-../infraset/tasks/brownfield/infraset-<slug>/
-../infraset/tasks/complex/greenfield/infraset-<slug>/
-../infraset/tasks/complex/brownfield/infraset-<slug>/
+${HOME}/infraset/tasks/greenfield/<slug>/
+${HOME}/infraset/tasks/brownfield/<slug>/
+${HOME}/infraset/tasks/complex/greenfield/<slug>/
+${HOME}/infraset/tasks/complex/brownfield/<slug>/
 ```
 
-Use `greenfield` when preparation is disabled and the executor receives pristine
-managed nodes. Use `brownfield` when task-authored preparation establishes existing
-state and captures a baseline before execution. Do not place a task in `brownfield`
-merely because the underlying image contains normal distribution defaults.
-
-Use the matching `complex/` directory when a task combines tightly coupled
-distributed services, consensus or replication with recovery/rejoin, specialized
-appliances with several custom networks or NICs, or an empirically long workflow
-that can consume most of the provider lease. Multiple nodes alone do not make a task
-complex.
-
-Within the selected directory, create:
+Create:
 
 ```text
 instruction.md
 task.toml
 environment/harbor_antrieb.toml
-verifier/checks.toml
 tests/test.sh
 ```
 
-Add preparation files only when preparation is enabled:
+Add preparation only when enabled:
 
 ```text
 prepare/setup.toml
@@ -40,15 +36,28 @@ prepare/baseline.toml
 prepare/prompt.md        # AI preparation only
 ```
 
-Add `verifier/judge.toml` with semantic dimensions and weights. Do not create unused
-directories or compatibility files.
+Do not create task-specific `verifier/checks.toml` or `verifier/judge.toml`. The
+executor collects task-specific evidence and the shared verifier scores it. Preserve
+legacy verifier files during an unrelated task revision unless migration or removal
+is explicitly requested.
 
-## Task and environment
+Keep `tests/test.sh` as Harbor's fail-closed sentinel:
 
-Use the current task schema and shared verifier environment mode. Follow the closest
-existing example rather than copying stale values blindly.
+```sh
+#!/bin/sh
+echo "InfraSet requires the configured Harbor-Antrieb verifier." >&2
+exit 1
+```
 
-Define managed topology in `environment/harbor_antrieb.toml`:
+## Antrieb references and topology
+
+Use the Antrieb MCP `search` tool to retrieve each authoritative reference by exact
+name before authoring topology. Read `antrieb/primer` for every task. Read
+`antrieb/networking-primer` for custom networks or NICs and the relevant image
+reference for specialized appliances. This is metadata discovery; do not provision a
+cluster during static task generation.
+
+Define the environment in `environment/harbor_antrieb.toml`:
 
 ```toml
 cluster = ["ubuntu24.04 x3"]
@@ -57,44 +66,18 @@ control_node = "node1"
 endpoint = "https://antrieb.sh/mcp"
 ```
 
-Always include `antrieb/primer`. Add `antrieb/networking-primer` when the task
-declares custom networks or NICs. Add an appliance reference such as
-`antrieb/vyos-reference` for each specialized image. Do not add scenario runbooks:
-the harness accepts only base primers and appliance references, reads them before
-provisioning, and injects them transiently into host-side AI prompts.
+Include every reference used during authoring in `base_runbooks`. Do not include
+scenario runbooks. For custom networks, verify CIDRs, reserved addresses, gateways,
+DHCP ranges, node placement, service addresses, and NIC mappings against the primer.
+Never copy a transient address from another run.
 
-Read those primers and references while authoring the task, before selecting the
-topology or exact values. They are authoritative for provider-reserved addresses,
-egress gateways, DHCP behavior, NIC attachment and naming, available image
-capabilities, management access, reboot behavior, and other platform constraints.
-Do not infer these conventions from an older example or merely list a runbook in
-`base_runbooks` without reading it.
+Use only currently available images. Do not add Docker or Compose files. Declare
+`max_clusters` only when the scenario intentionally permits fresh executor attempts;
+do not use retries to hide unreliable preparation.
 
-Create an address-allocation check for every custom network: record its CIDR,
-provider gateway and reserved range, DHCP range, node addresses, service VIPs, and
-published endpoints. Confirm that every address is unique, belongs to its intended
-network, survives the declared lifecycle, and does not conflict with infrastructure
-described by the primers. If an authoritative primer cannot be read, stop and report
-the blocker instead of inventing a topology.
+## Preparation and baselines
 
-Tasks default to one executor cluster. For a task where learning from a failed or
-expired attempt is part of the intended budget, declare a small explicit quota:
-
-```toml
-max_clusters = 3
-```
-
-Each retry uses an identically specified fresh cluster and repeats preparation. Do
-not increase the quota merely to hide an unreliable image, preparer, or evaluator.
-Increase `[agent].timeout_sec` enough to contain every cluster lease plus the
-log-only postmortems.
-
-Use Antrieb image names that are actually available in this repository/environment.
-Do not add Docker or Compose files.
-
-## Preparation decision
-
-For a greenfield task, leave preparation disabled and omit preparation files.
+Leave preparation disabled for greenfield tasks.
 
 For deterministic brownfield state:
 
@@ -106,94 +89,70 @@ setup = "prepare/setup.toml"
 baseline = "prepare/baseline.toml"
 ```
 
-Put idempotent or safely repeatable mutations in staged `[[steps]]`. Capture facts
-needed for later comparison as `[[observations]]`. Use required observations for
-grading prerequisites and optional observations only for documented limitations.
+Put idempotent or safely repeatable mutations in `[[steps]]`. Put facts needed for
+later preservation or regression scoring in `[[observations]]`. Mark an observation
+required only when scoring cannot be fair without it.
+
+Baseline observations should capture durable facts, not transient noise. Record the
+content, ownership, service state, policy, or application data that the task requires
+the executor to preserve. Global collectors may capture generic before-and-after
+hygiene such as temporary-file residue, but they cannot reconstruct missing
+task-specific brownfield facts.
 
 Use AI preparation only when deterministic setup cannot represent the scenario.
-Keep `agent` and `model` absent from task files and supply them with environment
-kwargs at run time. AI preparation still ends with a static baseline.
+Keep preparer model selection out of task files and finish AI preparation with a
+deterministic baseline.
 
-## Executor and evaluator selection
+## Runtime integration
 
-Use these direct import paths:
+The provider imports are:
 
 ```text
-infraset.agent:InfraSetHostAgent
-infraset.environment:InfraSetEnvironment
-infraset.verifier:InfraSetVerifier
+harbor_antrieb.agent:AntriebHostAgent
+harbor_antrieb.environment:AntriebEnvironment
+harbor_antrieb.verifier:AntriebVerifier
 ```
 
-Semantic verification uses the cumulative `--verifier-kwarg level=<1-through-10>`.
-Every task needs `verifier/judge.toml` with its semantic dimensions and weights.
+The shared executor contract requires the executor to perform final validation
+and identify provider-captured command evidence for the requested outcomes. The
+shared verifier then determines reward and confidence from the public problem,
+topology, baseline, complete executor trace, selected evidence, and universal static
+observations. Do not duplicate this contract in `instruction.md`. Task-local static
+verifier files are not runtime inputs.
 
-Put shared shell prerequisites in the top-level `command_prelude`. Use it to select
-an explicit client configuration and fail before assertions when the service being
-queried is unavailable. Since the prelude runs on every target node, guard
-controller-only setup with the managed `NODE_NAME` variable.
+Every provider exec call exposes `NODE_NAME`, `NODE_IP`, and `CLUSTER_HOSTS`.
+`node1` and similar values select managed exec targets but are not in-cluster DNS
+names. Public protocol identities belong in the task only when they are genuine
+business requirements.
 
-Keep the Harbor 0.21 fail-closed `tests/test.sh` sentinel required by task validation.
-It must explain that the custom InfraSet verifier is required and exit nonzero.
-
-## Fully expanded run command
-
-Use Harbor's supported long options. The environment long option is `--env`.
+Run a task through the repository runner:
 
 ```bash
-uv run --package infraset harbor run \
-  --path ../infraset/tasks/<category>/infraset-<slug> \
-  --agent infraset.agent:InfraSetHostAgent \
-  --model <executor-model> \
-  --agent-kwarg agent_name=<executor-backend> \
-  --agent-kwarg reasoning_effort=medium \
-  --agent-kwarg diagnostic_agent=<postmortem-backend> \
-  --agent-kwarg diagnostic_model=<postmortem-model> \
-  --agent-kwarg diagnostic_reasoning_effort=medium \
-  --env infraset.environment:InfraSetEnvironment \
-  --verifier infraset.verifier:InfraSetVerifier \
-  --verifier-kwarg level=<1-through-10>
+${HOME}/infraset/run-task.sh \
+  ${HOME}/infraset/tasks/<category>/<slug>
 ```
 
-Configure semantic evidence collection with deterministic assertion scoring:
-
-```text
---verifier infraset.verifier:InfraSetVerifier
---verifier-kwarg agent=<evaluator-backend>
---verifier-kwarg model=<evaluator-model>
---verifier-kwarg reasoning_effort=low
---verifier-kwarg level=<1-through-10>
---verifier-kwarg minimum_coverage=1.0
-```
-
-Its task-owned `checks.toml` separates bounded `[[probes]]` from atomic
-scored `[[assertions]]`. Evaluator limitations make only affected assertions
-indeterminate. Runs below the minimum coverage omit the primary reward and are not
-publication eligible.
-
-For AI preparation, add:
-
-```text
---environment-kwarg prepare_mode=ai
---environment-kwarg prepare_agent=<preparer-backend>
---environment-kwarg prepare_model=<preparer-model>
---environment-kwarg prepare_reasoning_effort=medium
-```
-
-The executor model remains Harbor's first-class `--model` value. Static preparation
-uses no model; AI preparation receives its model through run-time kwargs.
+The runner supplies models, agent, provider, verifier, credentials, lifecycle, and
+output location. Do not hardcode them in task files.
 
 ## Validation
 
-Run:
+Validate the evidence-based task artifacts:
 
 ```bash
-uv run --package infraset python \
-  ../infraset/skills/infraset-task-builder/scripts/validate_example.py \
-  ../infraset/tasks/<category>/infraset-<slug>
-uv run --package infraset pytest packages/infraset/tests/unit -q
-git diff --check
+uv run --isolated --no-project \
+  --with-editable "${HOME}/harbor-antrieb" \
+  python "${HOME}/infraset/skills/infraset-task-builder/scripts/validate_example.py" \
+  --task-only --strict "${HOME}/infraset/tasks/<category>/<slug>"
+git -C "${HOME}/infraset" diff --check
 ```
 
-For Python changes, also follow the repository's Ruff and `ty` requirements. Never
-launch a live cluster merely to validate generated files unless the user authorizes
-the run.
+Without a local provider checkout, replace `--with-editable` with:
+
+```text
+--with "harbor-antrieb @ git+https://github.com/open-sudo/harbor-antrieb.git"
+```
+
+Static validation checks schemas and authoring policy. It does not prove that the
+executor will complete the task or collect sufficient evidence. Do not launch a
+cluster unless the user explicitly authorizes execution.
