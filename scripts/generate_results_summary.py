@@ -114,7 +114,6 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
     metrics: dict[str, list[float]] = defaultdict(list)
     successful_commands = 0
     failed_commands = 0
-    exceptions = 0
     execution_durations: list[float] = []
     provisioning: list[float] = []
 
@@ -123,7 +122,6 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
         rewards = rewards if isinstance(rewards, dict) else {}
         for name in (
             "reward",
-            "confidence",
             "evaluation_complete",
             "evaluation_coverage",
             "functionality",
@@ -131,9 +129,6 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
             "publication_eligible",
         ):
             metrics[name].append(metric(rewards, name))
-
-        if result.get("exception_info") is not None:
-            exceptions += 1
 
         agent_execution = result.get("agent_execution", {})
         agent_execution = (
@@ -158,7 +153,6 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
         "task": task_dir.name,
         "environment": environment(jobs[-1]),
         "trials": len(trials),
-        "exceptions": exceptions,
         "commands": f"{successful_commands}/{failed_commands}",
         **{name: mean(values) for name, values in metrics.items()},
         "provisioning_seconds": mean(provisioning) / 1000,
@@ -187,14 +181,14 @@ def read_intro() -> str:
 
 def summary_table(values: list[dict[str, Any]]) -> str:
     lines = [
-        "| Task | Environment | Trials | Exceptions | Commands | Reward | Confidence | Evaluation complete | Coverage | Functionality | Hygiene | Publishable | Provisioning time | Execution time |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Task | Environment | Trials | Commands | Reward | Evaluation complete | Coverage | Functionality | Hygiene | Publishable | Provisioning time | Execution time |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for record in values:
         lines.append(
-            "| {task} | {environment} | {trials} | {exceptions} | "
+            "| {task} | {environment} | {trials} | "
             "{commands} | "
-            "{reward:.3f} | {confidence:.3f} | {evaluation_complete:.3f} | "
+            "{reward:.3f} | {evaluation_complete:.3f} | "
             "{evaluation_coverage:.3f} | {functionality:.3f} | "
             "{operational_hygiene:.3f} | {publication_eligible:.3f} | "
             "{provisioning_seconds:.2f}s | {execution_time} |".format(
@@ -216,7 +210,7 @@ def main() -> int:
 
 This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/tree/main/jobs). Metrics and times are averages across recorded trials. `Commands` reports successful/failed executor commands from the provider-captured audit. Unfinished or indeterminate command records are excluded from both values. A failed command records an unsuccessful attempt; it does not by itself mean that the final task outcome failed.
 
-`Reward` measures the supported outcome, while `Confidence` reflects the completeness and quality of its evidence. `Operational hygiene` measures attributable residue or unrelated regression found by applicable global checks. A hygiene score of `1.000` means all applicable checks passed; `0.000` means none passed.
+`Reward` measures the supported outcome. `Operational hygiene` measures attributable residue or unrelated regression found by applicable global checks. A hygiene score of `1.000` means all applicable checks passed; `0.000` means none passed.
 
 The current dataset contains {len(values)} tasks, {trials} trials, and {successful + failed} completed executor commands: {successful} successful and {failed} failed.
 

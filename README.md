@@ -50,7 +50,7 @@ taken before preparation, after preparation, and after execution. The LLM's
 final response is not evidence by itself. Browse and download the published traces from the
 [InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset).
 The `execution-summary` dataset configuration provides one row per task with its
-outcome, confidence, coverage, hygiene, commands, provisioning time, and
+outcome, coverage, hygiene, commands, provisioning time, and
 execution time. The `collector` configuration exposes lifecycle observations as flat
 JSONL records suitable for filtering and analysis. Jobs recorded before lifecycle
 collection are retained as `legacy` after-prepare and after-executor observations.
