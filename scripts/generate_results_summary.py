@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 JOBS = ROOT / "jobs"
 OUTPUT = ROOT / "results-summary.md"
 DATA_OUTPUT = ROOT / "data" / "execution-summary.jsonl"
+GITHUB_BLOB = "https://github.com/open-sudo/infraset/blob/main"
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
@@ -154,6 +155,9 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
 
     return {
         "task": task_dir.name,
+        "_analysis_url": (
+            f"{GITHUB_BLOB}/jobs/{task_dir.name}/{jobs[-1].name}/analysis.md"
+        ),
         "environment": environment(jobs[-1]),
         "commands": f"{successful_commands}/{failed_commands}",
         **{name: mean(values) for name, values in metrics.items()},
@@ -187,13 +191,15 @@ def summary_table(values: list[dict[str, Any]]) -> str:
         "|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for record in values:
+        task_link = f"[{record['task']}]({record['_analysis_url']})"
         lines.append(
-            "| {task} | {environment} | "
+            "| {task_link} | {environment} | "
             "{commands} | "
             "{reward:.3f} | {evaluation_coverage:.3f} | {functionality:.3f} | "
             "{operational_hygiene:.3f} | "
             "{provisioning_seconds:.2f}s | {execution_time} |".format(
                 **record,
+                task_link=task_link,
                 execution_time=format_duration(record["execution_seconds"]),
             )
         )
@@ -220,7 +226,10 @@ The current dataset contains {len(values)} tasks and {successful + failed} compl
     DATA_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with DATA_OUTPUT.open("w") as stream:
         for record in values:
-            stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+            dataset_record = {
+                key: value for key, value in record.items() if not key.startswith("_")
+            }
+            stream.write(json.dumps(dataset_record, ensure_ascii=False) + "\n")
     print(f"wrote {len(values)} task rows to {OUTPUT.relative_to(ROOT)}")
     print(f"wrote {len(values)} task records to {DATA_OUTPUT.relative_to(ROOT)}")
     return 0
