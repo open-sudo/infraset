@@ -82,6 +82,10 @@ Do not generate task-specific `verifier/checks.toml` or `verifier/judge.toml` fi
   proof, and do not put validation mechanics in the public instruction.
 - Keep executor evidence collection out of `instruction.md`; the global executor
   contract requests it for every task.
+- Keep process-hygiene policy out of `instruction.md`. The global verifier reviews
+  the complete command timeline for state changes that do not clearly contribute to
+  the requested outcome, bounded evidence collection, or restoration of temporary
+  state.
 - Preserve unrelated files and legacy verifier artifacts when revising an existing
   task unless the user explicitly requests their migration or removal.
 - Include every Antrieb reference used while authoring in `base_runbooks`; include no

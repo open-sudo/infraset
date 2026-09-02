@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import tomllib
-from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,20 +24,6 @@ def read_json(path: Path) -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
-
-
-def read_jsonl(path: Path) -> Iterable[dict[str, Any]]:
-    try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        return
-    for line in lines:
-        try:
-            value = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            yield value
 
 
 def parse_time(value: Any) -> datetime | None:
@@ -172,18 +158,96 @@ def job_dirs(jobs_dir: Path) -> list[Path]:
     return values
 
 
-def command_records(trial_dir: Path) -> dict[str, dict[str, Any]]:
-    path = trial_dir / "agent" / "executor-commands.jsonl"
+def command_audit_paths(trial_dir: Path) -> tuple[list[Path], str]:
+    canonical = trial_dir / "agent" / "executor-commands.jsonl"
+    if canonical.is_file():
+        return [canonical], "available"
+    attempts = sorted(
+        (trial_dir / "agent" / "attempts").glob("*/executor-commands.jsonl")
+    )
+    if attempts:
+        return attempts, "attempt_fallback"
+    return [], "unavailable"
+
+
+def command_audit(trial_dir: Path) -> dict[str, Any]:
+    paths, status = command_audit_paths(trial_dir)
     records: dict[str, dict[str, Any]] = {}
-    for item in read_jsonl(path):
-        command_id = item.get("command_id")
-        if not isinstance(command_id, str):
+    order: list[str] = []
+    anonymous = 0
+    malformed = 0
+    for path in paths:
+        attempt: int | None = None
+        if path.parent.parent.name == "attempts":
+            try:
+                attempt = int(path.parent.name)
+            except ValueError:
+                pass
+        try:
+            lines = path.read_text(errors="replace").splitlines()
+        except OSError:
             continue
-        if item.get("outcome") == "completed":
-            records[command_id] = item
-        elif command_id not in records:
-            records[command_id] = item
-    return records
+        for line in lines:
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                malformed += 1
+                continue
+            if not isinstance(item, dict):
+                malformed += 1
+                continue
+            command_id = item.get("command_id")
+            if not isinstance(command_id, str) or not command_id:
+                anonymous += 1
+                command_id = f"legacy-command-{anonymous:04d}"
+            item = {**item, "command_id": command_id}
+            if attempt is not None:
+                item.setdefault("executor_attempt", attempt)
+            if command_id not in records:
+                order.append(command_id)
+                records[command_id] = item
+            elif item.get("outcome") != "requested":
+                records[command_id] = {**records[command_id], **item}
+
+    for command_id in order:
+        if records[command_id].get("outcome") == "requested":
+            records[command_id] = {
+                **records[command_id],
+                "outcome": "unfinished",
+                "return_code": None,
+                "error": "No terminal command record was captured.",
+            }
+    timeline = [records[command_id] for command_id in order]
+    successful = sum(
+        item.get("outcome") == "completed" and item.get("return_code") == 0
+        for item in timeline
+    )
+    failed = sum(
+        item.get("outcome") == "completed"
+        and isinstance(item.get("return_code"), int)
+        and item.get("return_code") != 0
+        for item in timeline
+    )
+    return {
+        "status": status,
+        "paths": paths,
+        "records": records,
+        "timeline": timeline,
+        "successful": successful,
+        "failed": failed,
+        "issued": len(timeline),
+        "malformed": malformed,
+    }
+
+
+def command_display(audit: dict[str, Any]) -> str:
+    if audit["status"] == "unavailable":
+        return "audit unavailable"
+    if audit["issued"] == 0:
+        return "0/0 (none issued)"
+    if audit["successful"] == 0 and audit["failed"] == 0:
+        return "0/0 (no terminal result)"
+    return f"{audit['successful']}/{audit['failed']}"
 
 
 def observation_records(trial_dir: Path) -> dict[str, dict[str, Any]]:
@@ -219,7 +283,9 @@ def command_summary(command: Any) -> str:
         r"yum\b|apt\b|apk\b|pacman\b)"
     )
     candidates = [line for line in lines if not skip.search(line)] or lines
-    selected = next((line for line in candidates if preferred.search(line)), candidates[0])
+    selected = next(
+        (line for line in candidates if preferred.search(line)), candidates[0]
+    )
     selected = re.sub(r"\s+", " ", selected)
     if re.search(
         r"(?i)(/root/[^ ]*password|BEGIN [A-Z ]*PRIVATE KEY|"
@@ -232,7 +298,9 @@ def command_summary(command: Any) -> str:
         r"\1[redacted]",
         selected,
     )
-    selected = re.sub(r"[A-Za-z0-9+/]{160,}={0,2}", "[encoded content omitted]", selected)
+    selected = re.sub(
+        r"[A-Za-z0-9+/]{160,}={0,2}", "[encoded content omitted]", selected
+    )
     return selected[:217] + ("..." if len(selected) > 217 else "")
 
 
@@ -310,7 +378,10 @@ def evidence_description(
         source = f"global observation on {node}, {status}, return code {rc}"
         description = observation.get("description") or evidence_id.rsplit(":", 1)[-1]
         return source, markdown_text(description)
-    return "unresolved reference", "The cited identifier was not found in the recorded command or global-observation artifacts."
+    return (
+        "unresolved reference",
+        "The cited identifier was not found in the recorded command or global-observation artifacts.",
+    )
 
 
 def report_reward(report: dict[str, Any], result: dict[str, Any]) -> float | None:
@@ -380,9 +451,15 @@ def requirement_lines(report: dict[str, Any]) -> list[str]:
             continue
         identifier = markdown_text(item.get("id") or "requirement")
         status = str(item.get("status") or "unknown")
-        requirement = markdown_text(item.get("requirement") or "Requirement text unavailable.")
+        requirement = markdown_text(
+            item.get("requirement") or "Requirement text unavailable."
+        )
         summary = markdown_text(item.get("summary") or "No explanation was recorded.")
-        refs = [str(value) for value in item.get("evidence_ids", []) if isinstance(value, str)]
+        refs = [
+            str(value)
+            for value in item.get("evidence_ids", [])
+            if isinstance(value, str)
+        ]
         lines.extend(
             [
                 f"- **{identifier} — {labels.get(status, status.replace('_', ' ').title())}:** {requirement}",
@@ -395,10 +472,11 @@ def requirement_lines(report: dict[str, Any]) -> list[str]:
 
 
 def trial_metrics(
-    trial_dir: Path, result: dict[str, Any], report: dict[str, Any]
+    trial_dir: Path,
+    result: dict[str, Any],
+    report: dict[str, Any],
+    audit: dict[str, Any],
 ) -> dict[str, Any]:
-    stats = report.get("command_stats", {})
-    stats = stats if isinstance(stats, dict) else {}
     provisioned = provision_time_ms(trial_dir)
     return {
         "verdict": verdict(report, result),
@@ -407,8 +485,10 @@ def trial_metrics(
         "functionality": numeric(report.get("functionality")),
         "hygiene": report_hygiene(report),
         "confidence": numeric(report.get("confidence")),
-        "successful_commands": int(stats.get("successful", 0) or 0),
-        "failed_commands": int(stats.get("failed", 0) or 0),
+        "successful_commands": audit["successful"],
+        "failed_commands": audit["failed"],
+        "commands_display": command_display(audit),
+        "command_audit_status": audit["status"],
         "total_duration": elapsed(result.get("started_at"), result.get("finished_at")),
         "environment_duration": elapsed(
             result.get("environment_setup", {}).get("started_at"),
@@ -429,9 +509,10 @@ def trial_metrics(
 def trial_section(trial_dir: Path) -> tuple[list[str], dict[str, Any]]:
     result = read_json(trial_dir / "result.json") or {}
     report = read_json(trial_dir / "verifier" / "evaluation-report.json") or {}
-    commands = command_records(trial_dir)
+    audit = command_audit(trial_dir)
+    commands = audit["records"]
     observations = observation_records(trial_dir)
-    metrics = trial_metrics(trial_dir, result, report)
+    metrics = trial_metrics(trial_dir, result, report, audit)
     failures = failed_commands(commands)
     refs = evidence_ids(report)
     unresolved = [
@@ -441,14 +522,17 @@ def trial_section(trial_dir: Path) -> tuple[list[str], dict[str, Any]]:
         f"## Trial `{trial_dir.name}`",
         "",
         f"**Verifier decision: {metrics['verdict'].title()}.** "
-        + markdown_text(report.get("overall_summary") or "No overall verifier explanation was recorded."),
+        + markdown_text(
+            report.get("overall_summary")
+            or "No overall verifier explanation was recorded."
+        ),
         "",
         "| Reward | Coverage | Functionality | Hygiene | Confidence | Commands |",
         "|---:|---:|---:|---:|---:|---:|",
         f"| {score(metrics['reward'])} | {score(metrics['coverage'])} | "
         f"{score(metrics['functionality'])} | {score(metrics['hygiene'])} | "
         f"{score(metrics['confidence'])} | "
-        f"{metrics['successful_commands']}/{metrics['failed_commands']} |",
+        f"{metrics['commands_display']} |",
         "",
         "### Why the verifier reached this decision",
         "",
@@ -461,10 +545,14 @@ def trial_section(trial_dir: Path) -> tuple[list[str], dict[str, Any]]:
     if isinstance(hygiene, dict):
         lines.append(
             f"The verifier assigned hygiene **{score(hygiene.get('score'))}**. "
-            + markdown_text(hygiene.get("summary") or "No hygiene explanation was recorded.")
+            + markdown_text(
+                hygiene.get("summary") or "No hygiene explanation was recorded."
+            )
         )
         hygiene_refs = [
-            str(item) for item in hygiene.get("evidence_ids", []) if isinstance(item, str)
+            str(item)
+            for item in hygiene.get("evidence_ids", [])
+            if isinstance(item, str)
         ]
         if hygiene_refs:
             lines.extend(
@@ -498,7 +586,9 @@ def trial_section(trial_dir: Path) -> tuple[list[str], dict[str, Any]]:
     exception = result.get("exception_info")
     if isinstance(exception, dict):
         kind = markdown_text(exception.get("exception_type") or "Execution error")
-        message = markdown_text(exception.get("exception_message") or "No exception message was recorded.")
+        message = markdown_text(
+            exception.get("exception_message") or "No exception message was recorded."
+        )
         comments.append(f"**Execution exception:** {kind}: {message}")
     limitations = report.get("limitations", [])
     if isinstance(limitations, list):
@@ -550,8 +640,53 @@ def trial_section(trial_dir: Path) -> tuple[list[str], dict[str, Any]]:
     else:
         lines.append("No failed executor commands were recorded.")
 
+    if metrics["verdict"] != "full success":
+        lines.extend(["", "### Complete executor command timeline", ""])
+        if audit["status"] == "unavailable":
+            lines.append(
+                "The command audit is unavailable. No canonical or per-attempt "
+                "audit artifact exists, so the executor timeline cannot be reconstructed."
+            )
+        elif not audit["timeline"]:
+            lines.append(
+                "The command audit was captured, but it is empty. The executor "
+                "issued no managed-node commands."
+            )
+        else:
+            lines.append(
+                "The following is the complete provider-captured executor command "
+                "timeline, in execution order. Commands are stored in redacted form."
+            )
+            for index, item in enumerate(audit["timeline"], 1):
+                command = item.get("command")
+                rendered_command = (
+                    command if isinstance(command, str) and command else "(unavailable)"
+                )
+                summary = (
+                    f"{index}. {item.get('command_id', 'unknown')} · "
+                    f"{item.get('node', 'unknown')} · {item.get('outcome', 'unknown')}"
+                )
+                lines.extend(
+                    [
+                        "",
+                        "<details>",
+                        f"<summary>{html.escape(summary)}</summary>",
+                        "",
+                        f"- Attempt: `{table_text(item.get('executor_attempt', 'not recorded'))}`",
+                        f"- Timestamp: `{table_text(item.get('timestamp', 'not recorded'))}`",
+                        f"- Return code: `{table_text(item.get('return_code', 'not recorded'))}`",
+                        f"- Duration: `{table_text(item.get('duration_ms', 'not recorded'))}` ms",
+                        "",
+                        f"<pre><code>{html.escape(rendered_command)}</code></pre>",
+                        "",
+                        "</details>",
+                    ]
+                )
+
     provision = metrics["provision_ms"]
-    provision_text = f"{provision / 1000:.3f}s" if provision is not None else "not recorded"
+    provision_text = (
+        f"{provision / 1000:.3f}s" if provision is not None else "not recorded"
+    )
     lines.extend(
         [
             "",
@@ -566,12 +701,25 @@ def trial_section(trial_dir: Path) -> tuple[list[str], dict[str, Any]]:
             "### Trial artifacts",
             "",
             f"- [Trial result]({trial_dir.name}/result.json)",
-            f"- [Verifier report]({trial_dir.name}/verifier/evaluation-report.json)",
-            f"- [Executor command audit]({trial_dir.name}/agent/executor-commands.jsonl)",
-            f"- [Global observations]({trial_dir.name}/verifier/global-observations.json)",
-            "",
         ]
     )
+    if (trial_dir / "verifier" / "evaluation-report.json").is_file():
+        lines.append(
+            f"- [Verifier report]({trial_dir.name}/verifier/evaluation-report.json)"
+        )
+    for index, path in enumerate(audit["paths"], 1):
+        relative = path.relative_to(trial_dir.parent)
+        label = (
+            "Executor command audit"
+            if len(audit["paths"]) == 1
+            else f"Executor command audit {index}"
+        )
+        lines.append(f"- [{label}]({relative.as_posix()})")
+    if (trial_dir / "verifier" / "global-observations.json").is_file():
+        lines.append(
+            f"- [Global observations]({trial_dir.name}/verifier/global-observations.json)"
+        )
+    lines.append("")
     metrics["model"] = model_name(result)
     metrics["unresolved_evidence"] = len(unresolved)
     metrics["actual_failed_commands"] = len(failures)
@@ -581,14 +729,17 @@ def trial_section(trial_dir: Path) -> tuple[list[str], dict[str, Any]]:
 def job_outcome_text(metrics: list[dict[str, Any]]) -> str:
     counts = {
         name: sum(1 for item in metrics if item["verdict"] == name)
-        for name in ("full success", "partial success", "unsuccessful", "not successfully evaluated")
+        for name in (
+            "full success",
+            "partial success",
+            "unsuccessful",
+            "not successfully evaluated",
+        )
     }
     total = len(metrics)
     if counts["full success"] == total:
         if total == 1:
-            return (
-                "The verifier treated the recorded trial as a full success. All requested outcomes were conclusively supported by the cited evidence."
-            )
+            return "The verifier treated the recorded trial as a full success. All requested outcomes were conclusively supported by the cited evidence."
         return (
             f"The verifier treated all {total} independently provisioned trials as full successes. "
             "The repeated result strengthens run-level repeatability, while still not guaranteeing future executions."
@@ -615,7 +766,9 @@ def generate_job(job_dir: Path) -> dict[str, Any]:
 
     stats = root_result.get("stats", {})
     stats = stats if isinstance(stats, dict) else {}
-    job_duration = elapsed(root_result.get("started_at"), root_result.get("finished_at"))
+    job_duration = elapsed(
+        root_result.get("started_at"), root_result.get("finished_at")
+    )
     models = sorted({item["model"] for item in trial_metrics_values})
     lines = [
         "<!-- Generated by scripts/generate_job_analyses.py. -->",
@@ -653,7 +806,7 @@ def generate_job(job_dir: Path) -> dict[str, Any]:
         lines.append(
             f"| `{directory.name}` | {metrics['verdict'].title()} | {score(metrics['reward'])} | "
             f"{score(metrics['coverage'])} | {score(metrics['functionality'])} | "
-            f"{score(metrics['hygiene'])} | {metrics['successful_commands']}/{metrics['failed_commands']} | "
+            f"{score(metrics['hygiene'])} | {metrics['commands_display']} | "
             f"{format_duration(metrics['total_duration'])} |"
         )
     lines.append("")

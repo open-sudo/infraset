@@ -1,8 +1,69 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
-export ANTRIEB_TOKEN=ant_pCcC_8WFtcCT3FW28rAFe2A65Qw6d0AK2m4lETF9i4c
-export HARBOR_ANTRIEB_INITIALIZE_CREDENTIALS_FILE=~/rehl-credentials.txt
+
+credentials_file="${CREDENTIALS_FILE:-$HOME/credentials.env}"
+if [[ ! -f "$credentials_file" || ! -r "$credentials_file" ]]; then
+  printf 'Credentials file is not a readable regular file: %s\n' "$credentials_file" >&2
+  exit 2
+fi
+credentials_file="$(realpath "$credentials_file")"
+
+credentials_mode="$(stat -c '%a' "$credentials_file")"
+if (( (8#$credentials_mode & 8#077) != 0 )); then
+  printf 'Credentials file must not be group/world accessible: %s\n' "$credentials_file" >&2
+  exit 2
+fi
+
+credential_value() {
+  local requested_key="$1"
+  local path="$2"
+  local line key first last
+  local value=""
+  local found=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    if [[ -z "$line" || "$line" == \#* ]]; then
+      continue
+    fi
+    if [[ ! "$line" =~ ^(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+      printf 'Malformed credential assignment in %s\n' "$path" >&2
+      return 1
+    fi
+    key="${BASH_REMATCH[2]}"
+    value="${BASH_REMATCH[3]}"
+    if [[ "$key" != "$requested_key" ]]; then
+      continue
+    fi
+    if (( found )); then
+      printf 'Duplicate credential key %s in %s\n' "$requested_key" "$path" >&2
+      return 1
+    fi
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if (( ${#value} >= 2 )); then
+      first="${value:0:1}"
+      last="${value: -1}"
+      if [[ ( "$first" == "'" && "$last" == "'" ) \
+        || ( "$first" == '"' && "$last" == '"' ) ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+    fi
+    found=1
+  done < "$path"
+  if (( ! found )) || [[ -z "$value" ]]; then
+    printf 'Credentials file does not define a nonempty %s: %s\n' \
+      "$requested_key" "$path" >&2
+    return 1
+  fi
+  printf '%s' "$value"
+}
+
+ANTRIEB_TOKEN="$(credential_value ANTRIEB_TOKEN "$credentials_file")"
+export ANTRIEB_TOKEN
+export CREDENTIALS_FILE="$credentials_file"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 provider_requirement="${INFRASET_PROVIDER_REQUIREMENT:-harbor-antrieb @ git+https://github.com/open-sudo/harbor-antrieb.git}"
@@ -13,7 +74,6 @@ service_tier="${INFRASET_SERVICE_TIER:-fast}"
 agent_name="${INFRASET_AGENT_NAME:-codex}"
 jobs_root="${INFRASET_JOBS_DIR:-$script_dir/jobs}"
 n_attempts="${INFRASET_N_ATTEMPTS:-1}"
-task_parallel="${INFRASET_TASK_PARALLEL:-1}"
 parallel_limit="${INFRASET_PARALLEL:-1}"
 
 usage() {
@@ -23,16 +83,16 @@ usage() {
     "Run one InfraSet task, or every task found recursively below a folder." \
     "" \
     "Options:" \
-    "  -j, --parallel N       Total concurrent trial budget (default: $parallel_limit)" \
-    "  -k, --n-attempts N     Trials to run for each task (default: $n_attempts)" \
-    "  -n, --task-parallel N  Concurrent trials within one task (default: $task_parallel)" \
+    "  -j, --parallel N       Tasks to run concurrently (default: $parallel_limit)" \
+    "  -k, --n-attempts N     Sequential trials for each task (default: $n_attempts)" \
     "  -h, --help             Show this help" \
     "" \
-    "A running task consumes min(n-attempts, task-parallel) slots. The outer" \
-    "scheduler starts only as many tasks as fit within --parallel." \
+    "Trials for the same task never overlap. Up to --parallel different tasks" \
+    "may run at the same time." \
     "" \
-    "Environment equivalents: INFRASET_PARALLEL, INFRASET_N_ATTEMPTS," \
-    "INFRASET_TASK_PARALLEL." >&2
+    "Environment equivalents: INFRASET_PARALLEL and INFRASET_N_ATTEMPTS." \
+    "Set CREDENTIALS_FILE to override the default credentials file at" \
+    "\$HOME/credentials.env." >&2
 }
 
 # Development checkouts are authoritative when Harbor, the provider, and this
@@ -80,19 +140,6 @@ while [[ $# -gt 0 ]]; do
       n_attempts="${1#*=}"
       shift
       ;;
-    --task-parallel|--n-concurrent|-n)
-      if [[ $# -lt 2 ]]; then
-        printf 'Option %s requires a value.\n' "$1" >&2
-        usage
-        exit 2
-      fi
-      task_parallel="$2"
-      shift 2
-      ;;
-    --task-parallel=*|--n-concurrent=*)
-      task_parallel="${1#*=}"
-      shift
-      ;;
     --)
       shift
       if [[ $# -ne 1 || -n "$input_arg" ]]; then
@@ -123,7 +170,7 @@ if [[ -z "$input_arg" ]]; then
   exit 2
 fi
 
-for value_name in parallel_limit n_attempts task_parallel; do
+for value_name in parallel_limit n_attempts; do
   value="${!value_name}"
   if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
     printf '%s must be a positive integer: %s\n' "$value_name" "$value" >&2
@@ -224,19 +271,10 @@ else
   runner=(uv run --isolated --no-project --refresh-package harbor --refresh-package harbor-antrieb --with "$harbor_requirement" --with "$provider_requirement" harbor run)
 fi
 
-effective_task_parallel="$task_parallel"
-if (( effective_task_parallel > n_attempts )); then
-  effective_task_parallel="$n_attempts"
-fi
-if (( effective_task_parallel > parallel_limit )); then
-  effective_task_parallel="$parallel_limit"
-fi
+max_active_tasks="$parallel_limit"
 
-task_slots="$effective_task_parallel"
-max_active_tasks=$((parallel_limit / task_slots))
-
-printf 'Tasks: %s; attempts per task: %s; per-task concurrency: %s; total concurrency budget: %s\n' \
-  "${#task_paths[@]}" "$n_attempts" "$effective_task_parallel" "$parallel_limit"
+printf 'Tasks: %s; sequential trials per task: %s; concurrent tasks: %s\n' \
+  "${#task_paths[@]}" "$n_attempts" "$parallel_limit"
 
 for task_path in "${task_paths[@]}"; do
   task_name="$(basename "$task_path")"
@@ -253,8 +291,8 @@ run_one_task() {
   task_name="$(basename "$task_path")"
   jobs_dir="$jobs_root/$task_name"
 
-  printf '[%s] Starting (%s attempt(s), %s concurrent)\n' \
-    "$task_name" "$n_attempts" "$effective_task_parallel"
+  printf '[%s] Starting (%s sequential trial(s))\n' \
+    "$task_name" "$n_attempts"
 
   exec "${runner[@]}" \
     --yes \
@@ -277,7 +315,7 @@ run_one_task() {
     --verifier-kwarg service_tier="$service_tier" \
     --verifier-kwarg minimum_coverage=1.0 \
     --n-attempts "$n_attempts" \
-    --n-concurrent "$effective_task_parallel"
+    --n-concurrent 1
 }
 
 declare -a active_pids=()

@@ -69,10 +69,19 @@ python3 scripts/validate_hf_dataset.py
 
 Install `uv` and log in to the agent you want to use, such as Codex or Claude
 Code. Create an API key in the [Antrieb dashboard](https://antrieb.sh/dash), then
-export the Antrieb token:
+create `$HOME/credentials.env`:
+
+```dotenv
+ANTRIEB_TOKEN=ant_XXXXXX
+REDHAT_USERNAME=your-red-hat-username
+REDHAT_PASSWORD=your-red-hat-password
+```
+
+The Red Hat entries are needed only for tasks that initialize subscribed RHEL
+systems. Protect the file before running tasks:
 
 ```bash
-export ANTRIEB_TOKEN='ant_XXXXXX'
+chmod 600 "$HOME/credentials.env"
 ```
 
 Run a task from the repository root:
@@ -81,21 +90,22 @@ Run a task from the repository root:
 ./run-task.sh ./tasks/greenfield/haproxy-nodejs-ubuntu16
 ```
 
-Run every task below a folder with a shared concurrency budget:
+Set `CREDENTIALS_FILE` to use a different credential-file path.
+
+Run every task below a folder, with up to five different tasks running at once:
 
 ```bash
 ./run-task.sh --parallel 5 ./tasks/greenfield
 ```
 
-To repeat every task, set both the number of attempts and the concurrency allowed
-inside one task. Each active task consumes that many slots from the shared budget:
+To repeat every task three times while running up to five different tasks at once:
 
 ```bash
-./run-task.sh --parallel 6 --n-attempts 3 --task-parallel 2 ./tasks/greenfield
+./run-task.sh --parallel 5 --n-attempts 3 ./tasks/greenfield
 ```
 
-This example runs three task processes at a time, with two concurrent trials in
-each process. Run `./run-task.sh --help` for the equivalent environment variables.
+Trials belonging to the same task run sequentially and never overlap. Run
+`./run-task.sh --help` for the equivalent environment variables.
 
 The runner fetches Harbor and `harbor-antrieb` automatically. Results are stored
 under `jobs/<task-name>/`.

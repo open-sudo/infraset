@@ -96,11 +96,17 @@ def main() -> int:
         row["commands"]
         for row in summary
         if not isinstance(row["commands"], str)
-        or re.fullmatch(r"\d+/\d+", row["commands"]) is None
+        or re.fullmatch(
+            r"(?:\d+/\d+(?: \((?:none issued|no terminal result)\))?"
+            r"(?:; \d+ audit unavailable)?|audit unavailable)",
+            row["commands"],
+        )
+        is None
     ]
     if invalid_commands:
         raise ValueError(
-            "execution-summary commands must use successful/failed integer pairs"
+            "execution-summary commands must contain successful/failed counts or "
+            "an explicit audit-availability state"
         )
 
     summary_tasks = [str(row["task"]) for row in summary]

@@ -103,6 +103,72 @@ def metric(rewards: dict[str, Any], name: str) -> float:
     return float(value) if isinstance(value, (int, float)) else 0.0
 
 
+def command_audit_paths(trial_dir: Path) -> tuple[list[Path], str]:
+    canonical = trial_dir / "agent" / "executor-commands.jsonl"
+    if canonical.is_file():
+        return [canonical], "available"
+    attempts = sorted(
+        (trial_dir / "agent" / "attempts").glob("*/executor-commands.jsonl")
+    )
+    if attempts:
+        return attempts, "attempt_fallback"
+    return [], "unavailable"
+
+
+def command_audit_stats(trial_dir: Path) -> dict[str, Any]:
+    paths, status = command_audit_paths(trial_dir)
+    requested: set[str] = set()
+    terminal: set[str] = set()
+    successful = failed = anonymous = 0
+    for path in paths:
+        for line in path.read_text(errors="replace").splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            command_id = record.get("command_id")
+            if not isinstance(command_id, str) or not command_id:
+                anonymous += 1
+                command_id = f"anonymous-{anonymous}"
+            outcome = record.get("outcome")
+            if outcome == "requested":
+                requested.add(command_id)
+                continue
+            terminal.add(command_id)
+            return_code = record.get("return_code")
+            if outcome == "completed" and return_code == 0:
+                successful += 1
+            elif outcome == "completed" and isinstance(return_code, int):
+                failed += 1
+    return {
+        "status": status,
+        "issued": len(requested | terminal),
+        "successful": successful,
+        "failed": failed,
+        "unfinished": len(requested - terminal),
+    }
+
+
+def command_display(
+    successful: int,
+    failed: int,
+    issued: int,
+    available_trials: int,
+    unavailable_trials: int,
+) -> str:
+    if available_trials == 0:
+        return "audit unavailable"
+    if successful == 0 and failed == 0:
+        value = "0/0 (none issued)" if issued == 0 else "0/0 (no terminal result)"
+    else:
+        value = f"{successful}/{failed}"
+    if unavailable_trials:
+        value += f"; {unavailable_trials} audit unavailable"
+    return value
+
+
 def task_record(task_dir: Path) -> dict[str, Any] | None:
     jobs = job_dirs(task_dir)
     if not jobs:
@@ -120,6 +186,9 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
     metrics: dict[str, list[float]] = defaultdict(list)
     successful_commands = 0
     failed_commands = 0
+    issued_commands = 0
+    available_command_audits = 0
+    unavailable_command_audits = 0
     execution_durations: list[float] = []
     provisioning: list[float] = []
 
@@ -135,9 +204,7 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
             metrics[name].append(metric(rewards, name))
 
         agent_execution = result.get("agent_execution", {})
-        agent_execution = (
-            agent_execution if isinstance(agent_execution, dict) else {}
-        )
+        agent_execution = agent_execution if isinstance(agent_execution, dict) else {}
         started = timestamp(agent_execution.get("started_at"))
         finished = timestamp(agent_execution.get("finished_at"))
         if started is not None and finished is not None:
@@ -147,11 +214,14 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
         if provisioned is not None:
             provisioning.append(provisioned)
 
-        report = read_json(directory / "verifier" / "evaluation-report.json") or {}
-        command_stats = report.get("command_stats", {})
-        command_stats = command_stats if isinstance(command_stats, dict) else {}
-        successful_commands += int(command_stats.get("successful", 0) or 0)
-        failed_commands += int(command_stats.get("failed", 0) or 0)
+        command_stats = command_audit_stats(directory)
+        successful_commands += command_stats["successful"]
+        failed_commands += command_stats["failed"]
+        issued_commands += command_stats["issued"]
+        if command_stats["status"] == "unavailable":
+            unavailable_command_audits += 1
+        else:
+            available_command_audits += 1
 
     return {
         "task": task_dir.name,
@@ -159,7 +229,15 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
             f"{GITHUB_BLOB}/jobs/{task_dir.name}/{jobs[-1].name}/analysis.md"
         ),
         "environment": environment(jobs[-1]),
-        "commands": f"{successful_commands}/{failed_commands}",
+        "commands": command_display(
+            successful_commands,
+            failed_commands,
+            issued_commands,
+            available_command_audits,
+            unavailable_command_audits,
+        ),
+        "_successful_commands": successful_commands,
+        "_failed_commands": failed_commands,
         **{name: mean(values) for name, values in metrics.items()},
         "provisioning_seconds": mean(provisioning) / 1000,
         "execution_seconds": mean(execution_durations),
@@ -208,15 +286,15 @@ def summary_table(values: list[dict[str, Any]]) -> str:
 
 def main() -> int:
     values = records()
-    successful = sum(int(record["commands"].split("/", 1)[0]) for record in values)
-    failed = sum(int(record["commands"].split("/", 1)[1]) for record in values)
+    successful = sum(record["_successful_commands"] for record in values)
+    failed = sum(record["_failed_commands"] for record in values)
     content = f"""{read_intro()}
 
 ## Execution summary
 
-This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/tree/main/jobs). Metrics and times are averages across recorded trials. `Commands` reports successful/failed executor commands from the provider-captured audit. Unfinished or indeterminate command records are excluded from both values. A failed command records an unsuccessful attempt; it does not by itself mean that the final task outcome failed.
+This table summarizes the recorded [jobs](https://github.com/open-sudo/infraset/tree/main/jobs). Metrics and times are averages across recorded trials. `Commands` reports successful/failed executor commands read directly from the provider-captured audit. Unfinished or indeterminate command records are excluded from both values. `0/0 (none issued)` means an audit was captured but contains no command request; `audit unavailable` means no canonical or per-attempt audit artifact exists. A failed command records an unsuccessful attempt; it does not by itself mean that the final task outcome failed.
 
-`Reward` measures the supported outcome. `Operational hygiene` measures attributable residue or unrelated regression found by applicable global checks. A hygiene score of `1.000` means all applicable checks passed; `0.000` means none passed.
+`Reward` measures the supported outcome. `Operational hygiene` measures unnecessary mutations during execution, attributable residue, and unrelated regression. A hygiene score of `1.000` means the verifier found none of these problems; `0.000` means the execution received no hygiene credit.
 
 The current dataset contains {len(values)} tasks and {successful + failed} completed executor commands: {successful} successful and {failed} failed.
 

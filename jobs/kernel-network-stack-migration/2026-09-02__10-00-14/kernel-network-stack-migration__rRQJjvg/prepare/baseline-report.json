@@ -1,0 +1,237 @@
+{
+  "source": "static-prepare",
+  "nodes": [
+    {
+      "name": "node1",
+      "facts": [
+        {
+          "category": "legacy-platform-contract",
+          "observation": "ubuntu:16.04 kernel=4.4.0-210-generic interfaces=eth0,eth1 net.ifnames=0",
+          "command": "set -eu\n. /etc/os-release\ntest \"$ID\" = ubuntu\ntest \"$VERSION_ID\" = 16.04\nkernel=\"$(uname -r)\"\nprintf '%s\\n' \"$kernel\" | grep -Eq '^4\\.4\\.'\ngrep -qw 'net.ifnames=0' /proc/cmdline\ntest -d /sys/class/net/eth0\ntest -d /sys/class/net/eth1\nprintf '%s:%s kernel=%s interfaces=eth0,eth1 net.ifnames=0\\n' \"$ID\" \"$VERSION_ID\" \"$kernel\"\n"
+        },
+        {
+          "category": "legacy-application-artifacts",
+          "observation": "718bf49667525429b6b88779713c96be72f425f8733d91476290a45d189abe89  /etc/legacy-netapp/netapp.conf\nf9fce7bfc77fc75c665eb854b6d687310d32c420104ab601ca8409d861997b8d  /opt/legacy-netapp/edge-echo.py\n075cd1f5535be7bb3c8018ea7f10f52ff3a5943de75a460d6c7525d377b4c244  /usr/local/libexec/legacy-netapp-start\nbab9f360d87721bb36e8cf3beb2745cbcdcf58b070e47f1f4ffc931309ae2055  /usr/local/sbin/legacy-netapp-firewall\n4d1da2d2fec90950aabff036030f6265c41cdaa455f7be1fbb2dda84d549b7de  /etc/systemd/system/legacy-netapp-firewall.service\n8c53bfae609d3f456fca6eefb15013efd4ac8a89a8c17fda1899be7c86c7d09d  /etc/systemd/system/legacy-netapp@.service\nlegacy-netapp:legacy-netapp:440:/var/lib/legacy-netapp/site-id\nroot:legacy-netapp:640:/etc/legacy-netapp/netapp.conf\nroot:root:755:/opt/legacy-netapp/edge-echo.py",
+          "command": "set -eu\nsudo -n find /opt/legacy-netapp /etc/legacy-netapp -xdev -type f -print | sort | sudo -n xargs sha256sum\nsudo -n sha256sum /usr/local/libexec/legacy-netapp-start /usr/local/sbin/legacy-netapp-firewall /etc/systemd/system/legacy-netapp-firewall.service /etc/systemd/system/legacy-netapp@.service\nsudo -n stat -c '%U:%G:%a:%n' /var/lib/legacy-netapp/site-id /etc/legacy-netapp/netapp.conf /opt/legacy-netapp/edge-echo.py\n"
+        },
+        {
+          "category": "legacy-service-state",
+          "observation": "active\nenabled\nactive\nenabled\nactive\nenabled\nLISTEN     0      128    10.100.225.10:4180                     *:*                   users:((\"python\",pid=1327,fd=3))\nLISTEN     0      128    10.100.225.10:4180                     *:*                   users:((\"python\",pid=1329,fd=3))",
+          "command": "set -eu\nsystemctl is-active legacy-netapp-firewall.service\nsystemctl is-enabled legacy-netapp-firewall.service\nsystemctl is-active legacy-netapp@1.service\nsystemctl is-enabled legacy-netapp@1.service\nsystemctl is-active legacy-netapp@2.service\nsystemctl is-enabled legacy-netapp@2.service\nservice_ip=\"$(ip -o -4 addr show dev eth1 scope global | awk 'NR == 1 {split($4, a, \"/\"); print a[1]}')\"\nsudo -n ss -lnpt 'sport = :4180' | grep \"$service_ip:4180\"\n"
+        },
+        {
+          "category": "legacy-firewall-policy",
+          "observation": "command succeeded with no output",
+          "command": "set -eu\niptables -V | grep -vq 'nf_tables'\nbind_address=\"$(ip -o -4 addr show dev eth1 scope global | awk 'NR == 1 {split($4, a, \"/\"); print a[1]}')\"\nsource_cidr=\"$(ip -4 route show dev eth1 scope link | awk '$1 ~ /^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+\\/[0-9]+$/ {print $1; exit}')\"\ntest -n \"$bind_address\"\ntest -n \"$source_cidr\"\nsudo -n iptables -C INPUT -p tcp --dport 4180 -j LEGACY_NETAPP\nsudo -n iptables -C LEGACY_NETAPP -p tcp --dport 4180 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\nsudo -n iptables -C LEGACY_NETAPP -p tcp --dport 4180 -m conntrack --ctstate INVALID -j DROP\nsudo -n iptables -C LEGACY_NETAPP -i eth1 -s \"$source_cidr\" -d \"$bind_address\" -p tcp --dport 4180 -m conntrack --ctstate NEW -m limit --limit 120/second --limit-burst 240 -j ACCEPT\nsudo -n iptables -C LEGACY_NETAPP -p tcp --dport 4180 -m limit --limit 6/minute --limit-burst 10 -j LOG --log-prefix 'legacy-netapp-deny '\nsudo -n iptables -C LEGACY_NETAPP -p tcp --dport 4180 -j REJECT --reject-with tcp-reset\n"
+        },
+        {
+          "category": "legacy-host-security",
+          "observation": "Y\nactive\nenabled\ndisabled",
+          "command": "set -eu\ncat /sys/module/apparmor/parameters/enabled\nsystemctl is-active apparmor.service || true\nsystemctl is-enabled ssh.service 2>/dev/null || true\nsystemctl is-enabled ssh.socket 2>/dev/null || true\n"
+        },
+        {
+          "category": "legacy-failed-units",
+          "observation": "command succeeded with no output",
+          "command": "systemctl --failed --no-legend --no-pager || true"
+        }
+      ],
+      "unavailable": []
+    },
+    {
+      "name": "node2",
+      "facts": [
+        {
+          "category": "modern-platform-contract",
+          "observation": "ubuntu:24.04 kernel=6.8.0-71-generic interfaces=enp1s0,enp8s0 backend=nf_tables",
+          "command": "set -eu\n. /etc/os-release\ntest \"$ID\" = ubuntu\ntest \"$VERSION_ID\" = 24.04\nkernel=\"$(uname -r)\"\nprintf '%s\\n' \"$kernel\" | grep -Eq '^6\\.'\n! grep -qw 'net.ifnames=0' /proc/cmdline\ninterfaces=\"$(ip -o -4 addr show scope global | awk '{print $2}' | sort -u)\"\ntest \"$(printf '%s\\n' \"$interfaces\" | grep -c .)\" -eq 2\nif printf '%s\\n' \"$interfaces\" | grep -Ev '^enp[0-9]+s[0-9]+$' | grep -q .; then\n  exit 1\nfi\nbackend=not-installed\nif command -v iptables >/dev/null; then\n  iptables -V | grep -q 'nf_tables'\n  backend=nf_tables\nfi\nprintf '%s:%s kernel=%s interfaces=%s backend=%s\\n' \"$ID\" \"$VERSION_ID\" \"$kernel\" \"$(printf '%s\\n' \"$interfaces\" | paste -sd, -)\" \"$backend\"\n"
+        },
+        {
+          "category": "legacy-external-flow",
+          "observation": "command succeeded with no output",
+          "command": "set -eu\ndefault_if=\"$(ip -4 route show default | awk 'NR == 1 {print $5}')\"\nservice_if=\"$(ip -o -4 addr show scope global | awk -v default_if=\"$default_if\" '$2 != default_if {print $2; exit}')\"\ntest \"$(curl --noproxy '*' --interface \"$service_if\" --connect-timeout 2 --max-time 5 -fsS http://legacy-netapp.service.lan:4180/health)\" = legacy-netapp-ok\ntest \"$(curl --noproxy '*' --interface \"$service_if\" --connect-timeout 2 --max-time 5 -fsS http://legacy-netapp.service.lan:4180/identity)\" = migration-cohort-44\n"
+        },
+        {
+          "category": "legacy-reuseport-workers",
+          "observation": "command succeeded with no output",
+          "command": "set -eu\ndefault_if=\"$(ip -4 route show default | awk 'NR == 1 {print $5}')\"\nservice_if=\"$(ip -o -4 addr show scope global | awk -v default_if=\"$default_if\" '$2 != default_if {print $2; exit}')\"\nresponses=''\nfor attempt in $(seq 1 80); do\n  response=\"$(curl --noproxy '*' --interface \"$service_if\" --connect-timeout 2 --max-time 5 -fsS http://legacy-netapp.service.lan:4180/worker)\"\n  responses=\"${responses}${response}\\n\"\ndone\nprintf '%b' \"$responses\" | sort -u | grep -qx 'worker=1'\nprintf '%b' \"$responses\" | sort -u | grep -qx 'worker=2'\n"
+        },
+        {
+          "category": "modern-host-security",
+          "observation": "Y\nactive\ndisabled\nenabled",
+          "command": "set -eu\ncat /sys/module/apparmor/parameters/enabled\nsystemctl is-active apparmor.service || true\nsystemctl is-enabled ssh.service 2>/dev/null || true\nsystemctl is-enabled ssh.socket 2>/dev/null || true\n"
+        },
+        {
+          "category": "modern-target-clean",
+          "observation": "command succeeded with no output",
+          "command": "set -eu\n! id legacy-netapp >/dev/null 2>&1\ntest ! -e /opt/legacy-netapp\ntest ! -e /etc/legacy-netapp\n! sudo -n ss -lnpt 'sport = :4180' | grep -q ':4180'\n"
+        },
+        {
+          "category": "modern-failed-units",
+          "observation": "command succeeded with no output",
+          "command": "systemctl --failed --no-legend --no-pager || true"
+        }
+      ],
+      "unavailable": []
+    }
+  ],
+  "topology_observations": [],
+  "limitations": [],
+  "observations": [
+    {
+      "id": "legacy-platform-contract",
+      "stage": 10,
+      "node": "node1",
+      "command": "set -eu\n. /etc/os-release\ntest \"$ID\" = ubuntu\ntest \"$VERSION_ID\" = 16.04\nkernel=\"$(uname -r)\"\nprintf '%s\\n' \"$kernel\" | grep -Eq '^4\\.4\\.'\ngrep -qw 'net.ifnames=0' /proc/cmdline\ntest -d /sys/class/net/eth0\ntest -d /sys/class/net/eth1\nprintf '%s:%s kernel=%s interfaces=eth0,eth1 net.ifnames=0\\n' \"$ID\" \"$VERSION_ID\" \"$kernel\"\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "ubuntu:16.04 kernel=4.4.0-210-generic interfaces=eth0,eth1 net.ifnames=0\n",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "modern-platform-contract",
+      "stage": 10,
+      "node": "node2",
+      "command": "set -eu\n. /etc/os-release\ntest \"$ID\" = ubuntu\ntest \"$VERSION_ID\" = 24.04\nkernel=\"$(uname -r)\"\nprintf '%s\\n' \"$kernel\" | grep -Eq '^6\\.'\n! grep -qw 'net.ifnames=0' /proc/cmdline\ninterfaces=\"$(ip -o -4 addr show scope global | awk '{print $2}' | sort -u)\"\ntest \"$(printf '%s\\n' \"$interfaces\" | grep -c .)\" -eq 2\nif printf '%s\\n' \"$interfaces\" | grep -Ev '^enp[0-9]+s[0-9]+$' | grep -q .; then\n  exit 1\nfi\nbackend=not-installed\nif command -v iptables >/dev/null; then\n  iptables -V | grep -q 'nf_tables'\n  backend=nf_tables\nfi\nprintf '%s:%s kernel=%s interfaces=%s backend=%s\\n' \"$ID\" \"$VERSION_ID\" \"$kernel\" \"$(printf '%s\\n' \"$interfaces\" | paste -sd, -)\" \"$backend\"\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "ubuntu:24.04 kernel=6.8.0-71-generic interfaces=enp1s0,enp8s0 backend=nf_tables",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "legacy-application-artifacts",
+      "stage": 10,
+      "node": "node1",
+      "command": "set -eu\nsudo -n find /opt/legacy-netapp /etc/legacy-netapp -xdev -type f -print | sort | sudo -n xargs sha256sum\nsudo -n sha256sum /usr/local/libexec/legacy-netapp-start /usr/local/sbin/legacy-netapp-firewall /etc/systemd/system/legacy-netapp-firewall.service /etc/systemd/system/legacy-netapp@.service\nsudo -n stat -c '%U:%G:%a:%n' /var/lib/legacy-netapp/site-id /etc/legacy-netapp/netapp.conf /opt/legacy-netapp/edge-echo.py\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "718bf49667525429b6b88779713c96be72f425f8733d91476290a45d189abe89  /etc/legacy-netapp/netapp.conf\nf9fce7bfc77fc75c665eb854b6d687310d32c420104ab601ca8409d861997b8d  /opt/legacy-netapp/edge-echo.py\n075cd1f5535be7bb3c8018ea7f10f52ff3a5943de75a460d6c7525d377b4c244  /usr/local/libexec/legacy-netapp-start\nbab9f360d87721bb36e8cf3beb2745cbcdcf58b070e47f1f4ffc931309ae2055  /usr/local/sbin/legacy-netapp-firewall\n4d1da2d2fec90950aabff036030f6265c41cdaa455f7be1fbb2dda84d549b7de  /etc/systemd/system/legacy-netapp-firewall.service\n8c53bfae609d3f456fca6eefb15013efd4ac8a89a8c17fda1899be7c86c7d09d  /etc/systemd/system/legacy-netapp@.service\nlegacy-netapp:legacy-netapp:440:/var/lib/legacy-netapp/site-id\nroot:legacy-netapp:640:/etc/legacy-netapp/netapp.conf\nroot:root:755:/opt/legacy-netapp/edge-echo.py\n",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "legacy-service-state",
+      "stage": 10,
+      "node": "node1",
+      "command": "set -eu\nsystemctl is-active legacy-netapp-firewall.service\nsystemctl is-enabled legacy-netapp-firewall.service\nsystemctl is-active legacy-netapp@1.service\nsystemctl is-enabled legacy-netapp@1.service\nsystemctl is-active legacy-netapp@2.service\nsystemctl is-enabled legacy-netapp@2.service\nservice_ip=\"$(ip -o -4 addr show dev eth1 scope global | awk 'NR == 1 {split($4, a, \"/\"); print a[1]}')\"\nsudo -n ss -lnpt 'sport = :4180' | grep \"$service_ip:4180\"\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "active\nenabled\nactive\nenabled\nactive\nenabled\nLISTEN     0      128    10.100.225.10:4180                     *:*                   users:((\"python\",pid=1327,fd=3))\nLISTEN     0      128    10.100.225.10:4180                     *:*                   users:((\"python\",pid=1329,fd=3))\n",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "legacy-external-flow",
+      "stage": 15,
+      "node": "node2",
+      "command": "set -eu\ndefault_if=\"$(ip -4 route show default | awk 'NR == 1 {print $5}')\"\nservice_if=\"$(ip -o -4 addr show scope global | awk -v default_if=\"$default_if\" '$2 != default_if {print $2; exit}')\"\ntest \"$(curl --noproxy '*' --interface \"$service_if\" --connect-timeout 2 --max-time 5 -fsS http://legacy-netapp.service.lan:4180/health)\" = legacy-netapp-ok\ntest \"$(curl --noproxy '*' --interface \"$service_if\" --connect-timeout 2 --max-time 5 -fsS http://legacy-netapp.service.lan:4180/identity)\" = migration-cohort-44\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "legacy-reuseport-workers",
+      "stage": 15,
+      "node": "node2",
+      "command": "set -eu\ndefault_if=\"$(ip -4 route show default | awk 'NR == 1 {print $5}')\"\nservice_if=\"$(ip -o -4 addr show scope global | awk -v default_if=\"$default_if\" '$2 != default_if {print $2; exit}')\"\nresponses=''\nfor attempt in $(seq 1 80); do\n  response=\"$(curl --noproxy '*' --interface \"$service_if\" --connect-timeout 2 --max-time 5 -fsS http://legacy-netapp.service.lan:4180/worker)\"\n  responses=\"${responses}${response}\\n\"\ndone\nprintf '%b' \"$responses\" | sort -u | grep -qx 'worker=1'\nprintf '%b' \"$responses\" | sort -u | grep -qx 'worker=2'\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "legacy-firewall-policy",
+      "stage": 20,
+      "node": "node1",
+      "command": "set -eu\niptables -V | grep -vq 'nf_tables'\nbind_address=\"$(ip -o -4 addr show dev eth1 scope global | awk 'NR == 1 {split($4, a, \"/\"); print a[1]}')\"\nsource_cidr=\"$(ip -4 route show dev eth1 scope link | awk '$1 ~ /^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+\\/[0-9]+$/ {print $1; exit}')\"\ntest -n \"$bind_address\"\ntest -n \"$source_cidr\"\nsudo -n iptables -C INPUT -p tcp --dport 4180 -j LEGACY_NETAPP\nsudo -n iptables -C LEGACY_NETAPP -p tcp --dport 4180 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\nsudo -n iptables -C LEGACY_NETAPP -p tcp --dport 4180 -m conntrack --ctstate INVALID -j DROP\nsudo -n iptables -C LEGACY_NETAPP -i eth1 -s \"$source_cidr\" -d \"$bind_address\" -p tcp --dport 4180 -m conntrack --ctstate NEW -m limit --limit 120/second --limit-burst 240 -j ACCEPT\nsudo -n iptables -C LEGACY_NETAPP -p tcp --dport 4180 -m limit --limit 6/minute --limit-burst 10 -j LOG --log-prefix 'legacy-netapp-deny '\nsudo -n iptables -C LEGACY_NETAPP -p tcp --dport 4180 -j REJECT --reject-with tcp-reset\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "legacy-host-security",
+      "stage": 20,
+      "node": "node1",
+      "command": "set -eu\ncat /sys/module/apparmor/parameters/enabled\nsystemctl is-active apparmor.service || true\nsystemctl is-enabled ssh.service 2>/dev/null || true\nsystemctl is-enabled ssh.socket 2>/dev/null || true\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "Y\nactive\nenabled\ndisabled\n",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "modern-host-security",
+      "stage": 20,
+      "node": "node2",
+      "command": "set -eu\ncat /sys/module/apparmor/parameters/enabled\nsystemctl is-active apparmor.service || true\nsystemctl is-enabled ssh.service 2>/dev/null || true\nsystemctl is-enabled ssh.socket 2>/dev/null || true\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "Y\nactive\ndisabled\nenabled",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "modern-target-clean",
+      "stage": 20,
+      "node": "node2",
+      "command": "set -eu\n! id legacy-netapp >/dev/null 2>&1\ntest ! -e /opt/legacy-netapp\ntest ! -e /etc/legacy-netapp\n! sudo -n ss -lnpt 'sport = :4180' | grep -q ':4180'\n",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "legacy-failed-units",
+      "stage": 25,
+      "node": "node1",
+      "command": "systemctl --failed --no-legend --no-pager || true",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    },
+    {
+      "id": "modern-failed-units",
+      "stage": 25,
+      "node": "node2",
+      "command": "systemctl --failed --no-legend --no-pager || true",
+      "passed": true,
+      "return_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "attempts": 1,
+      "failure": null,
+      "required": true
+    }
+  ]
+}
