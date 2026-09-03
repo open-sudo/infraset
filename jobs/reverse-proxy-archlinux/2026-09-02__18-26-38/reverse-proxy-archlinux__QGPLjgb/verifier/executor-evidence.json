@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 15,
+    "successful": 11,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Local backend on TCP 8091 returns backend-ready",
+      "command_ids": [
+        "cmd-5696e686a8fa41ca",
+        "cmd-3464261fd146401a"
+      ],
+      "summary": "Direct requests to node1:8091 returned exactly `backend-ready`; the Python service was active and listening before and after reboot."
+    },
+    {
+      "requirement": "Reverse proxy on TCP 8090 publishes the backend",
+      "command_ids": [
+        "cmd-37d19eac122e4e03",
+        "cmd-3464261fd146401a"
+      ],
+      "summary": "Requests to node1:8090 returned exactly `backend-ready`; evidence shows the socat listener and its node1:8091 upstream."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-7970c8f35e38498d",
+        "cmd-9582fa4ab0ca4b6b",
+        "cmd-0797f6dde89d415b",
+        "cmd-3464261fd146401a"
+      ],
+      "summary": "Captured healthy baseline and original boot ID, acknowledged the scheduled safe reboot, proved a changed boot ID, then verified system health, active/enabled services, both listeners, and direct/proxied responses."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-db5cc324561e4d56",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:26:32.693697+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 170,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf 'os='; sed -n 's/^PRETTY_NAME=//p' /etc/os-release\nprintf 'pid1='; ps -p 1 -o comm=\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'listeners_8090_8091:\\n'; ss -ltnp '( sport = :8090 or sport = :8091 )' || true\nfor x in nginx caddy haproxy python3 busybox socat nc; do if command -v \"$x\" >/dev/null 2>&1; then printf '%s=%s\\n' \"$x\" \"$(command -v \"$x\")\"; fi; done\nprintf 'failed_units:\\n'; systemctl --failed --no-legend || true",
+      "stdout": "node=node1 ip=10.100.247.10\nos=\"Arch Linux\"\npid1=systemd\nboot_id=4eaf428d-1724-4431-a764-c9e0fdc350cc\nlisteners_8090_8091:\nState Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\npython3=/usr/bin/python3\nsocat=/usr/bin/socat\nnc=/usr/bin/nc\nfailed_units:"
+    },
+    {
+      "command_id": "cmd-62799883425c4cd6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:26:50.990539+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 78,
+      "command": "set -eu\nid\nfor f in /usr/local/lib/[REDACTED].py /usr/local/lib/[REDACTED].py /etc/systemd/system/backend-8091.service /etc/systemd/system/reverse-proxy-8090.service; do if [ -e \"$f\" ]; then printf 'exists:%s\\n' \"$f\"; else printf 'absent:%s\\n' \"$f\"; fi; done\nfor u in backend-8091.service reverse-proxy-8090.service; do printf '%s load-state=' \"$u\"; systemctl show -p LoadState --value \"$u\" 2>/dev/null || true; done",
+      "stdout": "uid=0(root) gid=0(root) groups=0(root)\nabsent:/usr/local/lib/[REDACTED].py\nabsent:/usr/local/lib/[REDACTED].py\nabsent:/etc/systemd/system/backend-8091.service\nabsent:/etc/systemd/system/reverse-proxy-8090.service\nbackend-8091.service load-state=not-found\nreverse-proxy-8090.service load-state=not-found"
+    },
+    {
+      "command_id": "cmd-824c3590015d493a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:27:12.445353+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 310,
+      "command": "set -eu\ninstall -d -m 0755 /usr/local/lib\ncat > /usr/local/lib/[REDACTED].py <<'ANTRIEB_BACKEND_PY'\n#!/usr/bin/python3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nBODY = b\"backend-ready\"\n\nclass Handler(BaseHTTPRequestHandler):\n    protocol_version = \"HTTP/1.1\"\n\n    def send_backend_response(self, include_body):\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"text/plain\")\n        self.send_header(\"Content-Length\", str(len(BODY)))\n        self.send_header(\"Connection\", \"close\")\n        self.end_headers()\n        if include_body:\n            self.wfile.write(BODY)\n\n    def do_GET(self):\n        self.send_backend_response(True)\n\n    def do_HEAD(self):\n        self.send_backend_response(False)\n\n    def log_message(self, fmt, *args):\n        print(\"%s - %s\" % (self.address_string(), fmt % args), flush=True)\n\nThreadingHTTPServer((\"0.0.0.0\", 8091), Handler).serve_forever()\nANTRIEB_BACKEND_PY\nchmod 0755 /usr/local/lib/[REDACTED].py\ncat > /etc/systemd/system/backend-8091.service <<'ANTRIEB_BACKEND_UNIT'\n[Unit]\nDescription=Local HTTP backend on TCP 8091\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/usr/bin/python3 /usr/local/lib/[REDACTED].py\nRestart=on-failure\nRestartSec=1s\nUser=nobody\nGroup=nobody\nNoNewPrivileges=yes\nPrivateTmp=yes\nProtectSystem=strict\nProtectHome=yes\nCapabilityBoundingSet=\nRestrictAddressFamilies=AF_INET AF_INET6\n\n[Install]\nWantedBy=multi-user.target\nANTRIEB_BACKEND_UNIT\nsystemctl daemon-reload\nsystemctl enable --now backend-8091.service\nsystemctl is-active backend-8091.service\nsystemctl is-enabled backend-8091.service",
+      "stdout": "Created symlink '/etc/systemd/system/multi-user.target.wants/backend-8091.service' \u2192 '/etc/systemd/system/backend-8091.service'.\nactive\nenabled"
+    },
+    {
+      "command_id": "cmd-5696e686a8fa41ca",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:27:15.865102+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 109,
+      "command": "set -eu\nprintf 'backend_body='; curl --noproxy '*' -fsS --max-time 5 \"http://$NODE_IP:8091/\"; printf '\\n'\nprintf 'backend_headers:\\n'; curl --noproxy '*' -fsSI --max-time 5 \"http://$NODE_IP:8091/\"\nprintf 'backend_listener:\\n'; ss -ltnp '( sport = :8091 )'\nprintf 'backend_unit='; systemctl is-active backend-8091.service",
+      "stdout": "backend_body=backend-ready\nbackend_headers:\nHTTP/1.1 200 OK\r\nServer: BaseHTTP/0.6 Python/3.14.6\r\nDate: Wed, 02 Sep 2026 23:27:15 GMT\r\nContent-Type: text/plain\r\nContent-Length: 13\r\nConnection: close\r\n\r\nbackend_listener:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8091      0.0.0.0:*    users:((\"python3\",pid=815,fd=3))\nbackend_unit=active"
+    },
+    {
+      "command_id": "cmd-a6970ec66cc241c1",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:27:25.773232+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 350,
+      "command": "set -eu\ncat > /etc/systemd/system/reverse-proxy-8090.service <<ANTRIEB_PROXY_UNIT\n[Unit]\nDescription=TCP reverse proxy from 8090 to local backend 8091\nRequires=backend-8091.service\nAfter=network.target backend-8091.service\n\n[Service]\nType=simple\nExecStart=/usr/bin/socat TCP4-LISTEN:8090,bind=0.0.0.0,reuseaddr,fork TCP4:${NODE_IP}:8091\nRestart=on-failure\nRestartSec=1s\nUser=nobody\nGroup=nobody\nNoNewPrivileges=yes\nPrivateTmp=yes\nProtectSystem=strict\nProtectHome=yes\nCapabilityBoundingSet=\nRestrictAddressFamilies=AF_INET\n\n[Install]\nWantedBy=multi-user.target\nANTRIEB_PROXY_UNIT\nsystemctl daemon-reload\nsystemctl enable --now reverse-proxy-8090.service\nsystemctl is-active reverse-proxy-8090.service\nsystemctl is-enabled reverse-proxy-8090.service",
+      "stdout": "Created symlink '/etc/systemd/system/multi-user.target.wants/reverse-proxy-8090.service' \u2192 '/etc/systemd/system/reverse-proxy-8090.service'.\nactive\nenabled"
+    },
+    {
+      "command_id": "cmd-37d19eac122e4e03",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:27:34.875458+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 90,
+      "command": "set -eu\nbackend_body=$(curl --noproxy '*' -fsS --max-time 5 \"http://$NODE_IP:8091/\")\nproxy_body=$(curl --noproxy '*' -fsS --max-time 5 \"http://$NODE_IP:8090/\")\n[ \"$backend_body\" = backend-ready ]\n[ \"$proxy_body\" = backend-ready ]\nprintf 'direct_backend=%s\\nproxied_backend=%s\\n' \"$backend_body\" \"$proxy_body\"\nprintf 'proxy_headers:\\n'; curl --noproxy '*' -fsSI --max-time 5 \"http://$NODE_IP:8090/\"\nprintf 'service_states:\\n'; systemctl is-active backend-8091.service reverse-proxy-8090.service\nprintf 'enablement:\\n'; systemctl is-enabled backend-8091.service reverse-proxy-8090.service\nprintf 'listeners:\\n'; ss -ltnp '( sport = :8090 or sport = :8091 )'\nprintf 'proxy_command='; systemctl show -p ExecStart --value reverse-proxy-8090.service",
+      "stdout": "direct_backend=backend-ready\nproxied_backend=backend-ready\nproxy_headers:\nHTTP/1.1 200 OK\r\nServer: BaseHTTP/0.6 Python/3.14.6\r\nDate: Wed, 02 Sep 2026 23:27:34 GMT\r\nContent-Type: text/plain\r\nContent-Length: 13\r\nConnection: close\r\n\r\nservice_states:\nactive\nactive\nenablement:\nenabled\nenabled\nlisteners:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8091      0.0.0.0:*    users:((\"python3\",pid=815,fd=3))\nLISTEN 0      5            0.0.0.0:8090      0.0.0.0:*    users:((\"socat\",pid=937,fd=5))\nproxy_command={ path=/usr/bin/socat ; argv[]=/usr/bin/socat TCP4-LISTEN:8090,bind=0.0.0.0,reuseaddr,fork TCP4:10.100.247.10:8091 ; ignore_errors=no ; start_time=[Wed 2026-09-02 19:27:25 EDT] ; stop_time=[n/a] ; pid=937 ; code=(null) ; status=0/0 }"
+    },
+    {
+      "command_id": "cmd-7970c8f35e38498d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:27:48.155342+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 86,
+      "command": "set -eu\nprintf 'pre_restart_boot_id='; cat /proc/sys/kernel/random/boot_id\nbackend_body=$(curl --noproxy '*' -fsS --max-time 5 \"http://$NODE_IP:8091/\")\nproxy_body=$(curl --noproxy '*' -fsS --max-time 5 \"http://$NODE_IP:8090/\")\n[ \"$backend_body\" = backend-ready ]\n[ \"$proxy_body\" = backend-ready ]\nprintf 'pre_restart_backend=%s\\npre_restart_proxy=%s\\n' \"$backend_body\" \"$proxy_body\"\nprintf 'pre_restart_active='; systemctl is-active backend-8091.service reverse-proxy-8090.service | paste -sd, -\nprintf 'pre_restart_enabled='; systemctl is-enabled backend-8091.service reverse-proxy-8090.service | paste -sd, -\nprintf 'pre_restart_listeners:\\n'; ss -ltnp '( sport = :8090 or sport = :8091 )'",
+      "stdout": "pre_restart_boot_id=4eaf428d-1724-4431-a764-c9e0fdc350cc\npre_restart_backend=backend-ready\npre_restart_proxy=backend-ready\npre_restart_active=active,active\npre_restart_enabled=enabled,enabled\npre_restart_listeners:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8091      0.0.0.0:*    users:((\"python3\",pid=815,fd=3))\nLISTEN 0      5            0.0.0.0:8090      0.0.0.0:*    users:((\"socat\",pid=937,fd=5))"
+    },
+    {
+      "command_id": "cmd-9582fa4ab0ca4b6b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:27:51.824867+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 49,
+      "command": "set -eu\nprintf 'reboot_request_node=%s\\n' \"$NODE_NAME\"\nprintf 'reboot_request_boot_id='; cat /proc/sys/kernel/random/boot_id\nsystemd-run --unit=[REDACTED] --on-active=3s /usr/bin/systemctl reboot\nprintf 'reboot_scheduled=yes\\n'",
+      "stdout": "reboot_request_node=node1\nreboot_request_boot_id=4eaf428d-1724-4431-a764-c9e0fdc350cc\nRunning timer as unit: [REDACTED].timer\nWill run service as unit: [REDACTED].service\nreboot_scheduled=yes"
+    },
+    {
+      "command_id": "cmd-7559202e44c94c76",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:27:54.386097+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 46,
+      "command": "set -eu\nprintf 'poll_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running || true",
+      "stdout": "poll_boot_id=4eaf428d-1724-4431-a764-c9e0fdc350cc\nsystem_state=running"
+    },
+    {
+      "command_id": "cmd-873c27c4f6854405",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:28:00.846074+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2744,
+      "command": "sleep 5\nprintf 'poll_boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-a757cda7ed8d4f70",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:28:05.079505+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2075,
+      "command": "printf 'poll_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running || true",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-1162b005c3fe4f4b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:28:07.475193+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 33,
+      "command": "printf 'poll_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running || true",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-4d63f4af24a24544",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:28:09.552163+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 35,
+      "command": "printf 'poll_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running || true",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-0797f6dde89d415b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:28:12.291538+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 45,
+      "command": "printf 'poll_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running || true",
+      "stdout": "poll_boot_id=f9af3214-0ab3-498f-9191-b4387db5bbd6\nsystem_state=running"
+    },
+    {
+      "command_id": "cmd-3464261fd146401a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:28:20.061834+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 122,
+      "command": "set -eu\nprintf 'post_restart_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'post_restart_system_state='; systemctl is-system-running\nbackend_body=$(curl --noproxy '*' -fsS --retry 5 --retry-connrefused --retry-delay 1 --max-time 5 \"http://$NODE_IP:8091/\")\nproxy_body=$(curl --noproxy '*' -fsS --retry 5 --retry-connrefused --retry-delay 1 --max-time 5 \"http://$NODE_IP:8090/\")\n[ \"$backend_body\" = backend-ready ]\n[ \"$proxy_body\" = backend-ready ]\nprintf 'post_restart_backend=%s\\npost_restart_proxy=%s\\n' \"$backend_body\" \"$proxy_body\"\nprintf 'post_restart_active='; systemctl is-active backend-8091.service reverse-proxy-8090.service | paste -sd, -\nprintf 'post_restart_enabled='; systemctl is-enabled backend-8091.service reverse-proxy-8090.service | paste -sd, -\nprintf 'post_restart_listeners:\\n'; ss -ltnp '( sport = :8090 or sport = :8091 )'\nprintf 'post_restart_failed_units:\\n'; systemctl --failed --no-legend || true",
+      "stdout": "post_restart_boot_id=f9af3214-0ab3-498f-9191-b4387db5bbd6\npost_restart_system_state=running\npost_restart_backend=backend-ready\npost_restart_proxy=backend-ready\npost_restart_active=active,active\npost_restart_enabled=enabled,enabled\npost_restart_listeners:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8090      0.0.0.0:*    users:((\"socat\",pid=359,fd=5))\nLISTEN 0      5            0.0.0.0:8091      0.0.0.0:*    users:((\"python3\",pid=356,fd=3))\npost_restart_failed_units:"
+    }
+  ]
+}

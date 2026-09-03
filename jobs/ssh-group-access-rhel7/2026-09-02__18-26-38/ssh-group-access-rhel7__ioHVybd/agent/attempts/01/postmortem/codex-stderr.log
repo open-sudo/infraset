@@ -1,0 +1,193 @@
+OpenAI Codex v0.147.0
+--------
+workdir: /home/antrieb-studio/infraset/jobs/ssh-group-access-rhel7/2026-09-02__18-26-38/ssh-group-access-rhel7__ioHVybd/agent/attempts/01/postmortem
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: max
+reasoning summaries: none
+session id: 01a064db-b518-7c42-82dd-888015b3bfd4
+--------
+user
+You are a postmortem evaluator for an infrastructure benchmark.
+The managed cluster from executor attempt 1 is unavailable or must be treated
+as unavailable. Analyze only the redacted evidence embedded below. You have no
+cluster access and must not use tools, inspect the host, or propose that the old
+cluster be queried. Distinguish observed facts from hypotheses, state when evidence
+is insufficient, and produce concise advice for an executor starting on an
+identically specified but completely fresh cluster.
+
+Task instruction:
+On `node1`, restrict SSH login access to members of a local group named `remote-access`, and add `opsadmin` to that group.
+
+
+Provider-maintained platform references:
+<platform-reference fq_name='antrieb/primer'>
+## What this is
+
+Start-of-session primer for any LLM working with Antrieb. Read before your first `provision`. These are the platform's contracts — follow them and commands work; ignore them and you'll rediscover the same issues every session.
+
+## Research before theorizing
+
+Your mental model of the platform is probably wrong in subtle ways. Before proposing a cause, gather evidence:
+
+1. Run a diagnostic command on the actual VM.
+2. Paste the output.
+3. Let the evidence confirm or contradict your theory.
+
+Cheap high-value commands: `ip -4 addr`, `ip route`, `ip neigh`, `ss -tlnp`, `systemctl is-active <svc>`, `journalctl -u <svc> -n 30 --no-pager`, `curl -v localhost:<port>`, `tcpdump -i <iface> -nn -c 10 <filter>`.
+
+*"The platform is filtering my packets"* is a theory. *"Here is what `ip route` shows"* is evidence. Never propose an architectural fix before you've pasted the output that supports it.
+
+## Research the appliance — use web_search / WebFetch
+
+For specialized images (vyos, opnsense, sonic, helm-k3s, vault, terraform-aws, cloudformation-aws, ansible-controller), **fetch current docs before writing non-trivial commands**. Your training data is often 6–24 months behind. A 30-second doc fetch prevents a 10-turn debug loop of hallucinated CLI.
+
+Workflow: look at the image's `reference` field → `web_search` for the specific topic (*"VyOS 1.5 nat source rule"*) → `WebFetch` the top result → write commands grounded in what you read.
+
+Skip only for stable base Linux (ubuntu, alma, arch, centos, alpine). If you don't have web tools in this client, say so up front.
+
+## Falsify before committing
+
+When you add a rule (firewall, NAT, route, sysctl) because you think it fixes something, **prove it by removing it and confirming the issue returns**. If the problem doesn't come back without the rule, the rule was cargo-cult — delete it.
+
+- **Start with the minimum config** that could plausibly work.
+- When it doesn't work, debug with `tcpdump`/`ip route`/`conntrack -L` — don't stack more rules hoping one matches.
+- For every added rule, state *why* and what evidence proves it. If you can't, it shouldn't be there.
+
+## Fetch order for runbooks
+
+1. `@antrieb/primer` — always (this document, fetched at session start).
+2. `@antrieb/<category>-primer` — `@antrieb/networking-primer` for networking, future `@antrieb/database-primer` for DBs.
+3. `search type=runbook keywords=<task>` — apply any specific-scenario match.
+4. No specific match → `@antrieb/<image>-reference` for each specialized image in the topology. Won't be your exact scenario; will have current, correct syntax. **Adapt values, keep syntax.**
+
+When the task is to create or revise an image intentionally published in the `antrieb` namespace, also fetch `@antrieb/managed-image-contract`. It is a build-time standard, not a runtime fact about similarly named images.
+
+Never skip step 4 if step 3 matches. Never skip 1 or 2.
+
+## Shell is POSIX sh, not bash
+
+Every `exec` runs in `/bin/sh`. Bashisms fail, sometimes silently:
+
+- `. /path` — not `source /path`
+- `[ ... ]` — not `[[ ... ]]`
+- No arrays, `${var,,}`, process substitution `<(cmd)`, `$'...'`, `set -o pipefail`
+- `printf` over `echo -e`
+
+If you genuinely need bash, write to a tempfile and invoke `bash /tmp/script.sh` explicitly.
+
+## No TTY/PTTY
+
+`exec` does not allocate a TTY/PTTY. Do not run commands that require an interactive terminal or automate terminal prompts through stdin. Use non-interactive alternatives: `sudo -u USER -- COMMAND` instead of interactive `su`, `chpasswd` instead of `passwd`, and package-manager flags such as `DEBIAN_FRONTEND=noninteractive` and `-y`.
+
+Normal stdin use for pipes, heredocs, and base64 content transfer is supported.
+
+## Cluster env vars — already set
+
+Every exec pre-exports these. Don't re-discover:
+
+- `NODE_NAME`, `NODE_INDEX`, `NODE_IP`
+- `CLUSTER_HOSTS` — multiline `IP NAME` for every node. Drop into `/etc/hosts`:
+  `echo "$CLUSTER_HOSTS" | sudo tee -a /etc/hosts`
+- `CLUSTER_SSH_PUBKEY` / `CLUSTER_SSH_PRIVKEY` — per-cluster keypair for passwordless inter-node SSH:
+  ```
+  printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+  printf '%s\n' "$CLUSTER_SSH_PUBKEY" >> ~/.ssh/authorized_keys
+  ```
+
+## Image interfaces are exact-ANI facts
+
+Credential files, startup scripts, helper commands, execution privilege, predefined users, and passwords are **not universal platform facts**. They apply only when the exact image returned by `search type=image` declares them in `image_interface`.
+
+- Match the provisioned node's full ANI, including namespace and version.
+- If `image_interface.credentials` exists, load its declared `path` with POSIX `.` and use only the variables listed there. Do not print secret values.
+- If `image_interface.startup` exists, its declared path is the supported allocation-time helper.
+- If `image_interface.execution.privilegeEscalation` is `sudo-noninteractive`, use a trusted non-interactive sudo wrapper for privileged operations. Do not infer sudo support from the operating-system name.
+- If a field is absent, inspect the VM and its exact image description. Do not infer a path from a technology name such as MariaDB, PostgreSQL, Cassandra, or Vault.
+- `antrieb.managed-image/v1` is a **build-time contract** for creating managed images. Its conventions are not evidence that a user-owned or otherwise undeclared image implements them.
+
+Example: `antrieb:mariadb:v1` may declare `/etc/profile.d/antrieb-app.sh`; a user-created MariaDB image does not inherit that declaration merely because it also runs MariaDB.
+
+## Shipping long content through exec
+
+Anything beyond one line with quotes/newlines/metacharacters eventually breaks escaping. Use one of:
+
+1. **Base64** (preferred): `echo <BASE64> | base64 -d > /tmp/myfile`
+2. **Heredoc, unique delimiter**:
+   ```
+   cat > /tmp/cfg <<'ANTRIEB_EOF'
+   ...
+   ANTRIEB_EOF
+   ```
+3. **Serve between nodes**: one node runs `python3 -m http.server`, another `curl`s it.
+
+## Streaming / long-running commands
+
+`exec` is a synchronous await, capped at ~2 MB output. For commands that stream (`dhclient -v`, `tail -f`), run for minutes (`apt install`), or may hang, **redirect + background + poll** — the standard UNIX pattern:
+
+```
+# Launch, capture PID
+exec: cmd > /tmp/out.log 2>&1 & echo $! > /tmp/cmd.pid
+
+# Poll in subsequent exec calls (as often as you need to decide)
+exec: tail -30 /tmp/out.log
+
+# Stop early if you've seen enough
+exec: kill "$(cat /tmp/cmd.pid)" 2>/dev/null
+```
+
+Each call is small and fast. The LLM decides cadence and can act on partial output turn by turn. Don't treat this as a workaround — it's the supported streaming contract.
+
+## Small exec calls, not one huge script
+
+One logical step per exec, check `exit_code` before the next. A 50-line script returns pass/fail with no hint of which line broke. Small steps debug easier, recover easier, and translate into runbooks cleanly.
+
+## Provision timing
+
+`provision` returns in under a second, but:
+
+- Exec is available immediately.
+- DHCP-assigned LAN IPs take 5–10 seconds to sett
+...[TRUNCATED 16399 CHARACTERS]...
+arbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+codex
+{"status":"completed","summary":"Baseline inspection shows RHEL 7.9 with sshd active and listening on port 22. Neither `opsadmin` nor `remote-access` exists yet, and SSH currently has no user/group allow-list, so the task requires creating both account objects and applying an `AllowGroups` policy.","actions_performed":["Captured the initial boot ID.","Verified passwordless administrative access, sshd syntax, service state, and listener.","Confirmed the requested user and group are absent."],"evidence":[{"requirement":"Initial node and SSH baseline","command_ids":["cmd-fc59caf35bd443f4","cmd-e4f6a7863cd24aae"],"summary":"RHEL 7.9; boot ID captured; sshd active with valid configuration and port 22 listener; no existing opsadmin or remote-access objects."}]}
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+codex
+{"status":"blocked","summary":"The SSH allow-list took effect, but the provider’s execution transport authenticates as `antrieb`, which is not yet in `remote-access`; the first post-change probe was rejected. I’m attempting the available direct-node control path again to see whether a retained management connection can apply the corrective group membership.","actions_performed":["Created `remote-access`.","Created `opsadmin` and added it to `remote-access`.","Installed a syntax-valid `AllowGroups remote-access` policy and reloaded sshd."],"evidence":[{"requirement":"Configuration change","command_ids":["cmd-34a3aaf982a04214","cmd-0d725817fd414433","cmd-d34510d3aea146b0","cmd-9ff71f7e37a544e3"],"summary":"Group, user membership, valid policy candidate, and successful sshd reload were captured."},{"requirement":"Management-path issue","command_ids":["cmd-7d150d44b88a4c04"],"summary":"The direct node execution transport was rejected immediately after the allow-list reload because its SSH identity is not authorized."}]}
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (failed)
+tool call error: tool call failed for `harbor_antrieb/exec`
+
+Caused by:
+    Mcp error: -32000: Unknown managed node: opsadmin@node1
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+codex
+{"status":"blocked","summary":"The requested SSH policy was installed and reloaded, but it excluded the provider transport account `antrieb` from `remote-access`. Subsequent node commands are rejected, so final verification and the mandatory restart protocol could not be performed. Recovery requires console/provider intervention to add `antrieb` to `remote-access` or temporarily remove `AllowGroups remote-access`.","actions_performed":["Created the local group `remote-access`.","Created `opsadmin` and added it to `remote-access`.","Backed up the SSH configuration.","Validated and installed `AllowGroups remote-access`.","Successfully reloaded sshd.","Retried the only permitted node-control path three times; authentication remained blocked.","Did not claim restart persistence because node1 could not safely be restarted or inspected afterward."],"evidence":[{"requirement":"Healthy pre-change node1 baseline","command_ids":["cmd-fc59caf35bd443f4","cmd-e4f6a7863cd24aae"],"summary":"Captured boot ID 192f6cab-c39d-4e64-a3f6-50e677966ca2; sshd was active, configuration syntax was valid, and port 22 was listening."},{"requirement":"Create remote-access and add opsadmin","command_ids":["cmd-34a3aaf982a04214","cmd-0d725817fd414433"],"summary":"Confirmed `remote-access` exists and `opsadmin` has supplementary membership in it."},{"requirement":"Restrict SSH access to remote-access","command_ids":["cmd-d34510d3aea146b0","cmd-9ff71f7e37a544e3"],"summary":"The candidate containing `AllowGroups remote-access` passed `sshd -t`, was installed, and sshd successfully reloaded while remaining active."},{"requirement":"Management-path blocker","command_ids":["cmd-7d150d44b88a4c04","cmd-66584ce5b93c4fbd","cmd-eae6963ab1c84ad4"],"summary":"Every post-change execution attempt was rejected as `antrieb`; therefore no corrective command, post-change inspection, or restart could run."},{"requirement":"Mandatory node1 restart sequence","command_ids":["cmd-fc59caf35bd443f4","cmd-e4f6a7863cd24aae"],"summary":"Only the healthy baseline and original boot identity were captured. There is no restart acknowledgement, changed boot identity, or post-restart recovery evidence."}]}
+tokens used
+28,210
+
+
+codex
+{"summary":"The attempt likely installed the requested persistent SSH policy, created `remote-access`, and added `opsadmin`, but it operationally failed by locking out the known management identity before final verification. The resulting state and restart persistence remain unverified.","evidence":[{"source":"Baseline commands","finding":"`node1` was RHEL 7.9; SSH was active, syntax-valid, and listening. The execution identity was explicitly shown as `antrieb`, while `opsadmin` and `remote-access` were initially absent."},{"source":"Account-management commands","finding":"`remote-access` was created, and `id opsadmin` showed membership in that group. The newly created `opsadmin` account had a locked password; the evidence does not establish that it had another usable SSH credential."},{"source":"SSH configuration commands","finding":"A candidate containing `AllowGroups remote-access` passed `sshd -t`, replaced the live configuration, and SSH successfully reloaded while remaining active."},{"source":"Post-change command attempts","finding":"The first and subsequent commands failed with SSH authentication denied for `antrieb`. No evidence shows that `antrieb` had been added to `remote-access` before the reload."},{"source":"Restart evidence","finding":"Only the original boot ID was recorded. There is no successful post-change inspection, restart acknowledgement, changed boot ID, or post-restart validation."}],"likely_causes":[{"cause":"Primary cause: unsafe operation ordering. The executor activated `AllowGroups remote-access` before adding the already-known transport account `antrieb` to that group.","confidence":"high"},{"cause":"The executor did not prove access through a fresh management connection before proceeding to the required restart phase.","confidence":"high"},{"cause":"`opsadmin` may not have been capable of authenticating because its password was locked and no authorized key was demonstrated; the task did not explicitly require provisioning credentials, so impact is uncertain.","confidence":"medium"}],"next_attempt_guidance":["On the fresh cluster, identify the actual management SSH account first and add it to `remote-access` before activating the allow-list; this still satisfies the rule because every permitted account is a group member.","Create or confirm `remote-access`, add both `opsadmin` and the management identity, and verify memberships with `getent group remote-access` and `id` before editing SSH configuration.","Back up the configuration, install exactly one global `AllowGroups remote-access` directive, and validate the candidate with `sshd -t` before reload.","Reload SSH, immediately prove that a new management connection works, then verify the effective policy with `sshd -T` and confirm `opsadmin` membership. Do not rely only on the existing session or service-active status.","If the benchmark requires a restart, perform it only after the fresh-connection check, then verify a changed boot ID, recovered SSH access, active SSH service, retained group membership, and retained effective `AllowGroups` policy.","If actual `opsadmin` login is part of verification, provision an approved key or other intended credential; group membership alone does not overcome a locked account."]}
+tokens used
+23,103

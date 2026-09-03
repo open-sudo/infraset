@@ -1,0 +1,340 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 27,
+    "successful": 15,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Persistent Redis service",
+      "command_ids": [
+        "cmd-cf91adb0ac22453d",
+        "cmd-117c330a5b214726",
+        "cmd-f28b8b8f7ea643da"
+      ],
+      "summary": "Shows appendonly=yes, appendfsync=everysec, the persistent data directory, healthy RDB/AOF status, disk artifacts, managed-IP listener, and OpenRC enablement before and after reboot."
+    },
+    {
+      "requirement": "Dedicated inventory identity and protected credential",
+      "command_ids": [
+        "cmd-cf91adb0ac22453d",
+        "cmd-117c330a5b214726",
+        "cmd-f28b8b8f7ea643da"
+      ],
+      "summary": "Shows /etc/redis-inventory.env as root:root mode 600, the inventory ACL binding, authenticated ACL identity inventory, successful PING, and rejection of unauthenticated access."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-117c330a5b214726",
+        "cmd-763ab4bd47c3400d",
+        "cmd-f28b8b8f7ea643da"
+      ],
+      "summary": "Captures the healthy baseline and old boot ID, acknowledged native reboot request, changed boot ID, recovered Redis service/listener/authentication, and the exact pre-reboot value recovered from persistent storage."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-d7155faccf314643",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:58:06.122526+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 96,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uid='; id -u\nprintf 'os='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nprintf 'redis_server='; command -v redis-server || true\nprintf 'redis_cli='; command -v redis-cli || true\nprintf 'service_state='; rc-service redis status 2>/dev/null || true\nprintf 'runlevel='; rc-update show default 2>/dev/null | grep -E '(^|[[:space:]])redis([[:space:]]|$)' || true\nprintf 'listeners:\\n'; ss -ltnp 2>/dev/null | grep ':6379' || true\nprintf 'files:\\n'; ls -ld /etc/redis* /var/lib/redis 2>/dev/null || true",
+      "stdout": "node=node1 ip=10.100.113.10\nboot_id=ca0d8525-ef93-45d3-bc24-9f5578837245\nuid=0\nos=alpine 3.23.3\nredis_server=redis_cli=service_state=runlevel=listeners:\nfiles:"
+    },
+    {
+      "command_id": "cmd-b47075a510734f3d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:58:09.235849+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 430,
+      "command": "apk add --no-cache redis",
+      "stdout": "(1/4) Installing libgcc (15.2.0-r2)\n(2/4) Installing libstdc++ (15.2.0-r2)\n(3/4) Installing redis (8.4.2-r0)\n  Executing redis-8.4.2-r0.pre-install\n  Executing redis-8.4.2-r0.post-install\n(4/4) Installing redis-openrc (8.4.2-r0)\nExecuting busybox-1.37.0-r30.trigger\nOK: 196.7 MiB in 137 packages"
+    },
+    {
+      "command_id": "cmd-0d75e9fe29184451",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:58:12.462779+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 53,
+      "command": "set -eu\nprintf 'package_version='; redis-server --version\nprintf 'service_script:\\n'; sed -n '1,220p' /etc/init.d/redis\nprintf 'config_paths:\\n'; apk info -L redis | grep -E '/(etc|var)/' | sort\nprintf 'config_key_defaults:\\n'; grep -nE '^(bind|protected-mode|port|dir|dbfilename|appendonly|appendfilename|appenddirname|aclfile|save|daemonize|supervised|logfile|pidfile|user|group)[[:space:]]' /etc/redis.conf | head -80",
+      "stdout": "package_version=Redis server v=8.4.2 sha=00000000:1 malloc=libc bits=64 build=b16f4b7dfcd86229\nservice_script:\n#!/sbin/openrc-run\n\nname=\"Redis server\"\n\n: ${cfgfile:=${REDIS_CONF:-\"/etc/redis.conf\"}}\n: ${command_user:=\"${REDIS_USER:-redis}:${REDIS_GROUP:-redis}\"}\n: ${retry:=30}\n\ncommand=\"/usr/bin/redis-server\"\ncommand_args=\"$cfgfile --daemonize no $command_args\"\ncommand_background=\"yes\"\npidfile=\"/run/$RC_SVCNAME.pid\"\n\nrequired_files=\"$cfgfile\"\n\ndepend() {\n\tuse net localmount logger\n\tafter keepalived firewall\n}\n\nstart_pre() {\n\t# Sets start-start-daemon's --chdir.\n\tdirectory=$(config_get 'dir' '/var/lib/redis')\n\tcheckpath -d -o \"$command_user\" \"$directory\"\n\n\tlocal logfile=$(config_get 'logfile')\n\t[ \"$logfile\" ] && checkpath -d -o \"$command_user\" \"${logfile%/*}\"\n\n\tlocal unixsocket=$(config_get 'unixsocket')\n\t[ \"$unixsocket\" ] && checkpath -d -o \"$command_user\" \"${unixsocket%/*}\"\n\n\treturn 0\n}\n\nconfig_get() {\n\tlocal key=\"$1\"\n\tlocal default=\"${2:-}\"\n\n\tlocal value=$(awk \"\\$1 == \\\"$key\\\" { print \\$2 }\" \"$cfgfile\")\n\tprintf '%s\\n' \"${value:-$default}\"\n}\nconfig_paths:\nWARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz: No such file or directory\nWARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.23/community/x86_64/APKINDEX.tar.gz: No such file or directory\nconfig_key_defaults:\n88:bind 127.0.0.1 -::1\n112:protected-mode yes\n139:port 6379\n337:logfile /var/log/redis/redis.log\n474:dbfilename dump.rdb\n497:dir /var/lib/redis\n1386:appendonly no\n1413:appendfilename \"appendonly.aof\"\n1419:appenddirname \"appendonlydir\""
+    },
+    {
+      "command_id": "cmd-a117106109e44944",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:58:35.783118+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 67,
+      "command": "set -eu\nprintf 'redis_account='; getent passwd redis\nprintf 'acl_directives:\\n'; grep -nE '^[#[:space:]]*(aclfile|user)[[:space:]]' /etc/redis.conf | head -30\nprintf 'persistence_directives:\\n'; grep -nE '^(save|appendonly|appendfsync|dir|dbfilename)[[:space:]]' /etc/redis.conf",
+      "stdout": "redis_account=redis:x:103:104:redis:/var/lib/redis:/sbin/nologin\nacl_directives:\n880:#   user <username> ... acl rules ...\n884:#   user worker +@list +@connection ~jobs:* on >ffa9203c493aa99\n961:#                           user (outside the parentheses).\n968:#   user alice on +@all -DEBUG ~* >somepassword\n975:#   user alice on -DEBUG +@all ~* >somepassword\n1038:# aclfile /etc/redis/users.acl\npersistence_directives:\n474:dbfilename dump.rdb\n497:dir /var/lib/redis\n1386:appendonly no\n1445:appendfsync everysec"
+    },
+    {
+      "command_id": "cmd-dd096ef5537b44aa",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:58:44.676449+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 113,
+      "command": "sed -n '430,510p;1015,1050p;1370,1460p' /etc/redis.conf",
+      "stdout": "# This will make the user aware (in a hard way) that data is not persisting\n# on disk properly, otherwise chances are that no one will notice and some\n# disaster will happen.\n#\n# If the background saving process will start working again Redis will\n# automatically allow writes again.\n#\n# However if you have setup your proper monitoring of the Redis server\n# and persistence, you may want to disable this feature so that Redis will\n# continue to work as usual even if there are problems with disk,\n# permissions, and so forth.\nstop-writes-on-bgsave-error yes\n\n# Compress string objects using LZF when dump .rdb databases?\n# By default compression is enabled as it's almost always a win.\n# If you want to save some CPU in the saving child set it to 'no' but\n# the dataset will likely be bigger if you have compressible values or keys.\nrdbcompression yes\n\n# Since version 5 of RDB a CRC64 checksum is placed at the end of the file.\n# This makes the format more resistant to corruption but there is a performance\n# hit to pay (around 10%) when saving and loading RDB files, so you can disable it\n# for maximum performances.\n#\n# RDB files created with checksum disabled have a checksum of zero that will\n# tell the loading code to skip the check.\nrdbchecksum yes\n\n# Enables or disables full sanitization checks for ziplist and listpack etc when\n# loading an RDB or RESTORE payload. This reduces the chances of a assertion or\n# crash later on while processing commands.\n# Options:\n#   no         - Never perform full sanitization\n#   yes        - Always perform full sanitization\n#   clients    - Perform full sanitization only for user connections.\n#                Excludes: RDB files, RESTORE commands received from the master\n#                connection, and client connections which have the\n#                [REDACTED] ACL flag.\n# The default should be 'clients' but since it currently affects cluster\n# resharding via MIGRATE, it is temporarily set to 'no' by default.\n#\n# sanitize-dump-payload no\n\n# The filename where to dump the DB\ndbfilename \n...[TRUNCATED 5295 CHARACTERS]...\nonly files in a dedicated\n# directory. The name of the directory is determined by the appenddirname\n# configuration parameter.\n\nappenddirname \"appendonlydir\"\n\n# The fsync() call tells the Operating System to actually write data on disk\n# instead of waiting for more data in the output buffer. Some OS will really flush\n# data on disk, some other OS will just try to do it ASAP.\n#\n# Redis supports three different modes:\n#\n# no: don't fsync, just let the OS flush the data when it wants. Faster.\n# always: fsync after every write to the append only log. Slow, Safest.\n# everysec: fsync only one time every second. Compromise.\n#\n# The default is \"everysec\", as that's usually the right compromise between\n# speed and data safety. It's up to you to understand if you can relax this to\n# \"no\" that will let the operating system flush the output buffer when\n# it wants, for better performances (but if you can live with the idea of\n# some data loss consider the default persistence mode that's snapshotting),\n# or on the contrary, use \"always\" that's very slow but a bit safer than\n# everysec.\n#\n# More details please check the following article:\n# http://antirez.com/post/redis-persistence-demystified.html\n#\n# If unsure, use \"everysec\".\n\n# appendfsync always\nappendfsync everysec\n# appendfsync no\n\n# When the AOF fsync policy is set to always or everysec, and a background\n# saving process (a background save or AOF log background rewriting) is\n# performing a lot of I/O against the disk, in some Linux configurations\n# Redis may block too long on the fsync() call. Note that there is no fix for\n# this currently, as even performing fsync in a different thread will block\n# our synchronous write(2) call.\n#\n# In order to mitigate this problem it's possible to use the following option\n# that will prevent fsync() from being called in the main process while a\n# BGSAVE or BGREWRITEAOF is in progress.\n#\n# This means that while another child is saving, the durability of Redis is\n# the same as \"appendfsync no\". In practical terms, this means that it is"
+    },
+    {
+      "command_id": "cmd-f4bb8d067c1e4193",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:58:47.576061+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 59,
+      "command": "grep -n 'save ' /etc/redis.conf | head -30",
+      "stdout": "409:# save <seconds> <changes> [<seconds> <changes> ...]\n411:# Redis will save the DB if the given number of seconds elapsed and it\n417:# save \"\"\n419:# Unless specified otherwise, by default Redis will save the DB:\n426:# save 3600 1 300 100 60 10000\n429:# (at least one save point) and the latest background save failed.\n445:# If you want to save some CPU in the saving child set it to 'no' but\n1164:# algorithms (in order to save memory), so you can tune it for speed or\n1367:# the configured save points).\n1449:# saving process (a background save or AOF log background rewriting) is\n1557:# an RDB snapshot is written to disk in a blocking operation if save points are configured.\n1559:# default:  Saves RDB snapshot only if save points are configured.\n1561:# save:     Forces a DB saving operation even if no save points are configured.\n1562:# nosave:   Prevents DB saving operation even if one or more save points are configured.\n1567:# Example: \"nosave force now\"\n2012:# Lists are also encoded in a special way to save a lot of space.\n2058:# order to save a lot of space. This encoding is only used when the length and\n2381:# the bgsave child process. The syntax to specify the cpu list is the same as\n2393:# Set bgsave child process to cpu affinity 1,10,11"
+    },
+    {
+      "command_id": "cmd-81957e02f6734e78",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:58:58.170095+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 168,
+      "command": "set -eu\numask 077\nif [ ! -f /etc/redis-inventory.env ]; then\n  inventory_password=[REDACTED]]] if=/dev/urandom bs=32 count=1 2>/dev/null | od -An -tx1 | tr -d ' \\n')\n  [ \"${#inventory_password}\" -eq 64 ]\n  env_tmp=\"/etc/redis-inventory.env.new.$$\"\n  printf 'REDIS_HOST=%s\\nREDIS_PORT=6379\\nREDIS_USERNAME=inventory\\nREDIS_PASSWORD=[REDACTED]]] \"$NODE_IP\" \"$inventory_password\" > \"$env_tmp\"\n  chown root:root \"$env_tmp\"\n  chmod 600 \"$env_tmp\"\n  mv \"$env_tmp\" /etc/redis-inventory.env\nfi\n. /etc/redis-inventory.env\n[ \"$REDIS_USERNAME\" = inventory ]\n[ -n \"$REDIS_PASSWORD\" ]\ninventory_hash=$(printf '%s' \"$REDIS_PASSWORD\" | sha256sum | awk '{print $1}')\nacl_tmp=\"/etc/redis/users.acl.new.$$\"\nprintf 'user default off\\nuser inventory on #%s ~* &* +@all\\n' \"$inventory_hash\" > \"$acl_tmp\"\nchown root:redis \"$acl_tmp\"\nchmod 640 \"$acl_tmp\"\nmv \"$acl_tmp\" /etc/redis/users.acl\nif [ ! -f /etc/redis.conf.package-default ]; then cp -p /etc/redis.conf /etc/redis.conf.package-default; fi\nsed -i \\\n  -e \"s/^bind .*/bind 127.0.0.1 $NODE_IP/\" \\\n  -e 's/^protected-mode .*/protected-mode yes/' \\\n  -e 's/^appendonly .*/appendonly yes/' \\\n  -e 's|^# aclfile /etc/redis/users.acl$|aclfile /etc/redis/users.acl|' \\\n  /etc/redis.conf\nmkdir -p /var/lib/redis /var/log/redis\nchown redis:redis /var/lib/redis /var/log/redis\nchmod 750 /var/lib/redis /var/log/redis\nprintf 'credential_file='; stat -c '%U:%G %a %n' /etc/redis-inventory.env\nprintf 'acl_file='; stat -c '%U:%G %a %n' /etc/redis/users.acl\nprintf 'acl_users='; awk '{printf \"%s \", $2} END {print \"\"}' /etc/redis/users.acl\nprintf 'effective_config:\\n'; grep -E '^(bind|protected-mode|port|dir|dbfilename|appendonly|appendfsync|appenddirname|aclfile)[[:space:]]' /etc/redis.conf",
+      "stdout": "bash: line 17: /etc/redis/users.acl.new.2824: No such file or directory"
+    },
+    {
+      "command_id": "cmd-cf91adb0ac22453d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:59:07.127665+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 131,
+      "command": "set -eu\nmkdir -p /etc/redis\nchown root:redis /etc/redis\nchmod 750 /etc/redis\n. /etc/redis-inventory.env\n[ \"$REDIS_USERNAME\" = inventory ]\n[ -n \"$REDIS_PASSWORD\" ]\ninventory_hash=$(printf '%s' \"$REDIS_PASSWORD\" | sha256sum | awk '{print $1}')\numask 027\nacl_tmp=\"/etc/redis/users.acl.new.$$\"\nprintf 'user default off\\nuser inventory on #%s ~* &* +@all\\n' \"$inventory_hash\" > \"$acl_tmp\"\nchown root:redis \"$acl_tmp\"\nchmod 640 \"$acl_tmp\"\nmv \"$acl_tmp\" /etc/redis/users.acl\nif [ ! -f /etc/redis.conf.package-default ]; then cp -p /etc/redis.conf /etc/redis.conf.package-default; fi\nsed -i \\\n  -e \"s/^bind .*/bind 127.0.0.1 $NODE_IP/\" \\\n  -e 's/^protected-mode .*/protected-mode yes/' \\\n  -e 's/^appendonly .*/appendonly yes/' \\\n  -e 's|^# aclfile /etc/redis/users.acl$|aclfile /etc/redis/users.acl|' \\\n  /etc/redis.conf\nmkdir -p /var/lib/redis /var/log/redis\nchown redis:redis /var/lib/redis /var/log/redis\nchmod 750 /var/lib/redis /var/log/redis\nprintf 'credential_file='; stat -c '%U:%G %a %n' /etc/redis-inventory.env\nprintf 'acl_file='; stat -c '%U:%G %a %n' /etc/redis/users.acl\nprintf 'acl_users='; awk '{printf \"%s \", $2} END {print \"\"}' /etc/redis/users.acl\nprintf 'effective_config:\\n'; grep -E '^(bind|protected-mode|port|dir|dbfilename|appendonly|appendfsync|appenddirname|aclfile)[[:space:]]' /etc/redis.conf",
+      "stdout": "credential_file=root:root 600 /etc/redis-inventory.env\nacl_file=root:redis 640 /etc/redis/users.acl\nacl_users=default inventory \neffective_config:\nbind 127.0.0.1 10.100.113.10\nprotected-mode yes\nport 6379\ndbfilename dump.rdb\ndir /var/lib/redis\naclfile /etc/redis/users.acl\nappendonly yes\nappenddirname \"appendonlydir\"\nappendfsync everysec"
+    },
+    {
+      "command_id": "cmd-92a3f2aadbb042f6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:59:11.853351+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 95,
+      "command": "set -eu\nrc-update add redis default\nrc-service redis start",
+      "stdout": " * service redis added to runlevel default\n * Caching service dependencies ... [ ok ]\n * /run/redis: creating directory\n * /run/redis: correcting owner\n * Starting Redis server ... [ ok ]"
+    },
+    {
+      "command_id": "cmd-97f70f490aae4e0d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:59:27.631100+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 86,
+      "command": "set -eu\n. /etc/redis-inventory.env\nredis_cmd() { REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli -h \"$NODE_IP\" -p \"$REDIS_PORT\" --user \"$REDIS_USERNAME\" --no-auth-warning --raw \"$@\"; }\nboot_id=$(cat /proc/sys/kernel/random/boot_id)\nproof_value=\"inventory-persistent-$boot_id\"\n[ \"$(redis_cmd PING)\" = PONG ]\n[ \"$(redis_cmd ACL WHOAMI)\" = inventory ]\n[ \"$(redis_cmd SET inventory:restart-proof \"$proof_value\")\" = OK ]\n[ \"$(redis_cmd SAVE)\" = OK ]\n[ \"$(redis_cmd GET inventory:restart-proof)\" = \"$proof_value\" ]\nprintf 'boot_id=%s\\n' \"$boot_id\"\nprintf 'service='; rc-service redis status\nprintf 'listener='; ss -ltnp | grep \"$NODE_IP:6379\"\nprintf 'authenticated_ping=%s\\n' \"$(redis_cmd PING)\"\nprintf 'authenticated_identity=%s\\n' \"$(redis_cmd ACL WHOAMI)\"\nprintf 'stored_value=%s\\n' \"$(redis_cmd GET inventory:restart-proof)\"\nprintf 'runtime_persistence:\\n'; redis_cmd CONFIG GET dir dbfilename appendonly appendfsync appenddirname\nprintf 'persistence_health:\\n'; redis_cmd INFO persistence | grep -E '^(loading|async_loading|rdb_last_bgsave_status|aof_enabled|aof_rewrite_in_progress|aof_last_write_status|aof_last_cow_size):'\nprintf 'disk_artifacts:\\n'; find /var/lib/redis -maxdepth 2 -type f -printf '%u:%g %m %s %p\\n' | sort",
+      "stdout": "boot_id=ca0d8525-ef93-45d3-bc24-9f5578837245\nservice= * status: started\nlistener=bash: line 13: ss: command not found"
+    },
+    {
+      "command_id": "cmd-b93396c7829042ec",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:59:37.004014+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 83,
+      "command": "set -eu\n. /etc/redis-inventory.env\nredis_cmd() { REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli -h \"$NODE_IP\" -p \"$REDIS_PORT\" --user \"$REDIS_USERNAME\" --no-auth-warning --raw \"$@\"; }\nboot_id=$(cat /proc/sys/kernel/random/boot_id)\nproof_value=\"inventory-persistent-$boot_id\"\n[ \"$(redis_cmd PING)\" = PONG ]\n[ \"$(redis_cmd ACL WHOAMI)\" = inventory ]\n[ \"$(redis_cmd GET inventory:restart-proof)\" = \"$proof_value\" ]\nprintf 'boot_id=%s\\n' \"$boot_id\"\nprintf 'service='; rc-service redis status\nprintf 'listener:\\n'; netstat -lntp 2>/dev/null | grep \"$NODE_IP:6379\"\nprintf 'authenticated_ping=%s\\n' \"$(redis_cmd PING)\"\nprintf 'authenticated_identity=%s\\n' \"$(redis_cmd ACL WHOAMI)\"\nprintf 'stored_value=%s\\n' \"$(redis_cmd GET inventory:restart-proof)\"\nprintf 'runtime_persistence:\\n'; redis_cmd CONFIG GET dir dbfilename appendonly appendfsync appenddirname\nprintf 'persistence_health:\\n'; redis_cmd INFO persistence | tr -d '\\r' | grep -E '^(loading|async_loading|rdb_last_bgsave_status|aof_enabled|aof_rewrite_in_progress|aof_last_write_status|aof_last_cow_size):'\nprintf 'disk_artifacts:\\n'; find /var/lib/redis -maxdepth 2 -type f -printf '%u:%g %m %s %p\\n' | sort",
+      "stdout": "boot_id=ca0d8525-ef93-45d3-bc24-9f5578837245\nservice= * status: started\nlistener:\ntcp        0      0 10.100.113.10:6379      0.0.0.0:*               LISTEN      3043/redis-server 1 \nauthenticated_ping=PONG\nauthenticated_identity=inventory\nstored_value=inventory-persistent-ca0d8525-ef93-45d3-bc24-9f5578837245\nruntime_persistence:\nappendfsync\neverysec\ndir\n/var/lib/redis\nappendonly\nyes\ndbfilename\ndump.rdb\nappenddirname\nappendonlydir\npersistence_health:\nloading:0\nasync_loading:0\nrdb_last_bgsave_status:ok\naof_enabled:1\naof_rewrite_in_progress:0\naof_last_write_status:ok\naof_last_cow_size:0\ndisk_artifacts:\nfind: unrecognized: -printf\nBusyBox v1.37.0 (2025-12-16 14:19:28 UTC) multi-call binary.\n\nUsage: find [-HL] [PATH]... [OPTIONS] [ACTIONS]\n\nSearch for files and perform actions on them.\nFirst failed action stops processing of current file.\nDefaults: PATH is current directory, action is '-print'\n\n\t-L,-follow\tFollow symlinks\n\t-H\t\t...on command line only\n\t-xdev\t\tDon't descend directories on other filesystems\n\t-maxdepth N\tDescend at most N levels. -maxdepth 0 applies\n\t\t\tactions to command line arguments only\n\t-mindepth N\tDon't act on first N levels\n\t-depth\t\tAct on directory *after* traversing it\n\nActions:\n\t( ACTIONS )\tGroup actions for -o / -a\n\t! ACT\t\tInvert ACT's success/failure\n\tACT1 [-a] ACT2\tIf ACT1 fails, stop, else do ACT2\n\tACT1 -o ACT2\tIf ACT1 succeeds, stop, else do ACT2\n\t\t\tNote: -a has higher priority than -o\n\t-name PATTERN\tMatch file name (w/o directory name) to PATTERN\n\t-iname PATTERN\tCase insensitive -name\n\t-path PATTERN\tMatch path to PATTERN\n\t-ipath PATTERN\tCase insensitive -path\n\t-regex PATTERN\tMatch path to regex PATTERN\n\t-type X\t\tFile type is X (one of: f,d,l,b,c,s,p)\n\t-executable\tFile is executable\n\t-perm MASK\tAt least one mask bit (+MASK), all bits (-MASK),\n\t\t\tor exactly MASK bits are set in file's mode\n\t-mtime DAYS\tmtime is greater than (+N), less than (-N),\n\t\t\tor exactly N days in the past\n\t-atime DAYS\tatime +N/-N/N days in the past\n\t-ctime DAYS\tctime +N/-N/N days in the past\n\t-mmin MINS\tmtime is greater than (+N), less than (-N),\n\t\t\tor exactly N minutes in the past\n\t-newer FILE\tmtime is more recent than FILE's\n\t-inum N\t\tFile has inode number N\n\t-user NAME/ID\tFile is owned by given user\n\t-group NAME/ID\tFile is owned by given group\n\t-size N[bck]\tFile size is N (c:bytes,k:kbytes,b:512 bytes(def.))\n\t\t\t+/-N: file size is bigger/smaller than N\n\t-links N\tNumber of links is greater than (+N), less than (-N),\n\t\t\tor exactly N\n\t-empty\t\tMatch empty file/directory\n\t-prune\t\tIf current file is directory, don't descend into it\nIf none of the following actions is specified, -print is assumed\n\t-print\t\tPrint file name\n\t-print0\t\tPrint file name, NUL terminated\n\t-exec CMD ARG ;\tRun CMD with all instances of {} replaced by\n\t\t\tfile name. Fails if CMD exits with nonzero\n\t-exec CMD ARG + Run CMD with {} replaced by list of file names\n\t-ok CMD ARG ;   Prompt and run CMD with {} replaced\n\t-delete\t\tDelete current file/directory. Turns on -depth option\n\t-quit\t\tExit"
+    },
+    {
+      "command_id": "cmd-117c330a5b214726",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T22:59:53.462559+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 96,
+      "command": "set -eu\n. /etc/redis-inventory.env\nredis_cmd() { REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli -h \"$NODE_IP\" -p \"$REDIS_PORT\" --user \"$REDIS_USERNAME\" --no-auth-warning --raw \"$@\"; }\nboot_id=$(cat /proc/sys/kernel/random/boot_id)\nproof_value=\"inventory-persistent-$boot_id\"\n[ \"$(redis_cmd PING)\" = PONG ]\n[ \"$(redis_cmd ACL WHOAMI)\" = inventory ]\n[ \"$(redis_cmd GET inventory:restart-proof)\" = \"$proof_value\" ]\n[ \"$(redis_cmd SAVE)\" = OK ]\nunauthenticated=$(redis-cli -h \"$NODE_IP\" -p \"$REDIS_PORT\" --raw PING 2>&1 || true)\ncase \"$unauthenticated\" in *NOAUTH*) : ;; *) exit 1 ;; esac\ninventory_hash=$(printf '%s' \"$REDIS_PASSWORD\" | sha256sum | awk '{print $1}')\ngrep -q \"user inventory on #$inventory_hash \" /etc/redis/users.acl\nprintf 'baseline_boot_id=%s\\n' \"$boot_id\"\nprintf 'service='; rc-service redis status\nprintf 'enabled='; rc-update show default | grep -E '(^|[[:space:]])redis([[:space:]]|$)'\nprintf 'listener:\\n'; netstat -lntp 2>/dev/null | grep \"$NODE_IP:6379\"\nprintf 'unauthenticated_access=%s\\n' \"$unauthenticated\"\nprintf 'authenticated_ping=%s\\n' \"$(redis_cmd PING)\"\nprintf 'authenticated_identity=%s\\n' \"$(redis_cmd ACL WHOAMI)\"\nprintf 'stored_value=%s\\n' \"$(redis_cmd GET inventory:restart-proof)\"\nprintf 'database_size=%s\\n' \"$(redis_cmd DBSIZE)\"\nprintf 'runtime_persistence:\\n'; redis_cmd CONFIG GET dir dbfilename appendonly appendfsync appenddirname\nprintf 'persistence_health:\\n'; redis_cmd INFO persistence | tr -d '\\r' | grep -E '^(loading|async_loading|rdb_last_bgsave_status|aof_enabled|aof_rewrite_in_progress|aof_last_write_status):'\nprintf 'credential_file='; stat -c '%U:%G %a %n' /etc/redis-inventory.env\nprintf 'acl_file='; stat -c '%U:%G %a %n' /etc/redis/users.acl\nprintf 'acl_credential_binding=verified-by-sha256\\n'\nprintf 'disk_artifacts:\\n'; find /var/lib/redis -maxdepth 2 -type f -exec stat -c '%U:%G %a %s %n' {} \\; | sort",
+      "stdout": "baseline_boot_id=ca0d8525-ef93-45d3-bc24-9f5578837245\nservice= * status: started\nenabled=                redis | default\nlistener:\ntcp        0      0 10.100.113.10:6379      0.0.0.0:*               LISTEN      3043/redis-server 1 \nunauthenticated_access=NOAUTH Authentication required.\nauthenticated_ping=PONG\nauthenticated_identity=inventory\nstored_value=inventory-persistent-ca0d8525-ef93-45d3-bc24-9f5578837245\ndatabase_size=1\nruntime_persistence:\nappendfsync\neverysec\ndir\n/var/lib/redis\nappendonly\nyes\ndbfilename\ndump.rdb\nappenddirname\nappendonlydir\npersistence_health:\nloading:0\nasync_loading:0\nrdb_last_bgsave_status:ok\naof_enabled:1\naof_rewrite_in_progress:0\naof_last_write_status:ok\ncredential_file=root:root 600 /etc/redis-inventory.env\nacl_file=root:redis 640 /etc/redis/users.acl\nacl_credential_binding=verified-by-sha256\ndisk_artifacts:\nredis:redis 644 102 /var/lib/redis/appendonlydir/appendonly.aof.manifest\nredis:redis 644 130 /var/lib/redis/appendonlydir/appendonly.aof.1.incr.aof\nredis:redis 644 176 /var/lib/redis/dump.rdb\nredis:redis 644 88 /var/lib/redis/appendonlydir/appendonly.aof.1.base.rdb"
+    },
+    {
+      "command_id": "cmd-9744c2eeed1541ef",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:03.986070+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 146,
+      "command": "set -eu\nprintf 'safe_reboot_command='; command -v openrc-shutdown\nprintf 'current_boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "safe_reboot_command="
+    },
+    {
+      "command_id": "cmd-2eda1dd9a10441e3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:07.335084+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 36,
+      "command": "printf 'reboot='; command -v reboot || true\nprintf 'poweroff='; command -v poweroff || true\nprintf 'shutdown='; command -v shutdown || true\nprintf 'openrc_candidates:\\n'; ls /sbin /usr/sbin 2>/dev/null | grep -E '^(openrc-shutdown|reboot|shutdown)$' || true\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "reboot=/sbin/reboot\npoweroff=/sbin/poweroff\nshutdown=openrc_candidates:\nreboot\nboot_id=ca0d8525-ef93-45d3-bc24-9f5578837245"
+    },
+    {
+      "command_id": "cmd-763ab4bd47c3400d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:12.990623+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 122,
+      "command": "set -eu\nbefore_boot_id=$(cat /proc/sys/kernel/random/boot_id)\nnohup sh -c 'sleep 3; exec /sbin/reboot' </dev/null >/tmp/redis-benchmark-reboot.log 2>&1 &\nrestart_pid=$!\nprintf 'restart_acknowledged node=%s mechanism=/sbin/reboot pid=%s before_boot_id=%s\\n' \"$NODE_NAME\" \"$restart_pid\" \"$before_boot_id\"",
+      "stdout": "restart_acknowledged node=node1 mechanism=/sbin/reboot pid=3257 before_boot_id=ca0d8525-ef93-45d3-bc24-9f5578837245"
+    },
+    {
+      "command_id": "cmd-a8fa6cd7f9f94196",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:16.604524+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 55,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-1c184a2600fc4786",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:20.639319+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2065,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-a245cfd96de24e38",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:25.695103+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2045,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-9b66fc2b4ae044f9",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:29.921202+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2076,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-86fc552173634d4a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:31.839949+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 48,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-cfb1b9494eab4566",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:34.157999+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 34,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-e4aaee9b8d7b4868",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:36.231822+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 39,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-f2c2ba71125b4ef4",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:39.961546+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 41,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-c76c05cd8e184048",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:43.264386+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 37,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-9513964aaa694de1",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:47.683471+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 44,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "reachable boot_id=bf259b70-4a66-42ae-bc82-025a60743094"
+    },
+    {
+      "command_id": "cmd-e00c23925bf347f6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:00:53.994041+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 102,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service='; rc-service redis status\nprintf 'managed_ip=%s\\n' \"$NODE_IP\"",
+      "stdout": "boot_id=bf259b70-4a66-42ae-bc82-025a60743094\nservice= * status: started\nmanaged_ip=10.100.113.10"
+    },
+    {
+      "command_id": "cmd-f28b8b8f7ea643da",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:01:05.780456+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 77,
+      "command": "set -eu\nbefore_boot_id='ca0d8525-ef93-45d3-bc24-9f5578837245'\nafter_boot_id=$(cat /proc/sys/kernel/random/boot_id)\n[ \"$after_boot_id\" != \"$before_boot_id\" ]\n. /etc/redis-inventory.env\n[ \"$REDIS_HOST\" = \"$NODE_IP\" ]\nredis_cmd() { REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli -h \"$NODE_IP\" -p \"$REDIS_PORT\" --user \"$REDIS_USERNAME\" --no-auth-warning --raw \"$@\"; }\nexpected_value=\"inventory-persistent-$before_boot_id\"\n[ \"$(redis_cmd PING)\" = PONG ]\n[ \"$(redis_cmd ACL WHOAMI)\" = inventory ]\n[ \"$(redis_cmd GET inventory:restart-proof)\" = \"$expected_value\" ]\nunauthenticated=$(redis-cli -h \"$NODE_IP\" -p \"$REDIS_PORT\" --raw PING 2>&1 || true)\ncase \"$unauthenticated\" in *NOAUTH*) : ;; *) exit 1 ;; esac\ninventory_hash=$(printf '%s' \"$REDIS_PASSWORD\" | sha256sum | awk '{print $1}')\ngrep -q \"user inventory on #$inventory_hash \" /etc/redis/users.acl\nprintf 'before_boot_id=%s\\n' \"$before_boot_id\"\nprintf 'after_boot_id=%s\\n' \"$after_boot_id\"\nprintf 'boot_identity_changed=yes\\n'\nprintf 'service='; rc-service redis status\nprintf 'enabled='; rc-update show default | grep -E '(^|[[:space:]])redis([[:space:]]|$)'\nprintf 'listener:\\n'; netstat -lntp 2>/dev/null | grep \"$NODE_IP:6379\"\nprintf 'unauthenticated_access=%s\\n' \"$unauthenticated\"\nprintf 'authenticated_ping=%s\\n' \"$(redis_cmd PING)\"\nprintf 'authenticated_identity=%s\\n' \"$(redis_cmd ACL WHOAMI)\"\nprintf 'recovered_value=%s\\n' \"$(redis_cmd GET inventory:restart-proof)\"\nprintf 'database_size=%s\\n' \"$(redis_cmd DBSIZE)\"\nprintf 'runtime_persistence:\\n'; redis_cmd CONFIG GET dir dbfilename appendonly appendfsync appenddirname\nprintf 'persistence_health:\\n'; redis_cmd INFO persistence | tr -d '\\r' | grep -E '^(loading|async_loading|rdb_last_bgsave_status|aof_enabled|aof_rewrite_in_progress|aof_last_write_status|aof_current_size|aof_base_size):'\nprintf 'credential_file='; stat -c '%U:%G %a %n' /etc/redis-inventory.env\nprintf 'acl_file='; stat -c '%U:%G %a %n' /etc/redis/users.acl\nprintf 'acl_credential_binding=verified-by-sha256\\n'\nprintf 'disk_artifacts:\\n'; find /var/lib/redis -maxdepth 2 -type f -exec stat -c '%U:%G %a %s %n' {} \\; | sort",
+      "stdout": "before_boot_id=ca0d8525-ef93-45d3-bc24-9f5578837245\nafter_boot_id=bf259b70-4a66-42ae-bc82-025a60743094\nboot_identity_changed=yes\nservice= * status: started\nenabled=                redis | default\nlistener:\ntcp        0      0 10.100.113.10:6379      0.0.0.0:*               LISTEN      2325/redis-server 1 \nunauthenticated_access=NOAUTH Authentication required.\nauthenticated_ping=PONG\nauthenticated_identity=inventory\nrecovered_value=inventory-persistent-ca0d8525-ef93-45d3-bc24-9f5578837245\ndatabase_size=1\nruntime_persistence:\nappendfsync\neverysec\ndbfilename\ndump.rdb\nappendonly\nyes\ndir\n/var/lib/redis\nappenddirname\nappendonlydir\npersistence_health:\nloading:0\nasync_loading:0\nrdb_last_bgsave_status:ok\naof_enabled:1\naof_rewrite_in_progress:0\naof_last_write_status:ok\naof_current_size:218\naof_base_size:88\ncredential_file=root:root 600 /etc/redis-inventory.env\nacl_file=root:redis 640 /etc/redis/users.acl\nacl_credential_binding=verified-by-sha256\ndisk_artifacts:\nredis:redis 644 102 /var/lib/redis/appendonlydir/appendonly.aof.manifest\nredis:redis 644 130 /var/lib/redis/appendonlydir/appendonly.aof.1.incr.aof\nredis:redis 644 176 /var/lib/redis/dump.rdb\nredis:redis 644 88 /var/lib/redis/appendonlydir/appendonly.aof.1.base.rdb"
+    }
+  ]
+}

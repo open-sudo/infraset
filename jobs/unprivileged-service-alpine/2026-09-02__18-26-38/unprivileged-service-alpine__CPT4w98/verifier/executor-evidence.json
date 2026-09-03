@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 17,
+    "successful": 12,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Dedicated inventorysvc account",
+      "command_ids": [
+        "cmd-1d413f94b4934f09",
+        "cmd-8cf398ac20334a41"
+      ],
+      "summary": "Account exists as UID 103/GID 104 with /nonexistent home and /sbin/nologin; the recovered process uses those IDs."
+    },
+    {
+      "requirement": "Managed service named inventory-worker executing the required worker",
+      "command_ids": [
+        "cmd-882d4c9cb96b476f",
+        "cmd-e69ad02ed78244d6"
+      ],
+      "summary": "OpenRC enabled and started the service. Final audit shows the service definition, required executable, PID tracking, started state, and exact live command line."
+    },
+    {
+      "requirement": "Service runs under inventorysvc",
+      "command_ids": [
+        "cmd-af60e9cf47b645be",
+        "cmd-e69ad02ed78244d6"
+      ],
+      "summary": "Live process ownership is inventorysvc:inventorysvc before and after reboot."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-40043f0160864031",
+        "cmd-fe5f7943cbdc4717",
+        "cmd-2eda65937c274573",
+        "cmd-8cf398ac20334a41"
+      ],
+      "summary": "Healthy baseline used boot ID 43704e36-8b9b-45fd-a165-2c8dac65abff; reboot was acknowledged; the new boot ID is abecf15a-be6c-4cb2-8131-6aea09e2ec9c; inventory-worker then recovered enabled and started with its executable and account intact."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-e173f1822576459e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:14:39.219380+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 107,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'os='; cat /etc/os-release\nprintf 'pid1='; ps -p 1 -o comm= 2>/dev/null || true\nprintf 'init='; command -v rc-service || true\nprintf 'user='; id\n",
+      "stdout": "node=node1 ip=10.100.86.10\nboot_id=43704e36-8b9b-45fd-a165-2c8dac65abff\nos=NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.23.3\nPRETTY_NAME=\"Alpine Linux v3.23\"\nHOME_URL=\"https://alpinelinux.org/\"\nBUG_REPORT_URL=\"https://gitlab.alpinelinux.org/alpine/aports/-/issues\"\npid1=init=/sbin/rc-service\nuser=uid=0(root) gid=0(root)"
+    },
+    {
+      "command_id": "cmd-be8cdb08eac04bf5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:14:45.571921+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 68,
+      "command": "set -eu\nls -l /usr/local/bin/os-comparison-worker\nif command -v file >/dev/null 2>&1; then file /usr/local/bin/os-comparison-worker; fi\nprintf '%s\\n' '--- first lines ---'\nhead -n 80 /usr/local/bin/os-comparison-worker 2>/dev/null || true\nprintf '%s\\n' '--- existing account/service ---'\ngetent passwd inventorysvc 2>/dev/null || true\nls -l /etc/init.d/inventory-worker 2>/dev/null || true\nrc-service inventory-worker status 2>&1 || true\nrc-update show 2>/dev/null | grep -F inventory-worker || true\n",
+      "stdout": "-rwxr-xr-x    1 root     root            60 Sep  2 19:14 /usr/local/bin/os-comparison-worker\n--- first lines ---\n#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 30; done\n--- existing account/service ---\n * rc-service: service `inventory-worker' does not exist"
+    },
+    {
+      "command_id": "cmd-1d413f94b4934f09",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:14:56.076775+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 69,
+      "command": "set -eu\nif ! getent group inventorysvc >/dev/null 2>&1; then addgroup -S inventorysvc; fi\nif ! getent passwd inventorysvc >/dev/null 2>&1; then adduser -S -D -H -h /nonexistent -s /sbin/nologin -G inventorysvc inventorysvc; fi\ngetent passwd inventorysvc\ngetent group inventorysvc\n",
+      "stdout": "inventorysvc:x:103:104::/nonexistent:/sbin/nologin\ninventorysvc:x:104:inventorysvc"
+    },
+    {
+      "command_id": "cmd-ad7761654cc04505",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:03.035256+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 54,
+      "command": "set -eu\ncat > /etc/init.d/inventory-worker <<'INVENTORY_WORKER_EOF'\n#!/sbin/openrc-run\n\nname=\"inventory-worker\"\ndescription=\"OS comparison inventory worker\"\ncommand=\"/usr/local/bin/os-comparison-worker\"\ncommand_user=\"inventorysvc:inventorysvc\"\ncommand_background=\"yes\"\npidfile=\"/run/${RC_SVCNAME}.pid\"\n\nstart_pre() {\n    checkpath --file --mode 0644 --owner inventorysvc:inventorysvc /var/log/inventory-worker.log\n}\n\ndepend() {\n    need localmount\n    after bootmisc\n}\nINVENTORY_WORKER_EOF\nchown root:root /etc/init.d/inventory-worker\nchmod 0755 /etc/init.d/inventory-worker\nls -l /etc/init.d/inventory-worker\nsed -n '1,80p' /etc/init.d/inventory-worker\n",
+      "stdout": "-rwxr-xr-x    1 root     root           401 Sep  2 19:15 /etc/init.d/inventory-worker\n#!/sbin/openrc-run\n\nname=\"inventory-worker\"\ndescription=\"OS comparison inventory worker\"\ncommand=\"/usr/local/bin/os-comparison-worker\"\ncommand_user=\"inventorysvc:inventorysvc\"\ncommand_background=\"yes\"\npidfile=\"/run/${RC_SVCNAME}.pid\"\n\nstart_pre() {\n    checkpath --file --mode 0644 --owner inventorysvc:inventorysvc /var/log/inventory-worker.log\n}\n\ndepend() {\n    need localmount\n    after bootmisc\n}"
+    },
+    {
+      "command_id": "cmd-25cc34a4a16d43e5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:08.004717+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 42,
+      "command": "set -eu\ncat > /etc/init.d/inventory-worker <<'INVENTORY_WORKER_EOF'\n#!/sbin/openrc-run\n\nname=\"inventory-worker\"\ndescription=\"OS comparison inventory worker\"\ncommand=\"/usr/local/bin/os-comparison-worker\"\ncommand_user=\"inventorysvc:inventorysvc\"\ncommand_background=\"yes\"\npidfile=\"/run/${RC_SVCNAME}.pid\"\n\ndepend() {\n    need localmount\n    after bootmisc\n}\nINVENTORY_WORKER_EOF\nchown root:root /etc/init.d/inventory-worker\nchmod 0755 /etc/init.d/inventory-worker\n/etc/init.d/inventory-worker describe 2>/dev/null || true\n",
+      "stdout": " * OS comparison inventory worker\n * cgroup_cleanup: Kill all processes in the cgroup"
+    },
+    {
+      "command_id": "cmd-882d4c9cb96b476f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:10.379276+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 127,
+      "command": "set -eu\nrc-update add inventory-worker default\nrc-service inventory-worker start\n",
+      "stdout": " * service inventory-worker added to runlevel default\n * Caching service dependencies ... [ ok ]\n * Starting inventory-worker ... [ ok ]"
+    },
+    {
+      "command_id": "cmd-af60e9cf47b645be",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:17.348589+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 99,
+      "command": "set -eu\nrc-service inventory-worker status\nprintf 'enabled='; rc-update show default | grep -F inventory-worker\nworker_pid=$(cat /run/inventory-worker.pid)\nprintf 'pid=%s\\n' \"$worker_pid\"\nkill -0 \"$worker_pid\"\nprintf 'cmdline='; tr '\\000' ' ' < \"/proc/$worker_pid/cmdline\"; printf '\\n'\nprintf '%s\\n' 'identity:'\nsed -n '/^Name:/p;/^State:/p;/^Uid:/p;/^Gid:/p' \"/proc/$worker_pid/status\"\nid inventorysvc\n",
+      "stdout": " * status: started\nenabled=     inventory-worker | default\npid=3108\ncmdline=/bin/sh /usr/local/bin/os-comparison-worker \nidentity:\nName:\tos-comparison-w\nState:\tS (sleeping)\nUid:\t103\t103\t103\t103\nGid:\t104\t104\t104\t104\nuid=103(inventorysvc) gid=104(inventorysvc) groups=104(inventorysvc),104(inventorysvc)"
+    },
+    {
+      "command_id": "cmd-40043f0160864031",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:29.128630+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 72,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nrc-service inventory-worker status\nprintf 'enabled='; rc-update show default | grep -F inventory-worker\nworker_pid=$(cat /run/inventory-worker.pid)\nkill -0 \"$worker_pid\"\nprintf 'pid=%s cmdline=' \"$worker_pid\"; tr '\\000' ' ' < \"/proc/$worker_pid/cmdline\"; printf '\\n'\nsed -n '/^Uid:/p;/^Gid:/p' \"/proc/$worker_pid/status\"\nprintf 'account='; getent passwd inventorysvc\nprintf 'executable='; test -x /usr/local/bin/os-comparison-worker && sha256sum /usr/local/bin/os-comparison-worker\n",
+      "stdout": "boot_id=43704e36-8b9b-45fd-a165-2c8dac65abff\n * status: started\nenabled=     inventory-worker | default\npid=3108 cmdline=/bin/sh /usr/local/bin/os-comparison-worker \nUid:\t103\t103\t103\t103\nGid:\t104\t104\t104\t104\naccount=inventorysvc:x:103:104::/nonexistent:/sbin/nologin\nexecutable=cdcc8e3f484d33fc84575ba02ec66a4c779f325ba721f8fbedb76633b42f069e  /usr/local/bin/os-comparison-worker"
+    },
+    {
+      "command_id": "cmd-fe5f7943cbdc4717",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:32.532912+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 43,
+      "command": "set -eu\nsync\nnohup sh -c 'sleep 2; /sbin/reboot' >/tmp/inventory-worker-reboot.log 2>&1 &\nprintf 'reboot_acknowledged node=%s scheduled_pid=%s pre_boot_id=' \"$NODE_NAME\" \"$!\"\ncat /proc/sys/kernel/random/boot_id\n",
+      "stdout": "reboot_acknowledged node=node1 scheduled_pid=3211 pre_boot_id=43704e36-8b9b-45fd-a165-2c8dac65abff"
+    },
+    {
+      "command_id": "cmd-3fe209661f8046f5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:34.981427+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 37,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-4ed388ba62994760",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:36.970675+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 37,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-45fde76419de4f17",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:39.338462+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 35,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-1baec81ffc2446e1",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:15:51.467347+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2058,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-bd7c1f0e618f4983",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:16:03.370575+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 59,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-2eda65937c274573",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:16:15.210618+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 68,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "reachable boot_id=abecf15a-be6c-4cb2-8131-6aea09e2ec9c"
+    },
+    {
+      "command_id": "cmd-8cf398ac20334a41",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:16:19.896183+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 46,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nrc-service inventory-worker status\nprintf 'enabled='; rc-update show default | grep -F inventory-worker\nworker_pid=$(cat /run/inventory-worker.pid)\nkill -0 \"$worker_pid\"\nprintf 'pid=%s cmdline=' \"$worker_pid\"; tr '\\000' ' ' < \"/proc/$worker_pid/cmdline\"; printf '\\n'\nsed -n '/^Name:/p;/^State:/p;/^Uid:/p;/^Gid:/p' \"/proc/$worker_pid/status\"\nprintf 'account='; getent passwd inventorysvc\nprintf 'executable='; test -x /usr/local/bin/os-comparison-worker && sha256sum /usr/local/bin/os-comparison-worker\n",
+      "stdout": "boot_id=abecf15a-be6c-4cb2-8131-6aea09e2ec9c\n * status: started\nenabled=     inventory-worker | default\npid=2315 cmdline=/bin/sh /usr/local/bin/os-comparison-worker \nName:\tos-comparison-w\nState:\tS (sleeping)\nUid:\t103\t103\t103\t103\nGid:\t104\t104\t104\t104\naccount=inventorysvc:x:103:104::/nonexistent:/sbin/nologin\nexecutable=cdcc8e3f484d33fc84575ba02ec66a4c779f325ba721f8fbedb76633b42f069e  /usr/local/bin/os-comparison-worker"
+    },
+    {
+      "command_id": "cmd-e69ad02ed78244d6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:16:30.539854+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 75,
+      "command": "set -eu\nprintf '%s\\n' 'service_definition:'\nls -l /etc/init.d/inventory-worker\nsed -n '1,40p' /etc/init.d/inventory-worker\nprintf '%s\\n' 'live_state:'\nrc-service inventory-worker status\nworker_pid=$(cat /run/inventory-worker.pid)\nprintf 'pid=%s owner=' \"$worker_pid\"\nstat -c '%U:%G' \"/proc/$worker_pid\"\nprintf 'cmdline='; tr '\\000' ' ' < \"/proc/$worker_pid/cmdline\"; printf '\\n'\n",
+      "stdout": "service_definition:\n-rwxr-xr-x    1 root     root           287 Sep  2 19:15 /etc/init.d/inventory-worker\n#!/sbin/openrc-run\n\nname=\"inventory-worker\"\ndescription=\"OS comparison inventory worker\"\ncommand=\"/usr/local/bin/os-comparison-worker\"\ncommand_user=\"inventorysvc:inventorysvc\"\ncommand_background=\"yes\"\npidfile=\"/run/${RC_SVCNAME}.pid\"\n\ndepend() {\n    need localmount\n    after bootmisc\n}\nlive_state:\n * status: started\npid=2315 owner=inventorysvc:inventorysvc\ncmdline=/bin/sh /usr/local/bin/os-comparison-worker "
+    }
+  ]
+}

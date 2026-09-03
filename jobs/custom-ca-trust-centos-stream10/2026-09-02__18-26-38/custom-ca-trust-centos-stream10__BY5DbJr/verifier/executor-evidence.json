@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 10,
+    "successful": 8,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Create and install OS Comparison Root CA as a trusted system CA",
+      "command_ids": [
+        "cmd-dbd53f3d29564f26",
+        "cmd-5858052c18d34365",
+        "cmd-807766e8afdd4400"
+      ],
+      "summary": "Shows CA creation, correct subject and CA constraints, matching private key, p11-kit anchor status, and successful probe-certificate verification through the system bundle before and after reboot."
+    },
+    {
+      "requirement": "Mandatory node1 restart and recovery",
+      "command_ids": [
+        "cmd-5858052c18d34365",
+        "cmd-3aa08bfc6b414f55",
+        "cmd-90207e02fe5e4444",
+        "cmd-807766e8afdd4400"
+      ],
+      "summary": "Captures the healthy baseline and original boot ID, safe reboot acknowledgement, new boot ID, running system state, and recovered persistent CA trust."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-93401cafff4a4243",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:42:31.363493+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 120,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf 'os='; . /etc/os-release; printf '%s %s\\n' \"$NAME\" \"$VERSION_ID\"\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'openssl='; openssl version\nprintf 'update_ca_trust='; command -v update-ca-trust\nprintf 'trust='; command -v trust || true\nprintf 'system_state='; systemctl is-system-running || true\nprintf 'root_fs='; findmnt -no SOURCE,FSTYPE,OPTIONS /\n",
+      "stdout": "node=node1 ip=10.100.152.10\nos=CentOS Stream 10\nboot_id=fb2aa416-d036-46d3-aeb8-30c65a01cb34\nopenssl=OpenSSL 3.5.5 27 Jan 2026 (Library: OpenSSL 3.5.5 27 Jan 2026)\nupdate_ca_trust=/usr/bin/update-ca-trust\ntrust=/usr/bin/trust\nsystem_state=running\nroot_fs=/dev/vda3 xfs rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota"
+    },
+    {
+      "command_id": "cmd-2adda786c35c473c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:42:35.426542+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 43,
+      "command": "set -eu\nfor p in /etc/pki/tls/private/os-comparison-root-ca.key /etc/pki/ca-trust/source/anchors/os-comparison-root-ca.crt; do\n  if [ -e \"$p\" ]; then\n    printf 'present %s\\n' \"$p\"\n    stat -c 'mode=%a owner=%U:%G size=%s' \"$p\"\n  else\n    printf 'absent %s\\n' \"$p\"\n  fi\ndone\n",
+      "stdout": "absent /etc/pki/tls/private/os-comparison-root-ca.key\nabsent /etc/pki/ca-trust/source/anchors/os-comparison-root-ca.crt"
+    },
+    {
+      "command_id": "cmd-dbd53f3d29564f26",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:42:45.948812+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1399,
+      "command": "set -eu\numask 077\ninstall -d -m 0700 /etc/pki/tls/private\nopenssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \\\n  -subj '/CN=OS Comparison Root CA' \\\n  -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \\\n  -addext 'keyUsage=critical,keyCertSign,cRLSign' \\\n  -addext 'subjectKeyIdentifier=hash' \\\n  -keyout /etc/pki/tls/private/os-comparison-root-ca.key \\\n  -out /etc/pki/ca-trust/source/anchors/os-comparison-root-ca.crt \\\n  2>/dev/null\nchmod 0600 /etc/pki/tls/private/os-comparison-root-ca.key\nchmod 0644 /etc/pki/ca-trust/source/anchors/os-comparison-root-ca.crt\nupdate-ca-trust extract\nprintf 'created_and_extracted\\n'\n",
+      "stdout": "created_and_extracted"
+    },
+    {
+      "command_id": "cmd-5858052c18d34365",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:43:05.900001+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 241,
+      "command": "set -eu\nca_cert=/etc/pki/ca-trust/source/anchors/os-comparison-root-ca.crt\nca_key=/etc/pki/tls/private/os-comparison-root-ca.key\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running\nstat -c 'key_mode=%a key_owner=%U:%G' \"$ca_key\"\nstat -c 'cert_mode=%a cert_owner=%U:%G' \"$ca_cert\"\nopenssl x509 -in \"$ca_cert\" -noout -subject -issuer -serial -dates -fingerprint -sha256\nopenssl x509 -in \"$ca_cert\" -noout -text | awk '/X509v3 Basic Constraints/{print; getline; print} /X509v3 Key Usage/{print; getline; print}'\nkey_pub=$(openssl pkey -in \"$ca_key\" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')\ncert_pub=$(openssl x509 -in \"$ca_cert\" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')\ntest \"$key_pub\" = \"$cert_pub\"\nprintf 'private_key_matches_certificate=yes\\n'\ntrust list --filter=ca-anchors | awk 'BEGIN { RS=\"\" } /label: OS Comparison Root CA/ { print; found=1 } END { if (!found) exit 1 }'\nprobe_dir=$(mktemp -d)\ntrap 'rm -rf \"$probe_dir\"' 0 1 2 3 15\nopenssl req -new -newkey rsa:2048 -nodes -sha256 -subj '/CN=system-trust-probe.invalid' -keyout \"$probe_dir/leaf.key\" -out \"$probe_dir/leaf.csr\" 2>/dev/null\nprintf 'basicConstraints=critical,CA:FALSE\\nkeyUsage=critical,digitalSignature,keyEncipherment\\n' > \"$probe_dir/leaf.ext\"\nopenssl x509 -req -in \"$probe_dir/leaf.csr\" -CA \"$ca_cert\" -CAkey \"$ca_key\" -set_serial 1001 -days 1 -sha256 -extfile \"$probe_dir/leaf.ext\" -out \"$probe_dir/leaf.crt\" 2>/dev/null\nprintf 'system_bundle_leaf_verification='; openssl verify -CAfile /etc/pki/tls/certs/ca-bundle.crt \"$probe_dir/leaf.crt\"\n",
+      "stdout": "boot_id=fb2aa416-d036-46d3-aeb8-30c65a01cb34\nsystem_state=running\nkey_mode=600 key_owner=root:root\ncert_mode=644 cert_owner=root:root\nsubject=CN=OS Comparison Root CA\nissuer=CN=OS Comparison Root CA\nserial=698D3A6E8FFE77196E906C3467F67A7E34103F3D\nnotBefore=Sep  2 23:42:44 2026 GMT\nnotAfter=Aug 30 23:42:44 2036 GMT\nsha256 Fingerprint=7A:E0:92:29:52:F1:19:14:31:21:14:FB:84:32:66:0D:3F:21:36:07:90:29:53:81:F3:3E:16:BC:6B:56:05:3E\n            X509v3 Basic Constraints: critical\n                CA:TRUE, pathlen:0\n            X509v3 Key Usage: critical\n                Certificate Sign, CRL Sign\nprivate_key_matches_certificate=yes\npkcs11:id=%F3%73%EA%9F%9C%5C%5E%92%1D%F7%4C%CD%9E%13%B1%B9%93%83%0E%57;type=cert\n    type: certificate\n    label: OS Comparison Root CA\n    trust: anchor\n    category: authority\nsystem_bundle_leaf_verification=/tmp/tmp.ukufsVICr3/leaf.crt: OK"
+    },
+    {
+      "command_id": "cmd-3aa08bfc6b414f55",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:43:13.359336+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 72,
+      "command": "set -eu\nprintf 'pre_reboot_boot_id='; cat /proc/sys/kernel/random/boot_id\nsystemd-run --quiet --unit=[REDACTED] --on-active=3s /usr/bin/systemctl reboot\nprintf 'reboot_acknowledged=scheduled_via_systemd\\n'\n",
+      "stdout": "pre_reboot_boot_id=fb2aa416-d036-46d3-aeb8-30c65a01cb34\nreboot_acknowledged=scheduled_via_systemd"
+    },
+    {
+      "command_id": "cmd-3821451f6f7a4cd5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:43:17.698848+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 46,
+      "command": "printf 'poll_boot_id='; cat /proc/sys/kernel/random/boot_id\nsystemctl is-system-running || true\n",
+      "stdout": "poll_boot_id=fb2aa416-d036-46d3-aeb8-30c65a01cb34\nrunning"
+    },
+    {
+      "command_id": "cmd-2419c96731114f94",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:43:22.664281+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2045,
+      "command": "sleep 5\nprintf 'still_available_before_disconnect\\n'\n",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-19f10362ff444561",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:43:24.832315+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 39,
+      "command": "printf 'poll_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running || true\n",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-90207e02fe5e4444",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:43:26.993678+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 52,
+      "command": "printf 'poll_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running || true\n",
+      "stdout": "poll_boot_id=5072428f-60d5-4a45-9699-eccbb7321e63\nsystem_state=running"
+    },
+    {
+      "command_id": "cmd-807766e8afdd4400",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-02T23:43:37.939660+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 281,
+      "command": "set -eu\nexpected_old_boot=fb2aa416-d036-46d3-aeb8-30c65a01cb34\ncurrent_boot=$(cat /proc/sys/kernel/random/boot_id)\nprintf 'old_boot_id=%s\\nnew_boot_id=%s\\n' \"$expected_old_boot\" \"$current_boot\"\ntest \"$current_boot\" != \"$expected_old_boot\"\nprintf 'boot_identity_changed=yes\\n'\nprintf 'system_state='; systemctl is-system-running\nca_cert=/etc/pki/ca-trust/source/anchors/os-comparison-root-ca.crt\nca_key=/etc/pki/tls/private/os-comparison-root-ca.key\nstat -c 'key_mode=%a key_owner=%U:%G' \"$ca_key\"\nstat -c 'cert_mode=%a cert_owner=%U:%G' \"$ca_cert\"\nopenssl x509 -in \"$ca_cert\" -noout -subject -issuer -serial -dates -fingerprint -sha256\nopenssl x509 -in \"$ca_cert\" -noout -text | awk '/X509v3 Basic Constraints/{print; getline; print} /X509v3 Key Usage/{print; getline; print}'\nkey_pub=$(openssl pkey -in \"$ca_key\" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')\ncert_pub=$(openssl x509 -in \"$ca_cert\" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')\ntest \"$key_pub\" = \"$cert_pub\"\nprintf 'private_key_matches_certificate=yes\\n'\ntrust list --filter=ca-anchors | awk 'BEGIN { RS=\"\" } /label: OS Comparison Root CA/ { print; found=1 } END { if (!found) exit 1 }'\nprobe_dir=$(mktemp -d)\ntrap 'rm -rf \"$probe_dir\"' 0 1 2 3 15\nopenssl req -new -newkey rsa:2048 -nodes -sha256 -subj '/CN=post-restart-trust-probe.invalid' -keyout \"$probe_dir/leaf.key\" -out \"$probe_dir/leaf.csr\" 2>/dev/null\nprintf 'basicConstraints=critical,CA:FALSE\\nkeyUsage=critical,digitalSignature,keyEncipherment\\n' > \"$probe_dir/leaf.ext\"\nopenssl x509 -req -in \"$probe_dir/leaf.csr\" -CA \"$ca_cert\" -CAkey \"$ca_key\" -set_serial 1002 -days 1 -sha256 -extfile \"$probe_dir/leaf.ext\" -out \"$probe_dir/leaf.crt\" 2>/dev/null\nprintf 'post_restart_system_bundle_leaf_verification='; openssl verify -CAfile /etc/pki/tls/certs/ca-bundle.crt \"$probe_dir/leaf.crt\"\n",
+      "stdout": "old_boot_id=fb2aa416-d036-46d3-aeb8-30c65a01cb34\nnew_boot_id=5072428f-60d5-4a45-9699-eccbb7321e63\nboot_identity_changed=yes\nsystem_state=running\nkey_mode=600 key_owner=root:root\ncert_mode=644 cert_owner=root:root\nsubject=CN=OS Comparison Root CA\nissuer=CN=OS Comparison Root CA\nserial=698D3A6E8FFE77196E906C3467F67A7E34103F3D\nnotBefore=Sep  2 23:42:44 2026 GMT\nnotAfter=Aug 30 23:42:44 2036 GMT\nsha256 Fingerprint=7A:E0:92:29:52:F1:19:14:31:21:14:FB:84:32:66:0D:3F:21:36:07:90:29:53:81:F3:3E:16:BC:6B:56:05:3E\n            X509v3 Basic Constraints: critical\n                CA:TRUE, pathlen:0\n            X509v3 Key Usage: critical\n                Certificate Sign, CRL Sign\nprivate_key_matches_certificate=yes\npkcs11:id=%F3%73%EA%9F%9C%5C%5E%92%1D%F7%4C%CD%9E%13%B1%B9%93%83%0E%57;type=cert\n    type: certificate\n    label: OS Comparison Root CA\n    trust: anchor\n    category: authority\npost_restart_system_bundle_leaf_verification=/tmp/tmp.P5S7baxxa4/leaf.crt: OK"
+    }
+  ]
+}

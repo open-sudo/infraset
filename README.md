@@ -92,21 +92,6 @@ Run a task from the repository root:
 
 Set `CREDENTIALS_FILE` to use a different credential-file path.
 
-Run every task below a folder, with up to five different tasks running at once:
-
-```bash
-./run-task.sh --parallel 5 ./tasks/greenfield
-```
-
-To repeat every task three times while running up to five different tasks at once:
-
-```bash
-./run-task.sh --parallel 5 --n-attempts 3 ./tasks/greenfield
-```
-
-Trials belonging to the same task run sequentially and never overlap. Run
-`./run-task.sh --help` for the equivalent environment variables.
-
 The runner fetches Harbor and `harbor-antrieb` automatically. Results are stored
 under `jobs/<task-name>/`.
 
