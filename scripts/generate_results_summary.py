@@ -16,6 +16,28 @@ JOBS = ROOT / "jobs"
 OUTPUT = ROOT / "results-summary.md"
 DATA_OUTPUT = ROOT / "data" / "execution-summary.jsonl"
 GITHUB_BLOB = "https://github.com/open-sudo/infraset/blob/main"
+JOB_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}__\d{2}-\d{2}-\d{2}$")
+
+
+def find_task_dirs(root: Path) -> list[Path]:
+    """Find task directories anywhere under root, regardless of category nesting.
+
+    A task directory is any directory whose direct children include at least
+    one job (timestamp-named) directory, so this works whether jobs live
+    directly under `jobs/<task>/` or nested under category subdirectories
+    such as `jobs/<category>/<os>/<task>/`.
+    """
+    found = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_dir():
+            continue
+        if any(
+            JOB_NAME.fullmatch(child.name)
+            for child in path.iterdir()
+            if child.is_dir()
+        ):
+            found.append(path)
+    return found
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
@@ -193,7 +215,7 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
     provisioning: list[float] = []
 
     for directory, result in trials:
-        rewards = result.get("verifier_result", {}).get("rewards", {})
+        rewards = (result.get("verifier_result") or {}).get("rewards", {})
         rewards = rewards if isinstance(rewards, dict) else {}
         for name in (
             "reward",
@@ -226,7 +248,7 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
     return {
         "task": task_dir.name,
         "_analysis_url": (
-            f"{GITHUB_BLOB}/jobs/{task_dir.name}/{jobs[-1].name}/analysis.md"
+            f"{GITHUB_BLOB}/jobs/{task_dir.relative_to(JOBS)}/{jobs[-1].name}/analysis.md"
         ),
         "environment": environment(jobs[-1]),
         "commands": command_display(
@@ -246,7 +268,7 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
 
 def records() -> list[dict[str, Any]]:
     values = []
-    for task_dir in sorted(path for path in JOBS.iterdir() if path.is_dir()):
+    for task_dir in find_task_dirs(JOBS):
         record = task_record(task_dir)
         if record is not None:
             values.append(record)
