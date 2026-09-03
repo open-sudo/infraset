@@ -5,8 +5,8 @@ Yet there is little public empirical data showing what happens when LLMs operate
 greenfield, brownfield, end-of-life, or distributed environments. Perhaps LLMs perform remarkably well. Perhaps
 they fail in subtle ways. We do not yet have enough evidence to know either way.
 
-InfraSet is a dataset of executed infrastructure tasks and traces, created to build that evidence. It currently
-contains 42 tasks, and we hope the community will join us and help expand it. Results can also be explored on
+InfraSet is a dataset of executed infrastructure tasks and traces, created to build that evidence. We invite the
+community to join us and help expand it. Results can also be explored on
 [the InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
 ## What makes InfraSet different
@@ -28,7 +28,8 @@ required.
 Environments can include:
 
 - Current and end-of-life Linux distributions, including RHEL 7 through 10,
-  AlmaLinux 9, Alpine, Arch, Debian 13, Ubuntu 16.04, and Ubuntu 24.04
+  AlmaLinux 9, Alpine, Arch, CentOS Stream 10, Debian 13, Ubuntu 16.04, and
+  Ubuntu 24.04
 - Single-node and multi-node systems
 - Brownfield configurations and pre-existing state
 - Routers, firewalls, and switches, including VyOS, OPNsense, OpenWrt, and SONiC
@@ -87,13 +88,15 @@ chmod 600 "$HOME/credentials.env"
 Run a task from the repository root:
 
 ```bash
-./run-task.sh ./tasks/greenfield/haproxy-nodejs-ubuntu16
+./run-task.sh ./tasks/mixed-os-scenarios/greenfield/haproxy-nodejs-ubuntu16
 ```
 
 Set `CREDENTIALS_FILE` to use a different credential-file path.
 
 The runner fetches Harbor and `harbor-antrieb` automatically. Results are stored
-under `jobs/<task-name>/`.
+under `jobs/`, mirroring the task's path under `tasks/`—for example, the task
+above records its results under
+`jobs/mixed-os-scenarios/greenfield/haproxy-nodejs-ubuntu16/`.
 
 ## Creating a task
 
