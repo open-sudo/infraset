@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Generate a task x OS command cross-reference summary for a job category.
 
-Produces `<category>-summary.md` at the repository root. Each row is a task
-(linking to the analysis.md of its latest recorded job run); each column is an
-operating system / image that appears in that category. Cells report
-successful/failed executor commands as "success/failure" for the latest job
-run, so the table shows how many commands the executor needed per OS and how
-many of them failed.
+Produces `<category>-summary.md` at the repository root. Each row is a task;
+each column is an operating system / image that appears in that category.
+For the catalog-driven matrices (single-node-os-comparison,
+multi-node-os-comparison) the file has two tables built from each task's
+latest recorded job run: successful/failed executor commands as
+"success/failure", and how long that job run took to complete. Every cell
+links to the analysis.md of the specific job run it describes.
+mixed-os-scenarios only gets the commands table, since its tasks are bespoke
+rather than a repeated matrix.
 
 Usage:
     python scripts/generate_category_summary.py single-node-os-comparison
@@ -20,6 +23,7 @@ import argparse
 import json
 import re
 import tomllib
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -130,6 +134,37 @@ def relative_link(path: Path) -> str:
     return str(path.relative_to(ROOT))
 
 
+def parse_time(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def trial_duration_seconds(trial_dir: Path) -> float | None:
+    result = read_json(trial_dir / "result.json") or {}
+    started = parse_time(result.get("started_at"))
+    finished = parse_time(result.get("finished_at"))
+    if started is None or finished is None:
+        return None
+    return (finished - started).total_seconds()
+
+
+def format_duration(seconds: float | None) -> str:
+    if seconds is None:
+        return "not recorded"
+    rounded = max(0, round(seconds))
+    hours, remainder = divmod(rounded, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
 def build_matrix_category(category: str) -> str:
     """single-node-os-comparison / multi-node-os-comparison: catalog-driven matrix."""
     catalog = read_toml(TASKS / category / "catalog.toml")
@@ -142,43 +177,67 @@ def build_matrix_category(category: str) -> str:
 
     category_jobs = JOBS / category
     cols = [label for _, label in os_ids]
-    lines = [
-        f"# {category}: command execution summary\n",
-        "Successful/failed executor commands per task per OS, from each task's "
-        "latest recorded job run. Task names link to that run's analysis. "
-        "`0/0` means the audit was captured but no managed-node commands were "
-        "issued. `—` means the task has not been executed yet for that OS.\n",
-        "| Task | " + " | ".join(cols) + " |",
-        "|---|" + "|".join(["---:"] * len(cols)) + "|",
-    ]
+    header = ["| Task | " + " | ".join(cols) + " |", "|---|" + "|".join(["---:"] * len(cols)) + "|"]
+
+    # cell_data[slug][os_id] = (link, "success/fail", "duration") or None
+    cell_data: dict[str, dict[str, tuple[str, str, str] | None]] = {}
 
     for slug in slugs:
-        cells = []
-        link_target: str | None = None
+        cell_data[slug] = {}
         for os_id, _ in os_ids:
             task_dir = category_jobs / os_id / f"{slug}-{os_id}"
-            if not task_dir.is_dir():
-                cells.append("—")
-                continue
-            runs = job_runs(task_dir)
+            runs = job_runs(task_dir) if task_dir.is_dir() else []
             if not runs:
-                cells.append("—")
+                cell_data[slug][os_id] = None
                 continue
             latest = runs[-1]
             successful = failed = 0
+            durations: list[float] = []
             for trial_dir in trial_dirs(latest):
                 records = command_records(trial_dir)
                 s, f = command_stats(records)
                 successful += s
                 failed += f
-            cells.append(f"{successful}/{failed}")
-            if link_target is None:
-                link_target = relative_link(latest / "analysis.md")
-        name_cell = f"[{slug}]({link_target})" if link_target else slug
-        lines.append("| " + name_cell + " | " + " | ".join(cells) + " |")
+                duration = trial_duration_seconds(trial_dir)
+                if duration is not None:
+                    durations.append(duration)
+            link = relative_link(latest / "analysis.md")
+            avg_duration = sum(durations) / len(durations) if durations else None
+            cell_data[slug][os_id] = (link, f"{successful}/{failed}", format_duration(avg_duration))
 
-    lines.append("")
-    return "\n".join(lines)
+    commands_lines = [
+        f"# {category}: command execution summary\n",
+        "Successful/failed executor commands per task per OS, from each task's "
+        "latest recorded job run. Each success/failure count links to the "
+        "analysis for that specific job. `0/0` means the audit was captured "
+        "but no managed-node commands were issued. `—` means the task has "
+        "not been executed yet for that OS.\n",
+        *header,
+    ]
+    for slug in slugs:
+        cells = []
+        for os_id, _ in os_ids:
+            data = cell_data[slug][os_id]
+            cells.append("—" if data is None else f"[{data[1]}]({data[0]})")
+        commands_lines.append("| " + slug + " | " + " | ".join(cells) + " |")
+
+    duration_lines = [
+        "",
+        "## Completion time\n",
+        "Wall-clock time from job start to finish for the same latest recorded "
+        "job run per task per OS (averaged across trials when a job ran more "
+        "than one). Each duration links to the analysis for that specific "
+        "job. `—` means the task has not been executed yet for that OS.\n",
+        *header,
+    ]
+    for slug in slugs:
+        cells = []
+        for os_id, _ in os_ids:
+            data = cell_data[slug][os_id]
+            cells.append("—" if data is None else f"[{data[2]}]({data[0]})")
+        duration_lines.append("| " + slug + " | " + " | ".join(cells) + " |")
+
+    return "\n".join(commands_lines + duration_lines + [""])
 
 
 def build_mixed_os_scenarios() -> str:
