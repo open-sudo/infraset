@@ -152,6 +152,19 @@ def trial_duration_seconds(trial_dir: Path) -> float | None:
     return (finished - started).total_seconds()
 
 
+def trial_hygiene(trial_dir: Path) -> float | None:
+    result = read_json(trial_dir / "result.json") or {}
+    rewards = (result.get("verifier_result") or {}).get("rewards")
+    if not isinstance(rewards, dict):
+        return None
+    value = rewards.get("operational_hygiene")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def format_hygiene(value: float | None) -> str:
+    return f"{value:.3f}" if value is not None else "not available"
+
+
 def format_duration(seconds: float | None) -> str:
     if seconds is None:
         return "not recorded"
@@ -179,8 +192,8 @@ def build_matrix_category(category: str) -> str:
     cols = [label for _, label in os_ids]
     header = ["| Task | " + " | ".join(cols) + " |", "|---|" + "|".join(["---:"] * len(cols)) + "|"]
 
-    # cell_data[slug][os_id] = (link, successful, failed, avg_duration_seconds) or None
-    cell_data: dict[str, dict[str, tuple[str, int, int, float | None] | None]] = {}
+    # cell_data[slug][os_id] = (link, successful, failed, avg_duration_seconds, avg_hygiene) or None
+    cell_data: dict[str, dict[str, tuple[str, int, int, float | None, float | None] | None]] = {}
 
     for slug in slugs:
         cell_data[slug] = {}
@@ -193,6 +206,7 @@ def build_matrix_category(category: str) -> str:
             latest = runs[-1]
             successful = failed = 0
             durations: list[float] = []
+            hygiene_scores: list[float] = []
             for trial_dir in trial_dirs(latest):
                 records = command_records(trial_dir)
                 s, f = command_stats(records)
@@ -201,22 +215,28 @@ def build_matrix_category(category: str) -> str:
                 duration = trial_duration_seconds(trial_dir)
                 if duration is not None:
                     durations.append(duration)
+                hygiene = trial_hygiene(trial_dir)
+                if hygiene is not None:
+                    hygiene_scores.append(hygiene)
             link = relative_link(latest / "analysis.md")
             avg_duration = sum(durations) / len(durations) if durations else None
-            cell_data[slug][os_id] = (link, successful, failed, avg_duration)
+            avg_hygiene = sum(hygiene_scores) / len(hygiene_scores) if hygiene_scores else None
+            cell_data[slug][os_id] = (link, successful, failed, avg_duration, avg_hygiene)
 
-    def column_averages() -> dict[str, tuple[float | None, float | None, float | None]]:
-        averages: dict[str, tuple[float | None, float | None, float | None]] = {}
+    def column_averages() -> dict[str, tuple[float | None, float | None, float | None, float | None]]:
+        averages: dict[str, tuple[float | None, float | None, float | None, float | None]] = {}
         for os_id, _ in os_ids:
             entries = [cell_data[slug][os_id] for slug in slugs if cell_data[slug][os_id] is not None]
             if not entries:
-                averages[os_id] = (None, None, None)
+                averages[os_id] = (None, None, None, None)
                 continue
             avg_success = sum(e[1] for e in entries) / len(entries)
             avg_failed = sum(e[2] for e in entries) / len(entries)
             durations = [e[3] for e in entries if e[3] is not None]
             avg_duration = sum(durations) / len(durations) if durations else None
-            averages[os_id] = (avg_success, avg_failed, avg_duration)
+            hygiene_scores = [e[4] for e in entries if e[4] is not None]
+            avg_hygiene = sum(hygiene_scores) / len(hygiene_scores) if hygiene_scores else None
+            averages[os_id] = (avg_success, avg_failed, avg_duration, avg_hygiene)
         return averages
 
     averages = column_averages()
@@ -240,7 +260,7 @@ def build_matrix_category(category: str) -> str:
         commands_lines.append("| " + slug + " | " + " | ".join(cells) + " |")
     avg_cells = []
     for os_id, _ in os_ids:
-        avg_success, avg_failed, _ = averages[os_id]
+        avg_success, avg_failed, _, _ = averages[os_id]
         avg_cells.append(
             "—" if avg_success is None else f"{avg_success:.1f}/{avg_failed:.1f}"
         )
@@ -265,11 +285,39 @@ def build_matrix_category(category: str) -> str:
         duration_lines.append("| " + slug + " | " + " | ".join(cells) + " |")
     avg_cells = []
     for os_id, _ in os_ids:
-        _, _, avg_duration = averages[os_id]
+        _, _, avg_duration, _ = averages[os_id]
         avg_cells.append(format_duration(avg_duration) if avg_duration is not None else "—")
     duration_lines.append("| **Average** | " + " | ".join(avg_cells) + " |")
 
-    return "\n".join(commands_lines + duration_lines + [""])
+    hygiene_lines = [
+        "",
+        "## Operational hygiene\n",
+        "Operational-hygiene score (1.000 = no unnecessary mutations, "
+        "attributable residue, or unrelated regression found) from the "
+        "verifier's evaluation of the same latest recorded job run per task "
+        "per OS, averaged across trials when a job ran more than one. Each "
+        "score links to the analysis for that specific job. `—` means the "
+        "task has not been executed yet for that OS, or the run has no "
+        "recorded verifier score. The final **Average** row is the mean "
+        "hygiene score per OS across all tasks with a recorded score.\n",
+        *header,
+    ]
+    for slug in slugs:
+        cells = []
+        for os_id, _ in os_ids:
+            data = cell_data[slug][os_id]
+            if data is None or data[4] is None:
+                cells.append("—")
+            else:
+                cells.append(f"[{format_hygiene(data[4])}]({data[0]})")
+        hygiene_lines.append("| " + slug + " | " + " | ".join(cells) + " |")
+    avg_cells = []
+    for os_id, _ in os_ids:
+        _, _, _, avg_hygiene = averages[os_id]
+        avg_cells.append(format_hygiene(avg_hygiene) if avg_hygiene is not None else "—")
+    hygiene_lines.append("| **Average** | " + " | ".join(avg_cells) + " |")
+
+    return "\n".join(commands_lines + duration_lines + hygiene_lines + [""])
 
 
 def build_mixed_os_scenarios() -> str:
