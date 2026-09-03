@@ -33,10 +33,10 @@ credential_value() {
       return 1
     fi
     key="${BASH_REMATCH[2]}"
-    value="${BASH_REMATCH[3]}"
     if [[ "$key" != "$requested_key" ]]; then
       continue
     fi
+    value="${BASH_REMATCH[3]}"
     if (( found )); then
       printf 'Duplicate credential key %s in %s\n' "$requested_key" "$path" >&2
       return 1
@@ -68,10 +68,10 @@ export CREDENTIALS_FILE="$credentials_file"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 provider_requirement="${INFRASET_PROVIDER_REQUIREMENT:-harbor-antrieb @ git+https://github.com/open-sudo/harbor-antrieb.git}"
 harbor_requirement="${HARBOR_REQUIREMENT:-harbor @ git+https://github.com/open-sudo/harbor.git}"
-model="${INFRASET_MODEL:-gpt-5.6-sol}"
-reasoning_effort="${INFRASET_REASONING_EFFORT:-max}"
+model="${INFRASET_MODEL:-claude-sonnet-5}"
+reasoning_effort="${INFRASET_REASONING_EFFORT:-medium}"
 service_tier="${INFRASET_SERVICE_TIER:-fast}"
-agent_name="${INFRASET_AGENT_NAME:-codex}"
+agent_name="${INFRASET_AGENT_NAME:-claude-code}"
 jobs_root="${INFRASET_JOBS_DIR:-$script_dir/jobs}"
 n_attempts="${INFRASET_N_ATTEMPTS:-1}"
 parallel_limit="${INFRASET_PARALLEL:-1}"
@@ -273,12 +273,21 @@ fi
 
 max_active_tasks="$parallel_limit"
 
+task_jobs_dir() {
+  local task_path="$1"
+  local tasks_root="$script_dir/tasks"
+  if [[ "$task_path" == "$tasks_root/"* ]]; then
+    printf '%s/%s' "$jobs_root" "${task_path#$tasks_root/}"
+  else
+    printf '%s/%s' "$jobs_root" "$(basename "$task_path")"
+  fi
+}
+
 printf 'Tasks: %s; sequential trials per task: %s; concurrent tasks: %s\n' \
   "${#task_paths[@]}" "$n_attempts" "$parallel_limit"
 
 for task_path in "${task_paths[@]}"; do
-  task_name="$(basename "$task_path")"
-  job_dir="$jobs_root/$task_name/$job_name"
+  job_dir="$(task_jobs_dir "$task_path")/$job_name"
   mkdir -p "$job_dir"
   cp "$task_path/instruction.md" "$job_dir/instruction.md"
   cp "${environment_files[$task_path]}" "$job_dir/environment.toml"
@@ -289,10 +298,28 @@ run_one_task() {
   local task_name
   local jobs_dir
   task_name="$(basename "$task_path")"
-  jobs_dir="$jobs_root/$task_name"
+  jobs_dir="$(task_jobs_dir "$task_path")"
 
   printf '[%s] Starting (%s sequential trial(s))\n' \
     "$task_name" "$n_attempts"
+
+  local -a agent_kwargs=(
+    --agent-kwarg agent_name="$agent_name"
+    --agent-kwarg reasoning_effort="$reasoning_effort"
+    --agent-kwarg diagnostic_agent="$agent_name"
+    --agent-kwarg diagnostic_model="$model"
+    --agent-kwarg diagnostic_reasoning_effort="$reasoning_effort"
+  )
+  local -a verifier_kwargs=(
+    --verifier-kwarg agent="$agent_name"
+    --verifier-kwarg model="$model"
+    --verifier-kwarg reasoning_effort="$reasoning_effort"
+    --verifier-kwarg minimum_coverage=1.0
+  )
+  if [[ "$agent_name" == "codex" && -n "$service_tier" ]]; then
+    agent_kwargs+=(--agent-kwarg service_tier="$service_tier")
+    verifier_kwargs+=(--verifier-kwarg service_tier="$service_tier")
+  fi
 
   exec "${runner[@]}" \
     --yes \
@@ -301,19 +328,10 @@ run_one_task() {
     --job-name "$job_name" \
     --agent harbor_antrieb.agent:AntriebHostAgent \
     --model "$model" \
-    --agent-kwarg agent_name="$agent_name" \
-    --agent-kwarg reasoning_effort="$reasoning_effort" \
-    --agent-kwarg service_tier="$service_tier" \
-    --agent-kwarg diagnostic_agent=codex \
-    --agent-kwarg diagnostic_model="$model" \
-    --agent-kwarg diagnostic_reasoning_effort="$reasoning_effort" \
+    "${agent_kwargs[@]}" \
     --env harbor_antrieb.environment:AntriebEnvironment \
     --verifier harbor_antrieb.verifier:AntriebVerifier \
-    --verifier-kwarg agent="$agent_name" \
-    --verifier-kwarg model="$model" \
-    --verifier-kwarg reasoning_effort="$reasoning_effort" \
-    --verifier-kwarg service_tier="$service_tier" \
-    --verifier-kwarg minimum_coverage=1.0 \
+    "${verifier_kwargs[@]}" \
     --n-attempts "$n_attempts" \
     --n-concurrent 1
 }

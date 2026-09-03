@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-created",
+      "requirement": "Create a certificate authority named 'Fleet Internal CA' on node1",
+      "status": "satisfied",
+      "summary": "CA key and self-signed x509 cert generated on node1 with subject/issuer CN=Fleet Internal CA, O=Fleet Internal CA, 10-year validity (2026-2036), confirmed via openssl x509 output.",
+      "evidence_ids": [
+        "cmd-6c245d6ebcf34d8e"
+      ]
+    },
+    {
+      "id": "cert-issued",
+      "requirement": "Issue a TLS certificate for node2 from the CA",
+      "status": "satisfied",
+      "summary": "node2 server cert generated (CN=node2, SAN DNS:node2/IP:10.100.175.11) and signed by the Fleet Internal CA; openssl output confirms Issuer=CN=Fleet Internal CA and correct SANs.",
+      "evidence_ids": [
+        "cmd-6fdb31ac599042d4"
+      ]
+    },
+    {
+      "id": "node2-https-8443",
+      "requirement": "Configure node2 to serve HTTPS on port 8443 using the issued certificate",
+      "status": "satisfied",
+      "summary": "After several corrected sed edits and mod_ssl reinstalls, ssl.conf was set to Listen 8443/VirtualHost :8443 pointing at the issued cert/key/chain; httpd is active and listening on 8443 (ss output); firewalld port 8443 opened; curl from node1 completes a full TLS handshake and presents the correct certificate (verified via --cacert and later via system trust store, SSL_VERIFY:0 both times). The 403 response body is expected since no site content was configured \u2014 TLS itself is what's being verified.",
+      "evidence_ids": [
+        "cmd-77b1447aaa2e4b9c",
+        "cmd-abc2dcf5113849fb",
+        "cmd-117098650fc84a23",
+        "cmd-0889533d7bd54d44",
+        "cmd-e2d593e8b1e0480d",
+        "cmd-ad7a2d6d670c44ae"
+      ]
+    },
+    {
+      "id": "ca-trust-node1",
+      "requirement": "Install the CA as a trusted system CA on node1",
+      "status": "satisfied",
+      "summary": "CA cert copied into /etc/pki/ca-trust/source/anchors and update-ca-trust extract run; trust list confirms Fleet Internal CA as an anchor/authority. Cross-node curl without --cacert succeeds (SSL_VERIFY:0), confirming the system trust store is actually used, not just present.",
+      "evidence_ids": [
+        "cmd-e7f61c68d2574786",
+        "cmd-ad7a2d6d670c44ae"
+      ]
+    },
+    {
+      "id": "ca-trust-node2",
+      "requirement": "Install the CA as a trusted system CA on node2",
+      "status": "satisfied",
+      "summary": "CA cert installed into node2's trust anchors and update-ca-trust extract run; trust list confirms Fleet Internal CA as anchor/authority on node2.",
+      "evidence_ids": [
+        "cmd-b2c15149202242f4"
+      ]
+    }
+  ],
+  "overall_summary": "All five material outcomes of the task are satisfied with direct evidence: a self-signed 'Fleet Internal CA' was created on node1, a CA-signed TLS certificate was issued to node2 with correct SANs, node2 serves HTTPS on port 8443 using that certificate (confirmed by a full TLS handshake and successful chain validation from node1, first with an explicit CA file and then via the system trust store alone), and the CA is installed as a trusted system anchor on both node1 and node2 per `trust list`. The independently-required node-restart evidence protocol was also executed cleanly for both nodes: pre-restart boot_id/health baselines, reboot acknowledgements, distinct post-restart boot_ids, and full recovery (httpd active, cert/key files intact, trust anchor present, firewall rule persisted, cross-node HTTPS still validating) were all captured and are corroborated by the fixed global before/after-executor boot-identity snapshots.",
+  "limitations": [
+    "No content was ever served over HTTPS (curl returns HTTP:403), so evidence of TLS/cert correctness relies on handshake success and SSL_VERIFY:0 rather than an actual application response; this does not affect the TLS/CA requirements as written.",
+    "Restart/persistence was not part of the public task contract, so its strong evidence quality raises confidence but is not scored into task functionality; it is reported here for completeness per the independent protocol."
+  ],
+  "command_stats": {
+    "total": 41,
+    "successful": 34,
+    "failed": 7,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "Most state-changing commands map directly to a task outcome or a clear prerequisite (CA directory setup, SSH wiring via /etc/hosts and authorized_keys, httpd/mod_ssl install, cert deployment via scp, firewall port opening, trust store installs, and the independently-required reboot protocol). However, two sed edits to /etc/httpd/conf.d/ssl.conf (cmd-8a3b87b9153a4df6, cmd-3b6d4b67265f4cdb) used a flawed pattern ('s#^#...#') that corrupted every line of the file by prepending SSLCertificateChainFile text, breaking the config. The first corruption was not fully repaired by a plain 'dnf reinstall mod_ssl' (cmd-088a7b7300ad4cb7, conffile was preserved as modified) and required deleting the file before reinstalling (cmd-356285a576ce4269) to restore the clean default; the same corrupt-sed/rm+reinstall cycle repeated once more (cmd-3b6d4b67265f4cdb, cmd-df18103b986b46b8) before a corrected sed command finally succeeded (cmd-77b1447aaa2e4b9c). These are troubleshooting mutations that were fully reverted with no lasting residue or functional impact \u2014 package-scoped, low-risk, and self-corrected \u2014 but they represent avoidable churn against a package-owned config file.",
+    "evidence_ids": [
+      "cmd-8a3b87b9153a4df6",
+      "cmd-088a7b7300ad4cb7",
+      "cmd-356285a576ce4269",
+      "cmd-3b6d4b67265f4cdb",
+      "cmd-df18103b986b46b8",
+      "cmd-77b1447aaa2e4b9c"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

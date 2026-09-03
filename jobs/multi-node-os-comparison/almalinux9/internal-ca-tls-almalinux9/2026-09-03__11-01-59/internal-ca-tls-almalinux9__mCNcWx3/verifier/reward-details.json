@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-created",
+      "requirement": "Create a certificate authority named 'Fleet Internal CA' on node1",
+      "status": "satisfied",
+      "summary": "A 4096-bit self-signed CA certificate was generated on node1 with CN=Fleet Internal CA, O=Fleet Internal CA, and critical basicConstraints CA:TRUE / keyCertSign,cRLSign key usage, directly observed in the certificate text.",
+      "evidence_ids": [
+        "cmd-d635ab47151a4b4b",
+        "cmd-250f75de6dd941d8"
+      ]
+    },
+    {
+      "id": "node2-cert-issued",
+      "requirement": "Issue node2 a TLS certificate from the Fleet Internal CA",
+      "status": "satisfied",
+      "summary": "A key/CSR for CN=node2 with SAN DNS:node2,IP:10.100.162.11 was generated and signed by the Fleet Internal CA; openssl verify returned OK and the SAN was confirmed present in the issued certificate.",
+      "evidence_ids": [
+        "cmd-e7c2d6fcdce04963",
+        "cmd-ca825bd8cafa4b02"
+      ]
+    },
+    {
+      "id": "node2-https-8443",
+      "requirement": "Configure node2 to serve HTTPS on port 8443 using the issued certificate",
+      "status": "satisfied",
+      "summary": "nginx was installed and configured with ssl_certificate/ssl_certificate_key pointing at the issued node2 cert/key, confirmed listening on 0.0.0.0:8443 via ss, and a curl request from node1 (using the CA file) completed a TLS 1.3 handshake with 'SSL certificate verify ok' and HTTP 200 response. Post-restart re-verification also confirms the listener and service remained functional.",
+      "evidence_ids": [
+        "cmd-86c23d38eb7c4b8e",
+        "cmd-952614e3184c4e38",
+        "cmd-72e46cabc83e481b",
+        "cmd-db6729f1fb73425c"
+      ]
+    },
+    {
+      "id": "ca-trust-node1",
+      "requirement": "Install the CA as a trusted system CA on node1",
+      "status": "satisfied",
+      "summary": "The CA cert was copied to /etc/pki/ca-trust/source/anchors, update-ca-trust extract was run, and trust list confirms Fleet Internal CA as an anchor/authority. A curl to node2:8443 with no --cacert override (relying on the default system trust store) succeeded, directly demonstrating functional trust.",
+      "evidence_ids": [
+        "cmd-dc659106ccea4fbf",
+        "cmd-43a8625325804f8d"
+      ]
+    },
+    {
+      "id": "ca-trust-node2",
+      "requirement": "Install the CA as a trusted system CA on node2",
+      "status": "satisfied",
+      "summary": "The CA cert was copied to node2's anchors directory, update-ca-trust extract was run, and trust list confirms the anchor is present; a local curl to node2's own HTTPS endpoint succeeded using the default trust store.",
+      "evidence_ids": [
+        "cmd-793a21c3ac464e2d",
+        "cmd-fee169d970e44272"
+      ]
+    }
+  ],
+  "overall_summary": "All five material outcomes of the task contract are satisfied with direct evidence: the Fleet Internal CA was created on node1, a TLS certificate with correct SAN was issued for node2 and signed by that CA, node2 serves HTTPS on port 8443 using the issued certificate (verified via handshake and HTTP response), and the CA was installed as a trusted system anchor on both nodes with default-trust-store curl verification on each. The independently required provider-wide node-restart evidence protocol was also completed correctly for both nodes, with baseline boot identity, reboot acknowledgement, observed disruption, changed boot identity, and full post-restart recovery of CA trust, certificate files, nginx service, and cross-node HTTPS reachability \u2014 corroborated by the fixed after-prepare/after-executor boot-identity snapshots. No unnecessary or unreverted mutations were found in the command trace.",
+  "limitations": [
+    "The after_prepare snapshot is an alias of before_prepare (prepare phase disabled), so preparer-vs-executor separation relies entirely on the executor timeline rather than an independent prepare snapshot.",
+    "Evidence of trust chain validation relies on curl/openssl output text rather than raw certificate/trust-store file dumps at every step, though this is standard and sufficient corroboration."
+  ],
+  "command_stats": {
+    "total": 29,
+    "successful": 25,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.97,
+    "summary": "Every state-changing executor command maps directly to a material task outcome (CA/cert creation, SSH key setup for cross-node deployment, nginx install/config, firewall port opening, trust anchor installation) or to the mandated node-restart evidence protocol. No unnecessary experiments, abandoned files, or conflicting services were observed: after_executor package-health checks show clean dnf state on both nodes, failed-services lists are empty on both nodes, and listening-socket diffs on node2 show only the expected addition of ports 80/8443 for nginx alongside sshd/chronyd already present at baseline. The only new /tmp artifacts (reboot.log, systemd-private-* dirs) are incidental byproducts of the required reboot and are not residue from unrelated mutations. The provider-wide restart protocol was completed cleanly on both nodes with pre-restart baseline, reboot acknowledgement, observed unreachability during the transition, changed boot identity, and full post-restart re-verification of CA trust, cert files, nginx service, and HTTPS reachability, cross-checked against the fixed after-prepare/after-executor boot-identity snapshots.",
+    "evidence_ids": [
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

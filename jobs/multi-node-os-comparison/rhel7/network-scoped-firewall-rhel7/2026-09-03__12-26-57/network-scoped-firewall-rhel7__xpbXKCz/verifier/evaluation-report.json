@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ssh-any",
+      "requirement": "Persistent firewall on node1 allows SSH from any address",
+      "status": "satisfied",
+      "summary": "firewalld active+enabled at boot; public zone (default zone, applied to eth0) lists ssh service with no source restriction, both before and after a full reboot cycle. Live SSH banner reachable from node3 confirms behavior, and this was re-verified after node1's reboot.",
+      "evidence_ids": [
+        "cmd-79139068cbdd43f6",
+        "cmd-57fdc66730234d69",
+        "cmd-af226c3400ff4427",
+        "cmd-2fa224a7754841aa",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "tcp9000-node2-only",
+      "requirement": "TCP port 9000 allowed only from node2, persisted",
+      "status": "satisfied",
+      "summary": "Permanent zone node2only created with source=10.100.140.11/32 (node2's address) and port 9000/tcp allowed; permanent and runtime configs match. Live curl from node2 got HTTP 200 both before and after node1's reboot, demonstrating the rule persisted across a restart.",
+      "evidence_ids": [
+        "cmd-aa800845d19b441b",
+        "cmd-ec203a2e7ce549d6",
+        "cmd-3224820cf1d64c29",
+        "cmd-fa7e13b76c884cb4",
+        "cmd-af226c3400ff4427",
+        "cmd-c08ab1c79c75458f"
+      ]
+    },
+    {
+      "id": "tcp9000-reject-others",
+      "requirement": "TCP port 9000 rejected from node3 and all other sources, persisted",
+      "status": "satisfied",
+      "summary": "Permanent rich rule in public zone rejects tcp/9000 for any source not matched by the more specific node2only zone (firewalld's source-zone precedence). Live curl from node3 got connection refused both before and after node1's reboot. Only node2 and node3 were directly tested (no arbitrary third source), but the rule has no source qualifier and applies to the whole zone, so 'everywhere else' is reasonably covered by the same evidence.",
+      "evidence_ids": [
+        "cmd-aa800845d19b441b",
+        "cmd-ec203a2e7ce549d6",
+        "cmd-5eae0f9317c14580",
+        "cmd-ac8d31f1273e4c79",
+        "cmd-af226c3400ff4427",
+        "cmd-2fa224a7754841aa"
+      ]
+    },
+    {
+      "id": "persistence-across-restart",
+      "requirement": "Firewall configuration and behavior survive a service/host restart (persistent, not just runtime)",
+      "status": "satisfied",
+      "summary": "node1 was rebooted (systemd-run deferred systemctl reboot); boot_id changed from 738d0aac to 60f8e0a5, firewalld came back active with permanent config intact (public zone reject rule + node2only zone both present), and live node2-allow/node3-reject/SSH-allow behavior was re-verified after the reboot completed - the full baseline to disruption to recovery transition is directly observed.",
+      "evidence_ids": [
+        "cmd-ccbfdb6a1cdc45d0",
+        "cmd-1638ccfecc284ee8",
+        "cmd-e406c745bbbd47f0",
+        "cmd-f5584e771bf648a5",
+        "cmd-af226c3400ff4427",
+        "cmd-fa7e13b76c884cb4",
+        "cmd-ac8d31f1273e4c79"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task - persistent SSH-from-anywhere, TCP/9000 allowed only from node2, and TCP/9000 rejected from node3/everywhere else - are directly supported by permanent firewalld configuration, matching runtime state, and live network tests both before and after a full node1 reboot, which also validates persistence across restart. The mandatory provider-wide restart protocol was executed and evidenced coherently on all three nodes (pre-restart boot id and health, reboot acknowledgement, changed post-restart boot id, and recovered firewalld/service state), cross-checked by the fixed lifecycle snapshots which show boot-identity changes and no failed services after executor changes. The only minor issue is unremoved temporary test-server log/pid files left in /tmp on node1, a low-risk hygiene gap contradicting the executor's claim of full cleanup.",
+  "limitations": [
+    "The 'reject from everywhere else' outcome was verified only via node2 (allowed) and node3 (rejected); no third arbitrary source IP was tested to directly confirm the rule generalizes beyond node3, though the rule's lack of a source qualifier makes this a low-risk inference.",
+    "Package-health checks were unavailable (timed out) on all nodes in all lifecycle snapshots, so package/RPM database integrity after firewalld package interactions could not be independently confirmed."
+  ],
+  "command_stats": {
+    "total": 50,
+    "successful": 34,
+    "failed": 14,
+    "indeterminate": 2,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Executor actions were mostly diagnostic/verification steps with clear ties to the task (test HTTP listeners on port 9000 to prove allow/reject behavior, before and after each reboot). One troubleshooting experiment (rich-rule with a priority attribute, cmd-3ee63d4074e84396) failed cleanly with no persisted state, so it left no residue. However, the temporary test HTTP server's log/pid files (/tmp/http9000.log, /tmp/http9000.pid, /tmp/http9000b.log/.pid, /tmp/http9000c.log/.pid) were never deleted - the executor only killed the running processes and confirmed no process remained, but the after-executor snapshot still shows these six files present on node1. This is bounded, low-risk residue (plain files in /tmp, no running service, no security exposure) but was not cleaned up as claimed.",
+    "evidence_ids": [
+      "global:after_executor:node1:temporary-files",
+      "cmd-015cfc87e4bb41dd",
+      "cmd-7401f93a7d55451d",
+      "cmd-7caac76aa53a4bf7",
+      "cmd-50ea80c6fd204bd5",
+      "cmd-3ee63d4074e84396"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

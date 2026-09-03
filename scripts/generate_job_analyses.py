@@ -388,7 +388,7 @@ def report_reward(report: dict[str, Any], result: dict[str, Any]) -> float | Non
     value = numeric(report.get("reward"))
     if value is not None:
         return value
-    rewards = result.get("verifier_result", {}).get("rewards", {})
+    rewards = (result.get("verifier_result") or {}).get("rewards", {})
     if isinstance(rewards, dict):
         return numeric(rewards.get("reward"))
     return None
@@ -491,16 +491,16 @@ def trial_metrics(
         "command_audit_status": audit["status"],
         "total_duration": elapsed(result.get("started_at"), result.get("finished_at")),
         "environment_duration": elapsed(
-            result.get("environment_setup", {}).get("started_at"),
-            result.get("environment_setup", {}).get("finished_at"),
+            (result.get("environment_setup") or {}).get("started_at"),
+            (result.get("environment_setup") or {}).get("finished_at"),
         ),
         "executor_duration": elapsed(
-            result.get("agent_execution", {}).get("started_at"),
-            result.get("agent_execution", {}).get("finished_at"),
+            (result.get("agent_execution") or {}).get("started_at"),
+            (result.get("agent_execution") or {}).get("finished_at"),
         ),
         "verifier_duration": elapsed(
-            result.get("verifier", {}).get("started_at"),
-            result.get("verifier", {}).get("finished_at"),
+            (result.get("verifier") or {}).get("started_at"),
+            (result.get("verifier") or {}).get("finished_at"),
         ),
         "provision_ms": provisioned,
     }

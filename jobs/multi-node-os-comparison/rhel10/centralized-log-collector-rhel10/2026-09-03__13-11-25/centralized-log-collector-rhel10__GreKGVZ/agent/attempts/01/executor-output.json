@@ -1,0 +1,72 @@
+{
+  "status": "completed",
+  "summary": "Set up centralized log forwarding: node2 runs a demo \"inventory\" application (systemd service inventory.service logging via syslog tag inventory), rsyslog on node2 forwards those messages via TCP/601 (disk-assisted queue for reliability) to node1, and rsyslog on node1 (imtcp listener on 601, firewalld port opened, SELinux var_log_t context) writes them to /var/log/inventory/node2.log. Both rsyslog and inventory.service are enabled systemd units, so the flow persists across restarts. Restarted node2 then node1 one at a time, confirmed boot_id changes on each, and verified services and log flow auto-recovered and new entries continued arriving after each restart.",
+  "actions_performed": [
+    "Created /usr/local/bin/inventory-app.sh and systemd unit inventory.service on node2 (demo app logging via logger -t inventory every 10s); enabled and started it",
+    "Created /var/log/inventory on node1 with var_log_t SELinux context",
+    "Configured /etc/rsyslog.d/00-inventory-collector.conf on node1: imtcp module, port 601, rule matching fromhost-ip 10.100.173.11 and programname inventory, writing to /var/log/inventory/node2.log; restarted rsyslog",
+    "Opened firewalld port 601/tcp permanently on node1 and reloaded",
+    "Configured /etc/rsyslog.d/00-inventory-forward.conf on node2: forwards programname=inventory messages via omfwd TCP to 10.100.173.10:601 with a disk-assisted LinkedList queue (saveOnShutdown, maxDiskSpace 100m); restarted rsyslog",
+    "Verified end-to-end log delivery into /var/log/inventory/node2.log on node1",
+    "Captured pre-restart boot_id and service-active baselines on both nodes",
+    "Restarted node2 via systemctl reboot (async ack), polled until reachable, confirmed new boot_id, confirmed rsyslog+inventory active and new log entries reaching node1",
+    "Restarted node1 via systemctl reboot (async ack), polled until reachable, confirmed new boot_id, confirmed rsyslog active, port 601 listening, firewall rule persisted, prior log data intact, and new entries continuing to arrive"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 inventory app logs exist and are forwarded to node1 collector",
+      "command_ids": [
+        "cmd-29701ef1e9024d29",
+        "cmd-b28f4d2e9f884e31",
+        "cmd-9ee0035bfc364b78",
+        "cmd-572a5e93ff5546ab"
+      ],
+      "summary": "inventory.service created/started on node2 logging via syslog; rsyslog forward rule installed; no SELinux denials; messages observed landing in /var/log/inventory/node2.log on node1"
+    },
+    {
+      "requirement": "node1 centralized collector persists messages to /var/log/inventory/node2.log",
+      "command_ids": [
+        "cmd-9408f8db68974067",
+        "cmd-bf993b28302543ca",
+        "cmd-7a82217bef5c4f6b",
+        "cmd-572a5e93ff5546ab"
+      ],
+      "summary": "Directory created with correct SELinux context, rsyslog imtcp listener configured and active on port 601, firewalld port opened, and file contains forwarded inventory log lines from node2"
+    },
+    {
+      "requirement": "healthy baseline captured before restarts (node1)",
+      "command_ids": [
+        "cmd-1f82d3c339f74c40"
+      ],
+      "summary": "boot_id 6d37896c... and rsyslog ActiveEnterTimestamp captured, plus existing log line count, prior to node1 restart"
+    },
+    {
+      "requirement": "healthy baseline captured before restarts (node2)",
+      "command_ids": [
+        "cmd-74e1667ab33b4f3f"
+      ],
+      "summary": "boot_id e625b9a5... and rsyslog/inventory active status captured prior to node2 restart"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-378ed650f36443ca",
+        "cmd-0ef58ec42ad24d53",
+        "cmd-aadb13ff536a4611",
+        "cmd-e5b5a95d503746e9",
+        "cmd-459dbf8eba0949d3"
+      ],
+      "summary": "Reboot acked and returned before disconnect; new boot_id d31f8c6c... proves restart; rsyslog and inventory.service active post-boot; new inventory log entries observed both locally and arriving at node1's collector file"
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-88d5c35ac27e42ce",
+        "cmd-2c32a0956d6e490f",
+        "cmd-afc282e320454689",
+        "cmd-faf61c10a8244d95"
+      ],
+      "summary": "Reboot acked and returned before disconnect; new boot_id 5d5286ce... proves restart; rsyslog active, TCP/601 listening again, firewall rule persisted, prior collected log data intact, and new forwarded entries continued arriving after recovery"
+    }
+  ]
+}

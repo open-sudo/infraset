@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Create a certificate authority named 'Fleet Internal CA' on node1",
+      "status": "satisfied",
+      "summary": "openssl req -x509 self-signed root cert generated on node1 with subject/issuer CN=Fleet Internal CA, O=Fleet Internal CA, 4096-bit key, 10-year validity, basicConstraints CA:TRUE.",
+      "evidence_ids": [
+        "cmd-340d9ba014eb4a57",
+        "cmd-bdc38b9777034feb"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Issue a TLS certificate for node2 from the CA",
+      "status": "satisfied",
+      "summary": "node2 key/CSR generated and signed by the Fleet Internal CA; resulting certificate shows issuer=CN=Fleet Internal CA and SAN DNS:node2, IP:10.100.107.11, matching node2's identity.",
+      "evidence_ids": [
+        "cmd-c46f14c80e8a41ed"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Configure node2 to serve HTTPS on port 8443 using the issued certificate",
+      "status": "satisfied",
+      "summary": "nginx server block bound to 8443 with ssl_certificate/ssl_certificate_key pointing to node2's cert/key; nginx -t passed, service started, and a local curl (with --cacert against the CA) completed a full TLS 1.3 handshake, matched the SAN, and returned HTTP 200. Post-executor snapshot independently confirms nginx listening on 0.0.0.0:8443.",
+      "evidence_ids": [
+        "cmd-aad17378781f4724",
+        "cmd-6237b1df1e084491",
+        "cmd-a72be32d788c4864",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Install the CA as a trusted system CA on node1",
+      "status": "satisfied",
+      "summary": "CA copied to /usr/local/share/ca-certificates and update-ca-certificates run; a text-grep check against the concatenated ca-certificates.crt bundle returned 0 matches (expected, since that file is base64-encoded PEM and won't contain the plaintext CN), but the authoritative check \u2014 'openssl verify -CApath /etc/ssl/certs' against node2's cert \u2014 returned OK, and the hash symlink bd89aeae.0 -> fleet-internal-ca.crt is present, directly confirming the CA is trusted by the system store.",
+      "evidence_ids": [
+        "cmd-4d9227110ebe4f0e",
+        "cmd-de6d15281ce7405a",
+        "cmd-bce4b4da4eff4c9f"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Install the CA as a trusted system CA on node2",
+      "status": "satisfied",
+      "summary": "Same pattern as node1: grep against the concatenated bundle returned 0 (expected non-issue), but the hash symlink bd89aeae.0 -> fleet-internal-ca.crt is present and 'openssl verify -CApath /etc/ssl/certs' against node2's own cert returned OK, directly confirming system trust store installation.",
+      "evidence_ids": [
+        "cmd-5e85e4a184a04ddf",
+        "cmd-3873e05cf67f4f49"
+      ]
+    },
+    {
+      "id": "req-6",
+      "requirement": "End-to-end validation that the HTTPS service and CA chain work together across nodes",
+      "status": "satisfied",
+      "summary": "curl from node1 to https://10.100.107.11:8443 using the CA cert as trust anchor succeeded with full chain verification and HTTP 200, both before and after the restart cycle.",
+      "evidence_ids": [
+        "cmd-80cce9e4828149fc",
+        "cmd-c85b2913023f4b93"
+      ]
+    }
+  ],
+  "overall_summary": "All material requirements of the task were satisfied and directly evidenced: a self-signed 'Fleet Internal CA' root CA was created on node1, a properly SAN-scoped certificate was issued for node2 and signed by that CA, node2 was configured with nginx to serve HTTPS on 8443 using that certificate (confirmed via a real TLS handshake and 200 response, both locally and cross-node), and the CA was installed into the system trust store on both nodes (confirmed via hash-symlink presence and successful openssl verify against each node's certificate, despite a misleading grep-based check that produced a false-negative 0-count against the base64 bundle). The mandatory provider-wide restart protocol was also executed on both nodes with coherent boot-identity changes, service recovery, and TLS re-verification post-restart. The only notable issue is a small, low-risk, unreverted SSH credential residue left from an abandoned troubleshooting attempt.",
+  "limitations": [
+    "The CA trust-store verification for both nodes relies partly on a grep check against the concatenated certificates bundle that returned 0 matches (expected false negative, since that file stores base64-encoded DER, not plaintext CN strings); the stronger openssl-verify and symlink evidence resolves this but the raw grep numbers could be misread as a failure without that context.",
+    "SSH-based transfer was abandoned due to a locked root account on node2, and residual SSH artifacts (authorized_keys entry, private key) were left in place rather than cleaned up.",
+    "ss (socket-stat) was unavailable on node2 so port-8443-listening was confirmed indirectly via curl and the independently captured after-executor listening-sockets snapshot rather than a direct ss/netstat check within the executor's own command output."
+  ],
+  "command_stats": {
+    "total": 60,
+    "successful": 31,
+    "failed": 29,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Core mutations (package installs, CA/cert generation, nginx config, trust-store updates) were all necessary and correctly scoped. However, the executor made an unsuccessful SSH-based file-transfer attempt after the root account on node2 turned out to be locked: it generated an SSH keypair on node1 (cmd-eb4997851cbc464f) and appended a public key to node2's authorized_keys (cmd-0c5735d0f79f4fee), then pivoted to base64-over-exec transfer once SSH auth failed (confirmed locked by auth.log in cmd-23d3553c2fa04479). Neither the added authorized_keys entry on node2 nor the generated private key on node1 was removed afterward \u2014 this is a low-risk but unreverted residual mutation (an added SSH credential) with no role in the final solution. A /etc/hosts entry was also added on node1 (cmd-61abfb88ef9c4cde) during the same troubleshooting; this is low-risk and plausibly a legitimate prerequisite for hostname resolution, so it is not counted as unnecessary. No damaged package state, no destructive actions, and no weakened security controls (locked root account was correctly left locked) were observed.",
+    "evidence_ids": [
+      "cmd-eb4997851cbc464f",
+      "cmd-0c5735d0f79f4fee",
+      "cmd-61abfb88ef9c4cde",
+      "cmd-23d3553c2fa04479"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

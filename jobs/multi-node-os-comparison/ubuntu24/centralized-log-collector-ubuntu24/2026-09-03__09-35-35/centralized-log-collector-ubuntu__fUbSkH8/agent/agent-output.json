@@ -1,0 +1,81 @@
+{
+  "status": "completed",
+  "summary": "Built a minimal 'inventory' application on node2 (systemd unit inventory.service, enabled) that emits events to syslog under the local0 facility. Configured rsyslog on node2 (/etc/rsyslog.d/10-inventory-forward.conf) to forward local0.* messages via TCP to node1 with a disk-backed queue for reliability, and rsyslog on node1 (/etc/rsyslog.d/10-inventory-receiver.conf) with imtcp on port 514 to filter node2's local0 traffic into /var/log/inventory/node2.log. Verified live end-to-end delivery, then ran the mandatory one-at-a-time restart protocol on both nodes: captured baseline boot_id/service state, issued native reboot, polled until reachable, proved boot_id changed, and confirmed rsyslog (both nodes) and inventory.service (node2) auto-recovered via systemd enablement with logs continuing to append into the same persistent file with no gaps or loss.",
+  "actions_performed": [
+    "Investigated node2/node1 for an existing 'inventory' app and logging stack (none found; rsyslog 8.2312.0 present on both, ufw inactive on both)",
+    "Created /usr/local/bin/inventory-app.sh on node2 emitting periodic syslog local0 events tagged 'inventory'",
+    "Created and enabled systemd unit inventory.service on node2 (Restart=always, WantedBy=multi-user.target)",
+    "Created /var/log/inventory directory on node1 owned by syslog:adm",
+    "Added /etc/rsyslog.d/10-inventory-receiver.conf on node1 (imtcp port 514, filter by fromhost-ip + local0 facility -> /var/log/inventory/node2.log)",
+    "Enabled and restarted rsyslog on node1; confirmed TCP 514 listening",
+    "Added /etc/rsyslog.d/10-inventory-forward.conf on node2 (omfwd TCP to node1:514 with disk-backed queue, action.resumeRetryCount=-1)",
+    "Restarted rsyslog on node2; verified config validation clean on both nodes",
+    "Verified live end-to-end log delivery into /var/log/inventory/node2.log on node1",
+    "Confirmed rsyslog enabled on node1, rsyslog+inventory.service enabled on node2 (systemctl is-enabled)",
+    "Captured pre-restart boot_id/state baseline for both nodes",
+    "Restarted node1 via 'sudo reboot' (backgrounded/disowned so ack returns before disconnect), polled until reachable, confirmed boot_id changed and rsyslog auto-started listening on 514, confirmed continuous log sequence with no gap/loss across the restart",
+    "Restarted node2 via 'sudo reboot' (backgrounded/disowned), polled until reachable, confirmed boot_id changed and both rsyslog and inventory.service auto-active, confirmed fresh inventory events (new sequence) flowing into the same persistent file on node1"
+  ],
+  "evidence": [
+    {
+      "requirement": "Inventory app on node2 producing log messages",
+      "command_ids": [
+        "cmd-f5197a6f90ea46a4",
+        "cmd-7ba65f8793bb4a2c"
+      ],
+      "summary": "inventory-app.sh created and inventory.service enabled+active, emitting local0 syslog events"
+    },
+    {
+      "requirement": "Forwarding configured from node2 to node1 collector",
+      "command_ids": [
+        "cmd-98aaac2790dd4bc0"
+      ],
+      "summary": "rsyslog omfwd TCP forward rule for local0.* to 10.100.140.10:514 validated and rsyslog restarted active on node2"
+    },
+    {
+      "requirement": "Centralized receiver on node1 listening and filtering to per-node file",
+      "command_ids": [
+        "cmd-da76b0451d7a428c",
+        "cmd-dd5776b056d14bc3"
+      ],
+      "summary": "imtcp receiver config created; rsyslog restarted and confirmed LISTEN on 0.0.0.0:514 and [::]:514"
+    },
+    {
+      "requirement": "Messages persisted at /var/log/inventory/node2.log on node1",
+      "command_ids": [
+        "cmd-8724e44dc362458e"
+      ],
+      "summary": "Live inventory events including a manual test line observed written to /var/log/inventory/node2.log on node1"
+    },
+    {
+      "requirement": "Flow keeps working after either system restarts (persistence across restarts)",
+      "command_ids": [
+        "cmd-1cb6f65828474aef",
+        "cmd-95d683ec7b5a4c97"
+      ],
+      "summary": "systemctl is-enabled confirms rsyslog enabled on node1 and rsyslog+inventory.service enabled on node2 for boot persistence"
+    },
+    {
+      "requirement": "node1 restart sequence: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-e82afa9d27f94e10",
+        "cmd-1d725678abaf4b3c",
+        "cmd-f5e380346cf9434f",
+        "cmd-83f5f504b9ae48a2",
+        "cmd-f0a544ebf0c7407a"
+      ],
+      "summary": "Baseline boot_id 4d70780a... and healthy log tail captured; reboot ack returned before disconnect; node1 reachable again; boot_id changed to 43b53c2e...; rsyslog active and listening on 514; continuous unbroken log sequence (13-20) proves recovered forwarding pipeline and data continuity"
+    },
+    {
+      "requirement": "node2 restart sequence: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-3ec95761abc947e8",
+        "cmd-5e23a65fefab4fbb",
+        "cmd-8f8952a0633f48d7",
+        "cmd-c226c5a6837d4bc4",
+        "cmd-07c2e547dcd34ebf"
+      ],
+      "summary": "Baseline boot_id 37344ae4... and active services captured; reboot ack returned before disconnect (with pre-disconnect boot_id shown); node2 reachable again; boot_id changed to f3fda784...; rsyslog and inventory.service both active; fresh inventory events (new seq counter) observed flowing into the same persistent node1 log file, proving full pipeline recovery"
+    }
+  ]
+}

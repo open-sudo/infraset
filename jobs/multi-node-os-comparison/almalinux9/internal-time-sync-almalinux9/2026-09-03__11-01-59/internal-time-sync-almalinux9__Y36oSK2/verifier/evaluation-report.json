@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "node1-internal-time-source",
+      "requirement": "node1 configured as the internal (server-role) time source for the cluster",
+      "status": "satisfied",
+      "summary": "node1's /etc/chrony.conf was updated to allow NTP client access from the 10.100.35.0/24 subnet and to serve time even unsynchronized (local stratum 10); chronyd was restarted and the firewalld ntp service was opened permanently and reloaded. chronyc clients on node1 subsequently shows node2 actively polling it over NTP, directly confirming the server role is functioning.",
+      "evidence_ids": [
+        "cmd-cf0bf6a01f7a4e78",
+        "cmd-dda4ec70b8904303",
+        "cmd-33a8624de07e4c34",
+        "cmd-fb690b9ff6544e38"
+      ]
+    },
+    {
+      "id": "node2-syncs-from-node1",
+      "requirement": "node2 configured to synchronize its clock against node1 instead of a public time server",
+      "status": "satisfied",
+      "summary": "node2's chrony.conf pool line (2.almalinux.pool.ntp.org) was replaced with 'server 10.100.35.10 iburst' and chronyd was restarted. chronyc -n sources -v on node2 shows 10.100.35.10 as the sole source and current best (^*), with no DHCP-provided sources present. This was independently re-confirmed after node2's later reboot, showing the configuration is durable, not just transiently applied.",
+      "evidence_ids": [
+        "cmd-0e34e762cb7441b9",
+        "cmd-21a7302b62824464",
+        "cmd-bc99a4e4071a462d",
+        "cmd-96e5b388d3e7406f",
+        "cmd-13c2a33b79d0452a"
+      ]
+    },
+    {
+      "id": "node1-restart-evidence",
+      "requirement": "Provider-wide restart protocol on node1: pre-restart baseline, restart acknowledgement, changed boot identity, and recovered service/config state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (5fb1b173...) and healthy chronyd/tracking state were captured, systemctl reboot was issued and acknowledged, a subsequent probe failed with connection reset confirming the disruption, and polling recovered with a new boot_id (12627f89...) matching the fixed after-executor snapshot. Post-restart checks confirm chronyd active, chrony.conf allow/local-stratum lines and firewalld ntp service persisted, and node1 resynced to the public pool.",
+      "evidence_ids": [
+        "cmd-0875adfaa0f44072",
+        "cmd-fecb9cbfab734a6b",
+        "cmd-65b8e66b0367490a",
+        "cmd-deafdd8f2ba04c26",
+        "cmd-52c966c4a3a94cfa",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "node2-restart-evidence",
+      "requirement": "Provider-wide restart protocol on node2: pre-restart baseline, restart acknowledgement, changed boot identity, and recovered service/config/cluster state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (d6298ced...) and chronyd-active state were captured on node2, reboot was issued and acknowledged, a connection-reset probe confirmed disruption, and polling recovered a new boot_id (3fcad5e7...) matching the fixed after-executor snapshot. Post-restart checks confirm chronyd active, the 'server 10.100.35.10 iburst' line persisted, and node2 resynced with node1 as sole current-best source. Additionally, node2's sync to node1 was verified intact after node1's own restart, confirming the cluster relationship survived a disruption to the server node.",
+      "evidence_ids": [
+        "cmd-f75b17f301d74964",
+        "cmd-39d6339b558b4490",
+        "cmd-f349b7b0cb5d44b8",
+        "cmd-173dd2cd3bea4e2d",
+        "cmd-13c2a33b79d0452a",
+        "cmd-9f5e223f5a6e4028",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "Both material outcomes of the task were achieved and directly verified: node1 was configured as an internal NTP server for the 10.100.35.0/24 subnet (with node2 confirmed as an active client), and node2 was reconfigured to sync exclusively against node1 rather than a public pool. The independent provider-wide restart protocol was executed cleanly and completely on both nodes, showing pre-restart healthy baselines, restart acknowledgements, changed boot identities matching the fixed lifecycle snapshots, and full recovery of chrony configuration, firewall rules, and the node1-node2 sync relationship. The only shortfall is minor unremoved diagnostic scratch files left in /tmp on both nodes, a low-risk hygiene issue rather than a functional one.",
+  "limitations": [
+    "Diagnostic scratch files (/tmp/*.txt, /tmp/reboot.log) created during verification were not cleaned up after the task, though they pose no functional or security risk.",
+    "No long-duration monitoring of chrony's stratum/offset convergence over time was captured beyond the immediate post-restart polls; only point-in-time source-state snapshots are available."
+  ],
+  "command_stats": {
+    "total": 32,
+    "successful": 29,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "State-changing commands were all purposeful: chrony.conf edits on both nodes (backed up to .bak before modification), chronyd restarts, and the firewalld ntp permanent/reload sequence all map directly to the task's server/client configuration requirement, and the two systemctl reboots map to the mandated restart-evidence protocol. Firewall exposure was scoped narrowly (only the ntp service was opened, and chrony's own 'allow' directive further restricts access to the 10.100.35.0/24 subnet), so no security control was weakened. The one minor issue is uncleaned diagnostic residue: several scratch files (e.g. /tmp/out.txt, /tmp/pre.txt, /tmp/post1.txt, /tmp/c.txt, /tmp/t.txt on node1; /tmp/src.txt, /tmp/src2.txt, /tmp/s.txt, /tmp/s2.txt, /tmp/t2.txt on node2, plus /tmp/reboot.log on both) created by commands like cmd-85d31225861f4de5, cmd-3b05f95b7df94fc5, cmd-f2e3f44e56914a14, cmd-76c79a691c5542d8, cmd-09a44b253ae94205, cmd-0875adfaa0f44072, cmd-52c966c4a3a94cfa, cmd-fecb9cbfab734a6b, cmd-9f5e223f5a6e4028, cmd-f75b17f301d74964, cmd-39d6339b558b4490, cmd-13c2a33b79d0452a were left in place per the after-executor temporary-files diff rather than removed. These are low-risk, bounded artifacts (command-output captures and reboot logs) with no failed services, package-health regressions, or destructive actions observed.",
+    "evidence_ids": [
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

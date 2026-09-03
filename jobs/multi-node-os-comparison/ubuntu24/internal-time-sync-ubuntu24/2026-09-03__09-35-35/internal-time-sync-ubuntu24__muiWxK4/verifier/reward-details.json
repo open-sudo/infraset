@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-node1-internal-source",
+      "requirement": "Configure node1 as the internal time source for the cluster",
+      "status": "satisfied",
+      "summary": "node1's chrony.conf had all public 'pool' lines removed and gained 'allow 10.100.254.0/24' plus 'local stratum 10' (cmd-b829fe282c504b95). chronyc tracking confirmed a self-referenced local clock (Reference ID 7F7F0101, Stratum 10) both before (cmd-c82629071a424dd9) and after a full reboot cycle (cmd-cf0d885a5f7745e8). chronyd was confirmed listening on 0.0.0.0:123 to serve the cluster subnet (cmd-e0a5711826dc4c73), and chronyc clients on node1 directly showed NTP requests received from node2 both pre- and post-restart (cmd-d5b388e1316543ac, cmd-3917e50f34b34b45), directly demonstrating node1 acting as the cluster's internal time source.",
+      "evidence_ids": [
+        "cmd-b829fe282c504b95",
+        "cmd-c82629071a424dd9",
+        "cmd-e0a5711826dc4c73",
+        "cmd-d5b388e1316543ac",
+        "cmd-cf0d885a5f7745e8",
+        "cmd-3917e50f34b34b45"
+      ]
+    },
+    {
+      "id": "req-2-node2-sync-node1",
+      "requirement": "Configure node2 to synchronize against node1 instead of a public time server",
+      "status": "satisfied",
+      "summary": "node2's chrony.conf had all public 'pool' lines removed and gained 'server 10.100.254.10 iburst prefer' (cmd-2500f01e574f469e). chronyc sources -v on node2 subsequently showed an active best-source lock ('^*') against 10.100.254.10 at stratum 11 within seconds (cmd-8dedb8b4d5084320), and this was independently corroborated from node1's side via chronyc clients (cmd-d5b388e1316543ac). No public NTP server remained configured or in the active source list.",
+      "evidence_ids": [
+        "cmd-2500f01e574f469e",
+        "cmd-39e08685c42b4cef",
+        "cmd-8dedb8b4d5084320",
+        "cmd-d5b388e1316543ac"
+      ]
+    },
+    {
+      "id": "req-3-restart-recovery",
+      "requirement": "Provider-wide node-restart evidence protocol: healthy baseline, restart, changed boot identity, and recovered service/cluster state on both nodes",
+      "status": "satisfied",
+      "summary": "For both nodes the full lifecycle was directly captured: pre-restart baseline with boot_id and healthy chrony state (cmd-282fdb6c385f4e5c for node1, cmd-07e5c4395d7c479e for node2), reboot acknowledgement followed by connection loss (cmd-a4da99df21f347d1/cmd-0c066a1d317b498a for node1, cmd-f97ecc5c07524541/cmd-8c50c8f175124dff for node2), a differing post-restart boot_id confirming an actual reboot (cmd-cf0d885a5f7745e8 for node1: 1e0cb179\u219250b469b0; cmd-3248545cb13d438d for node2: 29011044\u21928b97d254, both corroborated by the fixed lifecycle snapshots), and recovered service/cluster state \u2014 node1 back to local stratum 10 and node2 automatically re-synced to node1 (^*, stratum 11) without manual intervention, cross-checked via node1's chronyc clients still showing node2 requests post-restart (cmd-3917e50f34b34b45).",
+      "evidence_ids": [
+        "cmd-282fdb6c385f4e5c",
+        "cmd-07e5c4395d7c479e",
+        "cmd-a4da99df21f347d1",
+        "cmd-0c066a1d317b498a",
+        "cmd-cf0d885a5f7745e8",
+        "cmd-f97ecc5c07524541",
+        "cmd-8c50c8f175124dff",
+        "cmd-3248545cb13d438d",
+        "cmd-091bcd00f71c4e76",
+        "cmd-3917e50f34b34b45",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "Both material outcomes of the task contract \u2014 node1 as a self-referenced internal chrony time source serving the cluster subnet, and node2 configured to sync exclusively against node1 rather than public NTP \u2014 are directly and coherently satisfied, with bidirectional confirmation via chronyc tracking/sources and chronyc clients. The independent node-restart evidence protocol was also fully and directly demonstrated for both nodes: healthy pre-restart baseline, restart acknowledgement, distinct post-restart boot identity (corroborated by the fixed lifecycle snapshots), and automatic recovery of the internal time hierarchy without manual intervention. Operational hygiene is high; the only residue is a conventional .orig config backup on each node, which poses no functional or security concern.",
+  "limitations": [
+    "The 'systemctl disable --now systemd-timesyncd' step reported 'Unit file systemd-timesyncd.service does not exist' on both nodes; this did not block the outcome (timedatectl set-ntp false and chrony's own operation ensured timesyncd was not competing), but the exact prior state of that unit was not independently verified beyond the initial 'systemctl is-active' check showing it active.",
+    "Post-restart sync verification relied on hostname 'vm-rhel7-3030393055' resolving to 10.100.254.10 rather than an explicit IP match in every chronyc output line; this is corroborated elsewhere (chrony.conf content, Reference ID 0A64FE0A = 10.100.254.10 in hex) but is an indirect inference in a few individual outputs."
+  ],
+  "command_stats": {
+    "total": 27,
+    "successful": 24,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "Reviewing the chronological command trace, every state-changing action (apt install chrony, chrony.conf edits removing public pools and adding the internal-source/client directives, disabling systemd-timesyncd, enabling chrony, and the two native reboots) has a clear causal link to the material outcomes or to the restart-evidence protocol. No unnecessary or unrelated mutations were found. A minor, low-risk residue is the /etc/chrony/chrony.conf.orig backup file left on both nodes (created in cmd-b829fe282c504b95 and cmd-2500f01e574f469e); this is a conventional, bounded backup rather than abandoned or conflicting state, and package-health/failed-services checks in the after_executor snapshot show no damaged package state or failed units on either node.",
+    "evidence_ids": [
+      "cmd-b829fe282c504b95",
+      "cmd-2500f01e574f469e",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node2:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}
