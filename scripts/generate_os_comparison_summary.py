@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).parent))
 
 from generate_results_summary import (
+    command_audit_stats,
     format_duration,
     metric,
     provision_time_ms,
@@ -65,6 +66,8 @@ def load_task(task_name: str) -> dict | None:
     hygiene_vals: list[float] = []
     exec_durations: list[float] = []
     prov_ms_vals: list[float] = []
+    successful_commands = 0
+    failed_commands = 0
 
     for job_dir in jobs:
         for trial_dir in trial_dirs(job_dir):
@@ -89,6 +92,10 @@ def load_task(task_name: str) -> dict | None:
             if prov is not None:
                 prov_ms_vals.append(prov)
 
+            cmd = command_audit_stats(trial_dir)
+            successful_commands += cmd["successful"]
+            failed_commands += cmd["failed"]
+
     if not reward_vals:
         return None
 
@@ -102,6 +109,8 @@ def load_task(task_name: str) -> dict | None:
         "hygiene": avg(hygiene_vals),
         "exec_seconds": avg(exec_durations),
         "prov_seconds": avg(prov_ms_vals) / 1000 if prov_ms_vals else None,
+        "successful_commands": successful_commands,
+        "failed_commands": failed_commands,
         "latest_job": jobs[-1].name,
     }
 
@@ -134,21 +143,23 @@ def build_summary() -> str:
         executed = sum(1 for t in task_dirs if (JOBS / t.name).exists())
         lines.append(f"*{executed}/{total} tasks executed.*\n")
         lines.append(
-            "| Task | Reward | Coverage | Functionality | Hygiene | Provisioning time | Execution time |"
+            "| Task | Commands | Reward | Coverage | Functionality | Hygiene | Provisioning time | Execution time |"
         )
-        lines.append("|---|---:|---:|---:|---:|---:|---:|")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
 
         for task_dir in task_dirs:
             task_name = task_dir.name
             display = task_name.removesuffix(f"-{os_id}")
             data = load_task(task_name)
             if data is None:
-                lines.append(f"| {display} | — | — | — | — | — | — |")
+                lines.append(f"| {display} | — | — | — | — | — | — | — |")
             else:
                 url = f"{GITHUB_TREE}/{task_name}/{data['latest_job']}"
                 exec_t = format_duration(data["exec_seconds"]) if data["exec_seconds"] else "—"
+                cmds = f"{data['successful_commands']}/{data['failed_commands']}"
                 lines.append(
                     f"| [{display}]({url}) "
+                    f"| {cmds} "
                     f"| {data['reward']:.3f} "
                     f"| {data['coverage']:.3f} "
                     f"| {data['functionality']:.3f} "
