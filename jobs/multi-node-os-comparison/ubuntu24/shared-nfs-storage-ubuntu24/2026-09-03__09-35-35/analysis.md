@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **3m 18s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `shared-nfs-storage-ubuntu24__ryh8L9G` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 26/5 | 3m 16s |
+| `shared-nfs-storage-ubuntu24__ryh8L9G` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 26/3 (+2 dropped) | 3m 16s |
 
 ## Trial `shared-nfs-storage-ubuntu24__ryh8L9G`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **3m 18s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.940 | 26/5 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.940 | 26/3 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -116,8 +116,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-ba5954e377da4ab9` | node1 | 1 | `cat /etc/os-release \| head -5; echo "---"; id dataops 2>&1; echo "---"; which nfs-kernel-server 2>&1; dpkg -l \| grep -i nfs-kernel-server; echo "---"; cat /etc/exports 2>&1` | ---; cat: /etc/exports: No such file or directory |
 | `cmd-60a81f0967c046ff` | node2 | 1 | `cat /etc/os-release \| head -5; echo "---"; id dataops 2>&1; echo "---"; which nfs-common 2>&1; dpkg -l \| grep -i nfs-common; echo "---"; mount \| grep -i nfs` | ---; --- |
 | `cmd-367e5e2831cb48d7` | node2 | 2 | `ls -la /mnt/shared/ && sudo -u dataops touch /mnt/shared/from_node2.txt && ls -la /mnt/shared/` | ls: /mnt/shared/: Permission denied; ls: cannot open directory '/mnt/shared/': Permission denied |
-| `cmd-e0a129b623c04c97` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-6657159fa797420b` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -137,7 +135,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

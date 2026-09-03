@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **6m 30s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `dhcp-server-centos-stream10__5sbajrU` | Full Success | 1.000 | 1.000 | 1.000 | 0.920 | 38/23 | 6m 28s |
+| `dhcp-server-centos-stream10__5sbajrU` | Full Success | 1.000 | 1.000 | 1.000 | 0.920 | 38/6 (+17 dropped) | 6m 28s |
 
 ## Trial `dhcp-server-centos-stream10__5sbajrU`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **6m 30s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.920 | 0.920 | 38/23 |
+| 1.000 | 1.000 | 1.000 | 0.920 | 0.920 | 38/6 (+17 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -94,24 +94,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-e60c5dee3c93439d` | node1 | 127 | `ip -br link; echo ---; ip -4 addr show; echo ---; bash -c 'source /opt/vyatta/etc/functions/script-template; configure; run show interfaces; exit'` | bash: line 1: configure: command not found; bash: line 1: run: command not found |
 | `cmd-20792d6c9b9a4f91` | node1 | 127 | `bash -c 'source /opt/vyatta/etc/functions/script-template; configure; show interfaces ethernet eth1; exit'` | bash: line 1: configure: command not found; bash: line 1: show: command not found |
 | `cmd-a216bd8614fb41f3` | node2 | 1 | `ip -4 addr show enp8s0; echo ---; nmcli -t -f GENERAL.CONNECTION,IP4.ADDRESS,IP4.GATEWAY,IP4.DHCP4 device show enp8s0 2>/dev/null; echo ---; cat /var/lib/NetworkManager/*enp8s0* 2>/dev/null \| grep -i server` | ---; --- |
-| `cmd-a2c4b8b8771c44b4` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 110] Connection timed out |
-| `cmd-df40576a40724dcd` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 110] Connection timed out |
-| `cmd-9bb9c2748e1b48c5` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 110] Connection timed out |
-| `cmd-e40e36989da34a5b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 110] Connection timed out |
-| `cmd-953b81a405d146cc` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 110] Connection timed out |
-| `cmd-b37258e9dcfe467b` | node1 | -1 | `sleep 5; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 104] Connection reset by peer |
-| `cmd-09ffa8b54f184e6f` | node1 | -1 | `sleep 5; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 104] Connection reset by peer |
-| `cmd-ea617ae55cdd43f0` | node1 | -1 | `sleep 5; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 104] Connection reset by peer |
-| `cmd-1b01f005f9e348b5` | node1 | -1 | `sleep 5; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 104] Connection reset by peer |
-| `cmd-01c79cb598e14f60` | node1 | -1 | `sleep 8; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 104] Connection reset by peer |
 | `cmd-24ee1a1e4af04210` | node1 | 127 | `ip -4 addr show eth1; echo ---; systemctl is-active isc-kea-dhcp4-server.service; echo ---; bash -c 'source /opt/vyatta/etc/functions/script-template; run show dhcp server leases'` | bash: line 1: run: command not found |
-| `cmd-2fbdeaffe752406a` | node2 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 104] Connection reset by peer |
-| `cmd-89b6b1496e7a494b` | node2 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 110] Connection timed out |
-| `cmd-cae981ecc9a64434` | node2 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 104] Connection reset by peer |
-| `cmd-fbcef1bc446045da` | node3 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 104] Connection reset by peer |
-| `cmd-293c2dae07c6442a` | node3 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 110] Connection timed out |
-| `cmd-8d00468b67604848` | node3 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 110] Connection timed out |
-| `cmd-8a66334e9bd34bca` | node3 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 104] Connection reset by peer |
 | `cmd-25410f09eff44add` | node1 | 127 | `bash -c 'source /opt/vyatta/etc/functions/script-template; run show dhcp server leases'` | bash: line 1: run: command not found |
 
 ### Timing
@@ -132,7 +115,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 23 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

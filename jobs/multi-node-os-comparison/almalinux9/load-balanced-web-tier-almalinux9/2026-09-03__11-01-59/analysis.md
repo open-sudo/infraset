@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **4m 00s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `load-balanced-web-tier-almalinux__NJnQwaF` | Full Success | 1.000 | 1.000 | 1.000 | 0.820 | 36/7 | 3m 58s |
+| `load-balanced-web-tier-almalinux__NJnQwaF` | Full Success | 1.000 | 1.000 | 1.000 | 0.820 | 36/1 (+6 dropped) | 3m 58s |
 
 ## Trial `load-balanced-web-tier-almalinux__NJnQwaF`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **4m 00s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.820 | 0.900 | 36/7 |
+| 1.000 | 1.000 | 1.000 | 0.820 | 0.900 | 36/1 (+6 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -87,12 +87,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-35a6cfdb13544afb` | node1 | 1 | `cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.orig` | # error_page 500 502 503 504 /50x.html;; nginx: configuration file /etc/nginx/nginx.conf test failed |
-| `cmd-866df5e3910d4a7d` | node1 | -1 | `systemctl reboot & sleep 1; echo "reboot-issued"` | exec stream closed before command completion |
-| `cmd-03ea833e1bee4961` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-1a0ae8fd3a254267` | node2 | -1 | `systemctl reboot & sleep 1; echo "reboot-issued"` | exec stream closed before command completion |
-| `cmd-7cb3702deedd4f18` | node2 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-458eaa9b6e3d415c` | node3 | -1 | `systemctl reboot & sleep 1; echo "reboot-issued"` | exec stream closed before command completion |
-| `cmd-663352052d4a4fa5` | node3 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -112,7 +106,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

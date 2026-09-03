@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 45s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `lan-to-lan-routing-ubuntu24__5r7JHxz` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 56/4 | 5m 43s |
+| `lan-to-lan-routing-ubuntu24__5r7JHxz` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 56/2 (+2 dropped) | 5m 43s |
 
 ## Trial `lan-to-lan-routing-ubuntu24__5r7JHxz`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 45s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 56/4 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 56/2 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -110,8 +110,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-9309ff19b6c046f5` | node3 | 1 | `cat /tmp/nc.out; echo ---; ss -tn 2>/dev/null \| grep 12345; kill "$(cat /tmp/nc.pid)" 2>/dev/null` | hello-from-node2; --- |
 | `cmd-e2e6c1942e234cdb` | node2 | 1 | `cat /tmp/nc.out; kill "$(cat /tmp/nc.pid)" 2>/dev/null` | hello-from-node3 |
-| `cmd-534ff1f93ff24a92` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-54f1c76af0a54709` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -131,7 +129,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **7m 04s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `lan-to-lan-routing-rhel10__N6APtwQ` | Full Success | 1.000 | 1.000 | 1.000 | 0.920 | 51/14 | 7m 02s |
+| `lan-to-lan-routing-rhel10__N6APtwQ` | Full Success | 1.000 | 1.000 | 1.000 | 0.920 | 51/4 (+10 dropped) | 7m 02s |
 
 ## Trial `lan-to-lan-routing-rhel10__N6APtwQ`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **7m 04s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.920 | 0.930 | 51/14 |
+| 1.000 | 1.000 | 1.000 | 0.920 | 0.930 | 51/4 (+10 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -125,16 +125,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-7f534d41d63143fd` | node1 | 2 | `ip -4 addr show eth1; ip -4 addr show eth2` | ---firewall---; bash: -c: line 8: unexpected EOF while looking for matching ''' |
 | `cmd-b149a0d2bf8d48cb` | node3 | 1 | `which nc ncat socat 2>/dev/null` | connection.zone: trusted; /usr/bin/socat |
 | `cmd-f15266cb25bb4b47` | node1 | 1 | `conntrack -L 2>/dev/null \| grep -E "10.50.10.10\|10.50.20.10"` | Configuration under specified path is empty; --- |
-| `cmd-b45de1b987eb45a9` | node2 | -1 | `pkill socat 2>/dev/null; echo done` | exec stream closed before command completion |
-| `cmd-f252a5ae1b2c4c06` | node3 | -1 | `pkill socat 2>/dev/null; echo done` | exec stream closed before command completion |
-| `cmd-3b3aafd761014da2` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s; date` | [Errno 104] Connection reset by peer |
-| `cmd-0696d35bdcc940a3` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s; date` | [Errno 104] Connection reset by peer |
-| `cmd-64d3f9a37b694ce5` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date` | [Errno 110] Connection timed out |
-| `cmd-f063a46cd8094ba3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date` | [Errno 110] Connection timed out |
-| `cmd-de7c316079984380` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date` | [Errno 110] Connection timed out |
-| `cmd-9b368a7333e64a2a` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date` | [Errno 104] Connection reset by peer |
-| `cmd-b1446e1947614f5b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date` | [Errno 104] Connection reset by peer |
-| `cmd-b8cf281fb328496b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date` | [Errno 104] Connection reset by peer |
 | `cmd-cd9c83dec1834354` | node3 | 143 | `pkill -f 'socat -v TCP-LISTEN:12345' 2>/dev/null; echo done` | Terminated |
 
 ### Timing
@@ -155,7 +145,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 14 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

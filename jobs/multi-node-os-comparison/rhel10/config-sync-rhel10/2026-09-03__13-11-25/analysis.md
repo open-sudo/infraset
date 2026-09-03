@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **11m 26s** with **0 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `config-sync-rhel10__oijXoiw` | Full Success | 1.000 | 1.000 | 1.000 | 0.650 | 27/8 | 11m 24s |
+| `config-sync-rhel10__oijXoiw` | Full Success | 1.000 | 1.000 | 1.000 | 0.650 | 27/2 (+6 dropped) | 11m 24s |
 
 ## Trial `config-sync-rhel10__oijXoiw`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **11m 26s** with **0 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.650 | 0.900 | 27/8 |
+| 1.000 | 1.000 | 1.000 | 0.650 | 0.900 | 27/2 (+6 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -95,12 +95,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-776f033e06b6434b` | node1 | 1 | `ls -la /etc/inventory/ 2>&1; echo ---; cat /etc/inventory/app.conf 2>&1; echo ---; cat /etc/os-release \| head -3; echo ---; id; which rsync ssh crontab systemctl 2>&1` | ls: cannot access '/etc/inventory/': No such file or directory |
 | `cmd-0dcbfba6fd494114` | node2 | 1 | `ls -la /etc/inventory/ 2>&1; echo ---; cat /etc/inventory/app.conf 2>&1; echo ---; cat /etc/os-release \| head -3; echo ---; id; which rsync ssh crontab systemctl 2>&1` | ls: cannot access '/etc/inventory/': No such file or directory |
-| `cmd-94a8bca8fe8b4de4` | node1 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s; uptime` | [Errno 110] Connection timed out |
-| `cmd-fe70aef49aba478a` | node1 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-8742e5a825c74f97` | node1 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-00f80e50930a415c` | node2 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-5d1dec7a51ed4321` | node2 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-62dab8f6c1e542fa` | node2 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -120,7 +114,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

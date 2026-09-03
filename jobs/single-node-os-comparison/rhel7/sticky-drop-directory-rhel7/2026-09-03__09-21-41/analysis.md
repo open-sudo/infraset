@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **3m 45s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `sticky-drop-directory-rhel7__Ec4vHo2` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 11/1 | 3m 41s |
+| `sticky-drop-directory-rhel7__Ec4vHo2` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 11/0 (+1 dropped) | 3m 41s |
 
 ## Trial `sticky-drop-directory-rhel7__Ec4vHo2`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **3m 45s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.930 | 11/1 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.930 | 11/0 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -80,11 +80,7 @@ Hygiene evidence: `cmd-f35f4d5c2dd34aa8`, `cmd-8fdef7b2f490402c`
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-7ae72837e75f4154` | node1 | 255 | `echo alive; cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.190.10 port 22: Connection timed out |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -104,7 +100,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

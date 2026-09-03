@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **3m 17s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `custom-ca-trust-alpine__gPM4G7Y` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 16/11 | 3m 14s |
+| `custom-ca-trust-alpine__gPM4G7Y` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 16/3 (+8 dropped) | 3m 14s |
 
 ## Trial `custom-ca-trust-alpine__gPM4G7Y`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **3m 17s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 16/11 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 16/3 (+8 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -87,14 +87,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-cbf6558c5e1c44c6` | node1 | 1 | `apk info -e openssl ca-certificates 2>&1; which openssl update-ca-certificates 2>&1` | No error text was captured. |
 | `cmd-8b44edea36cf4dfe` | node1 | 1 | `tail -5 /etc/ca-certificates.conf; wc -l /etc/ca-certificates.conf; grep -i "os-comparison" /etc/ca-certificates.conf` | mozilla/vTrus_Root_CA.crt; 122 /etc/ca-certificates.conf |
 | `cmd-91ec1e3ed30b473d` | node1 | 127 | `wc -l /usr/sbin/update-ca-certificates 2>&1; ls -la /usr/sbin/update-ca-certificates /usr/local/sbin/update-ca-certificates 2>&1; file /usr/sbin/update-ca-certificates 2>&1` | bash: line 1: file: command not found |
-| `cmd-623e9b966b1540fa` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-a7eac3d9e380428b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-898f9ccaab534654` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-afff5be964b14d40` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-88dbbe53effe4d2b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-e79db1e81c624bcf` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-47cb6d9217a3435d` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-4409e0550cfe4561` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; date; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -114,7 +106,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 11 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

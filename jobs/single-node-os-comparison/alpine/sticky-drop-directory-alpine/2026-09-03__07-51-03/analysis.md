@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 20s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `sticky-drop-directory-alpine__VuhHhCk` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 11/8 | 2m 16s |
+| `sticky-drop-directory-alpine__VuhHhCk` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 11/1 (+7 dropped) | 2m 16s |
 
 ## Trial `sticky-drop-directory-alpine__VuhHhCk`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 20s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 11/8 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 11/1 (+7 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -80,13 +80,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-b13f2e7e71144ee0` | node1 | 1 | `grep -E '^(alice\|bob):' /etc/passwd; grep -E '^(alice\|bob):' /etc/group` | No error text was captured. |
-| `cmd-1ea36725966a486f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-602f7072773e4b50` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-83b06d3ae831409c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-bbf1f3137e2d4ae4` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-26cbe1efdcd64599` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-09a8d0f8e1b842e8` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-88485464e1d546c1` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -106,7 +99,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

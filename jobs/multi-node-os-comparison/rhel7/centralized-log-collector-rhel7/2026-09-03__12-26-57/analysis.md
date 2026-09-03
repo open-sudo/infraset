@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **7m 17s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `centralized-log-collector-rhel7__pFEg8jR` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 29/6 | 7m 15s |
+| `centralized-log-collector-rhel7__pFEg8jR` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 29/4 (+2 dropped) | 7m 15s |
 
 ## Trial `centralized-log-collector-rhel7__pFEg8jR`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **7m 17s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.850 | 29/6 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.850 | 29/4 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -102,8 +102,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-526b4019cc7f4dd6` | node1 | 127 | `systemctl is-enabled rsyslog; systemctl is-active firewalld; firewall-cmd --list-all 2>&1; echo ---; getenforce` | bash: getenforce: command not found |
 | `cmd-2ee5692eac3e455f` | node1 | 1 | `ps -o user= -C rsyslogd; grep -n "^\\$PrivDrop\\|User=" /etc/rsyslog.conf /usr/lib/systemd/system/rsyslog.service 2>/dev/null` | root |
 | `cmd-3c4be7eddcc642d7` | node1 | 1 | `sudo firewall-cmd --permanent --add-port=514/tcp && sudo firewall-cmd --reload && sudo firewall-cmd --list-ports` | bash: line 4: ss: command not found |
-| `cmd-874418a13a974c5e` | node1 | 255 | `cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.255.10 port 22: Connection timed out |
-| `cmd-7a1dfd93c32d4211` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.255.11 port 22: Connection timed out |
 
 ### Timing
 
@@ -123,7 +121,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

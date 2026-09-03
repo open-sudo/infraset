@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **6m 57s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `wireguard-gateway-ubuntu24__rtYCCcb` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 53/13 | 6m 55s |
+| `wireguard-gateway-ubuntu24__rtYCCcb` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 53/8 (+5 dropped) | 6m 55s |
 
 ## Trial `wireguard-gateway-ubuntu24__rtYCCcb`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **6m 57s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 53/13 |
+| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 53/8 (+5 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -95,11 +95,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-aae9a0665d5e4102` | node2 | 1 | `ls /etc/netplan/; cat /etc/netplan/*.yaml` | cat: '/etc/netplan/*.yaml': No such file or directory |
 | `cmd-9e8f0f1345f04e8e` | node3 | 3 | `cat /proc/sys/kernel/random/boot_id; uptime -s; systemctl is-active wg-quick@wg0.service` | 2026-09-03 16:54:47; inactive |
 | `cmd-51e7590dd9e94e14` | node2 | 28 | `echo "service state:"; systemctl is-active demo-app.service` | active; app proof: |
-| `cmd-a501626947194055` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-2594b1865ed0499d` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-b642b86ccf3a498f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-fb289f234f7d4455` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-80504b27067e4599` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -119,7 +114,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 13 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **11m 13s** with **0 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `lan-to-lan-routing-rhel7__7W3RDiY` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 64/20 | 11m 11s |
+| `lan-to-lan-routing-rhel7__7W3RDiY` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 64/10 (+10 dropped) | 11m 11s |
 
 ## Trial `lan-to-lan-routing-rhel7__7W3RDiY`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **11m 13s** with **0 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 64/20 |
+| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 64/10 (+10 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -139,16 +139,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-2040f7bec41447f0` | node2 | 1 | `sleep 1; ss -tlnp 2>/dev/null \| grep 8765 \|\| sudo ss -tlnp \| grep 8765` | which: no python3 in (/usr/local/bin:/usr/bin) |
 | `cmd-df8352020bc54e30` | node2 | 1 | `which python python2 socat ncat curl 2>&1; rpm -q nmap-ncat 2>&1` | /usr/bin/curl; package nmap-ncat is not installed |
 | `cmd-2a6a29ef4b6c453a` | node2 | 1 | `sudo ss -tn \| grep 8765` | No error text was captured. |
-| `cmd-95dca52f4dd6406a` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-8736300f8e4e40b0` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-ba1c8c495a844ea1` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-b5bca94ab6f74677` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-de75017d2f9a4b29` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-819a255d57094be1` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-24ced79612e848db` | node2 | 255 | `nohup sudo systemctl reboot > /tmp/reboot.log 2>&1 &` | Connection to 10.100.124.11 closed by remote host. |
-| `cmd-f925cab454264da5` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1` | ssh: connect to host 10.100.124.11 port 22: Connection timed out |
-| `cmd-af39d14259d9472d` | node3 | 255 | `nohup sudo systemctl reboot > /tmp/reboot.log 2>&1 &` | Connection to 10.100.124.12 closed by remote host. |
-| `cmd-337f6d6de8f242c0` | node3 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1` | ssh: connect to host 10.100.124.12 port 22: Connection timed out |
 
 ### Timing
 
@@ -168,7 +158,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 20 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 10 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

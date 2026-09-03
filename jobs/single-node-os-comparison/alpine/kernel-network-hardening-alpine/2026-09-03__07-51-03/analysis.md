@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **3m 08s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `kernel-network-hardening-alpine__Q9RDKA6` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 11/11 | 3m 05s |
+| `kernel-network-hardening-alpine__Q9RDKA6` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 11/0 (+11 dropped) | 3m 05s |
 
 ## Trial `kernel-network-hardening-alpine__Q9RDKA6`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **3m 08s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 11/11 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 11/0 (+11 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -90,21 +90,7 @@ Hygiene evidence: `cmd-bd261dbcdfd243fa`, `global:after_executor:node1:temporary
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-378ad206e350428e` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 104] Connection reset by peer |
-| `cmd-e95a39d74d6c46ec` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 104] Connection reset by peer |
-| `cmd-f8ff2b2cf1d942ca` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 110] Connection timed out |
-| `cmd-a36eb187473841b7` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 110] Connection timed out |
-| `cmd-cfce8353bb3444f5` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 110] Connection timed out |
-| `cmd-2e5bdfd0400e4680` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 104] Connection reset by peer |
-| `cmd-5f47e93a1b4b408e` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 104] Connection reset by peer |
-| `cmd-8f6ac2c4ebb747ec` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 104] Connection reset by peer |
-| `cmd-bbc1c2d412684273` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 104] Connection reset by peer |
-| `cmd-64da6d9c02e543ca` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 104] Connection reset by peer |
-| `cmd-31404a428d0b4e80` | node1 | -1 | `echo BOOT_ID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cut -d. -f1 /proc/uptime)` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -124,7 +110,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 11 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 33s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `custom-ca-trust-rhel9__fZqdkRV` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 8/2 | 2m 27s |
+| `custom-ca-trust-rhel9__fZqdkRV` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 8/0 (+2 dropped) | 2m 27s |
 
 ## Trial `custom-ca-trust-rhel9__fZqdkRV`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 33s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 8/2 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 8/0 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -71,12 +71,7 @@ Hygiene evidence: `cmd-e87f73d968d94ba5`, `cmd-181eda1499df4039`, `cmd-d3b4cde67
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-66e199c7654440b7` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-a37a15f436e045cd` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -96,7 +91,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

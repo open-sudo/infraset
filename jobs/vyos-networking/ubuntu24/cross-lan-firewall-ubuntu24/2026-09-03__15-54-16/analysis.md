@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **7m 26s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `cross-lan-firewall-ubuntu24__Y36NrHL` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 56/5 | 7m 24s |
+| `cross-lan-firewall-ubuntu24__Y36NrHL` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 56/4 (+1 dropped) | 7m 24s |
 
 ## Trial `cross-lan-firewall-ubuntu24__Y36NrHL`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **7m 26s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.930 | 56/5 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.930 | 56/4 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -96,7 +96,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-6692d92def724063` | node3 | 1 | `ip -4 addr show enp8s0; cat /etc/netplan/*.yaml 2>/dev/null` | No error text was captured. |
 | `cmd-e0582cce89624ca5` | node2 | 1 | `ip route get 10.60.60.12; echo ---; ping -c2 -W2 -I enp8s0 10.60.60.12` | --- 10.60.60.12 ping statistics ---; 2 packets transmitted, 0 received, 100% packet loss, time 1039ms |
 | `cmd-a16512bea09642d8` | node1 | 127 | `show firewall` | bash: line 1: show: command not found |
-| `cmd-5990b101703848e0` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -116,7 +115,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

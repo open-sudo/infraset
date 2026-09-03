@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **7m 15s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `cross-lan-firewall-centos-stream__VpeTUTi` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 52/29 | 7m 13s |
+| `cross-lan-firewall-centos-stream__VpeTUTi` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 52/13 (+16 dropped) | 7m 13s |
 
 ## Trial `cross-lan-firewall-centos-stream__VpeTUTi`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **7m 15s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.880 | 52/29 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.880 | 52/13 (+16 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -105,24 +105,8 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-3ab8b18cdb5e4ff5` | node2 | 1 | `import socket` | OSError: [Errno 113] No route to host |
 | `cmd-f0c167f816ce4d60` | node2 | 1 | `ping -c2 -W2 10.50.60.12` | === 8080 (should be rejected/timeout) ===; BLOCKED as expected: timed out |
 | `cmd-2865985924f54d5b` | node3 | 1 | `ping -c2 -W2 10.50.50.11` | BLOCKED as expected: timed out |
-| `cmd-7756e2cd59bf4d6a` | node2 | -1 | `pkill socat; sleep 1; ss -tlnp \| grep 5432 \|\| echo "cleaned"` | exec stream closed before command completion |
 | `cmd-4461acd38eb24780` | node3 | 143 | `pkill -f 'socat TCP-LISTEN:8080'; sleep 1; ss -tlnp \| grep -E '5432\|8080'` | Terminated |
 | `cmd-15d98c2d4fc84d8b` | node1 | 1 | `cat /proc/sys/kernel/random/boot_id; echo ---; uptime -s; echo ---; /opt/vyatta/bin/vyatta-op-cmd-wrapper show firewall \| tail -6; echo ---; ip -4 addr show eth1 eth2 \| grep inet` | Error: either "dev" is duplicate, or "eth2" is garbage. |
-| `cmd-0516d632c3d3434c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 110] Connection timed out |
-| `cmd-92f9acbb3c9241a4` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 110] Connection timed out |
-| `cmd-1288556aafd94c1f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 110] Connection timed out |
-| `cmd-80720f35a21d4325` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 110] Connection timed out |
-| `cmd-fd23b9f88c7f4d8c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 104] Connection reset by peer |
-| `cmd-98c360598b014090` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 104] Connection reset by peer |
-| `cmd-bfd68b66973b488b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 104] Connection reset by peer |
-| `cmd-685a3f423e074ee8` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 104] Connection reset by peer |
-| `cmd-6da64f7c8a424e2b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 104] Connection reset by peer |
-| `cmd-00c2ef16f4544f91` | node2 | -1 | `nohup systemctl reboot >/tmp/reboot.log 2>&1 < /dev/null &` | exec stream closed before command completion |
-| `cmd-c07fefac837a4f46` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 110] Connection timed out |
-| `cmd-0c9045198cc74ac3` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 110] Connection timed out |
-| `cmd-32ce71bbe93a4862` | node3 | -1 | `nohup systemctl reboot >/tmp/reboot.log 2>&1 < /dev/null &` | exec stream closed before command completion |
-| `cmd-909745f18f38420f` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 110] Connection timed out |
-| `cmd-fcb284bffc1146a5` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not up yet"` | [Errno 110] Connection timed out |
 | `cmd-f2c6e8ec82784b37` | node2 | 1 | `ping -c2 -W2 10.50.60.12` | --- 10.50.60.12 ping statistics ---; 2 packets transmitted, 0 received, 100% packet loss, time 1047ms |
 
 ### Timing
@@ -143,7 +127,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 29 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 13 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

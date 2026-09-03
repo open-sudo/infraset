@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **6m 19s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `cross-lan-firewall-ubuntu16__LxFAyoy` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 66/12 | 6m 17s |
+| `cross-lan-firewall-ubuntu16__LxFAyoy` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 66/4 (+8 dropped) | 6m 17s |
 
 ## Trial `cross-lan-firewall-ubuntu16__LxFAyoy`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **6m 19s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 66/12 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 66/4 (+8 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -115,14 +115,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-7338721736664a3d` | node1 | 127 | `source /opt/vyatta/etc/functions/script-template; show interfaces` | bash: line 1: show: command not found |
 | `cmd-cfeba721fa0e4194` | node3 | 1 | `which psql pg_ctl 2>/dev/null; dpkg -l \| grep -i postgres; ss -tlnp 2>/dev/null \| grep 5432` | No error text was captured. |
-| `cmd-1a8e72f524c14977` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-c4e9106aeaf94400` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-9a8e3ece441c4e70` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-53c84a227d1b436c` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-6f815f255d4e4d46` | node1 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-46b962aa2c894423` | node1 | -1 | `echo up; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-28a54cebfff74f46` | node1 | -1 | `echo up; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-39d7a016843843ce` | node1 | -1 | `echo up; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 | `cmd-442f2add136341ff` | node2 | 255 | `echo up; cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.224.11 port 22: Connection refused |
 | `cmd-c265a5dd32fd43e0` | node3 | 255 | `echo up; cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.224.12 port 22: Connection refused |
 
@@ -144,7 +136,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 12 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

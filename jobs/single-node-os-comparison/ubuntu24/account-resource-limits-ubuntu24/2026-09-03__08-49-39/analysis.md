@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **1m 28s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `account-resource-limits-ubuntu24__j2JVA8f` | Full Success | 1.000 | 1.000 | 1.000 | 1.000 | 9/2 | 1m 25s |
+| `account-resource-limits-ubuntu24__j2JVA8f` | Full Success | 1.000 | 1.000 | 1.000 | 1.000 | 9/1 (+1 dropped) | 1m 25s |
 
 ## Trial `account-resource-limits-ubuntu24__j2JVA8f`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **1m 28s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 1.000 | 0.930 | 9/2 |
+| 1.000 | 1.000 | 1.000 | 1.000 | 0.930 | 9/1 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -89,7 +89,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-fcf0650e28204015` | node1 | 2 | `id appworker 2>&1; cat /etc/os-release \| head -3; getent passwd appworker` | NAME="Ubuntu"; VERSION_ID="24.04" |
-| `cmd-4ba41d7873534709` | node1 | -1 | `uptime -s; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -109,7 +108,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

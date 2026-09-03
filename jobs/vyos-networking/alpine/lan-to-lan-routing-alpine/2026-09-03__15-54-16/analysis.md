@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 11s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `lan-to-lan-routing-alpine__BqchQK8` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 43/38 | 5m 09s |
+| `lan-to-lan-routing-alpine__BqchQK8` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 43/1 (+37 dropped) | 5m 09s |
 
 ## Trial `lan-to-lan-routing-alpine__BqchQK8`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 11s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.950 | 43/38 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.950 | 43/1 (+37 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -107,43 +107,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-8a1a5aebf1244376` | node3 | 1 | `ip -br link` | ip neigh show\|flush [to PREFIX] [dev DEV] [nud STATE]; ip rule [list] \| add\|del SELECTOR ACTION |
-| `cmd-2a026e7c63be4321` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-296dc1ef5a434f25` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-3b0c23060bd34972` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-ec48555d8d9a4c9e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-9292dcc1fd2f413b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-968376858b404656` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-dae053f57c244838` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-e8b0120cc3644f22` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-dc2640657846428a` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-e1ce240fbcff4979` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-49b36840655f42bd` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-da1f8a0db63041e5` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-9f6138f043374592` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-187a2337f87b43b0` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-d390c3c0f83b463d` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-3aa088f8e18d462f` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-b4d34d7742eb4620` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-9ebc4efc33794f44` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-ca1866af883d4c68` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-d874b61ba82744ab` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-04713adb63dd4899` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-c7f104937d8c48cb` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-3866e077314445d1` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-41bd1106a8fb47b5` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-5a9be665ca724bc6` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-662417f7867f4730` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-607df4cae0f2426a` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-9906c69aacd04e4f` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-e62e8a79a58946e7` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-81a2482b41dc4fee` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-a93b360662fe41f7` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-62eca16e02c7461a` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-5811a9993fd84a95` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-865e0981d1d24f92` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-243436bd458d4cdc` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-cd47b3e0f1e24401` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-83f9214202c943d9` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -163,7 +126,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 38 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **1m 52s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `unprivileged-service-almalinux9__BzenHV7` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 9/1 | 1m 49s |
+| `unprivileged-service-almalinux9__BzenHV7` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 9/0 (+1 dropped) | 1m 49s |
 
 ## Trial `unprivileged-service-almalinux9__BzenHV7`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **1m 52s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 9/1 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 9/0 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -88,11 +88,7 @@ Hygiene evidence: `cmd-4cda3837dbeb4d66`, `cmd-c4c6ed035d284a6b`, `global:before
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-91e8f76d30834a15` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -112,7 +108,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

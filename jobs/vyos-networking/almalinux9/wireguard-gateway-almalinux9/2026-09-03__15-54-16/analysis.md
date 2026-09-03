@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **6m 36s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `wireguard-gateway-almalinux9__eUSUKSY` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 42/7 | 6m 33s |
+| `wireguard-gateway-almalinux9__eUSUKSY` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 42/1 (+6 dropped) | 6m 33s |
 
 ## Trial `wireguard-gateway-almalinux9__eUSUKSY`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **6m 36s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.880 | 42/7 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.880 | 42/1 (+6 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -111,12 +111,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
-| `cmd-5744ee3a42e94db7` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-77f5280793f64b08` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-4bebc5aec1454350` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-bda10eff1d524311` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-6f5c9c335faf4229` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-3ce8cc9b277745b9` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 | `cmd-3b6b1ecad9e4452f` | node3 | 28 | `systemctl is-active wg-quick@wg0; curl -m 8 -sv http://10.100.47.11:8080/ 2>&1` | * Connection timed out after 8001 milliseconds |
 
 ### Timing
@@ -137,7 +131,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

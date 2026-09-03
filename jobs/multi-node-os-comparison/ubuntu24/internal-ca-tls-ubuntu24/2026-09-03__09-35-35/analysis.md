@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **4m 32s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-ca-tls-ubuntu24__U3D7PKY` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 34/4 | 4m 30s |
+| `internal-ca-tls-ubuntu24__U3D7PKY` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 34/1 (+3 dropped) | 4m 30s |
 
 ## Trial `internal-ca-tls-ubuntu24__U3D7PKY`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **4m 32s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 34/4 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 34/1 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -101,9 +101,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-29a88af3b8624308` | node1 | 255 | `mkdir -p /root/ca/csr && scp -o StrictHostKeyChecking=no root@node2:/root/tls/node2.csr.pem /root/ca/csr/node2.csr.pem && ls -la /root/ca/csr` | kex_exchange_identification: read: Connection reset by peer; Connection reset by 10.100.49.11 port 22 |
-| `cmd-683bf9c485e84114` | node1 | -1 | `echo "up: $(cat /proc/sys/kernel/random/boot_id)"` | [Errno 110] Connection timed out |
-| `cmd-51e510fac9e942f5` | node2 | -1 | `echo "up: $(cat /proc/sys/kernel/random/boot_id)"` | [Errno 110] Connection timed out |
-| `cmd-c41f9d658805459c` | node2 | -1 | `echo "up: $(cat /proc/sys/kernel/random/boot_id)"` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -123,7 +120,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

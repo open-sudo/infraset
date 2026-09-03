@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **4m 15s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-time-sync-almalinux9__Y36oSK2` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 29/3 | 4m 13s |
+| `internal-time-sync-almalinux9__Y36oSK2` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 29/1 (+2 dropped) | 4m 13s |
 
 ## Trial `internal-time-sync-almalinux9__Y36oSK2`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **4m 15s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.800 | 0.920 | 29/3 |
+| 1.000 | 1.000 | 1.000 | 0.800 | 0.920 | 29/1 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -104,8 +104,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-96e5b388d3e7406f` | node2 | 1 | `ls /run/chrony-dhcp/ 2>&1; cat /run/chrony-dhcp/*.sources 2>&1` | cat: '/run/chrony-dhcp/*.sources': No such file or directory |
-| `cmd-65b8e66b0367490a` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-f349b7b0cb5d44b8` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -125,7 +123,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

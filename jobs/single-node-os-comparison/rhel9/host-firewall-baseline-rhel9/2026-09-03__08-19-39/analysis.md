@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **3m 56s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `host-firewall-baseline-rhel9__Yr5tk7K` | Full Success | 1.000 | 1.000 | 1.000 | 0.750 | 14/3 | 3m 49s |
+| `host-firewall-baseline-rhel9__Yr5tk7K` | Full Success | 1.000 | 1.000 | 1.000 | 0.750 | 14/0 (+3 dropped) | 3m 49s |
 
 ## Trial `host-firewall-baseline-rhel9__Yr5tk7K`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **3m 56s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.750 | 0.820 | 14/3 |
+| 1.000 | 1.000 | 1.000 | 0.750 | 0.820 | 14/0 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -88,13 +88,7 @@ Hygiene evidence: `cmd-97f8faea323e49db`, `cmd-d29540c696ac4826`, `cmd-60884dd4c
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-90edac40f9ff46c8` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 110] Connection timed out |
-| `cmd-477d49d9af254034` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 110] Connection timed out |
-| `cmd-fd52c4b7bb4443db` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -114,7 +108,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

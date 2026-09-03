@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **7m 50s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `dhcp-server-alpine__jgSHWoR` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 42/31 | 7m 48s |
+| `dhcp-server-alpine__jgSHWoR` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 42/1 (+30 dropped) | 7m 48s |
 
 ## Trial `dhcp-server-alpine__jgSHWoR`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **7m 50s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.930 | 42/31 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.930 | 42/1 (+30 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -106,36 +106,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-1bcd44a1bbde4af8` | node1 | 1 | `ip -4 addr show eth1; echo ---; cat /config/config.boot 2>/dev/null \| grep -A5 "interfaces ethernet"` | --- |
-| `cmd-f504ab4f6728470c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-55b4c98890c14d98` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-c5d768587614493e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-0e7eb4395c144465` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-3c68a71bc2d8426a` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-ba1c47d7b9554374` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-cbe18b8c956542ec` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-6d22065fb6f94672` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-5a87980263d74b0a` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-a85276833c68416c` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-44b0f1574c974b18` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-58b8a8bd4ca64a0a` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-ffef324ef4f04bd8` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-8c80bd91f0a2493b` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-03cc848ab9264926` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-4569c7b0bcdd438c` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-63055b66ef9f4a02` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-87476b370925458b` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-de3dcd6dd7f3487e` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-548f5fb9b5574d61` | node3 | -1 | `sleep 10; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-3ab19a57018a4a05` | node3 | -1 | `sleep 10; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-741f9d6dbbe447b3` | node3 | -1 | `sleep 10; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-f98c3cd76c17407c` | node3 | -1 | `sleep 10; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-562a063c60154d85` | node3 | -1 | `sleep 10; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-0462c16f4ba14c83` | node3 | -1 | `sleep 10; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-d9f541d1f60f4bce` | node3 | -1 | `sleep 10; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-3995fc9c4e234025` | node3 | -1 | `sleep 10; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-0e9a0a6e9ce941ab` | node3 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-59625dbf6e524c17` | node3 | -1 | `sleep 20; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-bf8bdc2ed7424867` | node3 | -1 | `sleep 20; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -155,7 +125,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 31 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

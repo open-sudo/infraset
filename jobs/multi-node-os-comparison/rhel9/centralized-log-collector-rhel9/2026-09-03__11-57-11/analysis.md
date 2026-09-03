@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **5m 07s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `centralized-log-collector-rhel9__DyY6boF` | Full Success | 1.000 | 1.000 | 1.000 | 0.920 | 24/7 | 5m 02s |
+| `centralized-log-collector-rhel9__DyY6boF` | Full Success | 1.000 | 1.000 | 1.000 | 0.920 | 24/1 (+6 dropped) | 5m 02s |
 
 ## Trial `centralized-log-collector-rhel9__DyY6boF`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **5m 07s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.920 | 0.920 | 24/7 |
+| 1.000 | 1.000 | 1.000 | 0.920 | 0.920 | 24/1 (+6 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -107,12 +107,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-7293078ef98d46c2` | node2 | 1 | `systemctl restart rsyslog` | active; enabled |
-| `cmd-2454c9591b294c27` | node1 | -1 | `echo BOOT_ID=$(cat /proc/sys/kernel/random/boot_id); uptime -s` | [Errno 110] Connection timed out |
-| `cmd-6fcc815270d8413a` | node1 | -1 | `echo BOOT_ID=$(cat /proc/sys/kernel/random/boot_id); uptime -s` | [Errno 110] Connection timed out |
-| `cmd-1f277c965a8f4065` | node1 | -1 | `echo BOOT_ID=$(cat /proc/sys/kernel/random/boot_id); uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-9ae18fe5fa1f4a37` | node2 | -1 | `echo BOOT_ID=$(cat /proc/sys/kernel/random/boot_id); uptime -s` | [Errno 110] Connection timed out |
-| `cmd-1dd248aed231457b` | node2 | -1 | `echo BOOT_ID=$(cat /proc/sys/kernel/random/boot_id); uptime -s` | [Errno 110] Connection timed out |
-| `cmd-0fa0a7c9c23d48b4` | node2 | -1 | `echo BOOT_ID=$(cat /proc/sys/kernel/random/boot_id); uptime -s` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -132,7 +126,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

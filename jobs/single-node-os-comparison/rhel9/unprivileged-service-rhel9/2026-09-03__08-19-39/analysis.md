@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **3m 02s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `unprivileged-service-rhel9__RC338ZU` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 9/3 | 2m 56s |
+| `unprivileged-service-rhel9__RC338ZU` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 9/1 (+2 dropped) | 2m 56s |
 
 ## Trial `unprivileged-service-rhel9__RC338ZU`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **3m 02s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 9/3 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 9/1 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -91,8 +91,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-e69eafdf570541aa` | node1 | 1 | `ls -la /usr/local/bin/os-comparison-worker; file /usr/local/bin/os-comparison-worker; cat /etc/os-release \| head -5; systemctl --version \| head -1; id inventorysvc 2>&1` | systemd 252 (252-67.el9_8.4); id: ‘inventorysvc’: no such user |
-| `cmd-0c08762fd8f04ad2` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-6c9273fb92a6409f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -112,7 +110,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 22s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `repair-application-permissions-c__xiguxmW` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 12/4 | 2m 17s |
+| `repair-application-permissions-c__xiguxmW` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 12/2 (+2 dropped) | 2m 17s |
 
 ## Trial `repair-application-permissions-c__xiguxmW`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 22s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 12/4 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 12/2 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -96,8 +96,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-f4ac8946207e4e31` | node1 | 1 | `getent passwd inventorysvc; echo ---; getent group inventory-readers; echo ---; id inventorysvc` | ---; id: ‘inventorysvc’: no such user |
 | `cmd-25488903bfb44e7b` | node1 | 1 | `sudo pkill -u testreader; sudo pkill -u outsideruser; sleep 1; sudo userdel testreader 2>&1; sudo userdel outsideruser 2>&1; id testreader 2>&1; id outsideruser 2>&1` | id: ‘testreader’: no such user; id: ‘outsideruser’: no such user |
-| `cmd-48a11645aedb444e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-3fd8b631afbb4226` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -117,7 +115,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

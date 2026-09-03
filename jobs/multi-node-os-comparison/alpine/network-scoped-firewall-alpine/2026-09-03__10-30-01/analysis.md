@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 22s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `network-scoped-firewall-alpine__fj8N35S` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 34/22 | 5m 19s |
+| `network-scoped-firewall-alpine__fj8N35S` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 34/4 (+18 dropped) | 5m 19s |
 
 ## Trial `network-scoped-firewall-alpine__fj8N35S`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 22s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 34/22 |
+| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 34/4 (+18 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -104,24 +104,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-f3fc0be020a44a1d` | node3 | 255 | `mkdir -p ~/.ssh; printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519` | Permission denied, please try again.; Permission denied, please try again. |
 | `cmd-c497a471e56f47c5` | node2 | 255 | `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -i ~/.ssh/id_ed25519 root@10.100.142.10 'echo SSH_OK_FROM_NODE2'` | Permission denied, please try again.; Permission denied, please try again. |
 | `cmd-ad7b3a06b606416c` | node3 | 255 | `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -i ~/.ssh/id_ed25519 root@10.100.142.10 'echo SSH_OK_FROM_NODE3'` | Permission denied, please try again.; Permission denied, please try again. |
-| `cmd-7252345b5ecc48bb` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-c60717fcc0a3463c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-ead677c7e24f4766` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-9c7ddef350d34dd8` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-86fca10024ba448d` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-855a35aca9e643cc` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-5f7c14272cd04724` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-b23f6ab1b71a4c80` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-24e170f275364c83` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-691d2d290a89459b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-8a151a0caf79419a` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-64778bc4b27344cb` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s; rc-service sshd status` | [Errno 104] Connection reset by peer |
-| `cmd-e20831a85d424186` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s; rc-service sshd status` | [Errno 104] Connection reset by peer |
-| `cmd-fe433515f7d64303` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s; rc-service sshd status` | [Errno 104] Connection reset by peer |
-| `cmd-cac11e77a0584bfb` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s; rc-service sshd status` | [Errno 110] Connection timed out |
-| `cmd-c74764771a994838` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s; rc-service sshd status` | [Errno 104] Connection reset by peer |
-| `cmd-a9285b962df24417` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s; rc-service sshd status` | [Errno 104] Connection reset by peer |
-| `cmd-76db742f0c0d40b6` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s; rc-service sshd status` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -141,7 +123,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 22 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

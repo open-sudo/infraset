@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **5m 37s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `centralized-log-collector-almali__cVPsYLX` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 30/3 | 5m 34s |
+| `centralized-log-collector-almali__cVPsYLX` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 30/2 (+1 dropped) | 5m 34s |
 
 ## Trial `centralized-log-collector-almali__cVPsYLX`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **5m 37s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 30/3 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 30/2 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -104,7 +104,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-98955ee36f814668` | node2 | 1 | `systemctl is-enabled rsyslog firewalld; echo ---; id inventory 2>/dev/null; echo ---; getent passwd \| grep -i inv` | ---; --- |
 | `cmd-f34b51d2768d4286` | node1 | 1 | `which semanage; rpm -q policycoreutils-python-utils; semanage port -l \| grep 514` | bash: line 1: semanage: command not found |
-| `cmd-317e4cfcdf8f40c8` | node2 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -124,7 +123,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

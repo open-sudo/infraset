@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **5m 25s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `shared-nfs-storage-alpine__atgVsEk` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 32/11 | 5m 23s |
+| `shared-nfs-storage-alpine__atgVsEk` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 32/6 (+5 dropped) | 5m 23s |
 
 ## Trial `shared-nfs-storage-alpine__atgVsEk`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **5m 25s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 32/11 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 32/6 (+5 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -101,13 +101,8 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-8688ccd4c9734d6d` | node2 | 1 | `cat /etc/os-release; echo "---"; id dataops 2>&1; echo "---"; ls -la /mnt/shared 2>&1; echo "---"; which mount.nfs showmount 2>&1` | id: unknown user dataops |
 | `cmd-afc3267cfd74490d` | node1 | 1 | `exportfs -v; echo "---"; rpcinfo -p 2>&1 \| head -20; echo "---"; ss -tlnp 2>&1 \| grep -E '2049\|111'` | 100021 4 udp 49616; --- |
 | `cmd-aa334ae72c2c4651` | node2 | 1 | `sudo -u dataops touch /mnt/shared/from-node2.txt && ls -la /mnt/shared/` | ls: can't open '/mnt/shared/': Permission denied |
-| `cmd-b71fe59761264603` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-f6dcbacd221b4bd6` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-7587cf82431e486b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 | `cmd-5bdc92e9296f48fd` | node2 | 1 | `mount \| grep shared; sudo -u dataops touch /mnt/shared/post-node1-restart.txt && ls -la /mnt/shared/` | 10.100.163.10:/srv/nfs/shared on /mnt/shared type nfs4 (rw,relatime,sync,vers=4.2,rsize=262144,wsize=262144,namlen=255,hard,fatal_neterrors=none,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=10.100.163.11,local_lock=none,addr=10.100.163.10,_netdev); ls: can't open '/mnt/shared/': Permission denied |
-| `cmd-c171e73f46de4ddd` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 | `cmd-3f18a0918d244af5` | node2 | 1 | `mount \| grep shared; sudo -u dataops ls -la /mnt/shared/; sudo -u dataops touch /mnt/shared/post-node2-restart.txt && sudo -u dataops ls -la /mnt/shared/` | touch: /mnt/shared/post-node2-restart.txt: Permission denied |
-| `cmd-565ac1f8ed3e4850` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -127,7 +122,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 11 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

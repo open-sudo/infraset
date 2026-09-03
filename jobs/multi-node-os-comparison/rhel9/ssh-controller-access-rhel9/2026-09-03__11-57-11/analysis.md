@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **3m 56s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ssh-controller-access-rhel9__iGo5osh` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 24/5 | 3m 54s |
+| `ssh-controller-access-rhel9__iGo5osh` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 24/0 (+5 dropped) | 3m 54s |
 
 ## Trial `ssh-controller-access-rhel9__iGo5osh`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **3m 56s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 24/5 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 24/0 (+5 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -95,15 +95,7 @@ Hygiene evidence: `cmd-316f399536d94ed7`, `cmd-0c70a37300664ede`, `cmd-9231a167f
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-fda428ce188b42f3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-5a057c1d3b794b48` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-4d48c161df4e466c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-be49b4c786544d33` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-8d7b6d7957ae46c7` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -123,7 +115,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **7m 49s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `host-firewall-baseline-rhel7__jcXJqPU` | Full Success | 1.000 | 1.000 | 1.000 | 0.650 | 18/6 | 7m 46s |
+| `host-firewall-baseline-rhel7__jcXJqPU` | Full Success | 1.000 | 1.000 | 1.000 | 0.650 | 18/4 (+2 dropped) | 7m 46s |
 
 ## Trial `host-firewall-baseline-rhel7__jcXJqPU`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **7m 49s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.650 | 0.850 | 18/6 |
+| 1.000 | 1.000 | 1.000 | 0.650 | 0.850 | 18/4 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -99,8 +99,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-d2c2d2c5691d4a6d` | node1 | 127 | `ip route get "$NODE_IP"` | bash: ip: command not found |
 | `cmd-e22328c7079544fd` | node1 | 143 | `pkill -f SimpleHTTPServer; sleep 1; sudo ss -tlnp \| grep -E ':8080\|:9999'; echo done` | /bin/sh: line 1: 2283 Terminated /bin/sh -c 'if command -v bash >/dev/null 2>&1; then exec bash -c '"'"'pkill -f SimpleHTTPServer; sleep 1; sudo ss -tlnp \| grep -E '"'"'"'"'"'"'"'"':8080\|:9999'"'"'"'"'"'"'"'"'; echo done'"'"'; else exec /bin/sh -c '"'"'pkill -f SimpleHTTPServer; sleep 1; sudo ss -tlnp \| grep -E '"'"... |
 | `cmd-84d43255606b43f8` | node1 | 1 | `sudo ss -tlnp \| grep -E ':8080\|:9999'; ps aux \| grep -i SimpleHTTP \| grep -v grep` | No error text was captured. |
-| `cmd-b33ee281c43d44f2` | node1 | 255 | `cat /proc/sys/kernel/random/boot_id; who -b` | ssh: connect to host 10.100.180.10 port 22: Connection timed out |
-| `cmd-a746c5f0bad5469e` | node1 | 255 | `cat /proc/sys/kernel/random/boot_id; who -b` | ssh: connect to host 10.100.180.10 port 22: Connection timed out |
 
 ### Timing
 
@@ -120,7 +118,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

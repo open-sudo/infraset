@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **3m 57s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-time-sync-alpine__XjfEFJQ` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 19/14 | 3m 55s |
+| `internal-time-sync-alpine__XjfEFJQ` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 19/0 (+14 dropped) | 3m 55s |
 
 ## Trial `internal-time-sync-alpine__XjfEFJQ`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **3m 57s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 19/14 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 19/0 (+14 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -83,24 +83,7 @@ Hygiene evidence: `global:after_executor:node1:temporary-files`, `global:after_e
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-3abce1529ab04523` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-636a6feabb054524` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 110] Connection timed out |
-| `cmd-949a3a41f2d14375` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 110] Connection timed out |
-| `cmd-3fa67cddf9034366` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 110] Connection timed out |
-| `cmd-03f73ae5d50b4002` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-54c0a6e3588c4772` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-caf066125249420b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-be740ae7e6994faa` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-e984282378ca48f2` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 110] Connection timed out |
-| `cmd-b00c191c1add4581` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 110] Connection timed out |
-| `cmd-a80fb48163204342` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-991fba09fb1a40bc` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-b3b6ed518db9419d` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-e055b52fb4864773` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -120,7 +103,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 14 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **5m 18s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-time-sync-ubuntu16__vQmPmgr` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 23/6 | 5m 16s |
+| `internal-time-sync-ubuntu16__vQmPmgr` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 23/4 (+2 dropped) | 5m 16s |
 
 ## Trial `internal-time-sync-ubuntu16__vQmPmgr`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **5m 18s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.920 | 23/6 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.920 | 23/4 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -84,9 +84,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-9fc0424877c44329` | node1 | 1 | `chronyc clients` | ========================= ====== ====== ====== ====== ====== ==== ====; 501 Not authorised |
 | `cmd-414d9075015e4276` | node1 | 1 | `sudo chronyc clients` | ========================= ====== ====== ====== ====== ====== ==== ====; 501 Not authorised |
-| `cmd-1ce219ab065f4883` | node1 | 255 | `sudo sh -c 'nohup shutdown -r now >/tmp/reboot.log 2>&1 &' ; sleep 1; echo ack` | Connection to 10.100.171.10 closed by remote host. |
 | `cmd-6bda72ab67d44150` | node1 | 255 | `echo "BOOT_ID: $(cat /proc/sys/kernel/random/boot_id)"; uptime` | ssh: connect to host 10.100.171.10 port 22: Connection refused |
-| `cmd-abf2579148964c41` | node2 | 255 | `sudo sh -c 'nohup shutdown -r now >/tmp/reboot.log 2>&1 &' ; sleep 1; echo ack` | Connection to 10.100.171.11 closed by remote host. |
 | `cmd-3fa9a6a7bbe84d80` | node2 | 255 | `echo "BOOT_ID: $(cat /proc/sys/kernel/random/boot_id)"; uptime` | ssh: connect to host 10.100.171.11 port 22: Connection refused |
 
 ### Timing
@@ -107,7 +105,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

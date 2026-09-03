@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **4m 25s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `centralized-log-collector-ubuntu__fUbSkH8` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 22/9 | 4m 23s |
+| `centralized-log-collector-ubuntu__fUbSkH8` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 22/5 (+4 dropped) | 4m 23s |
 
 ## Trial `centralized-log-collector-ubuntu__fUbSkH8`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **4m 25s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 22/9 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 22/5 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -105,10 +105,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-4cc1f1a87aad4b13` | node1 | 1 | `ss -tlnp \| grep -i rsyslog; ss -tln \| grep :514` | No error text was captured. |
 | `cmd-ba71bd201d5a4d08` | node2 | 1 | `sleep 12; logger -t inventory -p local0.info "inventory event MANUAL-TEST-1 from node2 forward check"; sleep 2; tail -5 /var/log/syslog \| grep inventory` | No error text was captured. |
 | `cmd-8fd753c97ed04894` | node1 | 3 | `sudo tail -1 /var/log/inventory/node2.log; sudo systemctl stop rsyslog; sudo systemctl is-active rsyslog` | syslog.socket; activating |
-| `cmd-1d725678abaf4b3c` | node1 | -1 | `nohup sudo reboot >/tmp/reboot.log 2>&1 & disown; sleep 1; echo "reboot issued"` | exec stream closed before command completion |
-| `cmd-b5a020f20a734fdf` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-5e23a65fefab4fbb` | node2 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; nohup sudo reboot >/tmp/reboot.log 2>&1 & disown; sleep 1; echo "reboot issued"` | exec stream closed before command completion; BOOT_ID=37344ae4-6582-4c1f-ac5c-fcb32f67b968 |
-| `cmd-22e6016e95c5497b` | node2 | -1 | `echo up` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -128,7 +124,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 9 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

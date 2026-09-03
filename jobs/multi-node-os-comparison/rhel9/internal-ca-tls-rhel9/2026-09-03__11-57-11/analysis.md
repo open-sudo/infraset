@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **5m 54s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-ca-tls-rhel9__nyZdYRW` | Full Success | 1.000 | 1.000 | 1.000 | 0.650 | 34/7 | 5m 52s |
+| `internal-ca-tls-rhel9__nyZdYRW` | Full Success | 1.000 | 1.000 | 1.000 | 0.650 | 34/3 (+4 dropped) | 5m 52s |
 
 ## Trial `internal-ca-tls-rhel9__nyZdYRW`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **5m 54s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.650 | 0.900 | 34/7 |
+| 1.000 | 1.000 | 1.000 | 0.650 | 0.900 | 34/3 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -97,10 +97,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-eda38069a6e34a4c` | node1 | 1 | `cd /root/fleet-ca && openssl genrsa -out private/ca.key.pem 4096 && chmod 400 private/ca.key.pem && openssl req -config /dev/null -key private/ca.key.pem -new -x509 -days 3650 -sha256 -extensions v3_ca -out certs/ca.c...` | Error checking x509 extension section v3_ca |
 | `cmd-04af18f1967345c2` | node1 | 255 | `mkdir -p ~/.ssh && printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519 && printf '%s\n' "$CLUSTER_SSH_PUBKEY" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && ssh -o...` | ssh: Could not resolve hostname node2: Name or service not known |
 | `cmd-b8f7acb0f9284eec` | node1 | 255 | `echo "$CLUSTER_HOSTS" \| tee -a /etc/hosts && ssh -o StrictHostKeyChecking=no -o BatchMode=yes node2 'mkdir -p /etc/pki/tls/fleet-ca && echo ok'` | 10.100.175.11 node2; Warning: Permanently added 'node2' (ED25519) to the list of known hosts. |
-| `cmd-5de63b6bbaef4401` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not reachable"` | [Errno 110] Connection timed out |
-| `cmd-6fd2e439f2ca46eb` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not reachable"` | [Errno 104] Connection reset by peer |
-| `cmd-a610f26706ec4e44` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not reachable"` | [Errno 110] Connection timed out |
-| `cmd-90ce5843e6524c42` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "not reachable"` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -120,7 +116,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

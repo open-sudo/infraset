@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 08s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `load-balanced-web-tier-centos-st__ZauXkMW` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 42/8 | 5m 06s |
+| `load-balanced-web-tier-centos-st__ZauXkMW` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 42/3 (+5 dropped) | 5m 06s |
 
 ## Trial `load-balanced-web-tier-centos-st__ZauXkMW`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 08s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 42/8 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 42/3 (+5 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -94,11 +94,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-6bdf639ba615411b` | node2 | 1 | `cat /etc/os-release \| head -5; echo "---"; which nginx httpd python3 podman docker 2>/dev/null; ls /opt /srv /var/www 2>/dev/null; echo "---"; ls / \| grep -i inventor` | /srv:; --- |
 | `cmd-6dd9b22236874e8a` | node3 | 1 | `cat /etc/os-release \| head -5; echo "---"; which nginx httpd python3 podman docker 2>/dev/null; ls /opt /srv /var/www 2>/dev/null; echo "---"; ls / \| grep -i inventor` | /srv:; --- |
 | `cmd-4411a2ff781f4a1d` | node2 | 3 | `systemctl stop inventory-app; systemctl is-active inventory-app` | inactive |
-| `cmd-238cb35af6e549ac` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-1cb8c3f043d34166` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-41e7349d15be441c` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-2abd40b7825d46d0` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-87b526b5294248db` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -118,7 +113,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **16m 11s** with **1 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `wireguard-gateway-rhel7__JjoxnLm` | Not Successfully Evaluated | not available | not available | not available | not available | 88/20 | 16m 09s |
+| `wireguard-gateway-rhel7__JjoxnLm` | Not Successfully Evaluated | not available | not available | not available | not available | 88/12 (+8 dropped) | 16m 09s |
 
 ## Trial `wireguard-gateway-rhel7__JjoxnLm`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **16m 11s** with **1 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| not available | not available | not available | not available | not available | 88/20 |
+| not available | not available | not available | not available | not available | 88/12 (+8 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -67,15 +67,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-965de315dbcf4ec5` | node3 | 1 | `cat /etc/wireguard/wg0.conf \| grep -v PrivateKey` | cat: /etc/wireguard/wg0.conf: Permission denied |
 | `cmd-043f7c13e6554fe9` | node3 | 127 | `sudo -E env "PATH=/usr/local/bin:$PATH" WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go wg-quick up wg0 2>&1` | /usr/bin/wg-quick: line 32: ip: command not found; /usr/bin/wg-quick: line 32: ip: command not found |
 | `cmd-1ef59c0c3f084b65` | node3 | 1 | `sudo -E env "PATH=/usr/local/bin:/sbin:/usr/sbin:/usr/bin:/bin" WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go wg-quick up wg0 2>&1` | wg-quick: 'wg0' already exists |
-| `cmd-e08f4f227f274406` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-b19bc3532593455d` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-c477cff1086b4017` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-c3f32dcf11ab4e18` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-82e9c5c8d8c24fc8` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-4d0693df0d054f45` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-aa84810d15b94a55` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1` | ssh: connect to host 10.100.6.11 port 22: Connection timed out |
 | `cmd-81fea21f71ba41ca` | node3 | 28 | `curl -s -m 8 -o /dev/null -w "node3(via-tunnel)->node2:8080 = %{http_code}\n" http://10.100.6.11:8080/index.html` | node3(via-tunnel)->node2:8080 = 200; node3(direct-bypass)->node2:8080 = 000 |
-| `cmd-777f1c8a14d041ef` | node3 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1` | ssh: connect to host 10.100.6.12 port 22: Connection timed out |
 | `cmd-3b7f484263ec46ec` | node3 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1` | ssh: connect to host 10.100.6.12 port 22: Connection refused |
 | `cmd-b611f0038d084962` | node3 | 28 | `sudo systemctl is-active wg-quick@wg0` | post-restart node3(via-tunnel)->node2:8080 = 200; post-restart node3(direct-bypass)->node2:8080 = 000 |
 
@@ -1612,7 +1604,7 @@ curl -s -m 5 -o /dev/null -w &quot;post-restart node3(direct-bypass)-&gt;node2:8
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 20 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 12 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

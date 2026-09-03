@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **4m 45s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `application-log-rotation-rhel7__4RM4rhy` | Full Success | 1.000 | 1.000 | 1.000 | 0.700 | 12/5 | 4m 42s |
+| `application-log-rotation-rhel7__4RM4rhy` | Full Success | 1.000 | 1.000 | 1.000 | 0.700 | 12/3 (+2 dropped) | 4m 42s |
 
 ## Trial `application-log-rotation-rhel7__4RM4rhy`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **4m 45s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.700 | 0.850 | 12/5 |
+| 1.000 | 1.000 | 1.000 | 0.700 | 0.850 | 12/3 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -81,8 +81,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-eab04d95cb714887` | node1 | 127 | `cat /var/log/inventory/app.log; echo "---"; grep -rl "inventory/app.log" /etc/systemd/system /etc/cron* /usr/local 2>/dev/null; echo "---procs---"; ps aux \| grep -i inventory \| grep -v grep; echo "---which logrotate--...` | bash: logrotate: command not found |
 | `cmd-915bb3ad54f64f62` | node1 | 1 | `cat /etc/logrotate.conf; echo "---cron.daily---"; ls -la /etc/cron.daily/ \| grep -i logrotate; cat /etc/cron.daily/logrotate 2>/dev/null` | missingok |
 | `cmd-f29f296cfa604c53` | node1 | 1 | `cat > /etc/logrotate.d/inventory <<'EOF'` | bash: /etc/logrotate.d/inventory: Permission denied; chmod: cannot access ‘/etc/logrotate.d/inventory’: No such file or directory |
-| `cmd-c1c5bffa77194bde` | node1 | 255 | `echo probe; date` | ssh: connect to host 10.100.31.10 port 22: Connection timed out |
-| `cmd-4f8a6b2542ee425a` | node1 | 255 | `echo probe; date` | ssh: connect to host 10.100.31.10 port 22: Connection timed out |
 
 ### Timing
 
@@ -102,7 +100,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

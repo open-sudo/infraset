@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **7m 31s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `lan-to-lan-routing-rhel9__8s27Vd3` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 64/12 | 7m 29s |
+| `lan-to-lan-routing-rhel9__8s27Vd3` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 64/5 (+7 dropped) | 7m 29s |
 
 ## Trial `lan-to-lan-routing-rhel9__8s27Vd3`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **7m 31s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 64/12 |
+| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 64/5 (+7 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -132,13 +132,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-4d02e9048895479b` | node2 | 1 | `cat /etc/os-release \| head -3; echo ---; systemctl is-active systemd-networkd NetworkManager 2>&1; echo ---; ls /etc/netplan/ 2>/dev/null; echo ---; cat /etc/netplan/*.yaml 2>/dev/null` | ---; --- |
 | `cmd-40878d92566e4b11` | node2 | 7 | `curl -sS -m5 -o /dev/null -w "HTTP_STATUS:%{http_code}\n" http://10.50.20.12:8888/` | curl: (7) Failed to connect to 10.50.20.12 port 8888: No route to host |
 | `cmd-5ee22126146b494a` | node1 | 127 | `cat /proc/sys/kernel/random/boot_id; echo ---; uptime -s 2>/dev/null \|\| cat /proc/uptime; echo ---; ip -4 addr show eth1; ip -4 addr show eth2; echo ---; bash -c 'source /opt/vyatta/etc/functions/script-template; show...` | bash: line 1: show: command not found |
-| `cmd-bd89393cea404e30` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 110] Connection timed out |
-| `cmd-947d9760847a4673` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 110] Connection timed out |
-| `cmd-9e3723ce64e844ca` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 110] Connection timed out |
-| `cmd-ae98f4abae504b06` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 104] Connection reset by peer |
-| `cmd-d8a668460be94e84` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 104] Connection reset by peer |
-| `cmd-0c3c43e3b87942a6` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 110] Connection timed out |
-| `cmd-9757a953be3f419a` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOTUP` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -158,7 +151,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 12 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

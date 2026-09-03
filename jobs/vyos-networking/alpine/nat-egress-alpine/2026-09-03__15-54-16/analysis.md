@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 48s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `nat-egress-alpine__kABPA3s` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 45/18 | 5m 46s |
+| `nat-egress-alpine__kABPA3s` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 45/1 (+17 dropped) | 5m 46s |
 
 ## Trial `nat-egress-alpine__kABPA3s`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 48s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 45/18 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 45/1 (+17 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -88,23 +88,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-2ec979776620452b` | node1 | 1 | `show configuration commands \| grep -i nat` | Show failed |
-| `cmd-a7b284b407f74671` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-1c865f90fe6646dc` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-45d9e4e396cb4479` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-1c2669b09ffa455a` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-f7e3837d2f2a4920` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-3af2176c30984231` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-73487210d9d84f4f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-245d43b4e7ca49db` | node2 | -1 | `nohup /sbin/reboot >/tmp/reboot.log 2>&1 &` | exec stream closed before command completion |
-| `cmd-439e64f5e9be43bf` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-222eb80f0d1d4af5` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-a263b4f1a6354f08` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-84df3cb262c1429e` | node3 | -1 | `nohup /sbin/reboot >/tmp/reboot.log 2>&1 &` | exec stream closed before command completion |
-| `cmd-049e79aca788447d` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-9a74d44da80f4868` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-9b3eca80c858465e` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-55e92026789c425f` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-6084548a0a304acf` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -124,7 +107,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 18 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

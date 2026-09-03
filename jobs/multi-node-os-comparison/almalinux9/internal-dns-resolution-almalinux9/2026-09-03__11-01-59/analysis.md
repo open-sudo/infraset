@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 56s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-dns-resolution-almalinu__SKekgef` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 24/4 | 5m 54s |
+| `internal-dns-resolution-almalinu__SKekgef` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 24/2 (+2 dropped) | 5m 54s |
 
 ## Trial `internal-dns-resolution-almalinu__SKekgef`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 56s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.930 | 0.930 | 24/4 |
+| 1.000 | 1.000 | 1.000 | 0.930 | 0.930 | 24/2 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -91,8 +91,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-ee93b96af9ee470c` | node1 | 2 | `cat /etc/os-release \| head -3; echo ---; echo "NODE_IP=$NODE_IP"; echo "$CLUSTER_HOSTS"; echo ---; ss -tlnp \| grep -E ':53\b' ; rpm -q bind dnsmasq 2>&1` | package bind is not installed; package dnsmasq is not installed |
 | `cmd-042dd6ab42ed4eb3` | node1 | 2 | `dig @10.100.152.10 inventory-api.internal +short; echo ---; dig @10.100.152.10 node1 +short 2>&1; getent hosts node1 node2` | 127.0.1.1; fe80::dd50:b4ab:59f2:71ff node1 |
-| `cmd-569d4a6e7c494de3` | node1 | -1 | `echo "BOOT_ID:$(cat /proc/sys/kernel/random/boot_id)"` | [Errno 104] Connection reset by peer |
-| `cmd-45187cd2ab51402f` | node2 | -1 | `echo "BOOT_ID:$(cat /proc/sys/kernel/random/boot_id)"` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -112,7 +110,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

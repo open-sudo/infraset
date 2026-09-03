@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **3m 50s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `shared-nfs-storage-rhel9__WXBs2Yr` | Full Success | 1.000 | 1.000 | 1.000 | 0.880 | 29/8 | 3m 48s |
+| `shared-nfs-storage-rhel9__WXBs2Yr` | Full Success | 1.000 | 1.000 | 1.000 | 0.880 | 29/3 (+5 dropped) | 3m 48s |
 
 ## Trial `shared-nfs-storage-rhel9__WXBs2Yr`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **3m 50s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.880 | 0.930 | 29/8 |
+| 1.000 | 1.000 | 1.000 | 0.880 | 0.930 | 29/3 (+5 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -94,12 +94,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-e63d7d122cd94ef5` | node2 | 1 | `sudo mkdir -p /mnt/shared; showmount -e 10.100.107.10 2>&1` | clnt_create: RPC: Unable to receive |
 | `cmd-c2dbaeadea794c5d` | node2 | 2 | `ls -ld /mnt/shared; sudo -u dataops touch /mnt/shared/from_node2.txt; ls -l /mnt/shared` | ls: cannot open directory '/mnt/shared': Permission denied |
-| `cmd-8554ad3816244fa6` | node1 | -1 | `echo probe` | [Errno 110] Connection timed out |
-| `cmd-5a9b8a8e440d42c6` | node1 | -1 | `echo probe` | [Errno 110] Connection timed out |
 | `cmd-f317537657604215` | node2 | 2 | `mount \| grep /mnt/shared; sudo -u dataops touch /mnt/shared/post_node1_restart.txt; ls -l /mnt/shared` | ls: cannot open directory '/mnt/shared': Permission denied |
-| `cmd-59c26974bf2b4d1f` | node2 | -1 | `echo probe` | [Errno 110] Connection timed out |
-| `cmd-45eb1007be6043b5` | node2 | -1 | `echo probe` | [Errno 110] Connection timed out |
-| `cmd-f2444956ec5b4520` | node2 | -1 | `echo probe` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -119,7 +114,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

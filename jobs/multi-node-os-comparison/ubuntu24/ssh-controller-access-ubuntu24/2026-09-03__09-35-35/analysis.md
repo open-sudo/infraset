@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **4m 36s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ssh-controller-access-ubuntu24__hoDN4fW` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 29/14 | 4m 33s |
+| `ssh-controller-access-ubuntu24__hoDN4fW` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 29/10 (+4 dropped) | 4m 33s |
 
 ## Trial `ssh-controller-access-ubuntu24__hoDN4fW`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **4m 36s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.920 | 29/14 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.920 | 29/10 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -120,10 +120,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-fa62d11e5f6943d9` | node1 | 255 | `ssh-keygen -A && ls -la /etc/ssh/ssh_host* && sshd -t && echo CONFIG_OK` | Missing privilege separation directory: /run/sshd |
 | `cmd-69ad5474315e4654` | node2 | 255 | `ssh-keygen -A && ls -la /etc/ssh/ssh_host* && sshd -t && echo CONFIG_OK` | Missing privilege separation directory: /run/sshd |
 | `cmd-fa4639cb7d54408c` | node1 | 1 | `cat /usr/lib/systemd/system/ssh.service; echo ---; ls /usr/lib/tmpfiles.d/ \| grep -i ssh; cat /usr/lib/tmpfiles.d/*ssh* 2>/dev/null` | Restart=on-failure; RestartPreventExitStatus=255 |
-| `cmd-b65a6f2c298c4808` | node1 | -1 | `nohup shutdown -r now >/tmp/reboot.log 2>&1 & disown; sleep 1; echo ack` | exec stream closed before command completion |
-| `cmd-546bbd25952b40fa` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-834b9aaaa99b4be9` | node2 | -1 | `nohup shutdown -r now >/tmp/reboot.log 2>&1 & disown; sleep 1; echo ack` | exec stream closed before command completion |
-| `cmd-507fe096ada743a1` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -143,7 +139,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 14 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 10 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

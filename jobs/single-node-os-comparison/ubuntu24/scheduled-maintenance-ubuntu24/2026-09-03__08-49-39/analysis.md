@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 28s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `scheduled-maintenance-ubuntu24__bkPkJ9H` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 11/4 | 2m 26s |
+| `scheduled-maintenance-ubuntu24__bkPkJ9H` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 11/1 (+3 dropped) | 2m 26s |
 
 ## Trial `scheduled-maintenance-ubuntu24__bkPkJ9H`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 28s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 11/4 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 11/1 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -88,9 +88,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-439ed641504749a8` | node1 | 1 | `ls -la /usr/local/bin/inventory-maintenance 2>&1; echo ---; which crontab; systemctl is-active cron cron.service crond 2>&1; echo ---; crontab -l 2>&1` | ---; no crontab for root |
-| `cmd-3b6f531de0024c14` | node1 | -1 | `echo "BOOT_ID:$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-46fbd6c6a7b34411` | node1 | -1 | `echo "BOOT_ID:$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-9743713dc2894e49` | node1 | -1 | `echo "BOOT_ID:$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -110,7 +107,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

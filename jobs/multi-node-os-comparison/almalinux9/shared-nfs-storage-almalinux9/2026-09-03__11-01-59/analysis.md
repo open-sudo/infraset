@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **5m 48s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `shared-nfs-storage-almalinux9__wPkdWnG` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 24/7 | 5m 46s |
+| `shared-nfs-storage-almalinux9__wPkdWnG` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 24/3 (+4 dropped) | 5m 46s |
 
 ## Trial `shared-nfs-storage-almalinux9__wPkdWnG`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **5m 48s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 24/7 |
+| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 24/3 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -103,10 +103,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-9cdc47be25034ee9` | node1 | 1 | `cat /etc/os-release \| head -5; echo "---"; id dataops 2>&1; echo "---"; ls -la /srv/nfs/shared 2>&1; echo "---"; rpm -q nfs-utils 2>&1` | ls: cannot access '/srv/nfs/shared': No such file or directory |
 | `cmd-70b306ebf4f74fc7` | node2 | 1 | `cat /etc/os-release \| head -5; echo "---"; id dataops 2>&1; echo "---"; ls -la /mnt/shared 2>&1; echo "---"; rpm -q nfs-utils 2>&1` | ls: cannot access '/mnt/shared': No such file or directory |
 | `cmd-177fde8b24994bbe` | node2 | 2 | `sudo -u dataops -- touch /mnt/shared/from_node2.txt && ls -la /mnt/shared/` | ls: cannot open directory '/mnt/shared/': Permission denied |
-| `cmd-812972fc88734f95` | node1 | -1 | `nohup systemctl reboot >/dev/null 2>&1 & sleep 1; echo "reboot issued"` | exec stream closed before command completion |
-| `cmd-0c56c1db45cb42c3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-c58b25b6db564041` | node2 | -1 | `nohup systemctl reboot >/dev/null 2>&1 & sleep 1; echo "reboot issued"` | exec stream closed before command completion |
-| `cmd-385a5abc6d3c417d` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -126,7 +122,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

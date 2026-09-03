@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 30s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `repair-application-permissions-r__vcEbau6` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 13/5 | 2m 24s |
+| `repair-application-permissions-r__vcEbau6` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 13/2 (+3 dropped) | 2m 24s |
 
 ## Trial `repair-application-permissions-r__vcEbau6`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 30s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 13/5 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 13/2 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -87,9 +87,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-3989b841e5874848` | node1 | 1 | `cat /srv/inventory/data/records.csv; echo ---; cat /srv/inventory/data/config.json; echo ---; getent group \| grep -i invent; getent passwd \| grep -i invent` | {"site":"north","generation":4}; --- |
 | `cmd-bfd0852e7a714984` | node1 | 2 | `groupadd -f inventory-readers && id -u inventorysvc >/dev/null 2>&1 \|\| useradd -r -M -s /sbin/nologin -g inventorysvc inventorysvc 2>&1; getent passwd inventorysvc; getent group inventorysvc` | useradd: group 'inventorysvc' does not exist |
-| `cmd-0a5c93a1b78142e1` | node1 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-b32a8f2a756e44c4` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-7266d58805da40fa` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -109,7 +106,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

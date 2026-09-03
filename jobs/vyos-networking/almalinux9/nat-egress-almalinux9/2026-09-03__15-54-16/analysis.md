@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **6m 43s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `nat-egress-almalinux9__hHJkBnK` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 43/6 | 6m 40s |
+| `nat-egress-almalinux9__hHJkBnK` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 43/2 (+4 dropped) | 6m 40s |
 
 ## Trial `nat-egress-almalinux9__hHJkBnK`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **6m 43s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.930 | 43/6 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.930 | 43/2 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -90,10 +90,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-6ecaf569e6e34fcf` | node1 | 1 | `show configuration commands \| grep -E "firewall\|nat\|interfaces ethernet\|forwarding"` | Show failed |
 | `cmd-42f3b89beb18498f` | node2 | 1 | `ping -I eth1 -c4 -W2 1.1.1.1` | --- 1.1.1.1 ping statistics ---; 4 packets transmitted, 0 received, 100% packet loss, time 3111ms |
-| `cmd-b9f798755d194799` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-21e97aa547cb4fee` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-a226b8126ced4c65` | node2 | -1 | `(nohup reboot >/tmp/reboot.log 2>&1 &) ; sleep 1; echo ack_sent` | exec stream closed before command completion |
-| `cmd-74351d8840cf4a93` | node3 | -1 | `(nohup reboot >/tmp/reboot.log 2>&1 &) ; sleep 1; echo ack_sent` | exec stream closed before command completion |
 
 ### Timing
 
@@ -113,7 +109,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

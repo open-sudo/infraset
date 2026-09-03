@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **5m 40s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `account-resource-limits-alpine__PcKXXTZ` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 22/17 | 5m 37s |
+| `account-resource-limits-alpine__PcKXXTZ` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 22/5 (+12 dropped) | 5m 37s |
 
 ## Trial `account-resource-limits-alpine__PcKXXTZ`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **5m 40s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.820 | 22/17 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.820 | 22/5 (+12 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -89,18 +89,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-83eead7a86544da5` | node1 | 1 | `grep -Ei '^(PasswordAuthentication\|PermitRootLogin\|UsePAM)' /etc/ssh/sshd_config; grep -i AllowUsers /etc/ssh/sshd_config` | No error text was captured. |
 | `cmd-05a8b340c174435c` | node1 | 1 | `grep -i ulimit /etc/rc.conf; cat /etc/conf.d/sshd 2>&1; grep -i ulimit /etc/conf.d/sshd 2>&1` | #; #rsa_bit_size="3072" |
 | `cmd-b2036507277446dd` | node1 | 255 | `ssh -i ~/.ssh/id_ed25519_cluster -o StrictHostKeyChecking=no -o BatchMode=yes root@"$NODE_IP" 'echo "root nofile soft=$(ulimit -Sn) hard=$(ulimit -Hn) nproc soft=$(ulimit -Su)"'` | Sensitive error output was omitted. |
-| `cmd-dd3e854664554795` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-0c0e3d28ebd94664` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 110] Connection timed out |
-| `cmd-3e000fa2a9bb4eca` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 110] Connection timed out |
-| `cmd-3741ac5620a24bd0` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 110] Connection timed out |
-| `cmd-2793fedceaad41e8` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-6ceb6ca4eaba4aab` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-3ba96e31cef14ac1` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-a3388789f4934a38` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-e2078ea5a6184d7e` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-36af9f4e703d48c7` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-b55a378f9ca84a06` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
-| `cmd-1d46bb6913d3455a` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -120,7 +108,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 17 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

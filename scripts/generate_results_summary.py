@@ -137,11 +137,33 @@ def command_audit_paths(trial_dir: Path) -> tuple[list[Path], str]:
     return [], "unavailable"
 
 
+# A command whose exec channel dropped never reached the managed node. These
+# are dominated by the deliberate post-reboot liveness polling required by the
+# restart-evidence protocol, so counting them as failures measures how slowly
+# an image restores sshd rather than anything about the execution itself.
+_TRANSPORT_FAILURE = re.compile(
+    r"connection reset by peer"
+    r"|connection timed out"
+    r"|closed by remote host"
+    r"|exec stream closed",
+    re.IGNORECASE,
+)
+
+
+def is_transport_failure(record: dict[str, Any]) -> bool:
+    """Report whether a non-zero command failed in transit rather than on the node."""
+    for field in ("stderr", "error"):
+        value = record.get(field)
+        if isinstance(value, str) and _TRANSPORT_FAILURE.search(value):
+            return True
+    return False
+
+
 def command_audit_stats(trial_dir: Path) -> dict[str, Any]:
     paths, status = command_audit_paths(trial_dir)
     requested: set[str] = set()
     terminal: set[str] = set()
-    successful = failed = anonymous = 0
+    successful = failed = transport = anonymous = 0
     for path in paths:
         for line in path.read_text(errors="replace").splitlines():
             try:
@@ -163,12 +185,16 @@ def command_audit_stats(trial_dir: Path) -> dict[str, Any]:
             if outcome == "completed" and return_code == 0:
                 successful += 1
             elif outcome == "completed" and isinstance(return_code, int):
-                failed += 1
+                if is_transport_failure(record):
+                    transport += 1
+                else:
+                    failed += 1
     return {
         "status": status,
         "issued": len(requested | terminal),
         "successful": successful,
         "failed": failed,
+        "transport": transport,
         "unfinished": len(requested - terminal),
     }
 

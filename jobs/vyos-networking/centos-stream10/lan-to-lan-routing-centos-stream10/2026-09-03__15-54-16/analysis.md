@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **7m 20s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `lan-to-lan-routing-centos-stream__nLNpSv2` | Full Success | 1.000 | 1.000 | 1.000 | 0.780 | 53/19 | 7m 18s |
+| `lan-to-lan-routing-centos-stream__nLNpSv2` | Full Success | 1.000 | 1.000 | 1.000 | 0.780 | 53/8 (+11 dropped) | 7m 18s |
 
 ## Trial `lan-to-lan-routing-centos-stream__nLNpSv2`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **7m 20s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.780 | 0.920 | 53/19 |
+| 1.000 | 1.000 | 1.000 | 0.780 | 0.920 | 53/8 (+11 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -110,17 +110,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-87ac27b382a14ffb` | node2 | 7 | `curl -sS -m 3 -o /dev/null -w "http_code=%{http_code}\n" http://10.50.2.12:8765/` | curl: (7) Failed to connect to 10.50.2.12 port 8765 after 1 ms: Could not connect to server |
 | `cmd-a9818543f8cb4342` | node3 | 143 | `pkill -f "http.server 8765" 2>/dev/null; echo cleaned` | Terminated |
 | `cmd-054a4692c62a4088` | node2 | 143 | `pkill -f "http.server 9999" 2>/dev/null; echo cleaned` | Terminated |
-| `cmd-ed7facdf1ed04404` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 110] Connection timed out |
-| `cmd-3a9baf593d0047ae` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 110] Connection timed out |
-| `cmd-3e731fb80d84449e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 110] Connection timed out |
-| `cmd-f476811ba69348a4` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 110] Connection timed out |
-| `cmd-5224b3b777d94513` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 104] Connection reset by peer |
-| `cmd-297794e244984373` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 104] Connection reset by peer |
-| `cmd-e884f679c5c34ce9` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 104] Connection reset by peer |
-| `cmd-77d3f19cdc074b91` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 110] Connection timed out |
-| `cmd-ff6ea1f652694db9` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 104] Connection reset by peer |
-| `cmd-63a9d6f69ca84e8f` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 110] Connection timed out |
-| `cmd-b4857985c2044c6d` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo unreachable` | [Errno 104] Connection reset by peer |
 | `cmd-f42421c9617544d7` | node3 | 143 | `sleep 2; cat /tmp/tcpdump2.log; pkill -f "http.server 7777" 2>/dev/null; echo cleaned` | 0 packets dropped by kernel; Terminated |
 
 ### Timing
@@ -141,7 +130,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 19 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

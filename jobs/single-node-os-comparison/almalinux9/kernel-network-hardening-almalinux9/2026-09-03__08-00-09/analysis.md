@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 11s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `kernel-network-hardening-almalin__afa436W` | Full Success | 1.000 | 1.000 | 1.000 | 0.970 | 11/2 | 2m 06s |
+| `kernel-network-hardening-almalin__afa436W` | Full Success | 1.000 | 1.000 | 1.000 | 0.970 | 11/1 (+1 dropped) | 2m 06s |
 
 ## Trial `kernel-network-hardening-almalin__afa436W`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 11s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.970 | 0.950 | 11/2 |
+| 1.000 | 1.000 | 1.000 | 0.970 | 0.950 | 11/1 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -88,7 +88,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-12ac2bccdd6d4859` | node1 | 2 | `grep -rl "accept_redirects\\|accept_source_route" /etc/sysctl.conf /etc/sysctl.d/ /usr/lib/sysctl.d/ /run/sysctl.d/ 2>/dev/null` | /etc/sysctl.d/60-network-hardening.conf; /usr/lib/sysctl.d/50-default.conf |
-| `cmd-f2391c05f3dd466d` | node1 | -1 | `sleep 5; cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -108,7 +107,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

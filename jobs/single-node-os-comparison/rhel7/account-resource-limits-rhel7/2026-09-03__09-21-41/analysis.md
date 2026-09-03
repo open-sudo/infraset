@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **3m 27s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `account-resource-limits-rhel7__CmmHBZR` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 9/2 | 3m 24s |
+| `account-resource-limits-rhel7__CmmHBZR` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 9/1 (+1 dropped) | 3m 24s |
 
 ## Trial `account-resource-limits-rhel7__CmmHBZR`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **3m 27s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 9/2 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 9/1 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -83,7 +83,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-e2453609730c4930` | node1 | 2 | `cat /etc/os-release; id appworker 2>&1; getent passwd appworker 2>&1` | REDHAT_SUPPORT_PRODUCT_VERSION="7.9"; id: appworker: no such user |
-| `cmd-0393c76932894b6a` | node1 | 255 | `echo probe` | ssh: connect to host 10.100.101.10 port 22: Connection timed out |
 
 ### Timing
 
@@ -103,7 +102,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

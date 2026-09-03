@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **6m 09s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `nat-egress-ubuntu24__iqy9zWM` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 40/10 | 6m 07s |
+| `nat-egress-ubuntu24__iqy9zWM` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 40/3 (+7 dropped) | 6m 07s |
 
 ## Trial `nat-egress-ubuntu24__iqy9zWM`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **6m 09s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 40/10 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 40/3 (+7 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -110,13 +110,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-6514b3899d454d91` | node3 | 1 | `ls /run/systemd/network/ 2>/dev/null; echo ---; cat /run/systemd/network/*.network 2>/dev/null` | --- |
 | `cmd-a0c1b1a8357d4231` | node1 | 127 | `sysctl net.ipv4.ip_forward net.ipv4.conf.eth0.forwarding net.ipv4.conf.eth1.forwarding; echo ---; show nat source rules; echo ---; show interfaces` | bash: line 1: show: command not found; bash: line 1: show: command not found |
 | `cmd-ac82681d15e14eb0` | node1 | 127 | `curl -s -m 6 --interface eth0 https://api.ipify.org; echo; echo ---; op-command(){ vbash -c "$1"; } 2>/dev/null; vbash -c "show nat source rules" 2>&1 \|\| bash -c 'source /opt/vyatta/etc/functions/script-template; run ...` | Invalid command: [show]; bash: line 1: run: command not found |
-| `cmd-b837b18d01ce4ba9` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-c3010af0af6746e4` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-5c221bbbd0314b7a` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-8c7f7c0234c84ff4` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-7339f79dfacd42f2` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-b34d8c2a727047b0` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-a6edcf2ed8b64d95` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -136,7 +129,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 10 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

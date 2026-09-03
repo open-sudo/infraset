@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **3m 00s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ssh-key-only-alpine__TYF5ij9` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 16/6 | 2m 58s |
+| `ssh-key-only-alpine__TYF5ij9` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 16/2 (+4 dropped) | 2m 58s |
 
 ## Trial `ssh-key-only-alpine__TYF5ij9`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **3m 00s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 16/6 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 16/2 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -86,10 +86,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-ac11a844caef4a9d` | node1 | 1 | `passwd -l opsadmin && passwd -s opsadmin` | Sensitive error output was omitted. |
 | `cmd-198ce2c0fc354388` | node1 | 1 | `ss -tlnp \| grep :22; cat /home/opsadmin/.ssh/authorized_keys; ls -la /home/opsadmin/.ssh; passwd -s opsadmin` | bash: line 1: ss: command not found; ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINMKA2+oNHxgmpABaV61Sar8lVW2YxSL8Aw9d7b5yLh1 os-comparison@example.invalid |
-| `cmd-ba77293195974588` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-290e17e461984aa7` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-26e8cc94cf44452b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-7be8e2991b0b407f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -109,7 +105,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

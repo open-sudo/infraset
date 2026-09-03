@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **4m 52s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `repair-application-permissions-r__PZhLADj` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 12/5 | 4m 50s |
+| `repair-application-permissions-r__PZhLADj` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 12/4 (+1 dropped) | 4m 50s |
 
 ## Trial `repair-application-permissions-r__PZhLADj`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **4m 52s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 12/5 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 12/4 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -98,7 +98,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-7aab1af9cfec4eef` | node1 | 2 | `groupadd inventory-readers 2>&1; useradd -r -M -s /sbin/nologin -g inventorysvc inventorysvc 2>&1; getent group inventorysvc` | bash: groupadd: command not found; bash: useradd: command not found |
 | `cmd-6f36a8f1fd124f27` | node1 | 1 | `find /srv/inventory -exec ls -lad {} \; ; echo ---; sha256sum /srv/inventory/data/*` | find: ‘/srv/inventory’: Permission denied; sha256sum: /srv/inventory/data/*: Permission denied |
 | `cmd-195851fcc8ae4c2c` | node1 | 1 | `sudo find /srv/inventory -exec ls -lad {} \; ; echo ---; sudo sha256sum /srv/inventory/data/*` | -rw-r-----. 1 inventorysvc inventory-readers 32 Aug 26 10:34 /srv/inventory/data/config.json; --- |
-| `cmd-008e0f9f8d9b4952` | node1 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1` | ssh: connect to host 10.100.254.10 port 22: Connection timed out |
 
 ### Timing
 
@@ -118,7 +117,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 37s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `load-balanced-web-tier-rhel7__HKpLuEV` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 32/8 | 5m 35s |
+| `load-balanced-web-tier-rhel7__HKpLuEV` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 32/1 (+7 dropped) | 5m 35s |
 
 ## Trial `load-balanced-web-tier-rhel7__HKpLuEV`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 37s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 32/8 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 32/1 (+7 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -116,13 +116,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-2fdbb9c56c59467b` | node1 | 1 | `ls /etc/yum.repos.d/; echo ---; rpm -qa \| grep -iE 'nginx\|httpd\|haproxy'; echo ---; yum list installed 2>&1 \| grep -iE 'nginx\|httpd\|haproxy'` | ---; --- |
-| `cmd-04b6beab27bc455c` | node2 | 255 | `sudo systemctl reboot` | Connection to 10.100.4.11 closed by remote host. |
-| `cmd-0a34b37036754ee8` | node2 | 255 | `echo up` | ssh: connect to host 10.100.4.11 port 22: Connection timed out |
-| `cmd-58c2ed3b4c3d4e06` | node2 | 255 | `echo up` | ssh: connect to host 10.100.4.11 port 22: Connection timed out |
-| `cmd-58c207de681f4cb5` | node3 | 255 | `sudo systemctl reboot` | Connection to 10.100.4.12 closed by remote host. |
-| `cmd-5b43dd87e83d4719` | node3 | 255 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s; sudo systemctl is-active inventory-app.service; curl -s http://127.0.0.1:8080/health; echo; sudo firewall-cmd --list-ports` | ssh: connect to host 10.100.4.12 port 22: Connection timed out |
-| `cmd-685d5d1e0a814dbe` | node1 | 255 | `sudo systemctl reboot` | Connection to 10.100.4.10 closed by remote host. |
-| `cmd-25ffa4c5987349b8` | node1 | 255 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s; sudo systemctl is-active inventory-lb.service; sudo firewall-cmd --list-ports` | ssh: connect to host 10.100.4.10 port 22: Connection timed out |
 
 ### Timing
 
@@ -142,7 +135,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **6m 12s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `dhcp-server-rhel9__c7w9kwi` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 34/10 | 6m 10s |
+| `dhcp-server-rhel9__c7w9kwi` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 34/2 (+8 dropped) | 6m 10s |
 
 ## Trial `dhcp-server-rhel9__c7w9kwi`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **6m 12s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.920 | 34/10 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.920 | 34/2 (+8 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -112,14 +112,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-2deeb6295e4e451f` | node1 | 127 | `ip -br link; echo ---; bash -c 'source /opt/vyatta/etc/functions/script-template; show interfaces'` | pim6reg@NONE UNKNOWN <NOARP,UP,LOWER_UP>; bash: line 1: show: command not found |
 | `cmd-9a0f9d30c4a9444d` | node1 | 1 | `ip -4 addr show eth1; echo ---; systemctl is-active kea-dhcp4-server 2>&1; systemctl is-active isc-dhcp-server 2>&1; echo ---; ss -lunp \| grep -i 67 \|\| true; echo ---; bash -c 'source /opt/vyatta/etc/functions/script-...` | bash: line 1: run: command not found |
-| `cmd-7c075875f35a46fe` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-d9f1098a0f634662` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
-| `cmd-28c763a66ba34edb` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
-| `cmd-097a3d97fe984f3a` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-b2da6f47e6924270` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-b573e7fc4155479b` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
-| `cmd-20ceebbc22b545dc` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
-| `cmd-f9f18416e65d4a60` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -139,7 +131,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 10 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

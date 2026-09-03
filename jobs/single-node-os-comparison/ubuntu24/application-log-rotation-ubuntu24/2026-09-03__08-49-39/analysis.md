@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 30s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `application-log-rotation-ubuntu2__KrX8WQw` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 12/3 | 2m 27s |
+| `application-log-rotation-ubuntu2__KrX8WQw` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 12/1 (+2 dropped) | 2m 27s |
 
 ## Trial `application-log-rotation-ubuntu2__KrX8WQw`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 30s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 12/3 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 12/1 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -83,8 +83,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-280a2209945f4401` | node1 | 1 | `ls -la /var/log/inventory/ 2>&1; echo ---; cat /etc/logrotate.d/* 2>&1 \| head -100; echo ---; ps aux \| grep -i inventory; echo ---; systemctl list-units --type=service --all \| grep -i inventory` | missingok; missingok |
-| `cmd-0ee707a240344c67` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-f4cba4d0e8e04022` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -104,7 +102,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

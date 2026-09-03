@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **4m 43s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `network-scoped-firewall-centos-s__GCCS37W` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 31/4 | 4m 41s |
+| `network-scoped-firewall-centos-s__GCCS37W` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 31/1 (+3 dropped) | 4m 41s |
 
 ## Trial `network-scoped-firewall-centos-s__GCCS37W`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **4m 43s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 31/4 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 31/1 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -116,9 +116,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-d66ab38d0ebb4a39` | node2 | 127 | `nc -zv -w3 10.100.168.10 22 2>&1` | bash: line 1: nc: command not found |
-| `cmd-635a2ea54ec34d3b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-10413a227fb84b13` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-2237f10cf27e4e61` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -138,7 +135,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

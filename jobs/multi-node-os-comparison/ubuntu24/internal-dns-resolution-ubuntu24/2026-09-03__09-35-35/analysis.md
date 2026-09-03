@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **3m 21s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-dns-resolution-ubuntu24__PmeF3vm` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 23/3 | 3m 19s |
+| `internal-dns-resolution-ubuntu24__PmeF3vm` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 23/1 (+2 dropped) | 3m 19s |
 
 ## Trial `internal-dns-resolution-ubuntu24__PmeF3vm`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **3m 21s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.920 | 23/3 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.920 | 23/1 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -102,8 +102,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-b8915911ab1c4cd4` | node2 | 1 | `ls /etc/netplan/ 2>/dev/null; cat /etc/netplan/*.yaml 2>/dev/null` | No error text was captured. |
-| `cmd-36bbf28553c449d3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-f42126468cee42dd` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -123,7 +121,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

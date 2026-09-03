@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **3m 42s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-time-sync-ubuntu24__muiWxK4` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 24/3 | 3m 40s |
+| `internal-time-sync-ubuntu24__muiWxK4` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 24/0 (+3 dropped) | 3m 40s |
 
 ## Trial `internal-time-sync-ubuntu24__muiWxK4`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **3m 42s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 24/3 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 24/0 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -92,13 +92,7 @@ Hygiene evidence: `cmd-b829fe282c504b95`, `cmd-2500f01e574f469e`, `global:after_
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-0c066a1d317b498a` | node1 | -1 | `cat /tmp/reboot.log 2>&1; sudo -n true && echo SUDO_OK` | [Errno 110] Connection timed out |
-| `cmd-8c50c8f175124dff` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-6d55fac9e95044d4` | node2 | -1 | `echo up` | [Errno 110] Connection timed out |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -118,7 +112,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

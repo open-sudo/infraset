@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **8m 47s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `cross-lan-firewall-alpine__o86eHSU` | Full Success | 1.000 | 1.000 | 1.000 | 0.780 | 62/25 | 8m 45s |
+| `cross-lan-firewall-alpine__o86eHSU` | Full Success | 1.000 | 1.000 | 1.000 | 0.780 | 62/4 (+21 dropped) | 8m 45s |
 
 ## Trial `cross-lan-firewall-alpine__o86eHSU`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **8m 47s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.780 | 0.880 | 62/25 |
+| 1.000 | 1.000 | 1.000 | 0.780 | 0.880 | 62/4 (+21 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -115,30 +115,9 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-e4abfb3e9c944ba1` | node1 | 127 | `bash -c '` | bash: line 10: show: command not found |
-| `cmd-61370c8c680a4126` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 110] Connection timed out |
-| `cmd-e36fa2620e2846e1` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 110] Connection timed out |
-| `cmd-4bd10db75cb74e98` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 110] Connection timed out |
-| `cmd-1c1efdac12bd418b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 110] Connection timed out |
-| `cmd-05883212788c4493` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 110] Connection timed out |
-| `cmd-a8d4da9dea594e10` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-5c97dd7dd5ff4400` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-e3ba2cb1393a44b3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-af9c5583f2644d9d` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
 | `cmd-964542453d1a48a3` | node2 | 1 | `nohup nc -lk -p 5432 -e /bin/echo "hello5432" >/tmp/nc5432b.log 2>&1 & echo $! > /tmp/nc5432b.pid` | --- 10.50.20.12 ping statistics ---; 2 packets transmitted, 0 packets received, 100% packet loss |
 | `cmd-eb3007cb8e8041fb` | node3 | 1 | `nohup nc -lk -p 5432 -e /bin/echo "hello5432" >/tmp/nc5432.log 2>&1 & echo $! > /tmp/nc5432.pid` | No error text was captured. |
 | `cmd-52ae1947af3f4f82` | node3 | 127 | `ss -tlnp 2>/dev/null` | No error text was captured. |
-| `cmd-558347eec1c94979` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-0da44f2bba4f477c` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 110] Connection timed out |
-| `cmd-fbfca6f54f204343` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 110] Connection timed out |
-| `cmd-3819bf9a046445bb` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-92d828a4878143a4` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-a9caffcce12f40c5` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-3ff1615e626240fc` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 110] Connection timed out |
-| `cmd-0756beb505e7417c` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 110] Connection timed out |
-| `cmd-ae54f8d1ab27449b` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-a06b81fc9c974def` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-32f3f64a137c4967` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
-| `cmd-984ca9cfa385428e` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo "DOWN"` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -158,7 +137,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 25 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

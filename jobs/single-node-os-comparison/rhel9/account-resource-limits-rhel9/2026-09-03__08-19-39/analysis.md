@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 22s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `account-resource-limits-rhel9__YAxA46s` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 8/3 | 2m 15s |
+| `account-resource-limits-rhel9__YAxA46s` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 8/1 (+2 dropped) | 2m 15s |
 
 ## Trial `account-resource-limits-rhel9__YAxA46s`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 22s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 8/3 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 8/1 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -79,8 +79,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-d1e7e4bca1af41a6` | node1 | 1 | `cat /etc/os-release \| head -5; id appworker 2>&1` | VERSION_ID="9.8"; id: ‘appworker’: no such user |
-| `cmd-3fd96df588ef4a75` | node1 | -1 | `echo "BOOT_ID_AFTER=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-a6c7f8bd70964d33` | node1 | -1 | `echo "BOOT_ID_AFTER=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -100,7 +98,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

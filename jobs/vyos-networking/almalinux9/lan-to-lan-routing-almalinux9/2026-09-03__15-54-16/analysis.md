@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 34s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `lan-to-lan-routing-almalinux9__otVb5Wg` | Full Success | 1.000 | 1.000 | 1.000 | 0.880 | 58/15 | 5m 31s |
+| `lan-to-lan-routing-almalinux9__otVb5Wg` | Full Success | 1.000 | 1.000 | 1.000 | 0.880 | 58/3 (+12 dropped) | 5m 31s |
 
 ## Trial `lan-to-lan-routing-almalinux9__otVb5Wg`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 34s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.880 | 0.920 | 58/15 |
+| 1.000 | 1.000 | 1.000 | 0.880 | 0.920 | 58/3 (+12 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -119,18 +119,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-590c677b22504475` | node3 | 2 | `cat /tmp/nc_recv.log; echo "---tcpdump---"; cat /tmp/tcpdump.log; which nc ncat socat python3` | nohup: failed to run command 'nc': No such file or directory |
 | `cmd-75ee6efeca5248eb` | node3 | 1 | `cat /tmp/socat_recv.log; ss -tlnp \| grep 5201` | 2026/09/03 15:56:02 socat[1365] E bind(8, {AF=2 0.0.0.0:5201}, 16): Address already in use |
 | `cmd-703c3b9c597748c9` | node3 | 143 | `pkill -f "socat.*5201" 2>&1; rm -f /tmp/socat_recv*.log /tmp/tcpdump*.log /tmp/nc_recv.log; firewall-cmd --zone=public --remove-port=5201/tcp; firewall-cmd --zone=public --list-ports` | Terminated |
-| `cmd-635faee53861499c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-c32e7849388b4279` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-d4190028cae04447` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-961f753863e04a6e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-97a43f74f9954b33` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-87dd1feda06047f5` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-937b7a44844e4482` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-4d6dba13d8654ffb` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-39e6d4abd8e54aa0` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-4f9555335c38470f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-a9b63d5f194c4445` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-f821f878e953475a` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -150,7 +138,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 15 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

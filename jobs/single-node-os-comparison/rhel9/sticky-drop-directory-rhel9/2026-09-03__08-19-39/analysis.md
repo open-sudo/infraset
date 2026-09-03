@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **3m 15s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `sticky-drop-directory-rhel9__EsJNKeY` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 11/3 | 3m 09s |
+| `sticky-drop-directory-rhel9__EsJNKeY` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 11/1 (+2 dropped) | 3m 09s |
 
 ## Trial `sticky-drop-directory-rhel9__EsJNKeY`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **3m 15s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 11/3 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 11/1 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -89,8 +89,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-60a525ee7360410a` | node1 | 1 | `pkill -u dropuser1 2>&1; pkill -u dropuser2 2>&1; sleep 1; userdel -rf dropuser1 2>&1; userdel -rf dropuser2 2>&1; id dropuser1 2>&1; id dropuser2 2>&1` | id: ‘dropuser1’: no such user; id: ‘dropuser2’: no such user |
-| `cmd-b93fe6ebfc264026` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-b03377a9ad864123` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -110,7 +108,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

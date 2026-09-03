@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 47s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ssh-key-only-ubuntu24__Q54RPhw` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 19/4 | 2m 45s |
+| `ssh-key-only-ubuntu24__Q54RPhw` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 19/3 (+1 dropped) | 2m 45s |
 
 ## Trial `ssh-key-only-ubuntu24__Q54RPhw`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 47s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 19/4 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 19/3 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -89,7 +89,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-dc74469fce494a64` | node1 | 2 | `id opsadmin 2>&1; echo '---'; cat /etc/ssh/sshd_config; echo '---'; ls -la /home/opsadmin/.ssh 2>&1` | ls: cannot access '/home/opsadmin/.ssh': No such file or directory |
 | `cmd-96be26e9f1974aab` | node1 | 255 | `sudo ssh-keygen -A` | Missing privilege separation directory: /run/sshd |
 | `cmd-80ac1d609efa44b5` | node1 | 1 | `grep -r sshd /usr/lib/tmpfiles.d/ /etc/tmpfiles.d/ 2>/dev/null` | No error text was captured. |
-| `cmd-dca65da390154ee3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -109,7 +108,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

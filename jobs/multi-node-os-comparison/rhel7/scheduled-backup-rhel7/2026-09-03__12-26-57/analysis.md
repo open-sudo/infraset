@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **5m 36s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `scheduled-backup-rhel7__SGe9MZD` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 22/7 | 5m 34s |
+| `scheduled-backup-rhel7__SGe9MZD` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 22/1 (+6 dropped) | 5m 34s |
 
 ## Trial `scheduled-backup-rhel7__SGe9MZD`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **5m 36s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 22/7 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 22/1 (+6 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -83,12 +83,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-54be9deb298b47d0` | node1 | 255 | `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 antrieb@"$NODE_IP" true 2>&1` | node2 ip: 10.100.104.11; command-line line 0: unsupported option "accept-new". |
-| `cmd-56393e7ec53c49c9` | node1 | 255 | `sudo systemctl reboot &` | Connection to 10.100.104.10 closed by remote host. |
-| `cmd-bd26f30cf06142e7` | node1 | 255 | `echo up` | ssh: connect to host 10.100.104.10 port 22: Connection timed out |
-| `cmd-20d4f885152f49ce` | node1 | 255 | `echo up` | ssh: connect to host 10.100.104.10 port 22: Connection timed out |
-| `cmd-362a0329ccf44f29` | node2 | 255 | `sudo systemctl reboot &` | Connection to 10.100.104.11 closed by remote host. |
-| `cmd-f81e61c93004440a` | node2 | 255 | `echo up` | ssh: connect to host 10.100.104.11 port 22: Connection timed out |
-| `cmd-7ac49d97dd4a4fa0` | node2 | 255 | `echo up` | ssh: connect to host 10.100.104.11 port 22: Connection timed out |
 
 ### Timing
 
@@ -108,7 +102,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

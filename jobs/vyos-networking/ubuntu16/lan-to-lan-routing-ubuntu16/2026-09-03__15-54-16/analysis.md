@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 33s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `lan-to-lan-routing-ubuntu16__rpWRu3r` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 41/4 | 5m 31s |
+| `lan-to-lan-routing-ubuntu16__rpWRu3r` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 41/3 (+1 dropped) | 5m 31s |
 
 ## Trial `lan-to-lan-routing-ubuntu16__rpWRu3r`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 33s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 41/4 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 41/3 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -114,7 +114,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-58bbfbee6ca3402e` | node1 | 1 | `' 2>&1 \| grep -E "eth1\|eth2\|interfaces ethernet"` | No error text was captured. |
 | `cmd-6e081c80424847ab` | node3 | 143 | `sudo pkill -f "nc -l -p 5555" 2>/dev/null; rm -f /tmp/nc_out.log /tmp/tdump.log; echo cleaned` | Terminated |
-| `cmd-4716c7f775674d3e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
 | `cmd-c7643e5b096c496c` | node3 | 143 | `sleep 2; cat /tmp/tdump2.log; echo ---; cat /tmp/nc_out2.log; sudo pkill -f "nc -l -p 6666" 2>/dev/null; rm -f /tmp/tdump2.log /tmp/nc_out2.log` | ---; post-restart-check |
 
 ### Timing
@@ -135,7 +134,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

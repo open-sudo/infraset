@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **7m 10s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `wireguard-gateway-centos-stream1__6PapDfx` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 47/11 | 7m 08s |
+| `wireguard-gateway-centos-stream1__6PapDfx` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 47/4 (+7 dropped) | 7m 08s |
 
 ## Trial `wireguard-gateway-centos-stream1__6PapDfx`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **7m 10s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 47/11 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 47/4 (+7 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -119,14 +119,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-b7e386595ed04d51` | node2 | 2 | `whoami; id; sudo -n true 2>&1 && echo SUDO_OK; which firewall-cmd python3 nc curl wg 2>&1` | /usr/bin/python3; /usr/bin/curl |
 | `cmd-7703ffbf18d14f1d` | node3 | 7 | `timeout 5 curl -sv http://10.50.50.2:8080/ 2>&1` | * connect to 10.50.50.2 port 8080 from 10.99.0.2 port 36570 failed: No route to host; * Failed to connect to 10.50.50.2 port 8080 after 1 ms: Could not connect to server |
 | `cmd-e29db79e2a614a70` | node3 | 7 | `timeout 5 curl -sv http://10.50.50.2:8080/ 2>&1` | * connect to 10.50.50.2 port 8080 from 10.99.0.2 port 38172 failed: No route to host; * Failed to connect to 10.50.50.2 port 8080 after 1 ms: Could not connect to server |
-| `cmd-01f5efa644e14c35` | node1 | -1 | `echo probe` | [Errno 110] Connection timed out |
-| `cmd-eae785fa0764417b` | node1 | -1 | `echo probe` | [Errno 110] Connection timed out |
 | `cmd-e3d32d8f1539438a` | node3 | 124 | `timeout 5 curl -sv http://10.50.50.2:8080/ 2>&1` | * Trying 10.50.50.2:8080... |
-| `cmd-6325f94336834a69` | node2 | -1 | `echo probe` | [Errno 110] Connection timed out |
-| `cmd-da5c66b2dd224978` | node2 | -1 | `echo probe` | [Errno 110] Connection timed out |
-| `cmd-1c92bab7fc504bb9` | node3 | -1 | `echo probe` | [Errno 110] Connection timed out |
-| `cmd-c6d04a25eb7745ae` | node3 | -1 | `echo probe` | [Errno 110] Connection timed out |
-| `cmd-b0e699fab96b4285` | node3 | -1 | `echo probe` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -146,7 +139,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 11 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

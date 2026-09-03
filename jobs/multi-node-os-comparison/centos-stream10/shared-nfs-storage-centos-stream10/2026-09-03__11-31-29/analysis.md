@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **3m 28s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `shared-nfs-storage-centos-stream__jUmsvVg` | Full Success | 1.000 | 1.000 | 1.000 | 0.820 | 28/7 | 3m 26s |
+| `shared-nfs-storage-centos-stream__jUmsvVg` | Full Success | 1.000 | 1.000 | 1.000 | 0.820 | 28/3 (+4 dropped) | 3m 26s |
 
 ## Trial `shared-nfs-storage-centos-stream__jUmsvVg`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **3m 28s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.820 | 0.900 | 28/7 |
+| 1.000 | 1.000 | 1.000 | 0.820 | 0.900 | 28/3 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -94,10 +94,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-ecee5762659a407a` | node1 | 2 | `cat /etc/os-release \| head -5; echo "---"; id dataops 2>&1; echo "---"; rpm -q nfs-utils 2>&1; echo "---"; ls -la /srv/nfs/shared 2>&1` | ls: cannot access '/srv/nfs/shared': No such file or directory |
 | `cmd-6f8f33b3fa2e4611` | node2 | 2 | `cat /etc/os-release \| head -5; echo "---"; id dataops 2>&1; echo "---"; rpm -q nfs-utils 2>&1; echo "---"; ls -la /mnt/shared 2>&1` | ls: cannot access '/mnt/shared': No such file or directory |
 | `cmd-84b5695d98e64dd4` | node2 | 2 | `cat /proc/sys/kernel/random/boot_id; echo "---"; mount \| grep /mnt/shared; echo "---"; ls -la /mnt/shared` | 10.100.42.10:/srv/nfs/shared on /mnt/shared type nfs4 (rw,relatime,vers=4.2,rsize=262144,wsize=262144,namlen=255,hard,fatal_neterrors=none,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=10.100.42.11,local_lock=none,addr=10.100.42.10,_netdev); ls: cannot open directory '/mnt/shared': Permission denied |
-| `cmd-4b655585a5ae4717` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
-| `cmd-9499121c22374be2` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-96cbc332fbf34a6c` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
-| `cmd-a9afbeb6875e4dda` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -117,7 +113,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

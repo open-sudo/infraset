@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **3m 10s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `repair-application-permissions-r__p7vToEA` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 14/4 | 3m 03s |
+| `repair-application-permissions-r__p7vToEA` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 14/1 (+3 dropped) | 3m 03s |
 
 ## Trial `repair-application-permissions-r__p7vToEA`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **3m 10s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 14/4 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 14/1 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -92,9 +92,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-92b12b04882e4340` | node1 | 2 | `ls -lan /srv/inventory; echo ---; ls -la /srv/inventory 2>&1 \| head -50; echo ---; getent passwd inventorysvc; getent group inventory-readers` | drwxr-xr-x. 2 root root 44 Sep 3 08:20 data; --- |
-| `cmd-96bb53e874054f77` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>/dev/null; uptime -s 2>/dev/null` | [Errno 110] Connection timed out |
-| `cmd-24c482db39c14dff` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-12d3d08837c54e71` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -114,7 +111,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

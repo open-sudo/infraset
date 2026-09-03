@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 38s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `scheduled-maintenance-alpine__4vWHwG8` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 10/3 | 2m 35s |
+| `scheduled-maintenance-alpine__4vWHwG8` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 10/2 (+1 dropped) | 2m 35s |
 
 ## Trial `scheduled-maintenance-alpine__4vWHwG8`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 38s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 10/3 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 10/2 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -86,7 +86,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-f36e4c27cfe448b6` | node1 | 3 | `cat /etc/os-release; echo ---; ls -la /usr/local/bin/inventory-maintenance 2>&1; echo ---; which crond crontab 2>&1; echo ---; rc-service crond status 2>&1` | ---; * status: stopped |
 | `cmd-48db562160f54ff9` | node1 | 1 | `cat /usr/local/bin/inventory-maintenance; echo ---; crontab -l -u root 2>&1; echo ---; rc-update show default 2>&1 \| grep -i cron` | 0 5 1 * * run-parts /etc/periodic/monthly; --- |
-| `cmd-4ae68a31ad204ab8` | node1 | -1 | `echo BOOTID:$(cat /proc/sys/kernel/random/boot_id); echo UPTIME:$(cat /proc/uptime)` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -106,7 +105,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **6m 40s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-ca-tls-rhel7__5wFRyQV` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 33/8 | 6m 38s |
+| `internal-ca-tls-rhel7__5wFRyQV` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 33/6 (+2 dropped) | 6m 38s |
 
 ## Trial `internal-ca-tls-rhel7__5wFRyQV`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **6m 40s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.930 | 33/8 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.930 | 33/6 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -117,8 +117,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-deefedf71df94385` | node1 | 255 | `mkdir -p ~/.ssh && printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519 && echo "$CLUSTER_HOSTS" \| tee -a /etc/hosts 2>/dev/null \|\| echo "$CLUSTER_HOSTS" \| sudo tee -a /etc/hosts; ca...` | 10.100.120.11 node2; command-line line 0: unsupported option "accept-new". |
 | `cmd-a81e3064e4fb4e5d` | node1 | 255 | `ssh -o StrictHostKeyChecking=no antrieb@node2 "echo ssh_ok; hostname" 2>&1` | Permission denied, please try again.; Permission denied, please try again. |
 | `cmd-bef6cde7a561486c` | node2 | 1 | `openssl s_server 2>&1 \| grep -iE "naccept\|nbio"` | No error text was captured. |
-| `cmd-4dce8866a5cc4011` | node1 | 255 | `echo alive` | ssh: connect to host 10.100.120.10 port 22: Connection timed out |
-| `cmd-6bcb9c3f786a4862` | node2 | 255 | `echo alive; cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.120.11 port 22: Connection timed out |
 
 ### Timing
 
@@ -138,7 +136,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **3m 44s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-ca-tls-almalinux9__mCNcWx3` | Full Success | 1.000 | 1.000 | 1.000 | 0.970 | 25/4 | 3m 42s |
+| `internal-ca-tls-almalinux9__mCNcWx3` | Full Success | 1.000 | 1.000 | 1.000 | 0.970 | 25/1 (+3 dropped) | 3m 42s |
 
 ## Trial `internal-ca-tls-almalinux9__mCNcWx3`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **3m 44s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.970 | 0.950 | 25/4 |
+| 1.000 | 1.000 | 1.000 | 0.970 | 0.950 | 25/1 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -96,9 +96,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-a42dea2fa7da48b2` | node2 | 2 | `mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf '%s\n' "$CLUSTER_SSH_PUBKEY" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && mkdir -p /etc/pki/fleet-ca && which httpd nginx openssl` | which: no nginx in (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin); /usr/bin/openssl |
-| `cmd-c7ba1d5a422a4e07` | node1 | -1 | `echo "BOOT_ID:$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-df173899d3f343ed` | node1 | -1 | `echo "BOOT_ID:$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-011209bc8bcf47c3` | node2 | -1 | `echo "BOOT_ID:$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -118,7 +115,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

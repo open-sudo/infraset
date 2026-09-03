@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **6m 03s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `dhcp-server-rhel10__DCrfcYM` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 48/14 | 6m 01s |
+| `dhcp-server-rhel10__DCrfcYM` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 48/4 (+10 dropped) | 6m 01s |
 
 ## Trial `dhcp-server-rhel10__DCrfcYM`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **6m 03s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 48/14 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 48/4 (+10 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -114,16 +114,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-8c56b2377ddf43d0` | node3 | 1 | `ip -br link; echo ---; nmcli -t -f NAME,DEVICE,TYPE con show; echo ---; nmcli con show enp1s0 2>/dev/null \| grep -i method` | lo UNKNOWN 00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP> |
 | `cmd-8baf28777eb949c1` | node1 | 127 | `ps aux \| grep -i dhcp \| grep -v grep; echo ---; systemctl list-units \| grep -i dhcp; echo ---; bash -c 'source /opt/vyatta/etc/functions/script-template; configure; show service dhcp-server; exit'` | bash: line 1: configure: command not found; bash: line 1: show: command not found |
 | `cmd-33b26e6dfaf04b2e` | node1 | 127 | `ls -la /var/lib/kea/ 2>/dev/null; find /var -iname '*lease*' 2>/dev/null \| grep -i kea; echo ---; run_cmd() { :; }; bash -c 'source /opt/vyatta/etc/functions/script-template; run show dhcp server leases' 2>&1` | bash: line 1: run: command not found |
-| `cmd-c2055414e4c24b4d` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-0e66d30daeb1486f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-d2b668d0326441b3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-3b8359b340e4427c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-c6f7544ab8884eb6` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-916eacb3b9264749` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-5375a0b04bf84d1b` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-53c974a8d59f4692` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-a2bfb5a142c94257` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-07b825fda99346a8` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -143,7 +133,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 14 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

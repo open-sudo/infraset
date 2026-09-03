@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **9m 04s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `cross-lan-firewall-rhel7__GCtuYS2` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 54/21 | 9m 02s |
+| `cross-lan-firewall-rhel7__GCtuYS2` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 54/13 (+8 dropped) | 9m 02s |
 
 ## Trial `cross-lan-firewall-rhel7__GCtuYS2`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **9m 04s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 54/21 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 54/13 (+8 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -114,16 +114,8 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-b3e04f1d71554169` | node3 | 3 | `ls /usr/bin/nc* /usr/bin/python* /usr/bin/socat 2>&1; rpm -q nmap-ncat nc python3 2>&1` | ls: cannot access /usr/bin/nc*: No such file or directory; ls: cannot access /usr/bin/socat: No such file or directory |
 | `cmd-50c0b3c260a94659` | node3 | 1 | `ss -tlnp 2>/dev/null \| grep -E '5432\|8080'` | No error text was captured. |
 | `cmd-3f6240d3e5244797` | node1 | 127 | `show firewall` | bash: line 1: show: command not found |
-| `cmd-255a7d04f9c04612` | node1 | -1 | `echo up; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-b63340eea5254f05` | node1 | -1 | `echo up; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-6b2035a08a5b4d50` | node1 | -1 | `echo up; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-45fb2e5f075f491f` | node1 | -1 | `echo up; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-627b5396150a4dc3` | node1 | -1 | `echo up; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-1b5ef15934e141ee` | node1 | -1 | `echo up; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 | `cmd-4838bfeb46154179` | node2 | 1 | `ping -c2 -W2 10.50.2.12` | --- 10.50.2.12 ping statistics ---; 2 packets transmitted, 0 received, 100% packet loss, time 999ms |
-| `cmd-79a88f5901ec4bda` | node2 | 255 | `echo up; cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.136.11 port 22: Connection timed out |
 | `cmd-890c2da36303403b` | node2 | 1 | `/sbin/ip -4 addr show eth1; echo ---; /sbin/ip route; echo ---` | --- 10.50.2.12 ping statistics ---; 2 packets transmitted, 0 received, 100% packet loss, time 1005ms |
-| `cmd-08d08401728447cf` | node3 | 255 | `echo up; cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.136.12 port 22: Connection timed out |
 
 ### Timing
 
@@ -143,7 +135,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 21 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 13 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

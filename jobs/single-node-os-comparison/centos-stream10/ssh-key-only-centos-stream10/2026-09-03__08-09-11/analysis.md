@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 02s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ssh-key-only-centos-stream10__YFbZiyM` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 15/2 | 1m 57s |
+| `ssh-key-only-centos-stream10__YFbZiyM` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 15/0 (+2 dropped) | 1m 57s |
 
 ## Trial `ssh-key-only-centos-stream10__YFbZiyM`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 02s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.950 | 15/2 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.950 | 15/0 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -75,12 +75,7 @@ Hygiene evidence: `cmd-39b5a0fb29be482b`, `global:after_executor:node1:temporary
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-d919d11c42ab42c9` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-364b1a830fc04eb5` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -100,7 +95,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 44s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `kernel-network-hardening-centos__uRrRF6P` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 9/3 | 2m 39s |
+| `kernel-network-hardening-centos__uRrRF6P` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 9/0 (+3 dropped) | 2m 39s |
 
 ## Trial `kernel-network-hardening-centos__uRrRF6P`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 44s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 9/3 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 9/0 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -82,13 +82,7 @@ Hygiene evidence: `global:before_prepare:node1:failed-services`, `global:after_e
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-54ad35d982904963` | node1 | -1 | `sudo systemctl reboot & disown; sleep 1; echo REBOOT_ACK` | exec stream closed before command completion |
-| `cmd-2a784f9e02704cd1` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-0e9142a1e96744a3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -108,7 +102,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

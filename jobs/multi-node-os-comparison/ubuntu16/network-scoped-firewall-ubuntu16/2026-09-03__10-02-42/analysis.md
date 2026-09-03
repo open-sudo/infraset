@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **4m 29s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `network-scoped-firewall-ubuntu16__tMNE8wn` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 25/6 | 4m 27s |
+| `network-scoped-firewall-ubuntu16__tMNE8wn` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 25/3 (+3 dropped) | 4m 27s |
 
 ## Trial `network-scoped-firewall-ubuntu16__tMNE8wn`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **4m 29s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 25/6 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 25/3 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -94,11 +94,8 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-399431cd25364926` | node1 | 143 | `cat /tmp/nc9000.log; pkill -f "nc -l -p 9000" 2>/dev/null; echo done` | Terminated; hello |
-| `cmd-c31164c10af04c8e` | node1 | 255 | `nohup sudo -n shutdown -r now >/tmp/reboot.log 2>&1 & sleep 1; echo "ack:$?"` | Connection to 10.100.193.10 closed by remote host. |
 | `cmd-a115cc3cb0904d07` | node1 | 255 | `cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.193.10 port 22: Connection refused |
 | `cmd-acbd96347c2240a3` | node1 | 143 | `cat /tmp/nc9000b.log; pkill -f "nc -l -p 9000" 2>/dev/null; echo done` | Terminated; post-reboot |
-| `cmd-2bb2d94256454748` | node2 | 255 | `nohup sudo -n shutdown -r now >/tmp/reboot.log 2>&1 & sleep 1; echo "ack:$?"` | Connection to 10.100.193.11 closed by remote host. |
-| `cmd-518b8fc8093c4be0` | node3 | 255 | `nohup sudo -n shutdown -r now >/tmp/reboot.log 2>&1 & sleep 1; echo "ack:$?"` | Connection to 10.100.193.12 closed by remote host. |
 
 ### Timing
 
@@ -118,7 +115,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

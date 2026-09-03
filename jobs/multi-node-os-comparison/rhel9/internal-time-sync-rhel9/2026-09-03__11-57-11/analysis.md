@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **5m 08s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-time-sync-rhel9__k47WQyU` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 27/5 | 5m 06s |
+| `internal-time-sync-rhel9__k47WQyU` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 27/1 (+4 dropped) | 5m 06s |
 
 ## Trial `internal-time-sync-rhel9__k47WQyU`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **5m 08s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.850 | 27/5 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.850 | 27/1 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -86,10 +86,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-dff793b100a04f02` | node2 | 1 | `ls -la /run/chrony-dhcp/ 2>&1; cat /run/chrony-dhcp/*.sources 2>&1` | drwxr-xr-x. 27 root root 760 Jun 30 10:25 ..; cat: '/run/chrony-dhcp/*.sources': No such file or directory |
-| `cmd-a52125e7fb82459f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-dc010462004c47ac` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-34156acf2ad24fd8` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-8ae02d14be194280` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -109,7 +105,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 06s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-dns-resolution-rhel9__7e9n2pp` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 29/8 | 5m 04s |
+| `internal-dns-resolution-rhel9__7e9n2pp` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 29/0 (+8 dropped) | 5m 04s |
 
 ## Trial `internal-dns-resolution-rhel9__7e9n2pp`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 06s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 29/8 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 29/0 (+8 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -81,18 +81,7 @@ Hygiene evidence: `cmd-b123df44016b4e8d`, `cmd-e05092ab70d34651`, `global:after_
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-5946e498a2ad4485` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-2132b4f730a94049` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-79be19bd256947d4` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-bf0992dd4faa482d` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-e05e4eab8d064f0d` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-8a9753b6423744bc` | node2 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-9efce603a4374c77` | node2 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-3055df7d1fb74fb1` | node2 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -112,7 +101,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **5m 12s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-time-sync-rhel7__4UMhK5i` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 18/5 | 5m 10s |
+| `internal-time-sync-rhel7__4UMhK5i` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 18/1 (+4 dropped) | 5m 10s |
 
 ## Trial `internal-time-sync-rhel7__4UMhK5i`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **5m 12s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 18/5 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 18/1 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -99,10 +99,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-8043d7c8ba284b37` | node1 | 1 | `sudo systemctl is-active firewalld 2>&1; sudo firewall-cmd --list-services 2>&1; sudo firewall-cmd --permanent --add-service=ntp 2>&1; sudo firewall-cmd --reload 2>&1; ss -ulnp \| grep 123` | bash: ss: command not found |
-| `cmd-2811487e5b8a42cc` | node1 | 255 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | ssh: connect to host 10.100.127.10 port 22: Connection timed out |
-| `cmd-bfc1694a98144300` | node1 | 255 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | ssh: connect to host 10.100.127.10 port 22: Connection timed out |
-| `cmd-29e028ec6d59491d` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | ssh: connect to host 10.100.127.11 port 22: Connection timed out |
-| `cmd-d6efa72a69b845b9` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | ssh: connect to host 10.100.127.11 port 22: Connection timed out |
 
 ### Timing
 
@@ -122,7 +118,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

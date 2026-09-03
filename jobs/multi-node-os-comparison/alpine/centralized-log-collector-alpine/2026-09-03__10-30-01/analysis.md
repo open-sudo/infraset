@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **5m 54s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `centralized-log-collector-alpine__Sxdfb37` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 31/7 | 5m 52s |
+| `centralized-log-collector-alpine__Sxdfb37` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 31/3 (+4 dropped) | 5m 52s |
 
 ## Trial `centralized-log-collector-alpine__Sxdfb37`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **5m 54s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 31/7 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 31/3 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -98,10 +98,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-cc6198ea5ff54ace` | node1 | 1 | `rc-status 2>&1; echo ---; ls /etc/init.d/; echo ---; cat /etc/apk/repositories; echo ---; apk info rsyslog 2>&1; apk list -I 2>/dev/null \| grep -i syslog` | WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz: No such file or directory; WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.23/community/x86_64/APKINDEX.tar.gz: No such file or directory |
 | `cmd-e6781f17e20643cf` | node1 | 1 | `mkdir -p /var/log/inventory && chown root:adm /var/log/inventory && chmod 755 /var/log/inventory` | bash: line 2: /etc/rsyslog.d/inventory.conf: No such file or directory; cat: can't open '/etc/rsyslog.d/inventory.conf': No such file or directory |
 | `cmd-a844cc4ccccb417f` | node1 | 1 | `rc-service rsyslog start; sleep 1; rc-service rsyslog status; ss -tulnp \| grep 514` | bash: line 1: ss: command not found |
-| `cmd-24204bb2742d41cc` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-4579b330cd5b45ea` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-9663ae6c9a674857` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-b2e19b17412346be` | node2 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -121,7 +117,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

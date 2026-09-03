@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **10m 38s** with **0 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `wireguard-gateway-ubuntu16__imKqZjW` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 43/19 | 10m 36s |
+| `wireguard-gateway-ubuntu16__imKqZjW` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 43/11 (+8 dropped) | 10m 36s |
 
 ## Trial `wireguard-gateway-ubuntu16__imKqZjW`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **10m 38s** with **0 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 43/19 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 43/11 (+8 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -119,14 +119,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-8ea5ce34726e40a5` | node3 | 1 | `cat <<'EOF' \| sudo tee /etc/wireguard/wg0.conf >/dev/null` | cat: /etc/wireguard/wg0.conf: Permission denied |
 | `cmd-5f47995fad87483b` | node3 | 1 | `sudo wg show; ping -c2 -W2 10.200.0.1` | From 10.200.0.2 icmp_seq=1 Destination Host Unreachable; 0 packets transmitted, 0 received, +2 errors |
 | `cmd-c7277e32b8e74788` | node2 | 1 | `sudo kill -9 2379 2381 2>/dev/null; sleep 1; sudo dpkg --configure -a 2>&1 \| tail -5; ps aux \| grep apt \| grep -v grep` | Processing triggers for systemd (229-4ubuntu21.31) ...; Processing triggers for ureadahead (0.100.0-19.1) ... |
-| `cmd-60ae1fe037414adb` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-4b70be43a87f49cc` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-528fe7eeb263425a` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-4954e11714cf4294` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-5b264aa2e39a41ed` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-04bf3f3a93504ff6` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-4473f825eb09470c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-f64684c608d04fe3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 | `cmd-e5729907fe454d75` | node1 | 127 | `ip -4 addr show wg0; sudo wg show; bash -c 'source /opt/vyatta/etc/functions/script-template; run show nat source rules' 2>&1` | 5: wg0: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1420 qdisc noqueue state UNKNOWN group default qlen 1000; bash: line 1: run: command not found |
 | `cmd-268567e05ef4470e` | node3 | 28 | `sudo wg show; curl -s -m 4 http://10.100.224.11:8080/` | transfer: 780 B received, 804 B sent; persistent keepalive: every 25 seconds |
 | `cmd-7d96803385db4210` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.224.11 port 22: Connection refused |
@@ -151,7 +143,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 19 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 11 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

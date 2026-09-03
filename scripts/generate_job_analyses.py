@@ -170,6 +170,29 @@ def command_audit_paths(trial_dir: Path) -> tuple[list[Path], str]:
     return [], "unavailable"
 
 
+# A command whose exec channel dropped never ran on the managed node, so it is
+# not evidence about the operating system or the executor. These dominate the
+# deliberate post-reboot liveness polling required by the restart-evidence
+# protocol: the executor reboots a node and polls it until exec returns, and
+# every poll issued while the node is still down records one of these.
+_TRANSPORT_FAILURE = re.compile(
+    r"connection reset by peer"
+    r"|connection timed out"
+    r"|closed by remote host"
+    r"|exec stream closed",
+    re.IGNORECASE,
+)
+
+
+def is_transport_failure(record: dict[str, Any]) -> bool:
+    """Report whether a non-zero command failed in transit rather than on the node."""
+    for field in ("stderr", "error"):
+        value = record.get(field)
+        if isinstance(value, str) and _TRANSPORT_FAILURE.search(value):
+            return True
+    return False
+
+
 def command_audit(trial_dir: Path) -> dict[str, Any]:
     paths, status = command_audit_paths(trial_dir)
     records: dict[str, dict[str, Any]] = {}
@@ -222,10 +245,18 @@ def command_audit(trial_dir: Path) -> dict[str, Any]:
         item.get("outcome") == "completed" and item.get("return_code") == 0
         for item in timeline
     )
+    transport = sum(
+        item.get("outcome") == "completed"
+        and isinstance(item.get("return_code"), int)
+        and item.get("return_code") != 0
+        and is_transport_failure(item)
+        for item in timeline
+    )
     failed = sum(
         item.get("outcome") == "completed"
         and isinstance(item.get("return_code"), int)
         and item.get("return_code") != 0
+        and not is_transport_failure(item)
         for item in timeline
     )
     return {
@@ -235,6 +266,7 @@ def command_audit(trial_dir: Path) -> dict[str, Any]:
         "timeline": timeline,
         "successful": successful,
         "failed": failed,
+        "transport": transport,
         "issued": len(timeline),
         "malformed": malformed,
     }
@@ -245,9 +277,12 @@ def command_display(audit: dict[str, Any]) -> str:
         return "audit unavailable"
     if audit["issued"] == 0:
         return "0/0 (none issued)"
-    if audit["successful"] == 0 and audit["failed"] == 0:
+    if audit["successful"] == 0 and audit["failed"] == 0 and not audit.get("transport"):
         return "0/0 (no terminal result)"
-    return f"{audit['successful']}/{audit['failed']}"
+    value = f"{audit['successful']}/{audit['failed']}"
+    if audit.get("transport"):
+        value += f" (+{audit['transport']} dropped)"
+    return value
 
 
 def observation_records(trial_dir: Path) -> dict[str, dict[str, Any]]:
@@ -338,7 +373,11 @@ def failed_commands(commands: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
     values = []
     for record in commands.values():
         return_code = record.get("return_code")
-        if isinstance(return_code, int) and return_code != 0:
+        if (
+            isinstance(return_code, int)
+            and return_code != 0
+            and not is_transport_failure(record)
+        ):
             values.append(record)
     return sorted(values, key=lambda item: str(item.get("timestamp", "")))
 

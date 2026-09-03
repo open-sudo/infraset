@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **8m 52s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-ca-tls-alpine__DoJsyWu` | Full Success | 1.000 | 1.000 | 1.000 | 0.750 | 31/29 | 8m 50s |
+| `internal-ca-tls-alpine__DoJsyWu` | Full Success | 1.000 | 1.000 | 1.000 | 0.750 | 31/6 (+23 dropped) | 8m 50s |
 
 ## Trial `internal-ca-tls-alpine__DoJsyWu`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **8m 52s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.750 | 0.900 | 31/29 |
+| 1.000 | 1.000 | 1.000 | 0.750 | 0.900 | 31/6 (+23 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -107,29 +107,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-6237b1df1e084491` | node2 | 1 | `rc-update add nginx default && rc-service nginx restart && rc-service nginx status && ss -tlnp \| grep 8443` | bash: line 1: ss: command not found |
 | `cmd-4d9227110ebe4f0e` | node1 | 1 | `apk add --no-cache ca-certificates 2>&1 \| tail -5; cp /root/fleet-ca/certs/ca.cert.pem /usr/local/share/ca-certificates/fleet-internal-ca.crt && update-ca-certificates 2>&1 && grep -c "Fleet Internal CA" /etc/ssl/cert...` | OK: 190.9 MiB in 135 packages; 0 |
 | `cmd-5e85e4a184a04ddf` | node2 | 1 | `cp /etc/nginx/ssl/fleet-ca.crt /usr/local/share/ca-certificates/fleet-internal-ca.crt && update-ca-certificates 2>&1 && grep -c "Fleet Internal CA" /etc/ssl/certs/ca-certificates.crt` | 0 |
-| `cmd-61c427533abd4b87` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-80576bb8c39543ab` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-5a927748127446fc` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-2fee007fef3e4511` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-3172cb96b7764e46` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-e3c0a3c30b624275` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-9fe68bf3eb1a44fa` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-c7e3c3ec8121426d` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-55a1e64fdbfb4326` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-382a33fcf7534938` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-dceccd5394534132` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-977733d6814845db` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-469cca55109b4af2` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-17881c6c0e474c59` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-2bf6cdad6dd6409d` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-a88e388659bc43ae` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-b5fe123509324c0f` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-0b44c3f215ed47fa` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-db9c12ae569f4f31` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-14fd70622fcd45c0` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-23cedb9d64874e16` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-66d6a501d0cc4b65` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-df8654fbeaec4478` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -149,7 +126,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 29 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

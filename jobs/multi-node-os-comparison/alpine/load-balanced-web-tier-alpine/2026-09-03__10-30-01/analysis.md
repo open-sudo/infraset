@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **5m 59s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `load-balanced-web-tier-alpine__CnVK4Ts` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 38/13 | 5m 57s |
+| `load-balanced-web-tier-alpine__CnVK4Ts` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 38/0 (+13 dropped) | 5m 57s |
 
 ## Trial `load-balanced-web-tier-alpine__CnVK4Ts`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **5m 59s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 38/13 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.900 | 38/0 (+13 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -85,23 +85,7 @@ Hygiene evidence: `cmd-b3ccab75c0a447b0`, `cmd-84a79af54f174ada`, `cmd-770790cdb
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-c1ff5b02f09445fa` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
-| `cmd-60f3dd8cf83642b9` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-72ba474a60d84256` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-73aac5d825d444c6` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-7f7dfa680e7e48d9` | node2 | -1 | `sleep 5; cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-714d4b03e85b460b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-4238ca47c3204a2c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
-| `cmd-d1fd53fa379f48ac` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 110] Connection timed out |
-| `cmd-1f96027f0d0f4f68` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-c0d2a4629531471b` | node1 | -1 | `sleep 5; cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-b379a403497f4515` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-9a3cb481e05e4705` | node1 | -1 | `sleep 5; cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
-| `cmd-4baf831bfde3499f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -121,7 +105,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 13 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

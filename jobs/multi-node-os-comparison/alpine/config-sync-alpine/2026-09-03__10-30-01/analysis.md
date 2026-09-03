@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **12m 18s** with **0 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `config-sync-alpine__CXVLGwY` | Full Success | 1.000 | 1.000 | 1.000 | 0.700 | 32/22 | 12m 16s |
+| `config-sync-alpine__CXVLGwY` | Full Success | 1.000 | 1.000 | 1.000 | 0.700 | 32/3 (+19 dropped) | 12m 16s |
 
 ## Trial `config-sync-alpine__CXVLGwY`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **12m 18s** with **0 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.700 | 0.900 | 32/22 |
+| 1.000 | 1.000 | 1.000 | 0.700 | 0.900 | 32/3 (+19 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -95,25 +95,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-f76bc80cd7de47d6` | node1 | 1 | `cat /etc/os-release; echo ---; ls -la /etc/inventory/ 2>&1; echo ---; cat /etc/inventory/app.conf 2>&1; echo ---; id; echo ---; which sudo rsync ssh sshd crond 2>&1` | /usr/sbin/sshd; /usr/sbin/crond |
 | `cmd-ba6bf4cc862840cd` | node2 | 1 | `cat /etc/os-release; echo ---; ls -la /etc/inventory/ 2>&1; echo ---; cat /etc/inventory/app.conf 2>&1; echo ---; id; echo ---; which sudo rsync ssh sshd crond 2>&1` | /usr/sbin/sshd; /usr/sbin/crond |
 | `cmd-62dd1544c1c24d2b` | node2 | 255 | `mkdir -p /root/.ssh && chmod 700 /root/.ssh` | Sensitive error output was omitted. |
-| `cmd-cff9c6fb9b5f4ac3` | node1 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-99a088640eea47b6` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-789db48ad68e493f` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-102c1a905ed1471b` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-9f6a493c0e5f41d7` | node1 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-0cdb82c917a34831` | node1 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-b3ea562dee224f30` | node1 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-65a86f928af64a22` | node1 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-d07855f8fc78466f` | node1 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-15970faf6f65417b` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-822e368161874db5` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-27929c96d72e4eb7` | node2 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-1dc6609868624b0c` | node2 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-553fc2e2ed974237` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-cc8871a491c44c31` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-b1bc8efd34f04166` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-ed8f958a79084c26` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-15d2c1f82a3f4e84` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-b6bdbe9a82db4f69` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -133,7 +114,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 22 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **10m 23s** with **0 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-dns-resolution-rhel7__JR9daBd` | Full Success | 1.000 | 1.000 | 1.000 | 0.600 | 26/8 | 10m 21s |
+| `internal-dns-resolution-rhel7__JR9daBd` | Full Success | 1.000 | 1.000 | 1.000 | 0.600 | 26/6 (+2 dropped) | 10m 21s |
 
 ## Trial `internal-dns-resolution-rhel7__JR9daBd`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **10m 23s** with **0 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.600 | 0.900 | 26/8 |
+| 1.000 | 1.000 | 1.000 | 0.600 | 0.900 | 26/6 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -90,8 +90,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-23989837fa5c45b1` | node1 | 127 | `systemctl is-active firewalld 2>&1; sudo firewall-cmd --list-all 2>&1` | bash: line 3: dig: command not found; bash: line 3: nslookup: command not found |
 | `cmd-3659cbf8399b4de6` | node2 | 1 | `python2 -c "` | socket.gaierror: [Errno -2] Name or service not known |
 | `cmd-1f10858f7c674f31` | node1 | 1 | `systemctl is-enabled dnsmasq; systemctl is-enabled firewalld` | enabled; enabled |
-| `cmd-2d8e50641fe2459e` | node1 | 255 | `echo alive; uptime -s` | ssh: connect to host 10.100.159.10 port 22: Connection timed out |
-| `cmd-3cbd2c92f6244699` | node2 | 255 | `echo alive; uptime -s` | ssh: connect to host 10.100.159.11 port 22: Connection timed out |
 
 ### Timing
 
@@ -111,7 +109,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

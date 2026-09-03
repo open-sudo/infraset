@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **2m 46s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ssh-controller-access-almalinux9__LY83d5Q` | Full Success | 1.000 | 1.000 | 1.000 | 0.820 | 28/3 | 2m 44s |
+| `ssh-controller-access-almalinux9__LY83d5Q` | Full Success | 1.000 | 1.000 | 1.000 | 0.820 | 28/0 (+3 dropped) | 2m 44s |
 
 ## Trial `ssh-controller-access-almalinux9__LY83d5Q`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **2m 46s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.820 | 0.900 | 28/3 |
+| 1.000 | 1.000 | 1.000 | 0.820 | 0.900 | 28/0 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -92,13 +92,7 @@ Hygiene evidence: `cmd-46b597b1009f4ee7`, `cmd-cf5446a0d2524fb8`, `cmd-429de851f
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-af542b15044e40f7` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-01cbcecbfb434c61` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-afd9cdbf7c924350` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -118,7 +112,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 08s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `unprivileged-service-rhel10__ua56TyN` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 8/3 | 2m 01s |
+| `unprivileged-service-rhel10__ua56TyN` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 8/1 (+2 dropped) | 2m 01s |
 
 ## Trial `unprivileged-service-rhel10__ua56TyN`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 08s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 8/3 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 8/1 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -81,8 +81,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-c0bee47cd2564478` | node1 | 1 | `ls -la /usr/local/bin/os-comparison-worker; file /usr/local/bin/os-comparison-worker; cat /etc/os-release \| head -5; systemctl --version \| head -1; id inventorysvc 2>&1` | systemd 257 (257-9.el10_0.1-g8cd5633); id: ‘inventorysvc’: no such user |
-| `cmd-1667aa5c87534d0e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-e53c14f353c84f6e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -102,7 +100,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

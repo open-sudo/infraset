@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **4m 13s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `scheduled-maintenance-rhel7__joMoYGj` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 8/3 | 4m 10s |
+| `scheduled-maintenance-rhel7__joMoYGj` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 8/1 (+2 dropped) | 4m 10s |
 
 ## Trial `scheduled-maintenance-rhel7__joMoYGj`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **4m 13s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 8/3 |
+| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 8/1 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -72,8 +72,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-dde212b3a8674973` | node1 | 2 | `cat /usr/local/bin/inventory-maintenance; echo "---"; systemctl is-active crond; echo "---"; sudo crontab -l -u root 2>&1; echo "---"; ls -la /var/log/inventory-maintenance.log 2>&1` | ls: cannot access /var/log/inventory-maintenance.log: No such file or directory |
-| `cmd-b3f4e95e1cea40aa` | node1 | 255 | `echo alive; cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.8.10 port 22: Connection timed out |
-| `cmd-1c4af6e4680f43ba` | node1 | 255 | `echo alive; cat /proc/sys/kernel/random/boot_id` | ssh: connect to host 10.100.8.10 port 22: Connection timed out |
 
 ### Timing
 
@@ -93,7 +91,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

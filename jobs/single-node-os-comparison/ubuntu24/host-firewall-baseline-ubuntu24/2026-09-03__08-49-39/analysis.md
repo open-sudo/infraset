@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 35s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `host-firewall-baseline-ubuntu24__bJ4ex57` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 12/2 | 2m 31s |
+| `host-firewall-baseline-ubuntu24__bJ4ex57` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 12/1 (+1 dropped) | 2m 31s |
 
 ## Trial `host-firewall-baseline-ubuntu24__bJ4ex57`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 35s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 12/2 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 12/1 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -95,7 +95,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-ae3a1fe6d110492f` | node1 | 1 | `kill $(cat /tmp/http8080.pid) 2>/dev/null; rm -f /tmp/http8080.pid /tmp/http8080.log; sleep 1; ss -tlnp \| grep 8080` | No error text was captured. |
-| `cmd-ec738d7f6299490a` | node1 | -1 | `sleep 8; cat /proc/sys/kernel/random/boot_id 2>/dev/null \|\| echo NOT_UP` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -115,7 +114,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

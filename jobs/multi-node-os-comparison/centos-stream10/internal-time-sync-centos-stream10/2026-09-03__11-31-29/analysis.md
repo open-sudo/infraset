@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **3m 24s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-time-sync-centos-stream__5L2E7gV` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 25/4 | 3m 21s |
+| `internal-time-sync-centos-stream__5L2E7gV` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 25/0 (+4 dropped) | 3m 21s |
 
 ## Trial `internal-time-sync-centos-stream__5L2E7gV`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **3m 24s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 25/4 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 25/0 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -79,14 +79,7 @@ Hygiene evidence: `cmd-2ebffdf7a80b4ee9`, `cmd-760f6d4134564f31`, `cmd-742ff9fcf
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-e835267868a0434b` | node1 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-ed66f54853084be5` | node1 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-4f57eb5df2a14f36` | node2 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-65f0bc8ef7de4384` | node2 | -1 | `echo "BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)"; uptime -s` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -106,7 +99,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

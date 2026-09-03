@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **1m 31s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `account-resource-limits-almalinu__sHqpf7R` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 7/2 | 1m 29s |
+| `account-resource-limits-almalinu__sHqpf7R` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 7/0 (+2 dropped) | 1m 29s |
 
 ## Trial `account-resource-limits-almalinu__sHqpf7R`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **1m 31s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 7/2 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.950 | 7/0 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -81,12 +81,7 @@ Hygiene evidence: `cmd-6862d77351da4b1e`, `global:after_executor:node1:temporary
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-6862d77351da4b1e` | node1 | -1 | `sudo sh -c 'nohup shutdown -r now >/tmp/reboot.log 2>&1 &' ; sleep 1; echo ack` | exec stream closed before command completion |
-| `cmd-c669bb0654fd4109` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -106,7 +101,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

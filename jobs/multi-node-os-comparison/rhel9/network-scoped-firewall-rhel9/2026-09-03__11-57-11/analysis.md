@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **4m 48s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `network-scoped-firewall-rhel9__pQDa44d` | Full Success | 1.000 | 1.000 | 1.000 | 0.750 | 27/11 | 4m 46s |
+| `network-scoped-firewall-rhel9__pQDa44d` | Full Success | 1.000 | 1.000 | 1.000 | 0.750 | 27/1 (+10 dropped) | 4m 46s |
 
 ## Trial `network-scoped-firewall-rhel9__pQDa44d`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **4m 48s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.750 | 0.900 | 27/11 |
+| 1.000 | 1.000 | 1.000 | 0.750 | 0.900 | 27/1 (+10 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -115,16 +115,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-7b6272706cf4403a` | node1 | 1 | `systemctl is-enabled firewalld; nohup nc -lk 9000 >/tmp/nc9000.log 2>&1 & disown; sleep 1; ss -tlnp \| grep 9000` | enabled |
-| `cmd-2c99c51e64db4c10` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-60d567631e134e41` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-50f3537bf3f649e1` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-b68a1b71e1464314` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-e2025a4bad3840cc` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-204b77a2921b4414` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-7cf3a3790cec48ff` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-7d016f3614ff421d` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-7430ee3005b14f17` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-1f3b2cbf33b04a77` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -144,7 +134,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 11 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

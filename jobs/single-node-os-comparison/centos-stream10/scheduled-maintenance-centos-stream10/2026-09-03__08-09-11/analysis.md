@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 26s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `scheduled-maintenance-centos-str__4KVvuca` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 10/2 | 2m 21s |
+| `scheduled-maintenance-centos-str__4KVvuca` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 10/0 (+2 dropped) | 2m 21s |
 
 ## Trial `scheduled-maintenance-centos-str__4KVvuca`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 26s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 10/2 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.900 | 10/0 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -84,12 +84,7 @@ Hygiene evidence: `cmd-5d4cd8ae53544609`, `cmd-9a9fd95e1b834f66`, `cmd-75874eded
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-da86e1a7e5234f25` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-33a6d438e1cc4ede` | node1 | -1 | `echo alive; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -109,7 +104,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

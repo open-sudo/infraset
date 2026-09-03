@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **5m 33s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `scheduled-backup-ubuntu24__cS7GbCh` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 32/7 | 5m 31s |
+| `scheduled-backup-ubuntu24__cS7GbCh` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 32/3 (+4 dropped) | 5m 31s |
 
 ## Trial `scheduled-backup-ubuntu24__cS7GbCh`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **5m 33s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.950 | 32/7 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.950 | 32/3 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -115,10 +115,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-cfc94ee5f9ac4ee3` | node2 | 3 | `systemctl enable --now ssh 2>&1 \|\| systemctl enable --now sshd 2>&1; systemctl is-active ssh sshd 2>&1` | Job for ssh.service failed because the control process exited with error code. |
 | `cmd-bb48b8d619a24601` | node2 | 2 | `/usr/sbin/sshd -t 2>&1; echo "exit=$?"; ls -la /etc/ssh/ssh_host_* 2>&1` | exit=1; ls: cannot access '/etc/ssh/ssh_host_*': No such file or directory |
 | `cmd-1248ce9cf9754fc5` | node2 | 3 | `ssh-keygen -A 2>&1; systemctl restart ssh 2>&1; sleep 1; systemctl is-active ssh` | Job for ssh.service failed because the control process exited with error code.; failed |
-| `cmd-68255fc80d8449a2` | node1 | -1 | `echo up` | [Errno 110] Connection timed out |
-| `cmd-bac8850a474d4f70` | node1 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-95d4aa10d4b24e38` | node2 | -1 | `echo up` | [Errno 104] Connection reset by peer |
-| `cmd-45794cd000214249` | node2 | -1 | `echo up` | [Errno 110] Connection timed out |
 
 ### Timing
 
@@ -138,7 +134,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

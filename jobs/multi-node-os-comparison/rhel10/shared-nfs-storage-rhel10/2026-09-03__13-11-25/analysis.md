@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **4m 02s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `shared-nfs-storage-rhel10__NnTe3LX` | Full Success | 1.000 | 1.000 | 1.000 | 0.970 | 33/9 | 3m 59s |
+| `shared-nfs-storage-rhel10__NnTe3LX` | Full Success | 1.000 | 1.000 | 1.000 | 0.970 | 33/3 (+6 dropped) | 3m 59s |
 
 ## Trial `shared-nfs-storage-rhel10__NnTe3LX`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **4m 02s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.970 | 0.940 | 33/9 |
+| 1.000 | 1.000 | 1.000 | 0.970 | 0.940 | 33/3 (+6 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -104,12 +104,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-3c5ee0e5d6004fdc` | node1 | 1 | `cat /etc/os-release \| head -5; echo ---; id dataops 2>&1; echo ---; getent group dataops 2>&1; echo ---; ls -la /srv/nfs/ 2>&1; echo ---; rpm -q nfs-utils 2>&1` | ls: cannot access '/srv/nfs/': No such file or directory |
 | `cmd-c358b21c90304b07` | node2 | 1 | `cat /etc/os-release \| head -5; echo ---; id dataops 2>&1; echo ---; getent group dataops 2>&1; echo ---; ls -la /mnt/ 2>&1; echo ---; rpm -q nfs-utils 2>&1` | ---; package nfs-utils is not installed |
 | `cmd-8b54c7d053db4cfb` | node2 | 2 | `su -s /bin/sh dataops -c 'echo from-node2 > /mnt/shared/node2.txt'; ls -la /mnt/shared/` | ls: /mnt/shared/: Permission denied; ls: cannot open directory '/mnt/shared/': Permission denied |
-| `cmd-470357c49e074c37` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-a2d5eb766e674612` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-5b335071aa514f56` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
-| `cmd-6cd459a1e8cb4823` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-1fe33210cd044cd2` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo UNREACHABLE` | [Errno 110] Connection timed out |
-| `cmd-53ddde427e564dee` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1 \|\| echo UNREACHABLE` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -129,7 +123,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 9 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **19m 34s** with **1 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `wireguard-gateway-rhel7__jmQ7i7k` | Not Successfully Evaluated | not available | not available | not available | not available | 104/34 | 19m 32s |
+| `wireguard-gateway-rhel7__jmQ7i7k` | Not Successfully Evaluated | not available | not available | not available | not available | 104/20 (+14 dropped) | 19m 32s |
 
 ## Trial `wireguard-gateway-rhel7__jmQ7i7k`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **19m 34s** with **1 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| not available | not available | not available | not available | not available | 104/34 |
+| not available | not available | not available | not available | not available | 104/20 (+14 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -77,21 +77,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-eab587a189d74e6c` | node2 | 1 | `cat /etc/systemd/system/node2app.service 2>&1; echo ---; sudo systemctl status node2app.service --no-pager 2>&1 \| head -15; echo ---; ss -tlnp 2>&1 \| grep 8080 \|\| netstat -tlnp 2>&1 \| grep 8080` | Loaded: loaded (/etc/systemd/system/node2app.service; disabled; vendor preset: disabled) |
 | `cmd-587df3cde8214d5a` | node3 | 143 | `sudo pkill -f "wireguard-go wg0"; sleep 1; sudo rm -f /var/run/wireguard/wg0.sock; sudo systemctl start wg0-tunnel.service; sleep 2; sudo systemctl status wg0-tunnel.service --no-pager \| head -10; /sbin/ip -4 addr sho...` | /bin/sh: line 1: 4927 Terminated /bin/sh -c 'if command -v bash >/dev/null 2>&1; then exec bash -c '"'"'sudo pkill -f "wireguard-go wg0"; sleep 1; sudo rm -f /var/run/wireguard/wg0.sock; sudo systemctl start wg0-tunnel.service; sleep 2; sudo systemctl status wg0-tunnel.service --no-pager \| head -10; /sbin/ip -4 addr... |
 | `cmd-c51862437d4842eb` | node3 | 1 | `sudo systemctl is-active wg0-tunnel.service 2>&1; /sbin/ip -4 addr show wg0 2>&1; ps aux \| grep wireguard-go \| grep -v grep` | inactive; Device "wg0" does not exist. |
-| `cmd-c40f313513af4ee9` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 110] Connection timed out |
-| `cmd-64b84036c87646ed` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 110] Connection timed out |
-| `cmd-bf2a9274147342fd` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 110] Connection timed out |
-| `cmd-28c64624099e400f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 110] Connection timed out |
-| `cmd-058882897fc845a3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-b8a52344207b4058` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-188d97025aee4f99` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-f6a10fcf4a52410d` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-1a3934e8a3814a66` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-721a115dcec04195` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | [Errno 104] Connection reset by peer |
 | `cmd-a41d4faacb2848ea` | node3 | 1 | `python2 -c "` | socket.error: [Errno 13] Permission denied |
-| `cmd-b1798292d6604d43` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | ssh: connect to host 10.100.229.11 port 22: Connection timed out |
-| `cmd-dd47300cf94545c6` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | ssh: connect to host 10.100.229.11 port 22: Connection timed out |
-| `cmd-cf223824eaf649ef` | node3 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | ssh: connect to host 10.100.229.12 port 22: Connection timed out |
-| `cmd-d735fe5c9fb64a3e` | node3 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime 2>&1` | ssh: connect to host 10.100.229.12 port 22: Connection timed out |
 
 ### Complete executor command timeline
 
@@ -1980,7 +1966,7 @@ echo &quot;-- direct via public net (should be blocked) --&quot;; curl -s --max-
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 34 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 20 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

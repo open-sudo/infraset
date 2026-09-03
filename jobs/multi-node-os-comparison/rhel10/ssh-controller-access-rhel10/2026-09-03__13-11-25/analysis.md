@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **3m 47s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ssh-controller-access-rhel10__T6tZ2cd` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 33/11 | 3m 45s |
+| `ssh-controller-access-rhel10__T6tZ2cd` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 33/4 (+7 dropped) | 3m 45s |
 
 ## Trial `ssh-controller-access-rhel10__T6tZ2cd`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **3m 47s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 33/11 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 33/4 (+7 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -97,13 +97,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-31a0646bbc0b40da` | node1 | 1 | `grep -E "^PasswordAuthentication\|^PubkeyAuthentication\|^PermitRootLogin" /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null` | No error text was captured. |
 | `cmd-ab0b16b1a4a7447c` | node2 | 1 | `grep -E "^PasswordAuthentication\|^PubkeyAuthentication\|^PermitRootLogin" /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null` | No error text was captured. |
 | `cmd-2ec4106b5ab8480c` | node1 | 255 | `sudo -u opsbot ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -i /home/opsbot/.ssh/id_ed25519 opsbot@"$NODE_IP" 'echo SSH_KEY_AUTH_OK; whoami; hostname' 2>&1` | opsbot@10.100.76.10: Permission denied (publickey). |
-| `cmd-e250ef1b000f40e6` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-34306828fabb47c4` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-39b9522219d146bf` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-402325b9861d4c79` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-7f125f963d294484` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-422611eb42804da6` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-3621cf25fd264117` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -123,7 +116,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 11 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

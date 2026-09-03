@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **15m 06s** with **0 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `config-sync-rhel7__qXSWZQt` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 35/2 | 15m 04s |
+| `config-sync-rhel7__qXSWZQt` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 35/0 (+2 dropped) | 15m 04s |
 
 ## Trial `config-sync-rhel7__qXSWZQt`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **15m 06s** with **0 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 35/2 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 35/0 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -98,12 +98,7 @@ Hygiene evidence: `cmd-d3ffffce161d4252`, `cmd-2f1da0ab084e4435`, `cmd-899b815a3
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-726696fc54f540ae` | node1 | 255 | `echo alive; date` | ssh: connect to host 10.100.16.10 port 22: Connection timed out |
-| `cmd-4fbd07251cc744e5` | node1 | 255 | `echo alive; date` | ssh: connect to host 10.100.16.10 port 22: Connection timed out |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -123,7 +118,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

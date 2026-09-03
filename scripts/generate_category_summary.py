@@ -102,8 +102,35 @@ def command_records(trial_dir: Path) -> list[dict[str, Any]]:
     return records
 
 
-def command_stats(records: list[dict[str, Any]], node_filter: set[str] | None = None) -> tuple[int, int]:
-    successful = failed = 0
+# A command whose exec channel dropped never reached the managed node, so it
+# says nothing about the operating system or the executor. These are dominated
+# by the deliberate post-reboot liveness polling that the restart-evidence
+# protocol requires: every poll issued while the node is still rebooting
+# records one. Counting them as failures penalises whichever image is slowest
+# to bring sshd back up, which is not what this table is measuring.
+_TRANSPORT_FAILURE = re.compile(
+    r"connection reset by peer"
+    r"|connection timed out"
+    r"|closed by remote host"
+    r"|exec stream closed",
+    re.IGNORECASE,
+)
+
+
+def is_transport_failure(record: dict[str, Any]) -> bool:
+    """Report whether a non-zero command failed in transit rather than on the node."""
+    for field in ("stderr", "error"):
+        value = record.get(field)
+        if isinstance(value, str) and _TRANSPORT_FAILURE.search(value):
+            return True
+    return False
+
+
+def command_stats(
+    records: list[dict[str, Any]], node_filter: set[str] | None = None
+) -> tuple[int, int, int]:
+    """Return (successful, failed, transport) counts for completed commands."""
+    successful = failed = transport = 0
     for record in records:
         if node_filter is not None and record.get("node") not in node_filter:
             continue
@@ -113,8 +140,11 @@ def command_stats(records: list[dict[str, Any]], node_filter: set[str] | None = 
         if return_code == 0:
             successful += 1
         elif isinstance(return_code, int):
-            failed += 1
-    return successful, failed
+            if is_transport_failure(record):
+                transport += 1
+            else:
+                failed += 1
+    return successful, failed, transport
 
 
 def expand_cluster(cluster: list[Any]) -> list[str]:
@@ -209,7 +239,7 @@ def build_matrix_category(category: str) -> str:
             hygiene_scores: list[float] = []
             for trial_dir in trial_dirs(latest):
                 records = command_records(trial_dir)
-                s, f = command_stats(records)
+                s, f, _transport = command_stats(records)
                 successful += s
                 failed += f
                 duration = trial_duration_seconds(trial_dir)
@@ -250,6 +280,13 @@ def build_matrix_category(category: str) -> str:
         "not been executed yet for that OS. The final **Average** row is the "
         "mean successful/failed count per OS across all tasks with a "
         "recorded run.\n",
+        "Commands whose exec channel dropped (connection reset, connection "
+        "timed out, closed by remote host, exec stream closed) are excluded "
+        "from both counts: they never reached the node, and they are "
+        "dominated by the deliberate post-reboot liveness polling that the "
+        "restart-evidence protocol requires. Counting them would rank images "
+        "by how slowly they bring sshd back up rather than by how the "
+        "executor handled them.\n",
         *header,
     ]
     for slug in slugs:
@@ -345,7 +382,7 @@ def build_mixed_os_scenarios() -> str:
             successful = failed = 0
             for trial_dir in trial_dirs(latest):
                 records = command_records(trial_dir)
-                s, f = command_stats(records, node_filter=nodes)
+                s, f, _transport = command_stats(records, node_filter=nodes)
                 successful += s
                 failed += f
             per_image[image] = (successful, failed)

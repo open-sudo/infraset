@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **3m 49s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `scheduled-backup-rhel10__KyhsJwp` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 25/7 | 3m 47s |
+| `scheduled-backup-rhel10__KyhsJwp` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 25/1 (+6 dropped) | 3m 47s |
 
 ## Trial `scheduled-backup-rhel10__KyhsJwp`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **3m 49s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 25/7 |
+| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 25/1 (+6 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -94,12 +94,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-d814a518d7b84f1c` | node2 | 1 | `ls -la /srv/inventory/data 2>&1; echo "---"; du -sh /srv/inventory/data 2>&1` | ls: cannot access '/srv/inventory/data': No such file or directory; du: cannot access '/srv/inventory/data': No such file or directory |
-| `cmd-edf46fa3543c49cb` | node1 | -1 | `sleep 8; cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-0111d9583e5f4e9e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-3b1075361e32468e` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-4411c305618d4103` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-4d96b0350ce74212` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 110] Connection timed out |
-| `cmd-3eda60164bf44d47` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -119,7 +113,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

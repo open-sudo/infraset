@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **19m 37s** with **0 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `wireguard-gateway-rhel7__SwG6GVS` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 96/23 | 19m 35s |
+| `wireguard-gateway-rhel7__SwG6GVS` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 96/9 (+14 dropped) | 19m 35s |
 
 ## Trial `wireguard-gateway-rhel7__SwG6GVS`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **19m 37s** with **0 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 96/23 |
+| 1.000 | 1.000 | 1.000 | 0.800 | 0.900 | 96/9 (+14 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -136,20 +136,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-7dbb7e59bee64834` | node3 | 1 | `yum list available 2>&1 \| grep -E '^golang\|^gcc\.' \| head; echo ---rc; yum list available 2>&1 \| grep -E '^golang'` | gcc.x86_64 4.8.5-44.el7 rhel-7-server-rpms; ---rc |
 | `cmd-3796b36c74a243f3` | node1 | 127 | `generate pki wireguard key-pair 2>&1 \|\| bash -c 'source /opt/vyatta/etc/functions/script-template; generate pki wireguard key-pair'` | bash: line 1: generate: command not found; bash: line 1: generate: command not found |
 | `cmd-224b4fa72db242d4` | node1 | 255 | `echo WG:; wg show` | Error: either "dev" is duplicate, or "eth1" is garbage. |
-| `cmd-3828e09f7bf3481d` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | ssh: connect to host 10.100.206.11 port 22: Connection timed out |
-| `cmd-d8a8d9fa58d24616` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | ssh: connect to host 10.100.206.11 port 22: Connection timed out |
-| `cmd-d085e4847ae54fb1` | node3 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | ssh: connect to host 10.100.206.12 port 22: Connection timed out |
-| `cmd-0570d7f3b2a14ed4` | node3 | 255 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | ssh: connect to host 10.100.206.12 port 22: Connection timed out |
-| `cmd-41aab211cfcd4599` | node1 | -1 | `cat /proc/uptime` | [Errno 110] Connection timed out |
-| `cmd-4f938ce109bc4437` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | [Errno 110] Connection timed out |
-| `cmd-4a94db6b98d24ee3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | [Errno 110] Connection timed out |
-| `cmd-f7bc0142416d42e6` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | [Errno 110] Connection timed out |
-| `cmd-96ff37dd29e147cb` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | [Errno 110] Connection timed out |
-| `cmd-d4b800d3770141dc` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-59ce74202ab44dc0` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-a7dc7054403b4fd0` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-f7fa4c298b8b4582` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-14886219a9b040bb` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; cat /proc/uptime 2>&1` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -169,7 +155,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 23 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 9 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

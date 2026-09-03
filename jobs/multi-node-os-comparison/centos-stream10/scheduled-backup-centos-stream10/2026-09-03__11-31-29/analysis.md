@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **3m 55s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `scheduled-backup-centos-stream10__AkeWMfM` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 26/7 | 3m 53s |
+| `scheduled-backup-centos-stream10__AkeWMfM` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 26/2 (+5 dropped) | 3m 53s |
 
 ## Trial `scheduled-backup-centos-stream10__AkeWMfM`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **3m 55s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 26/7 |
+| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 26/2 (+5 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -108,11 +108,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-59e312df5f284f90` | node2 | 2 | `ls -la /srv 2>&1; ls -la /srv/inventory 2>&1` | ls: cannot access '/srv/inventory': No such file or directory |
 | `cmd-8d6f35482f6244dc` | node1 | 2 | `which ssh rsync sshpass 2>&1; ls -la /var/backups 2>&1` | ls: cannot access '/var/backups': No such file or directory |
-| `cmd-0714f4ce2b664bc6` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-e6d2f9948b0146c1` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-84619c8f3e8845ac` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-87a8a8a9c9ea4e87` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-82c3c387cc7f464d` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -132,7 +127,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 7 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

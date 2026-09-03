@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **3m 04s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-dns-resolution-alpine__jUnGMR8` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 18/16 | 2m 59s |
+| `internal-dns-resolution-alpine__jUnGMR8` | Full Success | 1.000 | 1.000 | 1.000 | 0.900 | 18/2 (+14 dropped) | 2m 59s |
 
 ## Trial `internal-dns-resolution-alpine__jUnGMR8`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **3m 04s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 18/16 |
+| 1.000 | 1.000 | 1.000 | 0.900 | 0.920 | 18/2 (+14 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -86,20 +86,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-434b789d04e745a6` | node1 | 1 | `rc-update add dnsmasq default 2>&1; rc-service dnsmasq start 2>&1; sleep 1; rc-service dnsmasq status; ss -tulnp \| grep :53` | bash: line 1: ss: command not found |
 | `cmd-3b52ee8236a64492` | node2 | 1 | `cat /etc/resolv.conf; echo ---; cat /etc/dhcpcd.conf 2>/dev/null \| grep -i resolv` | # /etc/resolv.conf.tail can replace this line; --- |
-| `cmd-a19ccd983c76461f` | node1 | -1 | `echo ok` | [Errno 104] Connection reset by peer |
-| `cmd-6be65bf822b3468e` | node1 | -1 | `echo ok` | [Errno 104] Connection reset by peer |
-| `cmd-473038c80c984d72` | node1 | -1 | `echo ok` | [Errno 104] Connection reset by peer |
-| `cmd-0ed05a12987d4c8d` | node1 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-84045fba16e64fe7` | node1 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-dd4233cd873449b7` | node1 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-bf625d3b0a2948aa` | node1 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-6f2f4f8699e34833` | node1 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-9939a6da041c484c` | node2 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-08bdfc4dbc324553` | node2 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-3d41e990d6ec4868` | node2 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-bdc8bb4eeec1455c` | node2 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-9509c10dd4284aeb` | node2 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-7a4f1d12ebe84c98` | node2 | -1 | `echo ok; cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -119,7 +105,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 16 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

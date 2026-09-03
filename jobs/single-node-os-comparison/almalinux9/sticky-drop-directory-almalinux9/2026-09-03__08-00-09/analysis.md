@@ -24,7 +24,7 @@ The job contains **1 trial**, completed in **2m 32s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `sticky-drop-directory-almalinux9__M6qajxu` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 13/4 | 2m 27s |
+| `sticky-drop-directory-almalinux9__M6qajxu` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 13/3 (+1 dropped) | 2m 27s |
 
 ## Trial `sticky-drop-directory-almalinux9__M6qajxu`
 
@@ -32,7 +32,7 @@ The job contains **1 trial**, completed in **2m 32s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 13/4 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.950 | 13/3 (+1 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -92,7 +92,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-61ffc40eff4a470f` | node1 | 1 | `ls -ldZ /srv/drop; getenforce 2>/dev/null; grep -E '^(drop\|test)' /etc/passwd` | drwxrwxrwt. 2 root root system_u:object_r:var_t:s0 6 Sep 3 08:03 /srv/drop; Enforcing |
 | `cmd-d5ac31c9f8524343` | node1 | 1 | `loginctl terminate-user dropuser1 2>&1; loginctl terminate-user dropuser2 2>&1; sleep 2; kill -9 1292 1294 1320 1322 2>&1; sleep 1; userdel dropuser1 2>&1; userdel dropuser2 2>&1; id dropuser1 2>&1; id dropuser2 2>&1` | id: ‘dropuser1’: no such user; id: ‘dropuser2’: no such user |
-| `cmd-9ed630ce68774235` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
 | `cmd-52078464b35243ae` | node1 | 1 | `sudo -u dropv1 -- rm -f /srv/drop/a.txt; sudo -u dropv2 -- rm -f /srv/drop/b.txt` | id: ‘dropv1’: no such user; id: ‘dropv2’: no such user |
 
 ### Timing
@@ -113,7 +112,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **3m 30s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `network-scoped-firewall-ubuntu24__6miYomS` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 31/4 | 3m 28s |
+| `network-scoped-firewall-ubuntu24__6miYomS` | Full Success | 1.000 | 1.000 | 1.000 | 0.950 | 31/1 (+3 dropped) | 3m 28s |
 
 ## Trial `network-scoped-firewall-ubuntu24__6miYomS`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **3m 30s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 31/4 |
+| 1.000 | 1.000 | 1.000 | 0.950 | 0.930 | 31/1 (+3 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -96,9 +96,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-2af64d60b48d4800` | node1 | 3 | `cat /proc/sys/kernel/random/boot_id; echo ---; uptime -s; echo ---; sudo ufw status; echo ---; systemctl is-active ssh` | ---; inactive |
-| `cmd-305ff0ee9c024abe` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-d41268b3c1f24a19` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-f455adaae25d4fb6` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -118,7 +115,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 1 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

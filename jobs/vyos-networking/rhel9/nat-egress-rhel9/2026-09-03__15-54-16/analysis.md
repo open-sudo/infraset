@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **6m 17s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `nat-egress-rhel9__93n8bW3` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 43/20 | 6m 14s |
+| `nat-egress-rhel9__93n8bW3` | Full Success | 1.000 | 1.000 | 1.000 | 0.930 | 43/4 (+16 dropped) | 6m 14s |
 
 ## Trial `nat-egress-rhel9__93n8bW3`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **6m 17s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 43/20 |
+| 1.000 | 1.000 | 1.000 | 0.930 | 0.900 | 43/4 (+16 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -111,23 +111,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-dc634f35fde645c7` | node1 | 127 | `vbash -c 'show configuration commands' 2>&1` | Invalid command: [show] |
 | `cmd-3e1e8c38b4df46de` | node1 | 1 | `find / -path /proc -prune -o -name "*.xml*" -path "*firewall*" -print 2>/dev/null \| grep -i state` | No error text was captured. |
 | `cmd-fa8928994bd44b87` | node1 | 1 | `find / -xdev -iname "*.xml.in" 2>/dev/null \| xargs grep -l "state" 2>/dev/null \| grep -i firewall` | No error text was captured. |
-| `cmd-9748c912137a45f3` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-08c00c5a3ed44c84` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-6bf8a6e2d3ad4e8f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-2ef6dacc26f8405f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-4dad7e22c3634ccf` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-29ac4efbb911414c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-992a07cac31e4505` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-3754234853a74933` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
 | `cmd-2767ad35eb024fb0` | node1 | 127 | `ip -4 addr show eth1; sysctl net.ipv4.ip_forward; nft list ruleset \| grep -A2 masquerade; bash -c 'source /opt/vyatta/etc/functions/script-template; configure; show nat source; show firewall ipv4 forward filter; exit'` | bash: line 1: show: command not found; bash: line 1: show: command not found |
-| `cmd-3815421db9c14ec5` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-c1597f740d2347c6` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-ffbf5bf376b64154` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-2fc6759375624263` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
-| `cmd-c6045a27b6144194` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-6c9a832e22124440` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-9c5a33ff49a0481a` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 110] Connection timed out |
-| `cmd-b9f991609ba640d4` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -147,7 +131,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 20 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 4 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

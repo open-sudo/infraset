@@ -27,7 +27,7 @@ The job contains **1 trial**, completed in **9m 01s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `shared-nfs-storage-rhel7__Ud7nMz8` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 26/12 | 8m 59s |
+| `shared-nfs-storage-rhel7__Ud7nMz8` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 26/8 (+4 dropped) | 8m 59s |
 
 ## Trial `shared-nfs-storage-rhel7__Ud7nMz8`
 
@@ -35,7 +35,7 @@ The job contains **1 trial**, completed in **9m 01s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 26/12 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.920 | 26/8 (+4 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -110,10 +110,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-a4144bc37d8b4a11` | node2 | 2 | `sudo ls -la /mnt/shared` | ls: cannot open directory /mnt/shared: Permission denied; ls: cannot open directory /mnt/shared: Permission denied |
 | `cmd-2f3e1cf2537f4f2c` | node1 | 2 | `systemctl is-active nfs-server rpcbind` | ls: cannot open directory /srv/nfs/shared: Permission denied |
 | `cmd-9e2ae21db63b49d0` | node2 | 2 | `systemctl is-active rpcbind` | ls: cannot open directory /mnt/shared: Permission denied |
-| `cmd-bffb324083ab4983` | node1 | 255 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | ssh: connect to host 10.100.87.10 port 22: Connection timed out |
-| `cmd-db9c006377bd4213` | node1 | 255 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | ssh: connect to host 10.100.87.10 port 22: Connection timed out |
-| `cmd-0c2517e9f449463d` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | ssh: connect to host 10.100.87.11 port 22: Connection timed out |
-| `cmd-ab11bd118d7a4610` | node2 | 255 | `cat /proc/sys/kernel/random/boot_id; uptime -s` | ssh: connect to host 10.100.87.11 port 22: Connection timed out |
 
 ### Timing
 
@@ -133,7 +129,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 12 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

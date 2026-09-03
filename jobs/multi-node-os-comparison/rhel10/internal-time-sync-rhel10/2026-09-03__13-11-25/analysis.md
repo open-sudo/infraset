@@ -25,7 +25,7 @@ The job contains **1 trial**, completed in **4m 09s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `internal-time-sync-rhel10__pUqg4eJ` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 33/6 | 4m 07s |
+| `internal-time-sync-rhel10__pUqg4eJ` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 33/0 (+6 dropped) | 4m 07s |
 
 ## Trial `internal-time-sync-rhel10__pUqg4eJ`
 
@@ -33,7 +33,7 @@ The job contains **1 trial**, completed in **4m 09s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 33/6 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.900 | 33/0 (+6 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -98,16 +98,7 @@ Hygiene evidence: `cmd-9d57be3301454c50`, `cmd-9608e792abd44c3a`, `cmd-b80e9b414
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-bf4c2334afab4c97` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-d871561efab34a58` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-5997501e43d04c64` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-14851015a55041d4` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-afad025746a94d33` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-5e8f1466e1304fd1` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -127,7 +118,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 6 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

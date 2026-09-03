@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **4m 18s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `network-scoped-firewall-rhel10__izaaLbL` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 39/8 | 4m 16s |
+| `network-scoped-firewall-rhel10__izaaLbL` | Full Success | 1.000 | 1.000 | 1.000 | 0.800 | 39/0 (+8 dropped) | 4m 16s |
 
 ## Trial `network-scoped-firewall-rhel10__izaaLbL`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **4m 18s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.800 | 0.920 | 39/8 |
+| 1.000 | 1.000 | 1.000 | 0.800 | 0.920 | 39/0 (+8 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -89,18 +89,7 @@ Hygiene evidence: `cmd-589467edb0fb42d7`, `cmd-2f9cd60f1312447b`, `cmd-7af9cccf1
 
 ### Failed executor commands
 
-A failed command is an unsuccessful attempt, not automatically a failed final outcome. The requirement findings above show whether the executor recovered.
-
-| Command ID | Node | Return code | Command | Recorded error |
-|---|---|---:|---|---|
-| `cmd-ee6185457d5244d1` | node1 | -1 | `sleep 10; cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-ad572ee06b1f41ca` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-cf0a8b54b85b4ff4` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-6bfd187e5feb41ac` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-4f6fcb158088407b` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-bec39fc970644e7f` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-b2fab34f94b34426` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-ca9fe9c06a0f4f08` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
+No failed executor commands were recorded.
 
 ### Timing
 
@@ -120,7 +109,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 8 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

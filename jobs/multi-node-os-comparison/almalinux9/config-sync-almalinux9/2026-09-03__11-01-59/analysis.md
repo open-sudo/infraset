@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **15m 48s** with **0 Harbor-reported 
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `config-sync-almalinux9__cjkMtik` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 42/5 | 15m 46s |
+| `config-sync-almalinux9__cjkMtik` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 42/3 (+2 dropped) | 15m 46s |
 
 ## Trial `config-sync-almalinux9__cjkMtik`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **15m 48s** with **0 Harbor-reported 
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.940 | 42/5 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.940 | 42/3 (+2 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -106,8 +106,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | Command ID | Node | Return code | Command | Recorded error |
 |---|---|---:|---|---|
 | `cmd-fb1e9b9c25cd44a6` | node2 | 2 | `sleep 100; date -Is; ls -la /tmp/wait_done.log 2>&1` | ls: cannot access '/tmp/wait_done.log': No such file or directory |
-| `cmd-5c1845afc754416b` | node1 | -1 | `sleep 15; cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-46ddda92bf88422e` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
 | `cmd-a1007bedc1c64899` | node2 | 2 | `sleep 100; date -Is; ls /tmp/wait2.log 2>&1` | ls: cannot access '/tmp/wait2.log': No such file or directory |
 | `cmd-d2b40961ed6b43f8` | node2 | 143 | `pkill -f 'sleep 320' 2>/dev/null; echo done` | Terminated |
 
@@ -129,7 +127,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 5 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

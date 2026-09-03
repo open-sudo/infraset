@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **7m 27s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `wireguard-gateway-rhel10__eFxeGkP` | Full Success | 1.000 | 1.000 | 1.000 | 0.820 | 54/22 | 7m 25s |
+| `wireguard-gateway-rhel10__eFxeGkP` | Full Success | 1.000 | 1.000 | 1.000 | 0.820 | 54/3 (+19 dropped) | 7m 25s |
 
 ## Trial `wireguard-gateway-rhel10__eFxeGkP`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **7m 27s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.820 | 0.900 | 54/22 |
+| 1.000 | 1.000 | 1.000 | 0.820 | 0.900 | 54/3 (+19 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -102,25 +102,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 | `cmd-d72c8fc25ba245eb` | node2 | 1 | `ip -4 addr show enp8s0; nmcli device status 2>/dev/null; cat /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null \| grep -A5 enp8s0` | enp8s0 ethernet connecting (getting IP configuration) Wired connection 2; lo loopback connected (externally) lo |
 | `cmd-bee691ed286f46e4` | node3 | 1 | `ping -c2 -W2 10.200.0.1; echo ---; ping -c2 -W2 10.50.50.254; echo ---; ping -c2 -W2 10.50.50.11` | --- 10.50.50.11 ping statistics ---; 2 packets transmitted, 0 received, 100% packet loss, time 1006ms |
 | `cmd-1b95fc9668124e1b` | node2 | 1 | `systemctl daemon-reload` | Created symlink '/etc/systemd/system/multi-user.target.wants/app8080.service' → '/etc/systemd/system/app8080.service'.; active |
-| `cmd-70683da6572e4a16` | node1 | -1 | `i=0; while [ $i -lt 30 ]; do id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); if [ "$id" != "4098161f-de60-45f0-8b5b-25aff0b44274" ] && [ -n "$id" ]; then echo "CHANGED:$id after ${i}s"; break; fi; sleep 2; i=$(...` | [Errno 110] Connection timed out |
-| `cmd-8d374a484e7145a4` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-904f17b706f04841` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-09fc8563ca3a4db5` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-9cbc64e848a44543` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-f87b6e68918c4028` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-ea7764d0017a40c0` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-2b7e7338ee844eaf` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-196aff3abb4942ae` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-9303b2d643a4406d` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-52b17ed13775473a` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-2afef7f6aa7b4e72` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-80df563b9ef14d7b` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-1a633d6890a44faf` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-4f7307b2408e440e` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-21b686678de94b4f` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
-| `cmd-9e753024d02d491c` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-6e57d1a8f1bd430a` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 110] Connection timed out |
-| `cmd-a89163e38db54067` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -140,7 +121,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 22 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 3 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts

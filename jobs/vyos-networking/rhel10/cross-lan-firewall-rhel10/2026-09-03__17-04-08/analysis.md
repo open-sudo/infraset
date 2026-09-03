@@ -26,7 +26,7 @@ The job contains **1 trial**, completed in **7m 23s** with **0 Harbor-reported e
 
 | Trial | Decision | Reward | Coverage | Functionality | Hygiene | Commands | Duration |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `cross-lan-firewall-rhel10__oHHMmDm` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 75/16 | 7m 21s |
+| `cross-lan-firewall-rhel10__oHHMmDm` | Full Success | 1.000 | 1.000 | 1.000 | 0.850 | 75/2 (+14 dropped) | 7m 21s |
 
 ## Trial `cross-lan-firewall-rhel10__oHHMmDm`
 
@@ -34,7 +34,7 @@ The job contains **1 trial**, completed in **7m 23s** with **0 Harbor-reported e
 
 | Reward | Coverage | Functionality | Hygiene | Confidence | Commands |
 |---:|---:|---:|---:|---:|---:|
-| 1.000 | 1.000 | 1.000 | 0.850 | 0.880 | 75/16 |
+| 1.000 | 1.000 | 1.000 | 0.850 | 0.880 | 75/2 (+14 dropped) |
 
 ### Why the verifier reached this decision
 
@@ -115,20 +115,6 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 |---|---|---:|---|---|
 | `cmd-013f6c74db8c44fc` | node2 | 124 | `echo hello \| timeout 3 bash -c 'cat < /dev/tcp/10.60.2.10/5432 & exec 3<>/dev/tcp/10.60.2.10/5432; echo ping >&3; timeout 2 cat <&3'` | bash: connect: No route to host; bash: line 1: /dev/tcp/10.60.2.10/5432: No route to host |
 | `cmd-adccc8d503ff42cd` | node1 | 127 | `show firewall ipv4 forward filter rules` | bash: line 1: show: command not found |
-| `cmd-9c9f187bc80d483d` | node3 | -1 | `pkill socat; sleep 1; ss -tlnp \| grep 5432 \|\| echo "listener stopped"` | exec stream closed before command completion |
-| `cmd-783f5f3b3172488c` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-aacda5ea73444b67` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-9ace8fcb2e9d404b` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-fd3f644dcb1449de` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-d59a1b3020f9498f` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-644402a42edb4142` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-e0ec9451f15344e2` | node1 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-77ad8b592b0343b2` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-8e06be19fee84421` | node2 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-d2f5d26f3c6b4b37` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 110] Connection timed out |
-| `cmd-489e58bdb7a84bbd` | node3 | -1 | `cat /proc/sys/kernel/random/boot_id 2>&1; uptime -s 2>&1` | [Errno 104] Connection reset by peer |
-| `cmd-766001365b754630` | node3 | -1 | `pkill socat 2>/dev/null; sleep 1; ss -tlnp \| grep 5432 \|\| echo stopped` | exec stream closed before command completion |
-| `cmd-ff69451e2a8d441e` | node3 | -1 | `ss -tlnp \| grep 5432 \|\| echo stopped` | [Errno 104] Connection reset by peer |
 
 ### Timing
 
@@ -148,7 +134,7 @@ A failed command is an unsuccessful attempt, not automatically a failed final ou
 ## Overall comments for readers
 
 - This job contains one trial. Its evidence can establish what happened in that execution, but it cannot measure run-to-run variability.
-- The executor audit contains 16 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
+- The executor audit contains 2 failed command attempt(s). Review their surrounding trial findings before interpreting them as final task failures.
 - Scores describe the outcomes supported by these recorded executions; they are not a general claim that the model will always complete the task.
 
 ## Job artifacts
