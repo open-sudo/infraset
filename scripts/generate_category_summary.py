@@ -179,8 +179,8 @@ def build_matrix_category(category: str) -> str:
     cols = [label for _, label in os_ids]
     header = ["| Task | " + " | ".join(cols) + " |", "|---|" + "|".join(["---:"] * len(cols)) + "|"]
 
-    # cell_data[slug][os_id] = (link, "success/fail", "duration") or None
-    cell_data: dict[str, dict[str, tuple[str, str, str] | None]] = {}
+    # cell_data[slug][os_id] = (link, successful, failed, avg_duration_seconds) or None
+    cell_data: dict[str, dict[str, tuple[str, int, int, float | None] | None]] = {}
 
     for slug in slugs:
         cell_data[slug] = {}
@@ -203,7 +203,23 @@ def build_matrix_category(category: str) -> str:
                     durations.append(duration)
             link = relative_link(latest / "analysis.md")
             avg_duration = sum(durations) / len(durations) if durations else None
-            cell_data[slug][os_id] = (link, f"{successful}/{failed}", format_duration(avg_duration))
+            cell_data[slug][os_id] = (link, successful, failed, avg_duration)
+
+    def column_averages() -> dict[str, tuple[float | None, float | None, float | None]]:
+        averages: dict[str, tuple[float | None, float | None, float | None]] = {}
+        for os_id, _ in os_ids:
+            entries = [cell_data[slug][os_id] for slug in slugs if cell_data[slug][os_id] is not None]
+            if not entries:
+                averages[os_id] = (None, None, None)
+                continue
+            avg_success = sum(e[1] for e in entries) / len(entries)
+            avg_failed = sum(e[2] for e in entries) / len(entries)
+            durations = [e[3] for e in entries if e[3] is not None]
+            avg_duration = sum(durations) / len(durations) if durations else None
+            averages[os_id] = (avg_success, avg_failed, avg_duration)
+        return averages
+
+    averages = column_averages()
 
     commands_lines = [
         f"# {category}: command execution summary\n",
@@ -211,15 +227,24 @@ def build_matrix_category(category: str) -> str:
         "latest recorded job run. Each success/failure count links to the "
         "analysis for that specific job. `0/0` means the audit was captured "
         "but no managed-node commands were issued. `—` means the task has "
-        "not been executed yet for that OS.\n",
+        "not been executed yet for that OS. The final **Average** row is the "
+        "mean successful/failed count per OS across all tasks with a "
+        "recorded run.\n",
         *header,
     ]
     for slug in slugs:
         cells = []
         for os_id, _ in os_ids:
             data = cell_data[slug][os_id]
-            cells.append("—" if data is None else f"[{data[1]}]({data[0]})")
+            cells.append("—" if data is None else f"[{data[1]}/{data[2]}]({data[0]})")
         commands_lines.append("| " + slug + " | " + " | ".join(cells) + " |")
+    avg_cells = []
+    for os_id, _ in os_ids:
+        avg_success, avg_failed, _ = averages[os_id]
+        avg_cells.append(
+            "—" if avg_success is None else f"{avg_success:.1f}/{avg_failed:.1f}"
+        )
+    commands_lines.append("| **Average** | " + " | ".join(avg_cells) + " |")
 
     duration_lines = [
         "",
@@ -227,15 +252,22 @@ def build_matrix_category(category: str) -> str:
         "Wall-clock time from job start to finish for the same latest recorded "
         "job run per task per OS (averaged across trials when a job ran more "
         "than one). Each duration links to the analysis for that specific "
-        "job. `—` means the task has not been executed yet for that OS.\n",
+        "job. `—` means the task has not been executed yet for that OS. The "
+        "final **Average** row is the mean completion time per OS across all "
+        "tasks with a recorded run.\n",
         *header,
     ]
     for slug in slugs:
         cells = []
         for os_id, _ in os_ids:
             data = cell_data[slug][os_id]
-            cells.append("—" if data is None else f"[{data[2]}]({data[0]})")
+            cells.append("—" if data is None else f"[{format_duration(data[3])}]({data[0]})")
         duration_lines.append("| " + slug + " | " + " | ".join(cells) + " |")
+    avg_cells = []
+    for os_id, _ in os_ids:
+        _, _, avg_duration = averages[os_id]
+        avg_cells.append(format_duration(avg_duration) if avg_duration is not None else "—")
+    duration_lines.append("| **Average** | " + " | ".join(avg_cells) + " |")
 
     return "\n".join(commands_lines + duration_lines + [""])
 
