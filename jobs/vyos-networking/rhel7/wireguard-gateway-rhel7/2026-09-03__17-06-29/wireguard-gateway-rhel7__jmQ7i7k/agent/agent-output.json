@@ -1,0 +1,94 @@
+{
+  "status": "completed",
+  "summary": "Built a WireGuard gateway on node1 (VyOS) so node3 can reach an app served from node2:8080 only through the tunnel. node1 and node2 share a private eth1 link (10.50.50.0/24, static, dhcp:false) that node3 has no access to; node3 sits only on the shared public network (10.100.229.0/24) alongside node1/node2's eth0. node1 terminates WireGuard on eth0 (wg0 10.200.0.1/24, UDP 51820), source-NATs (masquerades) wg0 traffic out eth1 so node2 sees requests arriving from node1's private IP (10.50.50.1), and node2's firewalld only accepts TCP 8080 from that address \u2014 confirmed blocking node3's direct/public-net access (\"No route to host\"). Since RHEL7's 3.10 kernel has no in-kernel WireGuard and yum had no usable repos, I built a from-source userspace wireguard-go (Go 1.27.1, CGO disabled; fetched via proxy.golang.org and raw.githubusercontent.com since github.com/codeload.github.com were blocked by the egress allowlist) and installed it as a systemd-managed tunnel (wg0-tunnel.service) on node3, configuring keys/peers via the WireGuard UAPI unix-socket protocol. The node2 app runs as a systemd service (node2app) for persistence. All three nodes were restarted one at a time (VyOS `reboot`, RHEL7 `/sbin/reboot`) with boot_id captured before and after to prove genuine reboots, and full functional recovery (interfaces, NAT, firewalld rule, WireGuard handshake, app reachable through the tunnel, and continued blocking of the direct path) was re-verified after each restart.",
+  "actions_performed": [
+    "Surveyed topology: eth0 is a shared public /24 (10.100.229.0/24) across all three nodes; eth1 is a private, dhcp:false link present only on node1 and node2",
+    "Assigned persistent static IPs on the private link: node1 eth1 10.50.50.1/24 (VyOS commit/save), node2 eth1 10.50.50.10/24 (RHEL7 ifcfg-eth1, NM-controlled)",
+    "Generated a WireGuard keypair on node1 via VyOS `generate pki wireguard key-pair`; configured wg0 (10.200.0.1/24, UDP 51820) with a peer entry for node3",
+    "Added VyOS NAT source rule 10 (masquerade wg0-subnet traffic egressing eth1) and an input-filter rule allowing UDP/51820 inbound on eth0",
+    "On node3 (no gcc, no yum repos, no kernel WG module): installed Go 1.27.1 from go.dev/dl, fetched wireguard-go's real main.go from raw.githubusercontent.com (the cached Go-proxy module versions only contained an empty stub, so cmd/wireguard-go had to be rebuilt from source against the library packages), built statically with CGO_ENABLED=0",
+    "Generated node3's WireGuard keypair with a small custom Go program using golang.org/x/crypto/curve25519 (wg/wg-tools binaries unavailable)",
+    "Configured node3's wg0 interface via the WireGuard UAPI protocol over its unix socket (python2), assigned 10.200.0.2/24, added a route for 10.50.50.0/24 via wg0",
+    "Deployed the node2 application (simple HTTP server on 8080) as a systemd service (node2app) for reboot persistence",
+    "Restricted node2's firewalld to accept TCP 8080 only from 10.50.50.1 (node1's private IP), leaving the zone's default policy to reject everything else including node3's direct public-net attempts",
+    "Packaged node3's tunnel setup (wireguard-go start + UAPI configuration + IP/route assignment) into a systemd oneshot service (wg0-tunnel.service), enabled for boot persistence",
+    "Verified end-to-end: node3 -> wg0 tunnel -> node1 (SNAT to 10.50.50.1) -> node2:8080 succeeds; node3 -> node2 public IP:8080 directly fails with 'No route to host'",
+    "Captured boot_id + health baseline on each node, restarted node1, node2, then node3 one at a time via native reboot mechanisms, polled each until reachable again, confirmed boot_id changed (proving a real reboot), and re-verified full recovery of interfaces, NAT, firewalld, WireGuard handshake, and the tunneled app path after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "App served from node2 on TCP 8080",
+      "command_ids": [
+        "cmd-d7674e5b01d542a8",
+        "cmd-c5fe6f1b858e41b2"
+      ],
+      "summary": "node2 runs a systemd-managed service (node2app) serving on 0.0.0.0:8080; curl to 127.0.0.1:8080 returns the app content."
+    },
+    {
+      "requirement": "WireGuard tunnel terminated on node1, reachable from node3",
+      "command_ids": [
+        "cmd-323280754cfb440b",
+        "cmd-0258a17c60ba434b",
+        "cmd-53ec45e313b546f1",
+        "cmd-0867dbff2ccb490b",
+        "cmd-05bebf21d60f4674"
+      ],
+      "summary": "VyOS wg0 configured with node1's generated keypair and node3's peer entry; interface up at 10.200.0.1/24; `show interfaces wireguard wg0` confirms an active handshake and peer traffic."
+    },
+    {
+      "requirement": "node3 configured as a WireGuard client reaching node2 only via node1",
+      "command_ids": [
+        "cmd-fddc8059f12a4a18",
+        "cmd-883758f1d4744e2a",
+        "cmd-96bd5330331843ab",
+        "cmd-24c49e83707344b4",
+        "cmd-ae80c84e80fb43e6"
+      ],
+      "summary": "wireguard-go built from source and running on node3; UAPI configured wg0 with node1 as peer/endpoint; route to 10.50.50.0/24 via wg0 added; curl through the tunnel (10.50.50.10:8080) succeeds after NAT fix."
+    },
+    {
+      "requirement": "node3 cannot reach node2's app directly (only via the tunnel)",
+      "command_ids": [
+        "cmd-9219b2f4a73f4c24",
+        "cmd-669927e7ca6749c1"
+      ],
+      "summary": "curl from node3 to node2's public IP (10.100.229.11:8080) fails with 'No route to host' both before and after node3's reboot, while the tunneled path (10.50.50.10:8080) succeeds."
+    },
+    {
+      "requirement": "node1 restart persistence and recovery",
+      "command_ids": [
+        "cmd-404ca4890ff64af2",
+        "cmd-a25cb5e2d43e4c4d",
+        "cmd-c40f313513af4ee9",
+        "cmd-5ea2e26ad2de4494",
+        "cmd-05b90c967bb942b6",
+        "cmd-d9c293aec6cc46b0"
+      ],
+      "summary": "Baseline boot_id e98d9010...; reboot triggered; node unreachable during restart; post-reboot boot_id aa1d4972... (changed) with uptime 0 min; wg0/eth1/NAT config intact from config.boot; tunneled app access re-verified."
+    },
+    {
+      "requirement": "node2 restart persistence and recovery",
+      "command_ids": [
+        "cmd-8401973024ca4372",
+        "cmd-e038046dbbde4064",
+        "cmd-b1798292d6604d43",
+        "cmd-a11cbff5b8ed439e",
+        "cmd-4132ff4639e645e4",
+        "cmd-ad271e9f77d74c30"
+      ],
+      "summary": "Baseline boot_id bdbfa15c...; reboot triggered; SSH connection timed out during restart; post-reboot boot_id 60c837b3... (changed) with uptime 0 min; node2app service, eth1 static IP, and firewalld rich rule all persisted; tunneled app access re-verified from node3."
+    },
+    {
+      "requirement": "node3 restart persistence and recovery",
+      "command_ids": [
+        "cmd-21b721a9bf254fe1",
+        "cmd-759ac3eb62134324",
+        "cmd-cf223824eaf649ef",
+        "cmd-95a82632726c4e49",
+        "cmd-8523d1cba8a2425d",
+        "cmd-669927e7ca6749c1"
+      ],
+      "summary": "Baseline boot_id 1a816f1f...; reboot triggered; SSH connection timed out during restart; post-reboot boot_id 96ce7435... (changed) with uptime 0 min; wg0-tunnel.service auto-started wireguard-go and restored wg0/routes; tunneled app access and continued direct-path blocking re-verified."
+    }
+  ]
+}

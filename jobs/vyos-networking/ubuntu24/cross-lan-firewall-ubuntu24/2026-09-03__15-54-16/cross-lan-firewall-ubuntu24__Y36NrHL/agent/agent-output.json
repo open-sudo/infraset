@@ -1,0 +1,95 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) to route between node2's lan-a network and node3's lan-b network, allowing only node2->node3 TCP/5432 and rejecting all other cross-lan traffic. Verified behavior, then performed the mandatory sequential reboot of node1, node2, and node3 with boot-id proof of restart and post-restart re-verification of connectivity and firewall behavior.",
+  "actions_performed": [
+    "Discovered topology: node1 is a VyOS router (eth0=mgmt, eth1/eth2 initially unconfigured); node2 sits on lan-a and node3 on lan-b, each with a second NIC (enp8s0) on an egress:false, dhcp:false network requiring manual addressing",
+    "Assigned static IPs via systemd-networkd drop-in files (to avoid the networkd reconciler clobbering them): node2 enp8s0=10.50.50.11/24, node3 enp8s0=10.60.60.12/24; VyOS eth1=10.50.50.254/24 (lan-a gateway), eth2=10.60.60.254/24 (lan-b gateway)",
+    "Added static routes on node2 and node3 (also via systemd-networkd config) pointing the far LAN subnet at node1's local LAN-side IP as gateway, since each host's default route only reaches the management network",
+    "Configured VyOS firewall ipv4 forward filter: default-action drop; rule 10 accept state established/related; rule 20 accept tcp destination-port 5432 from node2 (10.50.50.11) to node3 (10.60.60.12) via eth1->eth2; rule 900 reject all other eth1->eth2 traffic; rule 910 reject all eth2->eth1 traffic. Committed and saved config",
+    "Verified with nc and ping: node2->node3:5432 succeeds; node2->node3 on another TCP port is refused; ICMP between the two LANs is rejected in both directions",
+    "Captured a boot_id baseline on all three nodes, then restarted node1, node2, and node3 one at a time using each OS's native reboot command, backgrounded so the acknowledgement returned before disconnect",
+    "Polled each node until exec access returned, confirmed a changed /proc/sys/kernel/random/boot_id on each, and re-verified interface addressing, static routes, VyOS firewall rules, and the allow/reject traffic behavior after every individual node's restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 (lan-a) can reach node3 (lan-b) on TCP 5432, before and after each restart",
+      "command_ids": [
+        "cmd-3ea411d81ddb4368",
+        "cmd-8e5269b9bb6641b2",
+        "cmd-0b2ea3d6471e42fd",
+        "cmd-88be6f4a3a564015"
+      ],
+      "summary": "nc -zv from node2 to 10.60.60.12:5432 reports 'Connection succeeded' initially and after node1, node2, and node3 restarts respectively"
+    },
+    {
+      "requirement": "All other traffic between lan-a and lan-b is rejected (both directions)",
+      "command_ids": [
+        "cmd-3ea411d81ddb4368",
+        "cmd-7195042ec4144699",
+        "cmd-88be6f4a3a564015"
+      ],
+      "summary": "node2->node3 on a non-5432 TCP port returns 'Connection refused'; ICMP ping in both directions returns 'Destination Port Unreachable' (VyOS reject action), from node2->node3 initially/finally and node3->node2"
+    },
+    {
+      "requirement": "Firewall/NAT config configured via native VyOS CLI and persisted (saved)",
+      "command_ids": [
+        "cmd-250d7d3ad8fe43e2",
+        "cmd-c58c8fa2539b43f2"
+      ],
+      "summary": "show firewall ipv4 forward filter displays default-action drop plus rules 10/20/900/910 before and after node1's reboot, proving config was saved to config.boot"
+    },
+    {
+      "requirement": "node1 healthy baseline and changed boot identity on restart",
+      "command_ids": [
+        "cmd-30b08ca3dd7a4a46",
+        "cmd-63c58f16232f40de",
+        "cmd-5990b101703848e0",
+        "cmd-e88862f3dae146a5",
+        "cmd-c58c8fa2539b43f2"
+      ],
+      "summary": "Baseline boot_id ebd78841..., reboot acknowledged and returned immediately, connection timed out mid-reboot, new boot_id 83c0a01d... confirmed on reconnect, config/interfaces verified intact post-reboot"
+    },
+    {
+      "requirement": "node1 post-restart recovery of routing/firewall function",
+      "command_ids": [
+        "cmd-b3ae96c09140420f",
+        "cmd-8e5269b9bb6641b2"
+      ],
+      "summary": "After node1 reboot, listener restarted on node3 and node2->node3:5432 succeeded while ping was rejected, proving full functional recovery"
+    },
+    {
+      "requirement": "node2 healthy baseline and changed boot identity on restart",
+      "command_ids": [
+        "cmd-f0bf649c794547ce",
+        "cmd-2cf29dda4b434922",
+        "cmd-281be7397e104584",
+        "cmd-08c1c5d9ae0846ee"
+      ],
+      "summary": "Baseline boot_id 4d70780a..., reboot scheduled and acknowledged, new boot_id d9047a1b... confirmed on reconnect, static IP/route on enp8s0 verified intact post-reboot"
+    },
+    {
+      "requirement": "node2 post-restart recovery of routing/firewall function",
+      "command_ids": [
+        "cmd-0b2ea3d6471e42fd"
+      ],
+      "summary": "After node2 reboot, node2->node3:5432 succeeded and ping to node3 was rejected, confirming recovered connectivity and enforcement"
+    },
+    {
+      "requirement": "node3 healthy baseline and changed boot identity on restart",
+      "command_ids": [
+        "cmd-8c1312d9ea2e413c",
+        "cmd-1706767102ea4c53",
+        "cmd-db5d45bad3614be2",
+        "cmd-f67dcd787a3147e1"
+      ],
+      "summary": "Baseline boot_id 37344ae4..., reboot scheduled and acknowledged, new boot_id 357bb7b5... confirmed on reconnect, static IP/route on enp8s0 verified intact post-reboot"
+    },
+    {
+      "requirement": "node3 post-restart recovery of routing/firewall function",
+      "command_ids": [
+        "cmd-88be6f4a3a564015"
+      ],
+      "summary": "After node3 reboot, node2->node3:5432 succeeded, an unrelated port was refused, and ping was rejected, confirming full end-to-end recovery of the required allow/reject policy"
+    }
+  ]
+}

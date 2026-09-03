@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-routing-config",
+      "requirement": "node1 (VyOS) configured to route between lan-a (node2's segment) and lan-b (node3's segment)",
+      "status": "satisfied",
+      "summary": "node1's eth1/eth2 were assigned static addresses on the two LAN segments (10.50.1.254/24, 10.50.2.254/24), interface-to-LAN mapping was confirmed by ping tests from node2/node3, IPv4 forwarding was enabled on both interfaces, and a forward filter (default-drop, explicit accept rules for eth1<->eth2 plus established/related) was committed and saved, then verified live via 'show firewall' with nonzero packet counters after real traffic.",
+      "evidence_ids": [
+        "cmd-613cd1d4e81247e8",
+        "cmd-14d7bca7354647e8",
+        "cmd-0f135e8d0eb84074",
+        "cmd-3dd21c4faea04e1e",
+        "cmd-0d9ed45eb4e54cdf",
+        "cmd-8b4b5a2fac9749b6",
+        "cmd-9415462d4e044bbc",
+        "cmd-dc29ea6d45a04c47"
+      ]
+    },
+    {
+      "id": "req-2-any-port-reachability",
+      "requirement": "node2 and node3 can reach each other directly on any port",
+      "status": "satisfied",
+      "summary": "Bidirectional ICMP connectivity was demonstrated (10.50.1.11 <-> 10.50.2.12), and an arbitrary non-privileged TCP port (8765, an HTTP server) was successfully reached from node3 to node2 after host-level firewalld rules were opened for the peer subnet, confirmed via curl showing a full HTTP 200 response.",
+      "evidence_ids": [
+        "cmd-096e83e7040d434b",
+        "cmd-5190e3b4da774ea8",
+        "cmd-1d823802161e48de",
+        "cmd-60a26e7eabac48be",
+        "cmd-7d97f182c18149bf",
+        "cmd-22b91d142e104398"
+      ]
+    },
+    {
+      "id": "req-3-source-address-preservation",
+      "requirement": "Original source addresses are preserved when node2/node3 traffic crosses node1 (i.e., no NAT/masquerading)",
+      "status": "satisfied",
+      "summary": "VyOS 'show nat source/destination rules' confirmed NAT is not configured on node1, and conntrack entries on node1 for both ICMP and the TCP/8765 flow show unmodified src/dst pairs, including a completed TIME_WAIT/ASSURED TCP flow with no translation.",
+      "evidence_ids": [
+        "cmd-82dfe5d1056a488b",
+        "cmd-d0f1270bff0c47c9",
+        "cmd-b1b0063fa6b44fbf"
+      ]
+    },
+    {
+      "id": "req-4-node1-restart-evidence",
+      "requirement": "Provider-wide restart evidence protocol for node1 (VyOS): healthy baseline, restart ack, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id (5bcff8f9...) and firewall/ping health were captured, 'systemctl reboot' was issued and acknowledged, subsequent polls timed out/reset confirming a real disruption, the node came back with a different boot_id (e2ec5d5c...) matching the fixed after_executor snapshot, and post-restart interface addresses, firewall rules, ip_forward, and cross-LAN ping were all re-verified as recovered.",
+      "evidence_ids": [
+        "cmd-196fa57fb24b4082",
+        "cmd-fe19b2fe65a943fe",
+        "cmd-a82b32832b6e4318",
+        "cmd-95dca52f4dd6406a",
+        "cmd-d62a4185d4464308",
+        "cmd-7024581fc51845c5",
+        "cmd-fb3bc31adab94b88",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "req-5-node2-restart-evidence",
+      "requirement": "Provider-wide restart evidence protocol for node2 (RHEL7): healthy baseline, restart ack, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id (ef457a88...) and ping were captured, 'systemctl reboot' closed the SSH connection (ack), a subsequent poll timed out confirming disconnection, the node returned with a new boot_id (9c397077...) matching the fixed after_executor snapshot, and post-restart eth1 address, static route, firewalld source, and ping to node3 were verified recovered.",
+      "evidence_ids": [
+        "cmd-9c48fff24be74764",
+        "cmd-24ced79612e848db",
+        "cmd-f925cab454264da5",
+        "cmd-8c0454d5b0a94bc6",
+        "cmd-1cea1b69972447cf",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity"
+      ]
+    },
+    {
+      "id": "req-6-node3-restart-evidence",
+      "requirement": "Provider-wide restart evidence protocol for node3 (RHEL7): healthy baseline, restart ack, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id (192f6cab...) and ping were captured, 'systemctl reboot' closed the SSH connection (ack), a subsequent poll timed out confirming disconnection, the node returned with a new boot_id (b5682da1...) matching the fixed after_executor snapshot, and post-restart eth1 address, static route, firewalld source, and ping to node2 were verified recovered.",
+      "evidence_ids": [
+        "cmd-2f22d484237b43db",
+        "cmd-af39d14259d9472d",
+        "cmd-337f6d6de8f242c0",
+        "cmd-6a06b1d17bf04f40",
+        "cmd-c3e9ad1b221b493b",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly configured node1 as a pure router (no NAT) between lan-a and lan-b with a default-drop forward filter permitting only established/related and the two LAN-to-LAN directions, gave node2/node3 persistent static addressing and cross-LAN routes, and opened host firewalls to the peer subnet. All three material outcomes (routing configured, any-port reachability, source-address preservation) are directly supported by ICMP, arbitrary-port TCP, and conntrack/NAT-rule evidence. The independently required node-restart protocol was executed and evidenced for all three nodes with matching boot-identity transitions confirmed against the fixed before/after snapshots, and post-restart connectivity and configuration were shown to survive the reboots. Hygiene is good but not perfect: a few small diagnostic log files (nc_recv.log, http.log, reboot.log, tcpdump.log) were left in /tmp on the RHEL nodes without cleanup, and one troubleshooting mutation (a background nc listener) had no causal role in the final solution since nc was unavailable.",
+  "limitations": [
+    "The firewalld iptables listing on node2 (cmd-e437dcb67c254e2f) shows FORWARD chain policy ACCEPT, a RHEL7 host-level detail unrelated to node1 routing; whether this could allow node2 to also route/forward unrelated traffic was not independently checked, though it is outside the task's scope.",
+    "Persistence of node2/node3 network config across reboot was confirmed only via re-observation of ifcfg-derived state and connectivity after the executor's own restart, not via a separate independent reboot.",
+    "tcpdump was unavailable on node3, so a wire-level packet capture of preserved source addresses was not obtained; conntrack and application-level (curl) evidence was used instead as a reasonable but more indirect substitute."
+  ],
+  "command_stats": {
+    "total": 85,
+    "successful": 64,
+    "failed": 20,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Executor commands were reviewed chronologically. Most state-changing actions (interface address assignment, VyOS firewall commit, RHEL persistent ifcfg/route files, firewalld source additions) map directly to the routing/connectivity requirement. Some transient troubleshooting mutations were bounded and low-risk: temporary manual 'ip addr add' probes on node2/node3 eth1 (cmd-3dd21c4faea04e1e, cmd-0d9ed45eb4e54cdf) used only to confirm topology before persistent config overwrote them via ifcfg files (cmd-11592b1e2f7447ae, cmd-1dc25ab5f1804c7f) \u2014 no lasting inconsistency. A background 'nc -l 12345' listener was started on node2 (cmd-abc01791f3bb4f63) as part of a port-reachability test that was abandoned once 'nc' was found not installed (cmd-fcfce8d72da446c2); this left an unused /tmp/nc_recv.log file with no evidence it was ever cleaned up \u2014 an unnecessary mutation. The python2 SimpleHTTPServer process used for the actual port-8765 verification was explicitly killed after use (cmd-8db93a44b2a8498d), but its /tmp/http.log was left behind. /tmp/reboot.log (created for the reboot commands) and /tmp/tcpdump.log (from a failed tcpdump attempt, tcpdump binary missing) also persisted on node2/node3 after the executor's own restarts, per the after_executor temporary-files snapshot. All of these are small, non-destructive log-file residues with no security or availability impact; no failed services, no damaged package state, and no broadened/weakened firewall exposure beyond the peer-subnet rules the task required.",
+    "evidence_ids": [
+      "cmd-abc01791f3bb4f63",
+      "cmd-fcfce8d72da446c2",
+      "cmd-8db93a44b2a8498d",
+      "cmd-1b1eb409f0a3427b",
+      "cmd-688c61dcc9764665",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

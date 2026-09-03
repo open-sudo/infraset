@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Serve an application from node2 on TCP port 8080",
+      "status": "satisfied",
+      "summary": "A systemd-managed python3 http.server was deployed on node2, bound specifically to the private-network address 10.50.50.11:8080 (not the public interface). Confirmed listening via ss output and independently corroborated by the after-executor lifecycle snapshot showing 'tcp LISTEN ... 10.50.50.11:8080 ... python3'. End-to-end curl to /index.html succeeded from node3 while the tunnel was up.",
+      "evidence_ids": [
+        "cmd-1b95fc9668124e1b",
+        "cmd-df05741c90474dbb",
+        "global:after_executor:node2:listening-sockets",
+        "cmd-52af2cd4fe744031"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "WireGuard tunnel terminated on node1",
+      "status": "satisfied",
+      "summary": "VyOS wg0 interface (10.200.0.1/24, UDP 51820) was configured and committed on node1 with node3 as a peer; wg show on node1 confirms the local public key, listening port, and an active peer session with handshakes/transferred bytes. The after-executor snapshot confirms UDP 51820 is listening on node1 post-restart as well.",
+      "evidence_ids": [
+        "cmd-cd6a29267b6646a8",
+        "cmd-3b8126f4c84845a5",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node3 (outside the private network) can reach the app only through the WireGuard tunnel, not directly",
+      "status": "satisfied",
+      "summary": "With the tunnel active, curl from node3 to 10.50.50.11:8080 succeeded via a route through wg0. Stopping wg-quick on node3 caused the kernel route to fall back to the public gateway and curl failed with a connection error, directly demonstrating the app is unreachable without the tunnel. Restarting wg-quick restored the route and access. The app is bound only to the private IP (10.50.50.11), which node3 cannot otherwise reach since it has no interface on that network.",
+      "evidence_ids": [
+        "cmd-52af2cd4fe744031",
+        "cmd-0a0a7fdbc9c84f0e",
+        "cmd-a07bc6e512d64479",
+        "cmd-6dc01c2cc4c04135"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Private network topology preserved: node1/node2 share a private link that node3 is excluded from, with controlled forwarding/firewalling on node1",
+      "status": "satisfied",
+      "summary": "Discovery confirmed node1 eth1 and node2 enp8s0 form the private link (node3 has only a single public-network NIC). The link was statically addressed and pinged successfully. Node1's firewall was committed with default-drop input/forward filters plus explicit allow rules for SSH, WireGuard UDP, established/related, and wg0->eth1 forwarding, verified via config.boot and ip_forward/per-interface forwarding sysctls.",
+      "evidence_ids": [
+        "cmd-18735180a59f4ba4",
+        "cmd-a75b9ee337ce4410",
+        "cmd-3d475bfec73c4e8d",
+        "cmd-274f1f89a805460a",
+        "cmd-fcf216956e644b81",
+        "cmd-10ad4c0d49c3413b",
+        "cmd-0caa1c1748c84952"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are directly and coherently evidenced: node2 serves the app on TCP 8080 bound to its private IP, node1 terminates the WireGuard tunnel, and a falsification test (stop/restore wg-quick on node3) directly proves the app is reachable only through the tunnel and not via the public network. Firewall/forwarding configuration on node1 is default-drop with narrow allow rules for the tunnel and forwarding path. Independently of the task contract, the executor also ran the provider-wide node-restart evidence protocol on all three nodes, capturing pre-restart boot IDs, restart acknowledgements, changed post-restart boot IDs (cross-checked against the fixed after-executor lifecycle snapshot, which matches exactly), and recovered service/tunnel/app state, including a necessary node3-side wg-quick restart to re-establish the handshake after node1 rebooted.",
+  "limitations": [
+    "Restart/reboot behavior is not part of the public task contract, so its quality is reported for completeness but does not affect the requirement statuses above.",
+    "A WireGuard private key file for node3 was left in /tmp past task completion, a minor but avoidable secret-hygiene residue.",
+    "The evaluator relies on the executor-selected command IDs and cannot independently query live system state; all conclusions are drawn from the captured command outputs and fixed lifecycle snapshots provided."
+  ],
+  "command_stats": {
+    "total": 76,
+    "successful": 54,
+    "failed": 22,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "The command trace is mostly clean read-only discovery plus deliberate, in-scope configuration steps. One firewall commit attempt on node1 (cmd-a96c4ac40843451c) failed due to invalid syntax and was immediately corrected (cmd-726805a590244420); this is a corrective retry, not an unnecessary mutation. The falsification test that stopped wg-quick on node3 (cmd-a07bc6e512d64479) was bounded and fully restored (cmd-6dc01c2cc4c04135), consistent with treatment as low-risk and reverted. One residue item stands out: WireGuard private key material was written to /tmp on node1 and node3 (/tmp/node1_wg_priv.key, /tmp/node3_wg_priv.key) during key generation; node1's copy was incidentally cleared by its later reboot, but node3's private key file persisted in /tmp through the final after-executor snapshot (global:after_executor:node3:temporary-files), which is unnecessary sensitive-key residue that should have been removed after installing the key into /etc/wireguard/wg0.conf.",
+    "evidence_ids": [
+      "cmd-a96c4ac40843451c",
+      "cmd-726805a590244420",
+      "cmd-a07bc6e512d64479",
+      "cmd-6dc01c2cc4c04135",
+      "cmd-d9b2b4b1f9344f59",
+      "cmd-bc3784b806e04fd7",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

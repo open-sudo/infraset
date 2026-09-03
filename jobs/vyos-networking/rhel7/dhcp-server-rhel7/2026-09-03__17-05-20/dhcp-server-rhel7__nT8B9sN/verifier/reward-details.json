@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-node1-dhcp-server",
+      "requirement": "node1 runs a DHCP server on the private network shared with node2/node3 (10.100.56.0/24)",
+      "status": "satisfied",
+      "summary": "Kea DHCPv4 (isc-kea-dhcp4-server) was configured on node1 with shared-network LAN, subnet 10.100.56.0/24, pool 10.100.56.200-220, and static reservations for node2/node3. Service was verified active pre-restart, and post-restart the service auto-started (confirmed both by direct systemctl/config checks and by the fixed after_executor lifecycle snapshot showing kea-dhcp4 bound to 10.100.56.10:67).",
+      "evidence_ids": [
+        "cmd-1793223a57a3451f",
+        "cmd-0eec6c1c3432424a",
+        "cmd-08467ffc494f4193",
+        "global:after_executor:node1:listening-sockets",
+        "cmd-7d364fc186364e17"
+      ]
+    },
+    {
+      "id": "req-2-node2-dhcp-client",
+      "requirement": "node2 obtains its address on the shared network from node1 (not the platform's DHCP or a static assignment)",
+      "status": "satisfied",
+      "summary": "Baseline showed node2 already used dynamic DHCP, but bound to the platform gateway (10.100.56.1) rather than node1. A 'reject 10.100.56.1;' dhclient directive was added so node2 deterministically sources its lease from node1's Kea server. This was validated via manual ifdown/ifup renewal and, critically, across a full restart cycle: pre-restart healthy baseline, restart acknowledgement, changed boot identity, and post-restart NetworkManager/dhclient journal showing the platform's DHCPACK explicitly rejected and DHCPOFFER/DHCPACK accepted from 10.100.56.10 (node1), retaining IP 10.100.56.11. Cross-checked against node1's Kea lease database showing a current lease for node2 with a timestamp matching the post-reboot transaction.",
+      "evidence_ids": [
+        "cmd-fbc0ce892b8b43d4",
+        "cmd-ff8992168ef3448b",
+        "cmd-8e4712debe074d4d",
+        "cmd-9fc6805c75f44784",
+        "cmd-560da0a2bb1a4398",
+        "cmd-4038cb71457743ca",
+        "cmd-24f45a521228414d",
+        "cmd-7d364fc186364e17",
+        "global:after_executor:node2:boot-identity"
+      ]
+    },
+    {
+      "id": "req-3-node3-dhcp-client",
+      "requirement": "node3 obtains its address on the shared network from node1 (not the platform's DHCP or a static assignment)",
+      "status": "satisfied",
+      "summary": "Same pattern and evidence quality as node2: dhclient reject directive added, validated via ifdown/ifup, and confirmed across a full restart transition (pre-restart baseline, restart ack, changed boot identity, post-restart journal showing platform offers/NACKs rejected and DHCPACK accepted from 10.100.56.10, IP 10.100.56.12 retained). Cross-checked against node1's lease database.",
+      "evidence_ids": [
+        "cmd-496539da1066420c",
+        "cmd-177a6a86a1c945d3",
+        "cmd-af58f68fee0f4f58",
+        "cmd-394840dcac9941c3",
+        "cmd-c2fd94426d614740",
+        "cmd-e78a06f1b3614d28",
+        "cmd-bee5476314644f01",
+        "cmd-7d364fc186364e17",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task were satisfied with direct, coherent evidence including a full restart transition (pre-restart baseline, restart acknowledgement, changed boot identity, and post-restart recovery) for every node. node1 runs a Kea DHCPv4 server on the shared 10.100.56.0/24 network with reservations for node2 and node3; node2 and node3 were reconfigured (via a dhclient 'reject' directive, since both nodes were already using platform DHCP rather than static addressing) to deterministically obtain their leases from node1, and this was verified across ifdown/ifup renewal, a full reboot cycle, and cross-checked against node1's Kea lease database. Hygiene is moderate: two troubleshooting mutations (firewalld/iptables DROP rules) were cleanly reverted, but a custom DHCP-sniffing script and its output/log/pid files, plus a failed tcpdump log, were left behind unremoved on node2.",
+  "limitations": [
+    "The task instruction assumed node2/node3 started with a static IP assignment, but the captured baseline shows they were already using dynamic DHCP from the platform gateway (10.100.56.1); the executor's solution (rejecting the platform's offers to source leases from node1 instead) satisfies the evident intent but is not a literal 'static-to-DHCP' conversion.",
+    "Package-health checks for node2 and node3 were unavailable (timeout) in both before_prepare and after_executor snapshots, so package-manager consistency could not be independently verified before or after the task.",
+    "No evidence was captured showing node2/node3 DHCP behavior with the platform gateway's DHCP server fully disabled or absent; reliance on client-side rejection of the platform's offers/NACKs is a workaround rather than eliminating the competing DHCP source, though this appears to be an environment constraint outside the executor's control."
+  ],
+  "command_stats": {
+    "total": 86,
+    "successful": 63,
+    "failed": 23,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "Most state-changing commands were purposeful (node1 Kea configuration, dhclient reject directives, ifdown/ifup validation, the restart protocol). Two bounded troubleshooting mutations were made and then fully reverted: a persistent firewalld direct DROP rule for platform DHCP replies on node2/node3 (added at cmd-c36530c8bd9a4669 and cmd-5e2c86d217244fdd, removed at cmd-33761ab306b34c39 and cmd-d109a13399e04987) and an iptables raw PREROUTING DROP rule (added cmd-1fe245b805164804/cmd-5f94920cd61549b5, removed alongside the firewalld rule at the same commands) \u2014 both discovered ineffective and cleanly undone, so they are treated leniently. However, an unnecessary custom DHCP-sniffing troubleshooting script and its output files were created on node2 (cmd-f85a9051f2614b21 wrote /tmp/dhcpsniff.py; cmd-75cb7b7594e44151 ran it producing /tmp/sniff.log and /tmp/sniff.pid) plus a failed tcpdump attempt left /tmp/dhcp.pcap.log (cmd-84cd5960e6484bae). None of these files were cleaned up: the after_executor temporary-files snapshot for node2 still lists /tmp/dhcp.pcap.log, /tmp/dhcpsniff.py, /tmp/sniff.log, and /tmp/sniff.pid as residue. This is bounded, low-risk, non-security-relevant leftover (does not affect DHCP functionality or expose anything), but it is abandoned troubleshooting residue that was never restored.",
+    "evidence_ids": [
+      "cmd-c36530c8bd9a4669",
+      "cmd-5e2c86d217244fdd",
+      "cmd-1fe245b805164804",
+      "cmd-5f94920cd61549b5",
+      "cmd-33761ab306b34c39",
+      "cmd-d109a13399e04987",
+      "cmd-f85a9051f2614b21",
+      "cmd-75cb7b7594e44151",
+      "cmd-84cd5960e6484bae",
+      "global:after_executor:node2:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

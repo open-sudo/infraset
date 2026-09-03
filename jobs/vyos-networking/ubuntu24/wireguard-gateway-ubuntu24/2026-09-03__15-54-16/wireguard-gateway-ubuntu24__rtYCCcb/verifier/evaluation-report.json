@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-node2-serves-8080",
+      "requirement": "Serve an application from node2 on TCP port 8080",
+      "status": "satisfied",
+      "summary": "demo-app.service (python3 http.server) created, enabled, and started on node2; curl to 127.0.0.1:8080 returned app content, and the after-executor listening-sockets snapshot directly shows 0.0.0.0:8080 owned by python3 (pid 711).",
+      "evidence_ids": [
+        "cmd-716011d9a34549ae",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-2-node1-terminates-wireguard",
+      "requirement": "node1 (VyOS) terminates a WireGuard tunnel usable for reaching node2",
+      "status": "satisfied",
+      "summary": "wg0 (10.200.0.1/24, UDP 51820) was committed and saved on node1 with node3 as peer; wg show on both node1 and node3 confirms an active handshake and traffic counters, and the after-executor socket snapshot shows node1 listening on UDP 51820.",
+      "evidence_ids": [
+        "cmd-2fa61c795c8547c4",
+        "cmd-af98d904bf6f4a14",
+        "cmd-a7890454245544ac",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-3-node3-only-via-tunnel",
+      "requirement": "node3 (outside the private network) can reach node2:8080 only through the WireGuard tunnel terminated on node1, not directly",
+      "status": "satisfied",
+      "summary": "curl from node3 over the wg0-routed path (src 10.200.0.2) succeeded; a forced direct-LAN attempt from node3 (bound to enp1s0, bypassing the tunnel) timed out; node2's iptables INPUT chain shows 5 packets ACCEPT for the WireGuard subnet and 5 packets DROP for the same dport from elsewhere, directly confirming the access-control boundary during a live test.",
+      "evidence_ids": [
+        "cmd-000e0d1ddf7840bf",
+        "cmd-0947b37fb3744ad5",
+        "cmd-8eae464c85c0488d"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task are directly and coherently satisfied: node2 serves the app on 8080, node1 terminates a working WireGuard tunnel to node3, and node3's access to node2:8080 is demonstrably tunnel-only (successful tunnel curl, timed-out direct-LAN curl, and iptables ACCEPT/DROP counters all captured live). The independent provider-wide node-restart protocol was also executed cleanly on all three nodes with full pre-restart baseline, reboot acknowledgement, changed boot identity, and recovered functional/tunnel/service state for each node, matching the fixed after-prepare/after-executor boot-identity cross-check. Hygiene is good overall with one bounded, fully-reverted troubleshooting mutation and a minor unaddressed private-key file permission issue on node1.",
+  "limitations": [
+    "Restart/persistence was not itself part of the public task contract, so the strong restart evidence is assessed only for hygiene/confidence purposes, not counted toward the three material outcomes.",
+    "No evidence was captured showing removal or permission-hardening of node1's world-readable /tmp/node1_wg_priv.key file prior to node1's reboot; residual risk during that window cannot be ruled out from the trace."
+  ],
+  "command_stats": {
+    "total": 66,
+    "successful": 53,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Most executor mutations were direct, task-scoped, and left clean final state: WireGuard configs, the demo-app systemd unit, iptables rules with a persistence unit, and a final scoped systemd-networkd route file (40-enp1s0.network) all matched final observed state. One troubleshooting excursion was found: cmd-8646e84ce7fe4007 added a systemd-networkd drop-in (50-all-interfaces.network.d/10-wg-route.conf) that produced a duplicate/conflicting route via a spurious enp8s0 interface; this was fully reverted moments later by cmd-414682aea3a24ab7, which deleted the drop-in and replaced it with the clean, retained 40-enp1s0.network file. A minor security note: node1's WireGuard private key was written to /tmp/node1_wg_priv.key without a restrictive umask (the tool itself warned 'writing to world accessible file'), and no cleanup of that temp key file was captured before it was superseded by the reboot (which wipes /tmp). No failed services, no damaged package state, and no unnecessary broad or destructive mutations were observed in the after-executor snapshot.",
+    "evidence_ids": [
+      "cmd-8646e84ce7fe4007",
+      "cmd-414682aea3a24ab7",
+      "cmd-9ff68d0b1697435f",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -387,14 +387,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "category",
-        choices=["single-node-os-comparison", "multi-node-os-comparison", "mixed-os-scenarios"],
+        help=(
+            "Job category under jobs/. A category with a "
+            "tasks/<category>/catalog.toml is rendered as a task x OS matrix; "
+            "mixed-os-scenarios is rendered from its per-task topologies."
+        ),
     )
     args = parser.parse_args()
 
-    if args.category == "mixed-os-scenarios":
+    if not (JOBS / args.category).is_dir():
+        raise SystemExit(f"no recorded jobs for category {args.category!r}")
+
+    if (TASKS / args.category / "catalog.toml").is_file():
+        content = build_matrix_category(args.category)
+    elif args.category == "mixed-os-scenarios":
         content = build_mixed_os_scenarios()
     else:
-        content = build_matrix_category(args.category)
+        raise SystemExit(
+            f"category {args.category!r} has no catalog.toml and no bespoke builder"
+        )
 
     output = ROOT / f"{args.category}-summary.md"
     output.write_text(content)

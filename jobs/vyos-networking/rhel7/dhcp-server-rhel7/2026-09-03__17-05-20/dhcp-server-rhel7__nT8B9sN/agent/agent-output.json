@@ -1,0 +1,98 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) to run a Kea DHCPv4 server on the shared 10.100.56.0/24 network with static reservations for node2 and node3, and configured node2/node3 (RHEL7) to obtain their address from node1 rather than the platform's own DHCP responder. Since all three nodes share a single flat egress network where the platform gateway (10.100.56.1) also runs an active DHCP server, a `reject 10.100.56.1;` directive was added to dhclient config on node2/node3 so they deterministically source their lease from node1 instead of racing with the platform. All three nodes were then restarted one at a time per the mandatory protocol; boot IDs changed on each, and post-reboot state confirms node1's DHCP server auto-started and node2/node3 re-acquired their addresses (10.100.56.11/.12) via DHCPACK from node1 (10.100.56.10), preserving IPs and connectivity.",
+  "actions_performed": [
+    "Surveyed topology: node1=VyOS 2026.04 rolling, node2/node3=RHEL7, all on single 10.100.56.0/24 network with platform DHCP server active at 10.100.56.1",
+    "Set node1 eth0 to static 10.100.56.10/24, added static default route via 10.100.56.1, configured Kea DHCPv4 (service dhcp-server) with subnet 10.100.56.0/24, pool 10.100.56.200-220, and static-mapping reservations for node2 (MAC 02:85:a4:4d:8a:13 -> .11) and node3 (MAC 02:0d:a8:ac:0e:b8 -> .12); committed and saved",
+    "Verified isc-kea-dhcp4-server active and generated Kea config matches intent",
+    "Discovered platform gateway (10.100.56.1) actively answers DHCP on the same broadcast domain; attempted iptables/firewalld blocking was ineffective since dhclient uses raw LPF sockets that bypass netfilter delivery",
+    "Removed the ineffective iptables/firewalld rules to keep the system clean",
+    "Added persistent `reject 10.100.56.1;` to /etc/dhcp/dhclient.conf and /etc/dhcp/dhclient-eth0.conf on node2 and node3 so dhclient ignores platform offers/acks and binds only to node1's Kea server",
+    "Validated via ifdown/ifup that node2 and node3 rebind their existing IPs (.11/.12) with DHCPOFFER/DHCPACK sourced from 10.100.56.10, and platform offers/naks are explicitly rejected",
+    "Captured pre-restart boot_id and healthy service/network baselines on all three nodes",
+    "Restarted node1 first (dependency for DHCP), confirmed boot_id changed, confirmed Kea DHCP server auto-started active and static IP/route/config persisted via 'save'",
+    "Restarted node2, confirmed boot_id changed, confirmed via NetworkManager journal that it acquired its lease from 10.100.56.10 (node1) at boot with unchanged IP 10.100.56.11",
+    "Restarted node3, confirmed boot_id changed, confirmed via NetworkManager journal that it acquired its lease from 10.100.56.10 (node1) at boot with unchanged IP 10.100.56.12",
+    "Cross-verified node1's Kea lease database (dhcp4-leases.csv) shows active current leases for node2 (10.100.56.11) and node3 (10.100.56.12) matching post-reboot timestamps"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 healthy baseline before restart (DHCP config + static IP)",
+      "command_ids": [
+        "cmd-08467ffc494f4193",
+        "cmd-573b19c7089d4b4b",
+        "cmd-0eec6c1c3432424a",
+        "cmd-1793223a57a3451f"
+      ],
+      "summary": "node1 configured with static 10.100.56.10/24, Kea shared-network LAN with reservations for node2/node3, isc-kea-dhcp4-server active before restart"
+    },
+    {
+      "requirement": "node2/node3 healthy baseline (obtaining DHCP address from node1, not platform)",
+      "command_ids": [
+        "cmd-c1bd22c0dfa54675",
+        "cmd-1fa4a9ef6c3c44a5",
+        "cmd-0909e772ca28440b",
+        "cmd-8e4712debe074d4d",
+        "cmd-af58f68fee0f4f58",
+        "cmd-fbc0ce892b8b43d4",
+        "cmd-496539da1066420c"
+      ],
+      "summary": "Baseline showed platform DHCP (10.100.56.1) winning; after adding reject directive on node2/node3, ifdown/ifup renewal confirmed DHCPACK from node1 (10.100.56.10) with rejection of platform offers/naks logged"
+    },
+    {
+      "requirement": "node1 restart acknowledgement + boot identity change",
+      "command_ids": [
+        "cmd-cdeb84d5fdeb42a4",
+        "cmd-a8a236cedf6c42d9",
+        "cmd-4aa23c446fa04327"
+      ],
+      "summary": "reboot command dropped the exec stream (acknowledged before disconnect); polling timed out then boot_id changed from 7668189d-... to 88a04c3a-..."
+    },
+    {
+      "requirement": "node1 post-restart recovery (DHCP server + config persistence)",
+      "command_ids": [
+        "cmd-08467ffc494f4193"
+      ],
+      "summary": "After reboot, isc-kea-dhcp4-server active, static IP 10.100.56.10/24 and default route via 10.100.56.1 intact, Kea pool config matches committed/saved config"
+    },
+    {
+      "requirement": "node2 restart acknowledgement + boot identity change",
+      "command_ids": [
+        "cmd-560da0a2bb1a4398",
+        "cmd-349436fea2f84699",
+        "cmd-4038cb71457743ca"
+      ],
+      "summary": "reboot command closed connection (acknowledged); polling timed out/no-route then succeeded with boot_id changed from 9ed9e820-... to 3cfb33ab-..."
+    },
+    {
+      "requirement": "node2 post-restart recovery: DHCP lease obtained from node1",
+      "command_ids": [
+        "cmd-24f45a521228414d"
+      ],
+      "summary": "NetworkManager journal at boot shows DHCPACK from 10.100.56.1 explicitly rejected by rule, and DHCPOFFER/DHCPACK accepted from 10.100.56.10 (node1), binding to unchanged IP 10.100.56.11"
+    },
+    {
+      "requirement": "node3 restart acknowledgement + boot identity change",
+      "command_ids": [
+        "cmd-c2fd94426d614740",
+        "cmd-5e497a9050f24e99",
+        "cmd-e78a06f1b3614d28"
+      ],
+      "summary": "reboot command closed connection (acknowledged); polling timed out then succeeded with boot_id changed from a8e7c48c-... to 1a6e1f4b-..."
+    },
+    {
+      "requirement": "node3 post-restart recovery: DHCP lease obtained from node1",
+      "command_ids": [
+        "cmd-bee5476314644f01"
+      ],
+      "summary": "NetworkManager journal at boot shows DHCPACK from 10.100.56.1 explicitly rejected by rule, and DHCPOFFER/DHCPACK accepted from 10.100.56.10 (node1), binding to unchanged IP 10.100.56.12"
+    },
+    {
+      "requirement": "Cross-check: node1's DHCP server data confirms both clients as active leases post-recovery",
+      "command_ids": [
+        "cmd-7d364fc186364e17"
+      ],
+      "summary": "Kea lease database (dhcp4-leases.csv) on node1 shows current entries for node2 (10.100.56.11) and node3 (10.100.56.12) with hostnames and timestamps matching the post-reboot DHCP transactions"
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) as a NAT gateway for node2 and node3 over their shared private network (eth1/enp8s0, 10.50.50.0/24). node1's eth0 stays on the internet-reachable WAN network; a VyOS source-NAT masquerade rule on eth0 translates traffic from 10.50.50.0/24. On node2/node3, the private interface (enp8s0) got a static IP and NetworkManager-persisted policy routing (ip rule + table 100 default route via node1's 10.50.50.254) so traffic sourced from the private IP is forwarded through node1 and NAT'd to the internet, verified via ping/curl and conntrack showing translated replies from node1's WAN IP. All three nodes were then restarted one at a time (VyOS `reboot`, RHEL `systemctl reboot`), boot_id changes were captured proving actual restarts, and NAT/routing configuration was proven to persist and function correctly after each reboot.",
+  "actions_performed": [
+    "Inspected node1/node2/node3 network topology, existing routes, and OS type",
+    "Captured VyOS baseline config (config.boot) on node1 showing eth1 unconfigured, no NAT",
+    "Configured node1: eth1 10.50.50.254/24, NAT source rule 100 (masquerade 10.50.50.0/24 out eth0), firewall ipv4 forward filter default-action accept; committed and saved",
+    "Configured node2: enp8s0 static IP 10.50.50.11/24 via nmcli, persistent ip rule (from 10.50.50.11 -> table 100) and default route via 10.50.50.254 in table 100",
+    "Configured node3: enp8s0 static IP 10.50.50.12/24 via nmcli, persistent ip rule (from 10.50.50.12 -> table 100) and default route via 10.50.50.254 in table 100",
+    "Verified NAT end-to-end via ping/curl from node2 and node3 sourced from private IPs, and conntrack on node1 showing translated replies from 10.100.75.10 (WAN IP)",
+    "Captured boot_id/uptime baseline on all three nodes",
+    "Restarted node1 via /sbin/reboot, polled until reachable, confirmed changed boot_id, verified NAT config and forwarding survived reboot",
+    "Re-verified node2/node3 internet reachability through node1 after node1's restart",
+    "Restarted node2 via systemctl reboot, polled until reachable, confirmed changed boot_id, verified enp8s0 IP/policy routes persisted and NAT connectivity works",
+    "Restarted node3 via systemctl reboot, polled until reachable, confirmed changed boot_id, verified enp8s0 IP/policy routes persisted and NAT connectivity works",
+    "Final combined check on node1 showing fresh conntrack entries for both node2 and node3 post-reboot traffic, confirming NAT still functioning cluster-wide"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 provides NAT (source masquerade) for the private network out its WAN interface",
+      "command_ids": [
+        "cmd-f7c90f398f054d89",
+        "cmd-687181d9460846a9",
+        "cmd-ba29f73bb0cc4fd7"
+      ],
+      "summary": "VyOS config committed/saved with eth1=10.50.50.254/24 and NAT source rule 100 masquerading 10.50.50.0/24 out eth0; confirmed present in running config.boot and via native 'show nat source rules'."
+    },
+    {
+      "requirement": "Processes on node2 reach the internet through node1's NAT",
+      "command_ids": [
+        "cmd-881cdd1fa1f843a6",
+        "cmd-43b12746d9b847b0"
+      ],
+      "summary": "ping/curl from node2 sourced on 10.50.50.11 succeeded reaching 1.1.1.1; node1 conntrack shows the flow translated to reply dst=10.100.75.10 (node1's WAN IP), proving traffic transited node1's NAT."
+    },
+    {
+      "requirement": "Processes on node3 reach the internet through node1's NAT",
+      "command_ids": [
+        "cmd-7f968eee94a5446c",
+        "cmd-43b12746d9b847b0"
+      ],
+      "summary": "ping/curl from node3 sourced on 10.50.50.12 succeeded reaching 1.1.1.1; node1 conntrack shows the flow translated to reply dst=10.100.75.10, confirming NAT traversal."
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-1772c639f6494f85"
+      ],
+      "summary": "Captured boot_id 9028a473... , uptime 170s, NAT rule table, and eth1 address as pre-restart baseline."
+    },
+    {
+      "requirement": "node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-3d85d81dd4f742df",
+        "cmd-5bc1bf53bfd94f4c",
+        "cmd-adcec7ccf41541b5"
+      ],
+      "summary": "Reboot command acknowledged and backgrounded before disconnect; subsequent exec failed (connection reset) proving disconnection; later exec returned new boot_id efc00aa7... with low uptime (32s), proving an actual restart occurred."
+    },
+    {
+      "requirement": "node1 recovered state and data (NAT config, forwarding) after restart",
+      "command_ids": [
+        "cmd-db6dc6fd8e7048a7",
+        "cmd-bbc3d49de05147a4",
+        "cmd-6e8cbba3fbd649a1"
+      ],
+      "summary": "Post-reboot: eth1 address, NAT source rule, and ip_forward=1 all present (persisted via VyOS save); node2 and node3 successfully reached the internet through node1 again, confirming recovery."
+    },
+    {
+      "requirement": "node2 healthy baseline before restart",
+      "command_ids": [
+        "cmd-8c4ae2db0f284a59"
+      ],
+      "summary": "Captured boot_id 636556ce..., uptime 151s, and active ip rule/route table 100 as pre-restart baseline."
+    },
+    {
+      "requirement": "node2 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-f3aacb339ecc4ab6",
+        "cmd-6edf9ba0d8ea4643",
+        "cmd-d059551139784bac"
+      ],
+      "summary": "systemctl reboot acknowledged and backgrounded before disconnect; subsequent exec timed out proving disconnection; later exec returned new boot_id 1e5cca53... with uptime 38s, proving restart."
+    },
+    {
+      "requirement": "node2 recovered state (private IP, policy routing, NAT connectivity) after restart",
+      "command_ids": [
+        "cmd-5eb5a31813544996"
+      ],
+      "summary": "Post-reboot: enp8s0 retained 10.50.50.11/24, ip rule/table 100 route persisted via NetworkManager, and curl through node1's NAT succeeded again."
+    },
+    {
+      "requirement": "node3 healthy baseline before restart",
+      "command_ids": [
+        "cmd-d5989150653442dc"
+      ],
+      "summary": "Captured boot_id 7ef78016..., uptime 152s, and active ip rule/route table 100 as pre-restart baseline."
+    },
+    {
+      "requirement": "node3 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-2954ceed0fc2430f",
+        "cmd-366232785c4f426f"
+      ],
+      "summary": "systemctl reboot acknowledged and backgrounded before disconnect; polling exec returned new boot_id 1493271b... with uptime 32s, proving restart."
+    },
+    {
+      "requirement": "node3 recovered state (private IP, policy routing, NAT connectivity) after restart",
+      "command_ids": [
+        "cmd-42f61ab52550411e",
+        "cmd-4ec2625eb0964f38"
+      ],
+      "summary": "Post-reboot: enp8s0 retained 10.50.50.12/24, ip rule/table 100 route persisted, curl through node1's NAT succeeded; final node1 conntrack check shows fresh translated flows from both 10.50.50.11 and 10.50.50.12, confirming cluster-wide NAT health after all restarts."
+    }
+  ]
+}

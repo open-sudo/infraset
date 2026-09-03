@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "app-on-node2-8080",
+      "requirement": "Serve an application from node2 on TCP port 8080",
+      "status": "satisfied",
+      "summary": "app8080.service (Python HTTP server) was created, enabled, and started on node2, and curl against localhost:8080 returned the expected response (cmd-6d671cb63dd7481e). After node2's mandatory reboot the service was found inactive due to a pre-existing unit dependency on network-online.target hanging on an unconfigured second NIC; the executor diagnosed this, switched the dependency to network.target, restarted the service, and re-confirmed it serving traffic (cmd-0ff73b11f7c047d1, cmd-95e69b664bb74f55).",
+      "evidence_ids": [
+        "cmd-6d671cb63dd7481e",
+        "cmd-0ff73b11f7c047d1",
+        "cmd-95e69b664bb74f55"
+      ]
+    },
+    {
+      "id": "wg-tunnel-node1-node3",
+      "requirement": "Establish a WireGuard tunnel terminated on node1 (VyOS) with node3 as the remote client",
+      "status": "satisfied",
+      "summary": "Keypairs were generated on both node1 (via VyOS PKI helper) and node3 (wg genkey/pubkey). wg0 was configured, committed, and saved on node1 (address 10.200.0.1/24, UDP 51820, peer node3). wg-quick@wg0 was configured and enabled on node3, producing a successful handshake, confirmed again after node3's reboot with a fresh handshake (cmd-ab23fc344b644be4, cmd-576d11528c424183, cmd-ad850c6fc9c44904, cmd-b9f3e3f11ae24e14).",
+      "evidence_ids": [
+        "cmd-ab23fc344b644be4",
+        "cmd-576d11528c424183",
+        "cmd-ad850c6fc9c44904",
+        "cmd-b9f3e3f11ae24e14"
+      ]
+    },
+    {
+      "id": "node3-only-via-tunnel",
+      "requirement": "node3 can reach node2:8080 only through the WireGuard tunnel terminated on node1 (not directly)",
+      "status": "partially_satisfied",
+      "summary": "The final control plan is sound: node1's default-drop forward filter only accepts TCP 8080 arriving via wg0, and node2's firewalld default-deny zone only accepts 8080 from node1's own IP via a rich rule (cmd-5d6b6f6d69774937, cmd-1d0bb55fc8044caa, cmd-f23817fa4dc944da). Successful end-to-end access via the tunnel was repeatedly demonstrated, including after every reboot (cmd-439aa66696684566, cmd-c3420e226cb54e09, cmd-b9f3e3f11ae24e14). However, node3 and node2 both sit on the same shared mgmt subnet (10.100.226.0/24) rather than the topology's dedicated private 'lan' network, so the block relies entirely on firewall ACLs rather than L3 isolation. The one negative test showing 'No route to host' from node3 directly to node2:8080 (cmd-92eda74e69a94c51) was captured before node1's forward-filter and node2's firewalld rich rule for 8080 existed, so it does not directly prove the final configuration blocks a bypass attempt (e.g. with wg0 down). No post-setup direct-access negative test was captured, so the 'only via tunnel' guarantee rests on config inspection plus an earlier, not-fully-comparable negative result rather than a clean before/after demonstration against the final ruleset.",
+      "evidence_ids": [
+        "cmd-5d6b6f6d69774937",
+        "cmd-1d0bb55fc8044caa",
+        "cmd-f23817fa4dc944da",
+        "cmd-92eda74e69a94c51",
+        "cmd-439aa66696684566",
+        "cmd-c3420e226cb54e09"
+      ]
+    },
+    {
+      "id": "node-restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on all three managed nodes (pre-restart baseline, ack, changed boot identity, recovered state)",
+      "status": "satisfied",
+      "summary": "All three nodes show boot_id before/ack/after transitions consistent with the fixed lifecycle snapshots (node1: 9028a473 to f501745a; node2: 5f3ce3b8 to 3be1b5dc; node3: 910dc564 to 4abbb059). Each node was verified healthy pre-reboot and functionally recovered post-reboot: node1's wg0/firewall/NAT config and forward-path traffic were intact and re-verified (cmd-2df856ed08d5475b, cmd-14ca7b6c6ee54003); node2's app service was found broken post-reboot, diagnosed, and fixed with confirmed recovery (cmd-a1a72b7fc60b466c through cmd-c3420e226cb54e09); node3's tunnel re-established with a fresh handshake and successful end-to-end curl (cmd-b9f3e3f11ae24e14).",
+      "evidence_ids": [
+        "cmd-f001615f63fd44e6",
+        "cmd-9536d8033e454aa9",
+        "cmd-2df856ed08d5475b",
+        "cmd-14ca7b6c6ee54003",
+        "cmd-3524912733f84dff",
+        "cmd-c7dfc42c80f04150",
+        "cmd-0ff73b11f7c047d1",
+        "cmd-c3420e226cb54e09",
+        "cmd-6d1f16f2837b4333",
+        "cmd-bca02ab2537742e7",
+        "cmd-b9f3e3f11ae24e14"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully deployed the demo app on node2:8080 and established a working WireGuard tunnel terminated on node1 with node3 as the client, repeatedly demonstrating successful end-to-end access via the tunnel, including through a full sequential reboot of all three nodes with proper boot-identity, recovery, and (for node2) diagnosed-and-fixed troubleshooting evidence. The main weakness is that the 'node3 can reach node2:8080 only through the tunnel' guarantee rests on firewall ACLs applied to a shared mgmt subnet (rather than the topology's dedicated isolated lan network) and was not empirically re-tested against the final ruleset with the tunnel down or bypassed - the only negative test captured predates the relevant firewall rules. Operational hygiene is good, with no unnecessary or destructive mutations, though a NetworkManager-wait-online.service failure on node2 was left unresolved in the final state.",
+  "limitations": [
+    "No definitive post-configuration negative test shows node3 is blocked from reaching node2:8080 directly (e.g., with wg0 down) after the WireGuard tunnel and all firewall rules were finalized; the isolation guarantee is inferred from configuration plus an earlier, not-directly-comparable negative test.",
+    "The private-network isolation described in the task ('outside the private network shared by node1 and node2') was implemented via firewall ACLs on a shared mgmt subnet rather than the topology's dedicated lan network, whose usability in this environment could not be confirmed from the evidence.",
+    "NetworkManager-wait-online.service was left in a failed state on node2 after its reboot; root cause (unconfigured second NIC) is plausibly a pre-existing environment characteristic rather than an executor-introduced fault, but this could not be fully confirmed from the captured evidence."
+  ],
+  "command_stats": {
+    "total": 70,
+    "successful": 45,
+    "failed": 25,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.72,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.875,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewing the chronological command trace, all state-changing commands map to a clear task purpose: app deployment (cmd-6d671cb63dd7481e), WireGuard key generation and interface/peer configuration on both ends (cmd-ab23fc344b644be4, cmd-576d11528c424183, cmd-ad850c6fc9c44904), VyOS firewall/NAT rules (cmd-5d6b6f6d69774937, cmd-1d0bb55fc8044caa, after an earlier failed attempt that was immediately corrected, not left in a broken state), node2 firewalld rich rule (cmd-f23817fa4dc944da), and the app8080.service unit fix required to recover from a reboot-induced failure (cmd-0ff73b11f7c047d1). No destructive, broad, or security-weakening mutations were found; several failed configuration attempts (e.g. cmd-18e210b3ba374b97, cmd-b0ac3d0a7d73421b, cmd-208be11150e74946) were read/no-op or immediately corrected and left no residue. One notable gap: after node2's reboot, NetworkManager-wait-online.service was left in a failed state in the final after_executor snapshot due to a pre-existing unconfigured second NIC (enp8s0, part of the topology's lan network with dhcp disabled); the executor worked around this for app8080.service but did not address or explain the underlying failed systemd unit, leaving a minor blemish in final node2 health.",
+    "evidence_ids": [
+      "cmd-6d671cb63dd7481e",
+      "cmd-5d6b6f6d69774937",
+      "cmd-1d0bb55fc8044caa",
+      "cmd-f23817fa4dc944da",
+      "cmd-0ff73b11f7c047d1",
+      "global:after_executor:node2:failed-services"
+    ]
+  },
+  "reward": 0.875,
+  "provisional_reward": 0.875
+}

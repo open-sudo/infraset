@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "app-served-node2-8080",
+      "requirement": "Serve an application from node2 on TCP port 8080",
+      "status": "satisfied",
+      "summary": "webapp openrc service installed and started on node2, ultimately bound to 10.50.50.11:8080 (private interface). Confirmed via curl from node1 returning HTML (cmd-f43da85e07514481) and via netstat listing 10.50.50.11:8080 LISTEN (cmd-c2b77159fc7f4a39). The fixed after_executor snapshot independently confirms tcp 10.50.50.11:8080 LISTEN owned by python3.",
+      "evidence_ids": [
+        "cmd-c1e257762a6842ec",
+        "cmd-f43da85e07514481",
+        "cmd-c2b77159fc7f4a39",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    },
+    {
+      "id": "node3-only-via-tunnel",
+      "requirement": "node3 (outside the private network) can reach the node2 app only through a WireGuard tunnel terminated on node1",
+      "status": "satisfied",
+      "summary": "Initial config had the app bound to 0.0.0.0, so node3 could reach it directly over the shared network (HTTP 200, cmd-7751039dc19d4ac0) - a real but corrected gap. After rebinding the app to the private IP only (cmd-c2b77159fc7f4a39), direct access from node3 returns connection-refused (HTTP 000) while tunnel access (10.50.50.11:8080 via wg0) succeeds (cmd-681824177fde408b). This dual state (blocked direct / working tunnel) is re-confirmed after node3's restart (cmd-96edb7ae877e42cd).",
+      "evidence_ids": [
+        "cmd-7751039dc19d4ac0",
+        "cmd-c2b77159fc7f4a39",
+        "cmd-681824177fde408b",
+        "cmd-96edb7ae877e42cd"
+      ]
+    },
+    {
+      "id": "wg-tunnel-node1-node3",
+      "requirement": "Functional WireGuard tunnel terminated on node1, reachable by node3",
+      "status": "satisfied",
+      "summary": "Keys generated on both ends, wg0 configured on node1 (VyOS, 10.200.0.1/24, port 51820) and node3 (10.200.0.2/24, client), handshake and traffic confirmed via wg show and successful ping/curl over the tunnel (cmd-0328f687a4424f51), and again after independent restarts of both nodes (cmd-413221a0b7464805, cmd-96edb7ae877e42cd).",
+      "evidence_ids": [
+        "cmd-acc8a71c355e4986",
+        "cmd-1cbf054df705447c",
+        "cmd-95f662ada42947ea",
+        "cmd-8d74620f77414e1c",
+        "cmd-0328f687a4424f51",
+        "cmd-413221a0b7464805"
+      ]
+    },
+    {
+      "id": "nat-forwarding-node1",
+      "requirement": "Return traffic from node2 routes back through node1 to node3 (NAT/forwarding on the gateway)",
+      "status": "satisfied",
+      "summary": "nft ruleset on node1 shows an active masquerade rule for the wg0 subnet egressing eth1 (cmd-d1921c5a504b4116) with nonzero packet counters, and firewall input/forward filters set to accept (cmd-8a01a6cc183749a1), enabling routed traffic without additional routes on node2. End-to-end curl/ping success across the tunnel corroborates this is functionally working.",
+      "evidence_ids": [
+        "cmd-d1921c5a504b4116",
+        "cmd-8a01a6cc183749a1",
+        "cmd-0328f687a4424f51"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "(Independent protocol) Provider-wide node-restart evidence: pre-restart boot identity/health, restart, changed post-restart boot identity, recovered service/data/cluster state - for every managed node",
+      "status": "satisfied",
+      "summary": "All three nodes show a pre-restart boot_id and healthy state (cmd-baff46b7675946e0, cmd-a4116d19b01a4d92, cmd-a0b072f4b65841ae), a restart acknowledgement followed by a connectivity gap (multiple timeout/reset polls per node), and a changed boot_id afterward (cmd-634d92f022c042b4, cmd-7b56e709143e47a9, cmd-73e91feb0e6a46b7). Post-restart recovery is directly demonstrated: node1's wg0/NAT config persisted and a fresh node3 handshake occurred (cmd-80012e7abb204696, cmd-413221a0b7464805); node2's static IP and webapp auto-started (cmd-0db9e17643e64954) with node3 confirming app reachability via tunnel and blocked direct access (cmd-a4b9a3be92214be2); node3's wg-quick service auto-started with a fresh handshake and the same reachable/blocked pattern (cmd-96edb7ae877e42cd). The fixed after_executor snapshot boot IDs (c9b266ae for node1, 98ae1e16 for node2, 1665a5bf for node3) match the executor's post-restart boot_id observations, cross-confirming the restarts occurred.",
+      "evidence_ids": [
+        "cmd-baff46b7675946e0",
+        "cmd-634d92f022c042b4",
+        "cmd-80012e7abb204696",
+        "cmd-413221a0b7464805",
+        "cmd-a4116d19b01a4d92",
+        "cmd-7b56e709143e47a9",
+        "cmd-0db9e17643e64954",
+        "cmd-a4b9a3be92214be2",
+        "cmd-a0b072f4b65841ae",
+        "cmd-73e91feb0e6a46b7",
+        "cmd-96edb7ae877e42cd",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The topology matches the task contract: node2 serves HTTP on TCP 8080 bound to its private interface, node1 terminates a WireGuard tunnel to node3, and node3 can reach the app only via the tunnel (direct access is refused) with working NAT return-path forwarding on node1. All outcomes are directly evidenced, including a corrected initial misconfiguration (app briefly bound to 0.0.0.0, allowing direct access) that was fixed and re-verified. The mandatory per-node restart protocol was completed for all three nodes with pre/post boot-identity changes and full functional recovery, cross-confirmed by the fixed lifecycle snapshots. Hygiene is moderate: a transient security exposure of the app binding, a transient world-readable private key file (later shredded), and a retained broad firewall default-accept posture on node1 all represent unnecessary or excessive permissiveness relative to the task's minimal needs.",
+  "limitations": [
+    "The temporary window in which node2's app was reachable directly (0.0.0.0 binding) was not bounded by a timestamped access log showing whether any traffic besides the verification curl reached it during that window.",
+    "Firewall default-action accept on node1 was not narrowed to only necessary traffic classes in the observed evidence, so the final security posture is more permissive than strictly required, though functionally sufficient for the task.",
+    "Reboot mechanisms differed per node (VyOS-specific configure-mode exit needed on node1, direct /sbin/reboot on node2/node3) and required several failed attempts before succeeding; all failures were non-destructive polling/command-not-applicable issues rather than state corruption."
+  ],
+  "command_stats": {
+    "total": 78,
+    "successful": 44,
+    "failed": 34,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "Several state-changing actions introduced temporary or retained security weaknesses beyond what the task required, though none were destructive or broad-scope. (1) cmd-c1e257762a6842ec initially bound the webapp to 0.0.0.0:8080 rather than the private-only address, which node3 confirmed was directly reachable (cmd-7751039dc19d4ac0) - a real exposure of the tunnel-only requirement, corrected two commands later by cmd-c2b77159fc7f4a39 rebinding to 10.50.50.11 only. (2) cmd-4c3d188f4a67416b wrote a WireGuard private key to /tmp/wg_priv.key with world-accessible permissions (explicit warning in output) before cmd-95ac5cd36a0e46ec redid it with umask 077; the file was later removed via shred in cmd-45478348ed5b478e, so exposure was bounded and eventually reverted, but it is a sensitive-material-handling lapse worth flagging. (3) cmd-45478348ed5b478e (VyOS commit) set firewall ipv4 input and forward filter default-action to accept - a broad, permissive change retained in the final configuration (confirmed still present via cmd-80012e7abb204696) rather than a narrowly scoped rule permitting only the required WireGuard/forwarded traffic; this weakens the gateway's security posture beyond what was strictly necessary. All package installs (python3, wireguard-tools) and interface/IP assignments were required prerequisites and are not penalized.",
+    "evidence_ids": [
+      "cmd-c1e257762a6842ec",
+      "cmd-7751039dc19d4ac0",
+      "cmd-c2b77159fc7f4a39",
+      "cmd-4c3d188f4a67416b",
+      "cmd-95ac5cd36a0e46ec",
+      "cmd-45478348ed5b478e",
+      "cmd-80012e7abb204696"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}
