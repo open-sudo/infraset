@@ -16,6 +16,63 @@ Results across 50 infrastructure tasks executed on each OS by an LLM agent (Code
 - [Ubuntu 16.04](#ubuntu-1604)
 - [Ubuntu 24.04](#ubuntu-2404)
 
+## Commands by task and OS
+
+Successful/failed executor commands per task per OS. `0/0` means the audit was captured but no managed-node commands were issued.
+
+| Task | AlmaLinux 9 | Alpine | Arch | CentOS S10 | Debian 13 | RHEL 7.9 | RHEL 8.8 | RHEL 9.8 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| account-resource-limits | 10/1 | 21/6 | 13/4 | 8/3 | 14/2 | 10/5 | 10/3 | 0/0 |
+| admin-account | 7/2 | 10/8 | 17/2 | 9/2 | 13/2 | 15/2 | 14/2 | 0/0 |
+| application-log-rotation | 13/2 | 12/6 | 21/1 | 11/2 | 13/2 | 0/0 | 17/1 | 0/0 |
+| audit-sensitive-file | 21/6 | 26/7 | 21/3 | 19/4 | 14/5 | 0/0 | 20/4 | 0/0 |
+| boot-service | 8/2 | 6/11 | 9/4 | 11/3 | 8/1 | 0/0 | 8/2 | 0/0 |
+| caching-dns-resolver | 14/1 | 15/6 | 10/3 | 14/3 | 11/2 | 25/0 | 36/1 | 0/0 |
+| custom-ca-trust | 8/1 | 7/4 | 12/4 | 8/2 | 9/3 | 11/3 | 13/4 | 0/0 |
+| disable-core-dumps | 14/3 | 13/8 | 16/0 | 26/3 | 32/3 | 26/4 | 39/9 | 0/0 |
+| graceful-service-shutdown | 17/2 | 23/6 | 15/3 | 13/2 | 10/3 | 0/0 | 13/1 | 0/0 |
+| host-firewall-baseline | 23/2 | 0/0 | 23/6 | 25/3 | 16/3 | 40/2 | 29/1 | 0/0 |
+| https-web-service | 12/2 | 12/10 | 13/2 | 13/3 | 18/3 | 15/3 | 12/3 | 0/0 |
+| kernel-network-hardening | 8/2 | 9/7 | 10/2 | 11/1 | 12/2 | 18/3 | 15/3 | 0/0 |
+| local-log-retention | 9/1 | 15/8 | 11/1 | 15/3 | 13/3 | 20/7 | 22/2 | 0/0 |
+| login-banner | 13/2 | 12/9 | 22/8 | 15/1 | 14/4 | 14/1 | 11/1 | 0/0 |
+| login-lockout | 24/1 | 41/8 | 22/1 | 36/2 | 34/2 | 23/1 | 28/2 | 0/0 |
+| loopback-only-service | 12/2 | 10/3 | 10/1 | 15/1 | 11/2 | 12/3 | 12/3 | 0/0 |
+| mariadb-local-service | 13/1 | 16/11 | 22/3 | 8/2 | 13/2 | 23/2 | 14/2 | 0/0 |
+| password-aging | 8/2 | 8/7 | 10/3 | 9/1 | 13/1 | 9/3 | 8/3 | 0/0 |
+| persistent-bind-mount | 11/1 | 8/4 | 14/3 | 9/2 | 12/2 | 8/3 | 11/2 | 0/0 |
+| persistent-dns-settings | 10/2 | 13/7 | 14/4 | 8/2 | 0/0 | 10/7 | 10/1 | 0/0 |
+| redis-persistent-service | 23/4 | 15/12 | 25/5 | 26/2 | 19/3 | 27/1 | 28/3 | 0/0 |
+| repair-application-permissions | 14/1 | 14/7 | 12/3 | 18/2 | 11/2 | 0/0 | 13/1 | 0/0 |
+| restore-latest-backup | 10/2 | 10/3 | 11/3 | 7/3 | 14/3 | 0/0 | 11/3 | 0/0 |
+| restricted-sudo | 15/2 | 14/9 | 12/3 | 13/3 | 14/3 | 13/8 | 15/1 | 0/0 |
+| reverse-proxy | 22/2 | 15/11 | 11/4 | 24/4 | 17/3 | 14/3 | 17/2 | 0/0 |
+| scheduled-backup | 18/2 | 10/10 | 15/3 | 13/2 | 12/3 | 0/0 | 15/3 | 0/0 |
+| scheduled-maintenance | 11/1 | 12/8 | 17/5 | 30/2 | 14/1 | 0/0 | 13/3 | 0/0 |
+| secure-umask | 14/0 | 7/10 | 12/5 | 14/2 | 13/4 | 9/2 | 4/0 | 0/0 |
+| security-updates | 32/3 | 15/6 | 15/4 | 26/1 | 17/1 | 0/0 | 5/0 | 0/0 |
+| separate-authentication-logs | 15/1 | 13/8 | 18/5 | 20/5 | 17/3 | 15/4 | 0/0 | 0/0 |
+| service-account | 7/1 | 9/7 | 8/2 | 11/1 | 9/2 | 10/5 | 0/0 | 0/0 |
+| service-dependency | 13/0 | 29/5 | 11/2 | 25/2 | 16/2 | 0/0 | 0/0 | 0/0 |
+| service-resource-limits | 15/3 | 16/9 | 1/1 | 18/3 | 0/0 | 0/0 | 0/0 | 0/0 |
+| service-restart-on-failure | 21/1 | 16/10 | 13/2 | 15/3 | 12/3 | 0/0 | 0/0 | 0/0 |
+| setgid-workspace | 11/2 | 9/4 | 9/3 | 8/1 | 11/3 | 8/5 | 0/0 | 0/0 |
+| sftp-only-account | 15/2 | 14/10 | 19/6 | 20/5 | 18/4 | 25/5 | 0/0 | 0/0 |
+| shared-directory-acl | 9/2 | 14/9 | 15/4 | 11/0 | 17/1 | 15/6 | 0/0 | 0/0 |
+| shared-group-directory | 11/1 | 9/5 | 10/3 | 16/1 | 6/3 | 0/0 | 0/0 | 0/0 |
+| ssh-group-access | 14/1 | 17/9 | 16/5 | 11/2 | 14/3 | 7/3 | 0/0 | 0/0 |
+| ssh-key-only | 13/0 | 16/11 | 14/2 | 11/2 | 5/0 | 0/0 | 0/0 | 0/0 |
+| ssh-rate-limiting | 28/4 | 0/0 | 28/3 | 18/1 | 25/3 | 23/12 | 0/0 | 0/0 |
+| static-web-service | 12/2 | 11/9 | 7/1 | 13/3 | 8/2 | 9/3 | 0/0 | 0/0 |
+| sticky-drop-directory | 0/0 | 9/8 | 10/2 | 0/0 | 12/2 | 9/0 | 0/0 | 0/0 |
+| swap-file | 11/1 | 11/7 | 7/2 | 12/8 | 11/4 | 11/1 | 0/0 | 0/0 |
+| system-hostname | 9/0 | 6/10 | 12/5 | 9/2 | 10/2 | 7/6 | 0/0 | 0/0 |
+| system-locale | 10/1 | 18/10 | 13/3 | 15/2 | 12/2 | 24/3 | 0/0 | 0/0 |
+| system-timezone | 7/1 | 8/9 | 7/2 | 7/1 | 8/4 | 6/3 | 0/0 | 0/0 |
+| temporary-file-cleanup | 11/1 | 12/10 | 20/4 | 13/1 | 15/5 | 0/0 | 0/0 | 0/0 |
+| time-synchronization | 15/0 | 7/7 | 12/7 | 12/1 | 18/3 | 8/5 | 0/0 | 0/0 |
+| unprivileged-service | 11/0 | 12/5 | 12/3 | 13/1 | 10/2 | 0/0 | 0/0 | 0/0 |
+
 ## AlmaLinux 9
 
 *50/50 tasks executed.*

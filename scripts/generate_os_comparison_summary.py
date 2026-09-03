@@ -38,6 +38,18 @@ OS_ORDER = [
     ("ubuntu24",        "Ubuntu 24.04"),
 ]
 
+# OSes included in the cross-reference command table
+CROSSREF_OS = [
+    ("almalinux9",      "AlmaLinux 9"),
+    ("alpine",          "Alpine"),
+    ("archlinux",       "Arch"),
+    ("centos-stream10", "CentOS S10"),
+    ("debian13",        "Debian 13"),
+    ("rhel7",           "RHEL 7.9"),
+    ("rhel8",           "RHEL 8.8"),
+    ("rhel9",           "RHEL 9.8"),
+]
+
 METRIC_NAMES = ("reward", "evaluation_coverage", "functionality", "operational_hygiene")
 
 
@@ -119,6 +131,47 @@ def fmt_prov(seconds: float | None) -> str:
     return f"{seconds:.2f}s" if seconds is not None else "—"
 
 
+def get_commands(task_name: str) -> tuple[int, int] | None:
+    task_dir = JOBS / task_name
+    if not task_dir.exists():
+        return None
+    runs = sorted(p for p in task_dir.iterdir() if p.is_dir() and (p / "result.json").is_file())
+    if not runs:
+        return None
+    s = f = 0
+    for trial_dir in trial_dirs(runs[-1]):
+        stats = command_audit_stats(trial_dir)
+        s += stats["successful"]
+        f += stats["failed"]
+    return s, f
+
+
+def build_crossref_table() -> list[str]:
+    base_tasks = sorted(
+        d.name.removesuffix("-almalinux9")
+        for d in (TASKS / "almalinux9").iterdir() if d.is_dir()
+    )
+    cols = [label for _, label in CROSSREF_OS]
+    lines = [
+        "## Commands by task and OS\n",
+        "Successful/failed executor commands per task per OS. "
+        "`0/0` means the audit was captured but no managed-node commands were issued.\n",
+        "| Task | " + " | ".join(cols) + " |",
+        "|---|" + "|".join(["---:"] * len(CROSSREF_OS)) + "|",
+    ]
+    for task in base_tasks:
+        cells = []
+        for os_id, _ in CROSSREF_OS:
+            result = get_commands(f"{task}-{os_id}")
+            if result is None:
+                cells.append("—")
+            else:
+                cells.append(f"{result[0]}/{result[1]}")
+        lines.append("| " + task + " | " + " | ".join(cells) + " |")
+    lines.append("")
+    return lines
+
+
 def build_summary() -> str:
     lines: list[str] = []
 
@@ -135,6 +188,8 @@ def build_summary() -> str:
     for os_id, os_label in OS_ORDER:
         lines.append(f"- [{os_label}](#{os_anchor(os_label)})")
     lines.append("")
+
+    lines.extend(build_crossref_table())
 
     for os_id, os_label in OS_ORDER:
         lines.append(f"## {os_label}\n")
