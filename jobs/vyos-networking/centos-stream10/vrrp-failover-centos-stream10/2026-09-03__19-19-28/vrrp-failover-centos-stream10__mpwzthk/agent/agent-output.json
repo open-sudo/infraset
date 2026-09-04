@@ -1,0 +1,105 @@
+{
+  "status": "completed",
+  "summary": "Configured VRRP-based single-gateway failover so node3 reaches node4 through a stable virtual IP that stays available if either router (node1/node2) is down, preferring node1 while healthy. node1/node2 (VyOS routers) each connect to two private L2 segments: 10.50.3.0/24 (shared with node3) and 10.50.4.0/24 (shared with node4). VRRP groups NET3 (vrid 31) and NET4 (vrid 41) run on both routers with node1 priority 200 (master) and node2 priority 100 (backup), publishing virtual IPs 10.50.3.1 and 10.50.4.1. node3 (CentOS, via nmcli persistent connection profile) has a static route to 10.50.4.0/24 via gateway 10.50.3.1 on enp8s0 \u2014 its single gateway address for reaching node4. node4 has the symmetric static route back via 10.50.4.1, ensuring return-path resilience too. IP forwarding is enabled on both routers by default in VyOS. Verified: baseline reachability via node1 as master, forced node1 interfaces down \u2192 node2 promoted to master within seconds and node3\u2192node4 ping continued uninterrupted via the same gateway address, then restored node1 which reclaimed master status per its higher priority. All four nodes (node1, node2, node3, node4) were then restarted one at a time via native reboot mechanisms; each showed a changed OS boot_id confirming an actual restart, and post-restart checks confirmed VRRP state (node1 MASTER/node2 BACKUP on both groups), interface/route configuration persistence (VyOS `save` and nmcli persistent profiles), and live node3\u2192node4 reachability through the gateway.",
+  "actions_performed": [
+    "Inspected topology: discovered node1/node2 (VyOS routers, eth0=mgmt DHCP, eth1/eth2 unconfigured) and node3/node4 (CentOS Stream 10, enp1s0=mgmt DHCP, enp8s0=unconfigured private NIC)",
+    "Verified segment pairing with temporary ip addr tests: node1 eth1 <-> node3 enp8s0 (segment A), node1 eth2 <-> node4 enp8s0 (segment B)",
+    "Configured node3/node4 enp8s0 with static IPs via nmcli (NetworkManager was reconciling away raw `ip addr add` on a DHCP-profile interface)",
+    "Configured VyOS interfaces eth1 (10.50.3.2/24) and eth2 (10.50.4.2/24) on node1, with VRRP groups NET3 (vrid31, prio200) and NET4 (vrid41, prio200) publishing VIPs 10.50.3.1 and 10.50.4.1; committed and saved",
+    "Configured mirrored VyOS interfaces and VRRP on node2 (eth1=10.50.3.3/24, eth2=10.50.4.3/24) with priority 100 (backup) on both groups; committed and saved",
+    "Verified node1 elected MASTER and node2 BACKUP on both VRRP groups via `show vrrp`",
+    "Confirmed VIP reachability from node3 and node4 (ping to 10.50.3.1 and 10.50.4.1) and confirmed ip_forward + interface forwarding enabled on node1",
+    "Added persistent static routes via nmcli: node3 -> 10.50.4.0/24 via 10.50.3.1 (single gateway); node4 -> 10.50.3.0/24 via 10.50.4.1 (symmetric return path)",
+    "Verified baseline end-to-end reachability: node3 pinged node4's 10.50.4.13 successfully via gateway 10.50.3.1, routed through node1",
+    "Disrupted node1 by disabling eth1/eth2 in VyOS config (committed) to simulate router-down; confirmed node2 promoted to MASTER on both VRRP groups within seconds",
+    "Confirmed node3->node4 reachability persisted through the same gateway address (10.50.3.1) while node1 was disrupted, now served by node2",
+    "Restored node1 (deleted disable flags, committed/saved); confirmed node1 reclaimed MASTER on both groups and node2 returned to BACKUP, per its higher priority",
+    "Re-verified node3->node4 reachability after full recovery",
+    "Captured pre-restart boot_id and health evidence on all four nodes",
+    "Restarted node1 via `reboot`, polled until reachable, confirmed changed boot_id and recovered VRRP MASTER state plus interface config (persisted via VyOS save)",
+    "Restarted node2 via `reboot`, polled until reachable, confirmed changed boot_id and recovered VRRP BACKUP state plus interface config",
+    "Restarted node3 via `systemctl reboot`, polled until reachable, confirmed changed boot_id, persisted enp8s0 IP/route (nmcli profile), and live ping to node4",
+    "Restarted node4 via `systemctl reboot`, polled until reachable, confirmed changed boot_id, persisted enp8s0 IP/route, and final end-to-end ping from node3 to node4",
+    "Final verification: node1 MASTER / node2 BACKUP confirmed on both VRRP groups post all-node restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "node3 has a single gateway address to reach node4 (VRRP VIP + static route)",
+      "command_ids": [
+        "cmd-b3e2b498a8514c4b",
+        "cmd-c588760d081344ff"
+      ],
+      "summary": "node3's persistent route table shows 10.50.4.0/24 via 10.50.3.1 (the VRRP VIP) on enp8s0, and ping to node4 (10.50.4.13) succeeds via that gateway with ip route get confirming the path."
+    },
+    {
+      "requirement": "Gateway prefers node1 while healthy (VRRP priority)",
+      "command_ids": [
+        "cmd-e4e383f8e42e446a",
+        "cmd-92d65568be0a403a"
+      ],
+      "summary": "show vrrp on node1 shows MASTER priority 200 on both NET3/NET4 groups; node2 shows BACKUP priority 100 on both groups."
+    },
+    {
+      "requirement": "Gateway stays available when node1 is down (failover to node2)",
+      "command_ids": [
+        "cmd-4ad11316bef84f10",
+        "cmd-ca92744fc9384b3a",
+        "cmd-f146742a382344dd"
+      ],
+      "summary": "node1 eth1/eth2 disabled in VyOS config (simulated router-down); node2 immediately shows MASTER priority 100 on both VRRP groups; node3 still successfully pings node4 (10.50.4.13) via the same gateway address 10.50.3.1, now served by node2."
+    },
+    {
+      "requirement": "Gateway recovers preference for node1 when it comes back healthy",
+      "command_ids": [
+        "cmd-04ff73cbbb2346bd",
+        "cmd-274bb371dadc4965",
+        "cmd-62d6d13b1e5d4651",
+        "cmd-d3feafeaa87c41a4"
+      ],
+      "summary": "node1 eth1/eth2 re-enabled and committed; node1 reclaims MASTER (priority 200) on both VRRP groups, node2 returns to BACKUP; node3->node4 ping succeeds again through the restored path."
+    },
+    {
+      "requirement": "node1 restart: pre-restart baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-f278ea81109540bb",
+        "cmd-cd1bdc82ea0d477d",
+        "cmd-59dbd222595244bc",
+        "cmd-7999141f9e3845ff",
+        "cmd-3176e593ea104347"
+      ],
+      "summary": "Captured boot_id 50503c5d... pre-restart; issued reboot (ack returned); connection reset confirmed disconnect; post-poll boot_id changed to 8fb122a1...; show vrrp/interfaces confirm node1 recovered as MASTER with persisted eth1/eth2 addresses and VRRP config."
+    },
+    {
+      "requirement": "node2 restart: pre-restart baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-1b2dfc0f41704f99",
+        "cmd-1bbb93ee32314316",
+        "cmd-20b89bb48d824be3",
+        "cmd-068942dd02ef4f6e",
+        "cmd-4505db03ec004477"
+      ],
+      "summary": "Captured boot_id 7668189d... pre-restart; issued reboot; connection reset confirmed disconnect; post-poll boot_id changed to f63f998b...; show vrrp/interfaces confirm node2 recovered as BACKUP with persisted config."
+    },
+    {
+      "requirement": "node3 restart: pre-restart baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-4696b44669294de2",
+        "cmd-66e31c537cb9409f",
+        "cmd-a7f148ec78ac434f",
+        "cmd-e1d0b4c663294f28"
+      ],
+      "summary": "Captured boot_id 45c22b1f... pre-restart; issued systemctl reboot; post-poll boot_id changed to ceacb3fe...; confirmed enp8s0 IP (10.50.3.12/24) and static route to 10.50.4.0/24 persisted via nmcli profile, and live ping to node4 succeeded."
+    },
+    {
+      "requirement": "node4 restart: pre-restart baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-aaf4d311dc834b8c",
+        "cmd-98082046a7534ef6",
+        "cmd-821b4cf04e044759",
+        "cmd-7c550226340a494a",
+        "cmd-3ad233d4b4924b6a"
+      ],
+      "summary": "Captured boot_id bccb87ac... pre-restart; issued systemctl reboot; post-poll boot_id changed to 2c3e9a7d...; confirmed enp8s0 IP (10.50.4.13/24) and static route to 10.50.3.0/24 persisted, and final ping from node3 to node4 succeeded end-to-end after all four nodes were restarted."
+    }
+  ]
+}

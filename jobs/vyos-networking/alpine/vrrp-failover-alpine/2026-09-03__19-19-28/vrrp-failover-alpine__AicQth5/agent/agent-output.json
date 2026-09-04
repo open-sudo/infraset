@@ -1,0 +1,113 @@
+{
+  "status": "completed",
+  "summary": "Configured VRRP-based HA gateway so node3 has a single, always-available address (10.50.1.254) for reaching node4's network (10.50.2.0/24), preferring node1. node1 (priority 200) and node2 (priority 100) each run two VRRP groups \u2014 NETA (vrid 51, VIP 10.50.1.254/24 on eth1) and NETB (vrid 52, VIP 10.50.2.254/24 on eth2) \u2014 giving node3 a gateway on its network and node4 the mirrored gateway (10.50.2.254) on its side. node3's persistent route (10.50.2.0/24 via 10.50.1.254 dev eth1) and node4's mirrored route were added to /etc/network/interfaces so they survive reboot. Verified failover: killing node1's router interfaces promoted node2 to MASTER on both VRRP groups with zero-loss ping continuity through the same gateway IP, and restoring node1 caused it to preempt back to MASTER (as required \u2014 preferring node1 while healthy). All four nodes were then restarted one at a time per the mandatory protocol: each showed a changed OS boot_id, and post-restart checks confirmed VRRP roles, VIP assignment, static routes, and end-to-end node3-node4 connectivity all recovered correctly, with quorum preserved throughout (never restarting both routers concurrently).",
+  "actions_performed": [
+    "Inspected topology on all 4 nodes: node1/node2 are VyOS routers each with eth0 (shared 10.100.117.0/24 mgmt net), eth1, eth2; node3/node4 are Alpine hosts with eth0 (mgmt) and a previously-down eth1",
+    "Brought up node3 eth1 and node4 eth1, empirically mapped topology: 10.50.1.0/24 = node1-eth1+node2-eth1+node3-eth1; 10.50.2.0/24 = node1-eth2+node2-eth2+node4-eth1",
+    "Assigned static addresses: node1 eth1=10.50.1.1/24 eth2=10.50.2.1/24; node2 eth1=10.50.1.2/24 eth2=10.50.2.2/24",
+    "Configured VRRP group NETA (vrid 51, VIP 10.50.1.254/24) and NETB (vrid 52, VIP 10.50.2.254/24) on node1 (priority 200) and node2 (priority 100), committed and saved on both",
+    "Configured node3 (address 10.50.1.3/24 + persistent route 10.50.2.0/24 via 10.50.1.254) and node4 (address 10.50.2.4/24 + persistent route 10.50.1.0/24 via 10.50.2.254) in /etc/network/interfaces, applied via networking service restart",
+    "Verified baseline connectivity node3<->node4 through the VRRP gateway",
+    "Disrupted node1 (disabled eth1/eth2) to test failover: confirmed node2 became MASTER on both groups and node3<->node4 connectivity was unaffected",
+    "Restored node1: confirmed it preempted back to MASTER (preferred) and node2 returned to BACKUP",
+    "Executed mandatory restart protocol: captured boot_id baseline on all 4 nodes, restarted node4, node3, node2, then node1 (one at a time, preserving VRRP quorum), polled each until exec was available again, confirmed changed boot_id on each, and verified post-restart recovery of interfaces, VRRP state, routes, and end-to-end connectivity"
+  ],
+  "evidence": [
+    {
+      "requirement": "node3 has a single gateway address reachable via either router, preferring node1",
+      "command_ids": [
+        "cmd-29677a3302934379",
+        "cmd-2f5bd49b0a8f4932",
+        "cmd-ba5f29a0455c4c99"
+      ],
+      "summary": "VRRP groups configured; show vrrp on node1/node2 confirms node1=MASTER(200)/node2=BACKUP(100) on both NETA/NETB; node3 pings gateway 10.50.1.254 successfully"
+    },
+    {
+      "requirement": "node3 can reach node4 through the shared gateway (functional baseline)",
+      "command_ids": [
+        "cmd-1a0dcd2f25d046b3",
+        "cmd-753487eb97fc42b3",
+        "cmd-d474d7650f6643d8",
+        "cmd-875c58d0c1c44ea5"
+      ],
+      "summary": "Persistent routes installed on node3/node4; forwarding enabled on node1; node3<->node4 ping baseline succeeds"
+    },
+    {
+      "requirement": "Gateway stays available with node1 down, node4 still reachable",
+      "command_ids": [
+        "cmd-0621efbce39248d0",
+        "cmd-6760ab1ca9eb40bf",
+        "cmd-e7285c8e47ea46ea"
+      ],
+      "summary": "node1 eth1/eth2 disabled; node2 show vrrp reports MASTER(100) on both groups; node3 pings gateway 10.50.1.254 and node4 successfully during the disruption"
+    },
+    {
+      "requirement": "node1 preempts back to MASTER once healthy (preference honored)",
+      "command_ids": [
+        "cmd-514a9cf00cee4d8e",
+        "cmd-a3cefe30eb7740e2",
+        "cmd-bc2f68cab81c422f"
+      ],
+      "summary": "After re-enabling node1 interfaces, node1 shows MASTER(200) again, node2 drops to BACKUP(100), and node3->node4 ping still succeeds"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline on all 4 nodes (boot identity + service/data health)",
+      "command_ids": [
+        "cmd-65f8e09504a346dc",
+        "cmd-a5ae3e8c157741dd",
+        "cmd-4fe0a88c0dcc493b",
+        "cmd-459561b8f4614bf7"
+      ],
+      "summary": "Captured boot_id and uptime -s on node1-4 plus VRRP state (node1/node2) and route+ping health (node3/node4) before any restarts"
+    },
+    {
+      "requirement": "node4 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-4720ff68fe014ac7",
+        "cmd-f404faf6cf8c4a20",
+        "cmd-947ffa7dc63840a1"
+      ],
+      "summary": "reboot issued (stream closed = ack); boot_id changed ec56fab6->aea13366; eth1 address, persistent route, and ping to node3 all recovered"
+    },
+    {
+      "requirement": "node3 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-226700c343914c4e",
+        "cmd-bb5636599d624189",
+        "cmd-efa7635e41c34126"
+      ],
+      "summary": "reboot issued and acked; boot_id changed d814ed62->9e460478; eth1 address, persistent route, and ping to node4 all recovered"
+    },
+    {
+      "requirement": "node2 restart: acknowledgement, changed boot identity, recovered state, quorum preserved (node1 stayed MASTER during)",
+      "command_ids": [
+        "cmd-6790c2c20d014c47",
+        "cmd-847f34258fa24a0d",
+        "cmd-f20790c92f204132",
+        "cmd-f453d7a7340e4b1c",
+        "cmd-86a5ab262a294fac"
+      ],
+      "summary": "reboot issued; node1 remained MASTER and node3->node4 ping continued uninterrupted during node2's downtime; boot_id changed 32669db3->8c9ab088; post-restart node2 rejoined as BACKUP with VIPs configured"
+    },
+    {
+      "requirement": "node1 restart: acknowledgement, changed boot identity, recovered state, quorum preserved (node2 took over MASTER during)",
+      "command_ids": [
+        "cmd-b98c3fc1cccf416b",
+        "cmd-28bf089327d147ed",
+        "cmd-303596f6e137472f",
+        "cmd-77f491de7fde4ccf",
+        "cmd-d3e11b9d7fdb4502",
+        "cmd-39f0fdd0085842fd"
+      ],
+      "summary": "reboot issued; node2 became MASTER during downtime with continued node3->node4 connectivity; boot_id changed 5bcff8f9->06b7df86; post-restart node1 preempted back to MASTER with VIPs restored, node2 returned to BACKUP"
+    },
+    {
+      "requirement": "Final end-to-end verification after all 4 restarts",
+      "command_ids": [
+        "cmd-02efa54c72f94c1b",
+        "cmd-6c918bf3326749d2"
+      ],
+      "summary": "Post full-cycle: node3 and node4 routes intact and bidirectional ping succeeds through the VRRP-backed gateway"
+    }
+  ]
+}

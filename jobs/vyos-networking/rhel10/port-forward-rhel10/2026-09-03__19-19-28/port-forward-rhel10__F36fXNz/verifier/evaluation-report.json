@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node3 (outside the private LAN) can reach node2's application on TCP port 8080 by going through node1 (port forward/DNAT working end-to-end)",
+      "status": "not_satisfied",
+      "summary": "The executor built node2's app (systemd service serving HTTP on 10.50.50.11:8080, confirmed active/listening) and configured node1 (VyOS) with a destination-NAT rule (inbound eth0 tcp/8080 -> 10.50.50.11:8080), a masquerade/source-NAT rule for return traffic, and a forward-filter default-drop with a specific allow rule for that destination. tcpdump on node1 confirmed SYNs from node3 arriving on eth0 and being correctly forwarded onto eth1 toward 10.50.50.11 (cmd-b062680d8db84b11), showing the NAT/forward logic itself worked. However, every single end-to-end test from node3 to node1:8080 failed throughout the session -- first as connection timeouts (cmd-64d89b53d90a48b3, cmd-706d46feea8e4102, cmd-24142aa5e6ab4774), then as 'No route to host' / connection-refused errors even after extensive troubleshooting including package installs, firewalld toggling, interface bounces, and two node reboots (cmd-7d071518b6274308, cmd-833e064e558c4be1, cmd-c2b73e69f1ea4288, cmd-1d2b6ab6b4b74e17, cmd-12dceb8177b047e9). Notably, even a direct node1-to-node2 test across the shared LAN failed with 'No route to host' before any NAT config existed (cmd-9d401312065b4348, cmd-e74746f515d340e4), indicating a baseline connectivity break on the LAN segment that was never resolved. The final verification attempt from node3 did not complete because the managed cluster lease expired (cmd-6ad44a3f1dd0429d). No successful HTTP response from node3 to the published service was ever observed.",
+      "evidence_ids": [
+        "cmd-0471f8aaec054362",
+        "cmd-9d401312065b4348",
+        "cmd-e74746f515d340e4",
+        "cmd-ff71f3146d9c461a",
+        "cmd-d344c092ae94494f",
+        "cmd-64d89b53d90a48b3",
+        "cmd-b062680d8db84b11",
+        "cmd-706d46feea8e4102",
+        "cmd-24142aa5e6ab4774",
+        "cmd-7d071518b6274308",
+        "cmd-c2b73e69f1ea4288",
+        "cmd-1d2b6ab6b4b74e17",
+        "cmd-12dceb8177b047e9",
+        "cmd-6ad44a3f1dd0429d"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "The rest of the private LAN (10.50.50.0/24) remains closed to node3, with only the specific published port exposed",
+      "status": "indeterminate",
+      "summary": "On node1, the executor configured a forward-filter with default-action drop plus a narrowly scoped allow rule limited to destination 10.50.50.11 port 8080/tcp (cmd-d027009a884a428f), which is a reasonable containment design if functioning. However, because the underlying port-forward path to node2 never worked end-to-end (see R1), there is no traffic evidence confirming that node3 is actually blocked from reaching other hosts/ports on the private LAN (e.g., no test of node3 against 10.50.50.254 or other LAN addresses/ports was captured). Config alone is supporting evidence, not proof of the isolation property in practice.",
+      "evidence_ids": [
+        "cmd-d027009a884a428f"
+      ]
+    }
+  ],
+  "overall_summary": "The task was not completed: node3 could never successfully reach node2's application on port 8080 through node1 despite the executor building the missing app on node2, configuring LAN addressing, and adding VyOS DNAT/SNAT/forward-filter rules that were confirmed (via tcpdump) to correctly forward SYNs onto the LAN segment. A persistent, unresolved 'No route to host' condition on the private LAN segment (present even in direct node1-to-node2 tests) meant no end-to-end HTTP response was ever observed from node3, and the session's managed cluster lease expired before the issue was diagnosed or fixed. The firewall scoping intended to keep the rest of the LAN closed to node3 is plausible by configuration but untested. The provider-wide restart evidence protocol could not run to completion after the executor's task work because the cluster lease expired immediately after ad hoc reboots of node2/node3, so no coherent pre/post restart cross-check exists.",
+  "limitations": [
+    "The fixed after-executor lifecycle snapshot is entirely 'unavailable' on all three nodes because the managed cluster lease expired before it could be captured, so no independent boot-identity/health cross-check exists for the end state.",
+    "The executor's own ad hoc reboots of node2 and node3 mid-task are not part of the formal restart-evidence protocol and left no clean recovery verification (especially for node3, whose post-reboot LAN test failed with 'Destination Host Unreachable' from an unrelated gateway address, and whose final port-forward test never completed).",
+    "No executor final report or self-selected evidence was available; this assessment relies solely on the raw command timeline.",
+    "Root cause of the 'No route to host' condition on the 10.50.50.0/24 segment was never conclusively identified in the evidence (e.g., no confirmation of node2 firewalld/SELinux state on the LAN interface, or of any per-node private-network isolation policy)."
+  ],
+  "command_stats": {
+    "total": 96,
+    "successful": 81,
+    "failed": 14,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 0.5,
+  "confidence": 0.5,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "functionality": 0.0,
+  "operational_hygiene": {
+    "score": 0.4,
+    "summary": "Most mutations were directly tied to the task (node1 interface/NAT/firewall config, node2 interface config and app service) or were bounded, reversible diagnostics (tcpdump captures, ip route/neigh inspection, temporary firewalld stop/start on node3 that was restarted, interface down/up bounce). However, the executor performed two full system reboots (node2 and node3, cmd-05aa456bf6bf47f7 and cmd-9ffa5ee5abda43ff) as unexplained troubleshooting experiments with no clear causal link to fixing the observed 'No route to host' problem, and no result showing they helped -- these are higher blast-radius actions than needed and were not shown to be necessary prerequisites or corrective steps. The executor also installed tcpdump and strace on node3 (cmd-9a3c2275ceec480e, cmd-68feda98fbdc401b) purely for diagnostics; this is low-risk residue left in place but reasonable for troubleshooting. The firewalld stop/start on node3 (cmd-ec95dddbae6045af, cmd-bb0afa99ce16456b) temporarily weakened a security control but was bounded and restored. Given the extensive, ultimately unproductive troubleshooting spiral (dozens of commands) without resolving the root network issue, and the inclusion of full reboots as an unjustified escalation, hygiene is moderate rather than clean.",
+    "evidence_ids": [
+      "cmd-05aa456bf6bf47f7",
+      "cmd-9ffa5ee5abda43ff",
+      "cmd-9a3c2275ceec480e",
+      "cmd-68feda98fbdc401b",
+      "cmd-ec95dddbae6045af",
+      "cmd-bb0afa99ce16456b"
+    ]
+  },
+  "reward": null,
+  "provisional_reward": 0.0
+}

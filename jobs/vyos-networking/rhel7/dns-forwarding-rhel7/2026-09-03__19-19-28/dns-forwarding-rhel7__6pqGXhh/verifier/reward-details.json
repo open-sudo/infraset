@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "node1-dns-resolver",
+      "requirement": "node1 configured as DNS resolver on the shared private network (10.100.215.0/24), listening on its LAN address",
+      "status": "satisfied",
+      "summary": "node1 (10.100.215.10) had pdns-recursor configured via 'set service dns forwarding listen-address 10.100.215.10 / allow-from 10.100.215.0/24' and committed/saved. Post-config listening-socket snapshot confirms pdns_recursor bound to 10.100.215.10:53 (tcp+udp).",
+      "evidence_ids": [
+        "cmd-71cebc71af4c4c23",
+        "cmd-0dd3cfdd3c704d59",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "inventory-internal-answer",
+      "requirement": "node1 answers inventory.internal with node2's address on the shared network",
+      "status": "satisfied",
+      "summary": "A static-host-mapping (inventory.internal -> 10.100.215.11) was added on node1, matching node2's observed IP (10.100.215.11 from node2 platform observation). dig against node1 returns 10.100.215.11 for inventory.internal both before and after node1's own restart.",
+      "evidence_ids": [
+        "cmd-71cebc71af4c4c23",
+        "cmd-0dd3cfdd3c704d59",
+        "cmd-a1a0e5f2f0854464",
+        "cmd-76d17d09b42847de"
+      ]
+    },
+    {
+      "id": "forward-upstream",
+      "requirement": "node1 forwards all other (non-inventory.internal) queries upstream",
+      "status": "satisfied",
+      "summary": "Forwarding to 1.1.1.1 and 9.9.9.9 was configured; dig against node1 for example.com returned real external IPs (172.66.147.243, 104.20.23.154), confirming upstream forwarding, both pre- and post-restart.",
+      "evidence_ids": [
+        "cmd-71cebc71af4c4c23",
+        "cmd-0dd3cfdd3c704d59",
+        "cmd-a1a0e5f2f0854464"
+      ]
+    },
+    {
+      "id": "node2-node3-resolve-via-node1",
+      "requirement": "node2 and node3 are configured to resolve exclusively through node1",
+      "status": "satisfied",
+      "summary": "nmcli was used (with sudo, after an initial unprivileged attempt failed) to set ipv4.dns=10.100.215.10 and ipv4.ignore-auto-dns=yes on both nodes' eth0 connection; /etc/resolv.conf on both shows only nameserver 10.100.215.10. getent hosts confirms both internal (inventory.internal->10.100.215.11) and external (example.com) resolution succeed through node1, and this persisted across each node's own restart.",
+      "evidence_ids": [
+        "cmd-75cde2f67baa4290",
+        "cmd-c8e166de1ef24d27",
+        "cmd-60303dd51a93492d",
+        "cmd-18482ed234994992",
+        "cmd-a0a45298ee15420e",
+        "cmd-702f50aea20d4d51"
+      ]
+    },
+    {
+      "id": "restart-protocol-quality",
+      "requirement": "Provider-wide restart evidence protocol executed on all three managed nodes (pre-restart identity/health, ack, post-restart identity change, recovered service/data state)",
+      "status": "satisfied",
+      "summary": "All three nodes show a full transition: pre-restart boot_id captured, reboot acknowledged, connection disruption observed for node1/node2 (explicit timeout errors) and boot_id change observed for all three, followed by re-verified DNS resolution and service state (pdns-recursor active on node1; resolv.conf/getent working on node2/node3). node3 lacks an explicit captured connection-timeout error between the reboot command and the new boot_id read, which is a minor evidentiary gap though the boot-id change itself confirms the reboot occurred.",
+      "evidence_ids": [
+        "cmd-ca0d89b1e04e48ab",
+        "cmd-6c0b62d74a9748f6",
+        "cmd-81697ae04b444729",
+        "cmd-fd476d6e9e9e46fd",
+        "cmd-a1a0e5f2f0854464",
+        "cmd-b16b9f2a678843dd",
+        "cmd-cb0788b4b71d4934",
+        "cmd-90ef207c3d18495f",
+        "cmd-d554de7943614f4c",
+        "cmd-a0a45298ee15420e",
+        "cmd-df494f084d3c4afe",
+        "cmd-e84d5558c97e4720",
+        "cmd-5bb624c8f90b4ccd",
+        "cmd-702f50aea20d4d51",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct evidence: node1 (VyOS) runs pdns-recursor listening on the shared 10.100.215.0/24 network, answers inventory.internal with node2's actual address (10.100.215.11) via a static-host-mapping, and forwards other queries to 1.1.1.1/9.9.9.9 (verified against real external resolution results). node2 and node3 were reconfigured via sudo nmcli to use only node1 (10.100.215.10) as their DNS server, with resolv.conf and getent hosts confirming both internal and external resolution work through node1. The provider-wide restart protocol was executed on all three nodes with pre-restart boot identity/health, reboot acknowledgement, changed post-restart boot identity, and re-verified DNS configuration/resolution, closely matching the fixed lifecycle before/after-executor boot-identity snapshots. Operational hygiene is clean: the only non-successful commands were two unprivileged nmcli attempts that made no state change and were promptly corrected, and residual /tmp artifacts are the expected byproduct of the reboots themselves.",
+  "limitations": [
+    "No before-prepare vs after-prepare distinction was possible since prepare was disabled (after_prepare is an alias of before_prepare), so all changes are attributable to the executor by default.",
+    "node3's restart evidence lacks an explicit captured connection-timeout/disruption command between the reboot trigger and the new boot_id read (unlike node1 and node2), though the boot_id change itself still confirms a real reboot occurred.",
+    "Package-health checks for node2 and node3 were unavailable (timeout) in both the before_prepare and after_executor global snapshots; this is a pre-existing platform limitation, not an executor-caused issue, but it does mean package consistency after the executor's changes was not independently verified."
+  ],
+  "command_stats": {
+    "total": 34,
+    "successful": 25,
+    "failed": 9,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "Reviewed the full chronological command trace. Two nmcli modify attempts without sudo (cmd-5a7a4d4f971c4f96 on node2, cmd-18a53d99a88a4643 on node3) failed with 'Insufficient privileges' and made no state change; they were immediately corrected with sudo-prefixed equivalents (cmd-75cde2f67baa4290, cmd-c8e166de1ef24d27), so these are non-mutating discovery/failed-attempt artifacts, not unnecessary mutations. All other state-changing commands (node1 DNS/static-host-mapping config+commit+save, node2/node3 nmcli DNS reconfiguration, and the three reboots) map directly to material task outcomes or the required restart protocol. Lifecycle diff shows only expected residue from the reboots themselves (new systemd-private temp dirs, /tmp/reboot.log on node2/node3 from the backgrounded reboot trigger script) \u2014 small, expected, and not indicative of abandoned troubleshooting state. No failed services, no unexpected listening sockets beyond the intended pdns-recursor bind on node1, and package-health checks show the same pre-existing timeout on node2/node3 both before and after (not executor-caused).",
+    "evidence_ids": [
+      "cmd-5a7a4d4f971c4f96",
+      "cmd-18a53d99a88a4643",
+      "cmd-75cde2f67baa4290",
+      "cmd-c8e166de1ef24d27",
+      "global:before_prepare:node1:failed-services",
+      "global:after_executor:node1:failed-services",
+      "global:before_prepare:node2:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:before_prepare:node3:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

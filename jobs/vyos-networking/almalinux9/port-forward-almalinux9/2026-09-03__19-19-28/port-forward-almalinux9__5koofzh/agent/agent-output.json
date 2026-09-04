@@ -1,0 +1,96 @@
+{
+  "status": "completed",
+  "summary": "Published node2's port-8080 app through node1 to node3 via a new private link plus VyOS DNAT/SNAT, without exposing the rest of node1\u2194node2's private network. All three nodes were then restarted one at a time with verified boot-identity change and full post-restart recovery.",
+  "actions_performed": [
+    "Discovered topology: node1/node2/node3 share a common /24 (10.100.249.0/24) via eth0; node1 and node2 each also have an unconfigured eth1 for a dedicated private link.",
+    "Configured a new private subnet 10.50.50.0/24 on node1 eth1 (10.50.50.254/24, VyOS) and node2 eth1 (10.50.50.10/24, via nmcli static connection so it survives reconciliation/reboot).",
+    "Deployed a systemd-managed python http.server demo app on node2:8080 (enabled+started), and restricted it in firewalld to only accept from the 10.50.50.0/24 private subnet (blocking direct access from node3 over the shared eth0 network).",
+    "Configured VyOS on node1: nat destination rule 10 (DNAT eth0:8080 -> 10.50.50.10:8080), firewall ipv4 forward filter default-drop with rule 5 (established/related) and rule 10 (allow eth0->eth1 tcp/8080 to 10.50.50.10), and nat source rule 10 (masquerade for eth1-outbound traffic destined to 10.50.50.10:8080) to fix asymmetric-routing hairpin caused by node2's direct L2 path back to node3.",
+    "Verified node3 can reach the app only via node1:8080, and cannot reach node2 directly on 8080, cannot reach node2's private IP, and cannot reach unrelated ports (22) via node1.",
+    "Captured pre-restart boot_id and health baselines on all 3 nodes, then restarted node1, node2, and node3 sequentially (one at a time) using native `reboot`, polled each until exec was available again, confirmed changed boot_id, and re-verified config persistence, service health, and end-to-end port-forward functionality plus continued isolation after each restart."
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline private network + app setup and connectivity between node1 and node2",
+      "command_ids": [
+        "cmd-647618634c8d4475",
+        "cmd-7eab9290ae2742a5",
+        "cmd-7397842ea6474018",
+        "cmd-3a7c79281cd244fc",
+        "cmd-7bb99c7912ab427d",
+        "cmd-c8c6c229c7d94fc0",
+        "cmd-a74a027ba7a14e59",
+        "cmd-95061938db854ac1",
+        "cmd-df1b96fe52f44343"
+      ],
+      "summary": "Discovered topology (shared /24 + unconfigured eth1 on node1/node2), configured static 10.50.50.0/24 private link, deployed demo app on node2:8080, and confirmed node1 can reach node2 over the private link."
+    },
+    {
+      "requirement": "App restricted to the private network (not directly exposed to node3)",
+      "command_ids": [
+        "cmd-5364c50a9fb94007",
+        "cmd-e60e9d76843a4e45",
+        "cmd-fd198a1be64c41e8",
+        "cmd-611a0e42ede64079"
+      ],
+      "summary": "firewalld rich rule limits node2:8080 to 10.50.50.0/24 source; node3 confirmed unable to reach node2 directly via eth0 or via the private subnet, both before and after configuring the forward."
+    },
+    {
+      "requirement": "Publish app through node1 to node3 on port 8080 (VyOS DNAT/SNAT + forward firewall)",
+      "command_ids": [
+        "cmd-7ca5e2da7b9b4f76",
+        "cmd-e82b135b37834cdc",
+        "cmd-b9cc088522194b27",
+        "cmd-5e70dc680866401a",
+        "cmd-669058861ae14df7",
+        "cmd-a3c153147ec6463a",
+        "cmd-48da44fbe8b14b64",
+        "cmd-85d4c8d5387c4565",
+        "cmd-ce26c29de94c4068",
+        "cmd-29da78c6444c4f28"
+      ],
+      "summary": "Configured and iteratively fixed VyOS DNAT, forward-filter established/related state, and masquerade SNAT to resolve asymmetric routing; node3 successfully retrieves the app content via node1:8080 (HTTP 200)."
+    },
+    {
+      "requirement": "Rest of private network stays closed to node3 after publishing",
+      "command_ids": [
+        "cmd-611a0e42ede64079",
+        "cmd-379a2bdace8f40bf"
+      ],
+      "summary": "node3 cannot reach node2 directly (8080), node2's private IP, or node1's SSH port \u2014 only the forwarded 8080 path works."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-fe6faad776ae42ac",
+        "cmd-0ccda423f5f44639",
+        "cmd-ba10d06ecec545c2",
+        "cmd-25e78afb10ba4404",
+        "cmd-ac940555834246da",
+        "cmd-27b0ef91d19944eb"
+      ],
+      "summary": "Baseline boot_id 7668189d... and NAT config captured; reboot acked; boot_id changed to eb0becc7...; VyOS config/forwarding persisted and end-to-end app access via node3 confirmed post-restart."
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-21957c5ffe2a434e",
+        "cmd-836e91a46b1e468f",
+        "cmd-ae11e3087ab8475a",
+        "cmd-de03bd7a1212434b",
+        "cmd-ae9ada7fea324a8d"
+      ],
+      "summary": "Baseline boot_id 8c28f3cd... and app health captured; reboot acked; boot_id changed to 4124fbb2...; eth1 static IP, firewalld rule, and demo-app.service persisted, app reachable via node1 post-restart."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-da2b375cdf1f4a6c",
+        "cmd-22097dc196a842c1",
+        "cmd-e4a7c34347d040f0",
+        "cmd-379a2bdace8f40bf"
+      ],
+      "summary": "Baseline boot_id e65e6bcf... and app reachability captured; reboot acked; boot_id changed to 6f92ff83...; app access via node1:8080 and continued isolation confirmed post-restart."
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "status": "completed",
+  "summary": "Configured node3 with a single gateway address (10.50.10.1) that reaches node4's private network with automatic router failover. node1 and node2 each run VyOS with interfaces on both node3's segment (10.50.10.0/24, eth1) and node4's segment (10.50.20.0/24, eth2). A keepalived VRRP group per segment provides virtual gateway IPs (10.50.10.1 on node3's segment, 10.50.20.1 on node4's segment); node1 is priority 200 (preferred/preemptive master), node2 is priority 100 (backup). node3 has one static route to 10.50.20.0/24 via 10.50.10.1 \u2014 a single, always-available gateway address regardless of which physical router is up. node4 has the symmetric static route back via 10.50.20.1 so replies traverse correctly. Verified live failover: rebooted node1 (the preferred router) while running continuous pings from node3 to node4 \u2014 node2 took over as MASTER on both VRRP groups within ~1s, all 64 pings succeeded (0% loss), and when node1 came back it reclaimed MASTER via VRRP preemption as designed. All four nodes (node1-node4) were then restarted one at a time per the mandatory protocol; each showed a changed boot_id and, after recovery, correct VRRP state (node1 MASTER, node2 BACKUP), persisted IP/route configuration, and successful node3\u2194node4 ICMP connectivity.",
+  "actions_performed": [
+    "Mapped L2 topology via broadcast-arping + RX packet-counter deltas: node1 eth1/node2 eth1 join node3's segment; node1 eth2/node2 eth2 join node4's segment",
+    "Configured VyOS node1: eth1=10.50.10.2/24, eth2=10.50.20.2/24, VRRP groups NET-A (vrid10) and NET-B (vrid20) both priority 200 with VIPs 10.50.10.1/24 and 10.50.20.1/24; committed and saved",
+    "Configured VyOS node2: eth1=10.50.10.3/24, eth2=10.50.20.3/24, same VRRP groups at priority 100; committed and saved",
+    "Configured node3 (RHEL10/NetworkManager): enp8s0 static 10.50.10.10/24, static route 10.50.20.0/24 via 10.50.10.1",
+    "Configured node4 (RHEL10/NetworkManager): enp8s0 static 10.50.20.10/24, static route 10.50.10.0/24 via 10.50.20.1",
+    "Verified baseline connectivity node3->node4 via VRRP VIP with node1 as MASTER",
+    "Ran continuous ping loop from node3 to node4 while rebooting node1 to prove zero-loss VRRP failover to node2, then automatic preemption back to node1 on recovery",
+    "Sequentially restarted node2, node3, node4 (one at a time), capturing pre/post boot_id, and validating post-restart service/config/data recovery on each"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline healthy state captured for all 4 nodes before any restart",
+      "command_ids": [
+        "cmd-f7e188aed6fa4423",
+        "cmd-35bc9162247f4f02",
+        "cmd-6d9c60eec0b548a4",
+        "cmd-e9f596eac5a849ad"
+      ],
+      "summary": "boot_id and uptime -s captured for node1-node4 prior to any disruption"
+    },
+    {
+      "requirement": "VRRP configured and healthy: node1 MASTER (priority 200) on both segments, node2 BACKUP (priority 100)",
+      "command_ids": [
+        "cmd-b62a39084da04e7e",
+        "cmd-57f37151c5c14336"
+      ],
+      "summary": "keepalived logs and interface addresses show node1 holding both VIPs as MASTER, node2 as BACKUP"
+    },
+    {
+      "requirement": "node3 has single gateway address to reach node4, working while node1 is healthy",
+      "command_ids": [
+        "cmd-6426a93487ee4f4b"
+      ],
+      "summary": "ping from node3 to node4 succeeds via route through VIP 10.50.10.1, resolved to node1"
+    },
+    {
+      "requirement": "Gateway stays available when preferred router (node1) is down - failover to node2, preferring node1 when healthy",
+      "command_ids": [
+        "cmd-158bf57ca0c8415d",
+        "cmd-093482cede5f47df",
+        "cmd-7863904504d84a9c",
+        "cmd-7a1e2550d7fa4fc3",
+        "cmd-997890303e83488f"
+      ],
+      "summary": "Continuous ping loop started on node3, node1 rebooted, node2 keepalived logs show immediate MASTER transition on both VRRP groups, and ping log shows 27+ consecutive successes with 0 packet-loss entries during the disruption"
+    },
+    {
+      "requirement": "node1 restart: boot identity changed and post-restart recovery/preemption verified (also serves as node1's mandatory restart evidence)",
+      "command_ids": [
+        "cmd-9cc861ae8deb45c8",
+        "cmd-f6c7640e086a4e6d",
+        "cmd-b181c9b0a6a64959",
+        "cmd-50bfc216e1394633",
+        "cmd-91287b8b7278432f",
+        "cmd-6050ee71bd7c453d"
+      ],
+      "summary": "node1 unreachable during reboot, boot_id changed from 7668189d... to 5788a55a..., keepalived logs show node1 reclaiming MASTER on both groups (preemption over node2's priority 100), node2 confirmed stepped back to BACKUP, and node3->node4 ping succeeds post-recovery with 64 total successful pings / 0 losses across the whole cycle"
+    },
+    {
+      "requirement": "node2 restart: boot identity changed and post-restart cluster/VRRP recovery verified",
+      "command_ids": [
+        "cmd-4890f1d1c147409f",
+        "cmd-3d3534e9f84f4579",
+        "cmd-0fa5043ca71149de",
+        "cmd-9ba7523c2e254b3b",
+        "cmd-5eb5cc32901146d4",
+        "cmd-af925db6211a46a1",
+        "cmd-403f326e0abc49b9"
+      ],
+      "summary": "node2 boot_id changed from 50503c5d... to abf5ce36..., keepalived active and rejoined as BACKUP on both VRRP groups post-restart, node1 confirmed still MASTER holding both VIPs, node3->node4 ping succeeds"
+    },
+    {
+      "requirement": "node3 restart: boot identity changed and post-restart network config/data (static route to node4) recovered",
+      "command_ids": [
+        "cmd-b145339c9f0e43b7",
+        "cmd-f053f598a8c447e3",
+        "cmd-d547075f78b042c2"
+      ],
+      "summary": "node3 boot_id changed from e625b9a5... to 985f3c5d..., static IP and route to 10.50.20.0/24 via 10.50.10.1 persisted after reboot, ping to node4 succeeds"
+    },
+    {
+      "requirement": "node4 restart: boot identity changed and post-restart network config/data (static route to node3) recovered",
+      "command_ids": [
+        "cmd-9cc4d74825ad4abf",
+        "cmd-59199bd545c64351",
+        "cmd-439212fd1cad4350",
+        "cmd-ae9655fe55264c31"
+      ],
+      "summary": "node4 boot_id changed from aad96cc9... to b6b30017..., static IP and return route to 10.50.10.0/24 via 10.50.20.1 persisted after reboot, ping from node3 to node4 succeeds"
+    }
+  ]
+}
