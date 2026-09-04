@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a task x OS command cross-reference summary for a job category.
 
-Produces `<category>-summary.md` at the repository root. Each row is a task;
+Produces `metrics/<category>.md`. Each row is a task;
 each column is an operating system / image that appears in that category.
 For the catalog-driven matrices (single-node-os-comparison,
 multi-node-os-comparison) the file has two tables built from each task's
@@ -21,11 +21,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
+import sys
 import re
 import tomllib
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).parent))
+from generate_provisioning_metrics import (  # noqa: E402
+    samples as provisioning_samples,
+    trial_share as provisioning_trial_share,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 JOBS = ROOT / "jobs"
@@ -161,7 +169,8 @@ def expand_cluster(cluster: list[Any]) -> list[str]:
 
 
 def relative_link(path: Path) -> str:
-    return str(path.relative_to(ROOT))
+    """Link from metrics/<category>.md back to a path under the repository root."""
+    return "../" + str(path.relative_to(ROOT))
 
 
 def parse_time(value: Any) -> datetime | None:
@@ -206,6 +215,25 @@ def format_duration(seconds: float | None) -> str:
     if minutes:
         return f"{minutes}m {secs:02d}s"
     return f"{secs}s"
+
+
+def provisioning_note() -> str:
+    """One line placing cluster provisioning next to the completion times."""
+    values = [elapsed for _, _, elapsed in provisioning_samples()]
+    if not values:
+        return ""
+    share = provisioning_trial_share()
+    note = (
+        f"Cluster provisioning is not a meaningful part of these times: "
+        f"median {statistics.median(values):.0f} ms across {len(values)} "
+        f"clusters"
+    )
+    if share is not None:
+        note += f", about {share:.2f}% of a trial's wall clock"
+    return note + (
+        ". See [cluster provisioning performance]"
+        "(cluster-provisioning-performance.md).\n"
+    )
 
 
 def build_matrix_category(category: str) -> str:
@@ -325,6 +353,8 @@ def build_matrix_category(category: str) -> str:
         _, _, avg_duration, _ = averages[os_id]
         avg_cells.append(format_duration(avg_duration) if avg_duration is not None else "—")
     duration_lines.append("| **Average** | " + " | ".join(avg_cells) + " |")
+    duration_lines.append("")
+    duration_lines.append(provisioning_note())
 
     hygiene_lines = [
         "",
@@ -444,7 +474,8 @@ def main() -> int:
             f"category {args.category!r} has no catalog.toml and no bespoke builder"
         )
 
-    output = ROOT / f"{args.category}-summary.md"
+    output = ROOT / "metrics" / f"{args.category}.md"
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(content)
     print(f"wrote {output.relative_to(ROOT)}")
     return 0

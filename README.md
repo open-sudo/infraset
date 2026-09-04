@@ -124,8 +124,16 @@ files. Run the generated task with:
 
 Task definitions are in the [tasks directory](https://github.com/open-sudo/infraset/tree/main/tasks); execution results are in the [jobs directory](https://github.com/open-sudo/infraset/tree/main/jobs). The same
 results are published in the [InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset),
-which is the easiest place to browse or download them. Use your preferred
-analysis tool to investigate:
+which is the easiest place to browse or download them.
+
+The [metrics directory](metrics) carries the aggregated view: one page per task
+category, each reporting executor commands, completion time, and operational
+hygiene for every task and operating system, with each cell linking to the
+analysis of the job it came from. [Cluster provisioning
+performance](metrics/cluster-provisioning-performance.md) covers how long
+Antrieb takes to create the disposable clusters these tasks run on.
+
+Use your preferred analysis tool to investigate:
 
 - How are LLMs performing on version X of your distribution?
 - Which system components are most LLM-friendly?
