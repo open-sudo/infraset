@@ -1,0 +1,132 @@
+{
+  "status": "completed",
+  "summary": "Joined node1, node2, node3 into a RabbitMQ 3.13.7 cluster (Erlang 26), created a payments vhost with a durable quorum queue \"orders\" replicated across all 3 nodes, and an app_user account with full permissions on payments. Demonstrated that a durable/persistent message survives loss of the queue leader node (node1) and remains consumable from the surviving nodes, with automatic quorum leader failover to node3. Completed the mandatory per-node restart protocol: captured baseline boot_id + cluster/queue health for each node, restarted node1, node2, then node3 one at a time via systemctl reboot, confirmed changed boot_id after each, and verified full cluster (3/3 nodes running) and quorum queue recovery (3/3 members online, message intact) after each restart. Final end-to-end publish/consume test succeeded post-recovery.",
+  "actions_performed": [
+    "Installed Erlang 26 and RabbitMQ 3.13.7 on node1/node2/node3 via packagecloud repos (redirected el/10 -> el/9 paths since no RHEL10 build was published yet)",
+    "Opened firewalld ports 4369, 5672, 15672, 25672(-25682) on all 3 nodes for inter-node clustering traffic",
+    "Set hostnames to node1/node2/node3, populated /etc/hosts with CLUSTER_HOSTS, set up cluster SSH keypair for inter-node access",
+    "Generated a shared Erlang cookie on node1 and securely copied it (via scp, no plaintext echo) to node2/node3 with rabbitmq:rabbitmq 0400 permissions",
+    "Enabled rabbitmq_management plugin on all nodes; started/enabled rabbitmq-server service on all nodes",
+    "Joined node2 and node3 to node1's cluster via rabbitmqctl join_cluster; verified 3-node cluster_status",
+    "Created 'payments' vhost, generated a random password on node1 for 'app_user' (stored root-only at /root/.app_user_pw, never printed), granted full permissions on payments vhost",
+    "Declared durable quorum queue 'orders' (x-queue-type=quorum) in payments vhost, replicated to all 3 nodes",
+    "Published a persistent test message, then stopped node1 (queue leader) via rabbitmqctl stop_app, verified quorum leader failover to node3 and consumed the message successfully from node2 while node1 was down",
+    "Restarted node1's rabbit app, confirmed full cluster recovery, republished a message for steady-state",
+    "Executed mandatory restart protocol: captured boot_id + service/cluster/queue health baseline on all 3 nodes; restarted node1, then node2, then node3 sequentially via systemctl reboot with async invocation so acknowledgement returned pre-disconnect; polled each node until reachable; confirmed changed boot_id per node; verified rabbitmq-server active and full 3/3 cluster + quorum queue membership/message integrity after each restart",
+    "Performed final end-to-end publish/consume test confirming message durability and cluster health after all restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "RabbitMQ cluster of node1/node2/node3 formed",
+      "command_ids": [
+        "cmd-c71a35aca2264d76"
+      ],
+      "summary": "rabbitmqctl cluster_status on node1 shows Disk Nodes and Running Nodes = rabbit@node1, rabbit@node2, rabbit@node3, no partitions"
+    },
+    {
+      "requirement": "payments vhost created",
+      "command_ids": [
+        "cmd-23abb817bf8f491e"
+      ],
+      "summary": "rabbitmqctl add_vhost payments succeeded; list_vhosts shows payments and /"
+    },
+    {
+      "requirement": "Application account (app_user) with publish/consume permissions on payments",
+      "command_ids": [
+        "cmd-d18442e20a8a4a56"
+      ],
+      "summary": "add_user, set_permissions -p payments '.*' '.*' '.*', list_permissions confirms app_user has configure/write/read '.*' on payments vhost"
+    },
+    {
+      "requirement": "Durable queue replicated across all nodes (quorum queue)",
+      "command_ids": [
+        "cmd-2ec7f4d65eba4a56"
+      ],
+      "summary": "PUT /api/queues/payments/orders with durable:true, x-queue-type:quorum; GET shows members and online = [rabbit@node1, rabbit@node2, rabbit@node3], leader rabbit@node1"
+    },
+    {
+      "requirement": "Healthy baseline before disruption: message published and present",
+      "command_ids": [
+        "cmd-5d2b8d004a394d0d",
+        "cmd-cf7ac25382f648be"
+      ],
+      "summary": "Published order-durability-test-1 with delivery_mode 2 (persistent); queue GET confirms messages:1, messages_persistent:1, state running"
+    },
+    {
+      "requirement": "Message survives loss of one node (queue leader) and stays consumable from remaining nodes",
+      "command_ids": [
+        "cmd-8ddf1d094eee45ff",
+        "cmd-0138bbbf54694252",
+        "cmd-dd3989e3cae14982"
+      ],
+      "summary": "Stopped rabbit app on node1 (leader); from node2, queue GET shows leader failed over to rabbit@node3, online=[node2,node3], messages:1 persistent; then successfully consumed order-durability-test-1 via basic.get on node2 while node1 was down"
+    },
+    {
+      "requirement": "Cluster/component restored after disruption",
+      "command_ids": [
+        "cmd-14eeddf5e2074528",
+        "cmd-e6392491b293498e"
+      ],
+      "summary": "rabbitmqctl start_app on node1 restored 3/3 running nodes; queried queue from node3 directly confirms messages:1 persistent:1 still present post-recovery"
+    },
+    {
+      "requirement": "Node restart protocol - node1: baseline boot identity + health",
+      "command_ids": [
+        "cmd-c4cb54421657400e"
+      ],
+      "summary": "boot_id 19062a82-6390-435d-a09f-4dba1593d529 captured; rabbitmq-server active; cluster_status shows 3/3 running nodes"
+    },
+    {
+      "requirement": "Node restart protocol - node1: restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-e793159c16a145e8",
+        "cmd-a93a5e0461be4266",
+        "cmd-07ba548d65b94ccd",
+        "cmd-1ced9f095dd546f3",
+        "cmd-035c7caaf2364771"
+      ],
+      "summary": "systemctl reboot acknowledged before disconnect; node became unreachable then returned with new boot_id fef52e1c-142b-42e8-983a-c7a5e6662648; rabbitmq-server became active; cluster_status shows 3/3 nodes running, quorum queue list shows 1 message with all 3 members present"
+    },
+    {
+      "requirement": "Node restart protocol - node2: baseline boot identity + health",
+      "command_ids": [
+        "cmd-32acb740bc374782"
+      ],
+      "summary": "boot_id 03408ac4-bfe4-4151-98bd-1966b0a205af captured; rabbitmq-server active; 3/3 nodes running per cluster_status"
+    },
+    {
+      "requirement": "Node restart protocol - node2: restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-c267116891bc46ce",
+        "cmd-a39d8745f46042bd",
+        "cmd-c282728e8d14466b",
+        "cmd-a757aa368c514938"
+      ],
+      "summary": "systemctl reboot acknowledged before disconnect; node returned with new boot_id f5b64036-ba81-438a-9147-ebbbc48b427f; rabbitmq-server active; cluster_status shows 3/3 running, quorum queue orders shows 1 message with 3 members [node1,node3,node2] and new leader rabbit@node2"
+    },
+    {
+      "requirement": "Node restart protocol - node3: baseline boot identity + health",
+      "command_ids": [
+        "cmd-bd22267a71fc4aba"
+      ],
+      "summary": "boot_id 6ab6a71b-188c-48ae-971b-a6bb378b1d72 captured; rabbitmq-server active; 3/3 nodes running"
+    },
+    {
+      "requirement": "Node restart protocol - node3: restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-348164e3278b454c",
+        "cmd-3417d7a018b2430a",
+        "cmd-3e3c329102534c5e",
+        "cmd-46c7099586b54b82"
+      ],
+      "summary": "systemctl reboot acknowledged before disconnect; node returned with new boot_id b9cf372a-72ba-4599-9628-8dd76b945b4f; rabbitmq-server active; cluster_status shows 3/3 running, quorum queue orders shows 1 message with 3 members and new leader rabbit@node3"
+    },
+    {
+      "requirement": "Final post-all-restarts end-to-end proof: cluster healthy and message consumable",
+      "command_ids": [
+        "cmd-c1358075f26c4e90"
+      ],
+      "summary": "cluster_status on node1 post all restarts shows 3/3 running nodes; basic.get via management API successfully consumed order-post-recovery-2 confirming publish/consume works after full restart cycle"
+    }
+  ]
+}

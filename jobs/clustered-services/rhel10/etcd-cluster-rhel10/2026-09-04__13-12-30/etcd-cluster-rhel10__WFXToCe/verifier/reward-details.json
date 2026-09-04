@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Build a three-member etcd cluster across node1, node2, and node3",
+      "status": "satisfied",
+      "summary": "etcd v3.5.17 installed and configured as systemd services on all three nodes with a static 3-member initial-cluster config. member list shows node1, node2, node3 all 'started' and endpoint health --cluster shows all three endpoints healthy=true, directly confirming a formed, healthy 3-member cluster.",
+      "evidence_ids": [
+        "cmd-6335b6e2c1174758",
+        "cmd-30b794be5f274c24",
+        "cmd-cd288e4c86b744ca",
+        "cmd-5142c138a53348c2"
+      ]
+    },
+    {
+      "id": "cross-member-read-write",
+      "requirement": "A key written through any member must be readable from the others",
+      "status": "satisfied",
+      "summary": "Key 'benchmark-key' was written via the node1 endpoint and successfully read back via both the node2 and node3 endpoints, directly demonstrating cross-member replication.",
+      "evidence_ids": [
+        "cmd-d98586d3ca784a57",
+        "cmd-92c8bf66f58a407b",
+        "cmd-f9e333eb3df44217"
+      ]
+    },
+    {
+      "id": "availability-during-outage",
+      "requirement": "Cluster keeps serving reads and writes while one member is unavailable",
+      "status": "satisfied",
+      "summary": "etcd was stopped on node3 (systemctl stop etcd, confirmed inactive). While node3 was down, a new key 'during-outage' was successfully written and read via node1/node2 endpoints, and endpoint health showed node1/node2 true while node3 correctly reported false (2/3 quorum maintained), directly demonstrating continued read/write availability during a bounded single-member disruption.",
+      "evidence_ids": [
+        "cmd-013e8aa943fd4e45",
+        "cmd-5545cc3b356a4ed2"
+      ]
+    },
+    {
+      "id": "member-catchup",
+      "requirement": "Bring the unavailable member back up to date when it returns",
+      "status": "satisfied",
+      "summary": "etcd was restarted on node3; it successfully read the 'during-outage' key that was written during its downtime, and cluster-wide endpoint health returned to all-true, directly showing successful resynchronization/catch-up.",
+      "evidence_ids": [
+        "cmd-a2423345d1094da3",
+        "cmd-49c2f6f34d6645e9"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are directly satisfied with concrete evidence: a healthy 3-member etcd cluster was formed, a key written on one member was confirmed readable on the other two, the cluster continued serving reads/writes with node3 stopped (2/3 quorum), and node3 caught up on the missed write and rejoined a fully healthy cluster once restarted. Independently, the provider-wide node-restart evidence protocol was also completed thoroughly: pre-restart boot_id and data baselines were captured for all three nodes, each node was sequentially rebooted while preserving quorum, boot_id changes were directly observed post-reboot, and etcd/cluster health/data were confirmed recovered on each node afterward, cross-validated by the fixed after-prepare/after-executor boot-identity snapshots. The only detractor is minor uncleaned /tmp installation residue (extracted etcd tarball contents and a reboot helper log) left on all three nodes, which is low-risk but unnecessary retained state.",
+  "limitations": [
+    "No prepare-phase baseline existed (prepare disabled), so before/after-prepare comparison could not distinguish preparer-created state; before_prepare and after_prepare snapshots are identical by design.",
+    "Reboot evidence relies on boot_id and short polling windows around each reboot; exact downtime duration and finer-grained raft/log state during the reboot window were not independently captured beyond service/health checks taken a few seconds after reconnection.",
+    "Firewalld and SELinux (Enforcing) were left in their modified/observed states as required by etcd operation; no negative security impact was observed but SELinux policy interaction with the etcd binary was not explicitly verified beyond service starting successfully."
+  ],
+  "command_stats": {
+    "total": 59,
+    "successful": 42,
+    "failed": 17,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Reviewing all state-changing executor commands chronologically: package/user creation, systemd unit writes, firewalld port openings, etcd enable/start, key writes, node3 stop/start, and the three sequential reboots (node1, node2, node3) all have a clear causal role in satisfying the cluster-formation, availability, or restart-evidence requirements. The main hygiene issue is uncleaned installation residue left on all three nodes: the extracted /tmp/etcd-v3.5.17-linux-amd64 directory (with binaries/docs), /tmp/etcd.tar.gz, and /tmp/reboot.log helper files are visible in the after_executor snapshot on node1, node2, and node3 (introduced by cmd-c5a44e75749e4943, cmd-bce499e991354f4a, cmd-dde67dd9c7ea43e6 for the tarball extraction, and cmd-4458df98eaeb489f, cmd-613831027cce4b10, cmd-88d7641bfcd847ae for the reboot.log via nohup) and were never cleaned up. This is low-risk, bounded residue (a handful of files in /tmp, no destructive or security-weakening effect, no failed services, no package-manager damage) but represents retained, unnecessary leftover state rather than a fully restored temporary artifact. One transient failure (cmd-d9a6df750536409e, node1's first etcd enable --now timing out while waiting for peer quorum) was not a mutation problem \u2014 it self-resolved once node2/node3 joined and etcd became active (cmd-6a810da3e1e14b01), so it is not counted as an unnecessary mutation.",
+    "evidence_ids": [
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "cmd-c5a44e75749e4943",
+      "cmd-bce499e991354f4a",
+      "cmd-dde67dd9c7ea43e6"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

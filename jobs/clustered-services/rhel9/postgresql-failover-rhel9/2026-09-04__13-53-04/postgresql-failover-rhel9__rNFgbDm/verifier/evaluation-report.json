@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-replication-established",
+      "requirement": "Streaming replication running across node1 (writable primary), node2, and node3 (standbys)",
+      "status": "satisfied",
+      "summary": "node1 initialized as primary with wal_level=replica, replication role and slots created; node2 and node3 built via pg_basebackup -R and confirmed as standbys (standby.signal, pg_is_in_recovery=t). pg_stat_replication on node1 shows both node2 (10.100.216.11) and node3 (10.100.216.12) actively streaming with near-zero replay lag, and both standbys independently queried show the identical baseline row from node1, confirming healthy data-consistent replication before any disruption.",
+      "evidence_ids": [
+        "cmd-4efb3b375aff4491",
+        "cmd-74704185ddab430c",
+        "cmd-5a2149b1d8d444d0",
+        "cmd-bb4b5087644a4703",
+        "cmd-008376f662594617"
+      ]
+    },
+    {
+      "id": "req-2-failover-no-data-loss",
+      "requirement": "When the primary is lost, a standby takes over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "A row was inserted and committed on node1 (LSN 0/4000250), then node1's postgresql service was stopped to simulate primary loss (return_code 3 on stop, verified inactive). node2 was directly queried and shown to already contain both prior rows (baseline + the pre-failover committed row) with a matching WAL LSN, confirming zero data loss before promotion. node2 was then promoted via pg_ctl promote (pg_is_in_recovery became false) and a subsequent write succeeded, proving node2 became the new writable primary.",
+      "evidence_ids": [
+        "cmd-3986899832aa4e88",
+        "cmd-6e6f1166d3ac45ae",
+        "cmd-8be4280f50ce4d29",
+        "cmd-03dd6f9bde5243dd",
+        "cmd-4180f03dc9284dfc"
+      ]
+    },
+    {
+      "id": "req-3-former-primary-rejoins-as-standby",
+      "requirement": "The recovered former primary (node1) comes back as a standby of whichever system is primary at that point (node2)",
+      "status": "satisfied",
+      "summary": "node3 was repointed to stream from node2 (ALTER SYSTEM primary_conninfo/slot, restart, confirmed pg_is_in_recovery=t with full dataset). node1 was rebuilt from scratch via pg_basebackup -R from node2, started, and shown in recovery mode with the complete post-failover dataset. node2's pg_stat_replication and pg_replication_slots confirm both node1 and node3 actively streaming and slots active, completing the required three-node topology with node2 as primary.",
+      "evidence_ids": [
+        "cmd-d9f7824f33e44489",
+        "cmd-d7bc8bee36ff40fb",
+        "cmd-4dce40318f7443b5",
+        "cmd-83f57befbefe4ad7",
+        "cmd-a44fd3d71fa24b04",
+        "cmd-19a94286ac8647f1"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established three-node PostgreSQL 16 streaming replication (node1 primary, node2/node3 standbys), directly demonstrated a primary-loss failover with zero data loss (node2 confirmed to hold committed data before promotion, then promoted and made writable), and rejoined the recovered former primary (node1) as a standby of the new primary (node2), alongside repointing node3 to the new primary \u2014 all three material outcomes are directly evidenced by query output rather than inferred. The independent provider-wide restart protocol was also executed on all three nodes in a safe order (standbys first, primary last), with each node showing a captured pre-restart boot_id/healthy state, an acknowledged reboot, a distinct post-restart boot_id, and full recovery of service, data, and cluster/replication state; these boot-identity transitions are corroborated by the fixed before/after lifecycle snapshots.",
+  "limitations": [
+    "The 'primary lost' scenario was simulated via 'systemctl stop postgresql' on node1 rather than a full node/OS-level failure or unplanned crash; this is a reasonable interpretation of the task's failover requirement but represents a graceful-stop rather than a hard-failure test.",
+    "Synchronous_commit was set to 'on' in postgresql.conf but no synchronous_standby_names was configured, so replication was effectively asynchronous throughout (visible as sync_state=async in pg_stat_replication); this does not affect the observed no-data-loss outcome in this run but means durability guarantees under a true primary crash are not as strong as synchronous replication would provide."
+  ],
+  "command_stats": {
+    "total": 66,
+    "successful": 53,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "All state-changing commands trace clearly to task-required steps: package installs, firewall port 5432 openings (scoped to the specific port needed, on all three nodes), PostgreSQL initialization/config, replication role/slot creation, pg_basebackup rebuilds of node2/node3/node1, promotion of node2, primary_conninfo repointing of node3, and the sequential reboot protocol. Two early pg_basebackup attempts on node2 and node3 failed with 'No route to host' (cmd-ddc9271115cd4e66, cmd-a013c07c47c14bb0) because the firewall port had not yet been opened; these were not destructive (no persistent state changed) and were immediately corrected by opening firewalld ports, so they read as expected discovery rather than unnecessary mutation. Fixed after-executor snapshots show no failed services, no unexpected residue beyond standard postgres runtime artifacts (socket files, install logs), and no package-health issues on any node, corroborating a clean final state.",
+    "evidence_ids": [
+      "cmd-ddc9271115cd4e66",
+      "cmd-a013c07c47c14bb0",
+      "cmd-c2ab7955c2034051",
+      "cmd-1a92581441ee48a3",
+      "cmd-0882dc18c1db4413",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,102 @@
+{
+  "status": "completed",
+  "summary": "Configured PostgreSQL 17 streaming replication across node1 (primary), node2 and node3 (standbys) on Alpine Linux, secured with a dedicated cluster CA. Generated a CA on node1 (CN=pgcluster-ca), issued server certs to each node (SAN=DNS:nodeN,IP:node IP) and a client cert (CN=replicator) for the replication role. postgresql.conf enables ssl with ssl_ca_file=ca.crt on all nodes; pg_hba.conf restricts replication (and all) connections to hostssl with clientcert=verify-full, rejecting anything not signed by the cluster CA (verified: unknown-CA cert rejected with TLS 'unknown ca' alert; plaintext connection rejected for lack of hostssl match). Standbys were built via pg_basebackup -R over TLS/cert auth and confirmed streaming with pg_stat_replication/pg_stat_ssl showing ssl=t, client_dn=/CN=replicator. Live writes on the primary propagate to both standbys. Completed the mandatory one-at-a-time restart protocol for all three nodes (standbys first, primary last), proving boot_id changes and full data/replication recovery after each restart, including a final post-restart write that replicated to both standbys.",
+  "actions_performed": [
+    "Installed postgresql17 (+contrib, openrc) via apk on node1, node2, node3",
+    "Fixed inter-node SSH: appended CLUSTER_HOSTS to /etc/hosts on node1 (was missed initially) and unlocked the locked root account on node2/node3 (passwd -u root) so the pre-provisioned CLUSTER_SSH keypair could authenticate",
+    "Created a CA (ca.key/ca.crt, CN=pgcluster-ca, 10y validity) on node1",
+    "Issued per-node server certs (node1/node2/node3, SAN=DNS+IP, serverAuth+clientAuth EKU) and a client cert for role 'replicator' (CN=replicator, clientAuth EKU), all signed by the cluster CA",
+    "initdb'd node1 as primary; installed ca.crt/server.crt/server.key into its data dir; set ssl=on, wal_level=replica, max_wal_senders/max_replication_slots, hot_standby=on in postgresql.conf",
+    "Configured pg_hba.conf on node1 to require hostssl + cert clientcert=verify-full for replication and general connections from the cluster subnet",
+    "Started node1, created REPLICATION LOGIN role 'replicator' (cert-mapped, no password), created a repltest table with seed rows",
+    "Distributed CA/replicator client cert to node2/node3 postgres user's ~/.postgresql default libpq cert location",
+    "Ran pg_basebackup -R over TLS (sslmode=verify-full) from node1 to build node2 and node3 standby data directories, generating primary_conninfo automatically",
+    "Installed matching server certs and identical ssl/pg_hba.conf settings on node2/node3; started PostgreSQL as standbys",
+    "Verified streaming replication (pg_stat_replication), TLS-secured connections with verified client cert DN (pg_stat_ssl), and live data propagation to both standbys",
+    "Falsified the security control: confirmed a non-CA-signed client cert is rejected ('unknown ca') and a plaintext (sslmode=disable) connection is rejected by pg_hba.conf",
+    "Captured pre-restart boot_id and health/data baselines on all three nodes",
+    "Restarted node3, then node2 (standbys), then node1 (primary) one at a time via `reboot`, polling until exec access returned, confirming boot_id changed on each, and verifying PostgreSQL/replication/data recovered fully after each restart before proceeding to the next node",
+    "Performed a final post-all-restarts write on the primary and confirmed it replicated to both standbys"
+  ],
+  "evidence": [
+    {
+      "requirement": "Streaming replication configured with node1 as writable primary, node2/node3 as standbys",
+      "command_ids": [
+        "cmd-489a1fbe1a994df6",
+        "cmd-f286e31bcd954aaa",
+        "cmd-06830da012c44b29",
+        "cmd-ffd8bd7502074287",
+        "cmd-f54a6aa04bda4d6c",
+        "cmd-4f8e90e7d7254a23",
+        "cmd-c31f68d41f5641cf",
+        "cmd-c8686972b18643f0",
+        "cmd-3047dc2bcacb4026",
+        "cmd-2741085fe6d549ad"
+      ],
+      "summary": "node1 initialized and started as primary (recovery=f), node2/node3 built via pg_basebackup -R and started as standbys (recovery=t); pg_stat_replication on node1 shows both streaming; seeded data present identically on both standbys"
+    },
+    {
+      "requirement": "Replication traffic carried over TLS using a CA created for this cluster",
+      "command_ids": [
+        "cmd-016fff46ab3d44ae",
+        "cmd-e8df576b45de486f",
+        "cmd-20f47bcc8bb14283",
+        "cmd-6bb876f90b634495",
+        "cmd-c8686972b18643f0"
+      ],
+      "summary": "Dedicated CA (CN=pgcluster-ca) created on node1; per-node server certs and a replicator client cert issued from it; pg_stat_ssl on primary confirms ssl=t for both replication connections with cipher TLS_AES_256_GCM_SHA384"
+    },
+    {
+      "requirement": "Replication connections accepted only from peers presenting a certificate issued by that CA",
+      "command_ids": [
+        "cmd-1374e221aa0e4192",
+        "cmd-c8686972b18643f0",
+        "cmd-4e2f37caabb3475d",
+        "cmd-e895deb9cd004436"
+      ],
+      "summary": "pg_hba.conf enforces hostssl + cert clientcert=verify-full; accepted connections show client_dn=/CN=replicator (CA-issued); a self-signed (non-CA) cert was rejected with TLS 'unknown ca', and a plaintext connection attempt was rejected for no matching (non-SSL) pg_hba entry"
+    },
+    {
+      "requirement": "Live data propagates from primary to both standbys (functional replication proof)",
+      "command_ids": [
+        "cmd-603b87e73e6242e2",
+        "cmd-999ed5211f474f59",
+        "cmd-2741085fe6d549ad"
+      ],
+      "summary": "Row inserted on node1 primary appeared on both node2 and node3 standbys after a short delay"
+    },
+    {
+      "requirement": "node1 restart evidence: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-138223cff13845f6",
+        "cmd-df6153e16d0e479b",
+        "cmd-0b6fec46aad34688",
+        "cmd-45f4a71427f64159",
+        "cmd-42eb1e0c3e6b456f",
+        "cmd-4c2e7b9c27004234",
+        "cmd-dfc4b4295d394f8c"
+      ],
+      "summary": "Baseline boot_id 5cf05d6e...+healthy primary/data captured; reboot acknowledged (stream closed); post-restart boot_id c2829721... (changed); PostgreSQL restarted as writable primary with data intact, both standbys reconnected via TLS with verified client certs, and a new post-restart write replicated to both standbys"
+    },
+    {
+      "requirement": "node2 restart evidence: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-dd798c7989b140f8",
+        "cmd-b505f068865f4e18",
+        "cmd-8b96ef3c810a4a9d",
+        "cmd-5284763e9c4d4686"
+      ],
+      "summary": "Baseline boot_id e4290abe...+healthy standby/data captured; reboot acknowledged (stream closed); post-restart boot_id 689be9a9... (changed); PostgreSQL restarted as standby (recovery=t) with all data present"
+    },
+    {
+      "requirement": "node3 restart evidence: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b89bf82dca2e4d8a",
+        "cmd-2a24b100ae3b4a1a",
+        "cmd-15cbcbefc66b4c29",
+        "cmd-be784f2280dc494b"
+      ],
+      "summary": "Baseline boot_id f77f5f46...+healthy standby/data captured; reboot acknowledged (stream closed); post-restart boot_id 6e70ca36... (changed); PostgreSQL restarted as standby (recovery=t) with all data present"
+    }
+  ]
+}

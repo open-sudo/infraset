@@ -1,0 +1,104 @@
+{
+  "status": "completed",
+  "summary": "Deployed PostgreSQL 16 streaming replication across node1 (initial primary), node2 and node3 (standbys) on Alpine Linux. Demonstrated primary-loss failover by stopping node1's postgres, promoting node2 to writable primary with zero committed-data loss, repointing node3 to follow node2, and rebuilding node1 as a standby of node2. Then performed the mandatory one-at-a-time node restart protocol on all three nodes (node1, node3, node2/primary), proving changed OS boot_id and full PostgreSQL/replication recovery after each restart, with quorum and data consistency preserved throughout.",
+  "actions_performed": [
+    "Installed postgresql16/postgresql16-openrc on node1, node2, node3 (apk update needed on node3 for stale index)",
+    "Populated /etc/hosts from CLUSTER_HOSTS on all nodes",
+    "Initialized primary data dir on node1 via 'rc-service postgresql setup', configured wal_level=replica, max_wal_senders, hot_standby, listen_addresses, and pg_hba.conf for replication + client access",
+    "Created replicator role (password generated on node1, passed via secret_env) and appdb/t table with baseline rows on node1",
+    "Built node2 and node3 as standbys via pg_basebackup -R with dedicated physical replication slots (node2_slot, node3_slot), created matching postgresql.conf/pg_hba.conf/pg_ident.conf under /etc/postgresql16 on each",
+    "Verified streaming replication and data consistency across all 3 nodes with an inserted row",
+    "Simulated primary loss: stopped postgres on node1 (rc-service postgresql stop_force) after confirming standbys were fully caught up on LSN",
+    "Promoted node2 to primary via 'rc-service postgresql promote'; verified pre-failover committed row survived and node2 accepted new writes",
+    "Created replication slots node1_slot/node3_slot on node2; repointed node3's primary_conninfo/slot to node2 and restarted it; rebuilt node1 as a fresh standby of node2 via pg_basebackup with node1_slot",
+    "Verified full 3-node health post-failover: node2 primary streaming to node1 and node3, consistent row counts on all nodes",
+    "Captured pre-restart boot_id and DB health baseline on all 3 nodes",
+    "Restarted node1 via 'reboot' (backgrounded so ack returned before disconnect), polled until exec available, confirmed new boot_id and full standby recovery/rejoin",
+    "Restarted node3 the same way, confirmed new boot_id and recovery/rejoin",
+    "Restarted node2 (primary) the same way, confirmed new boot_id, that it resumed as primary (not recovery mode), and both standbys reconnected",
+    "Performed final end-to-end write on node2 and confirmed replication to node1 and node3 after all three restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "Healthy 3-node streaming replication baseline (node1 primary, node2/node3 standbys)",
+      "command_ids": [
+        "cmd-1b186dceef3c43ee",
+        "cmd-fb0c6120617b4d44",
+        "cmd-1dffd2fb960345ec",
+        "cmd-5edc92217c2d4a57"
+      ],
+      "summary": "pg_stat_replication on node1 shows both node2 (10.100.42.11) and node3 (10.100.42.12) streaming with active slots; a new row inserted on node1 appears on both standbys."
+    },
+    {
+      "requirement": "Primary loss handled without losing committed data; standby promoted to writable primary",
+      "command_ids": [
+        "cmd-797d8920f041477f",
+        "cmd-20a14dc2eb2746bb",
+        "cmd-93305dd05bad402a",
+        "cmd-5d17a78f2c234e72",
+        "cmd-51406b04bd544f08"
+      ],
+      "summary": "Row 'pre-failover-commit' committed and confirmed replayed (sent_lsn=replay_lsn) on both standbys before node1's postgres was stopped; node2 promoted (pg_is_in_recovery flips t->f) and retains all 4 pre-failover rows plus accepts a new write."
+    },
+    {
+      "requirement": "Recovered former primary rejoins as standby of the new primary; third node also follows new primary",
+      "command_ids": [
+        "cmd-d3397ecf46674868",
+        "cmd-82b7af155b75496d",
+        "cmd-1579f3d9e5d24acc",
+        "cmd-0fd055fea9ef439f",
+        "cmd-4cf389c427d1462f",
+        "cmd-28bfd057b7c94be2",
+        "cmd-41f9476d25d44e5e"
+      ],
+      "summary": "node3 repointed to node2 and streaming; node1 rebuilt via pg_basebackup from node2 and started in recovery; node2's pg_stat_replication shows both node1 (10.100.42.10) and node3 (10.100.42.12) streaming; all three nodes show identical 6-row dataset including the post-failover write."
+    },
+    {
+      "requirement": "Pre-restart healthy baseline captured on every node",
+      "command_ids": [
+        "cmd-777686c04ca44408",
+        "cmd-9af37cbb389b49a5",
+        "cmd-0513d1afa8be4e3a"
+      ],
+      "summary": "Captured boot_id and PostgreSQL replication-role/row-count health on node1 (standby), node2 (primary, 2 streaming replicas), and node3 (standby) before any restarts."
+    },
+    {
+      "requirement": "node1 restart: acknowledgement returned pre-disconnect, changed boot identity proven, recovery verified",
+      "command_ids": [
+        "cmd-fb51b3bd8fbc46b9",
+        "cmd-a5429350450a4730",
+        "cmd-bee973decdc2493c",
+        "cmd-d63c57a003ba4606"
+      ],
+      "summary": "Backgrounded reboot acknowledged immediately; boot_id changed from bd379a35... to 9bc37ced...; postgres restarted as standby with all 6 rows intact and node2 shows it streaming again."
+    },
+    {
+      "requirement": "node3 restart: acknowledgement returned pre-disconnect, changed boot identity proven, recovery verified",
+      "command_ids": [
+        "cmd-72d8d3f7f84f437c",
+        "cmd-df13e2c3cc7144f8",
+        "cmd-2bedb364000d476e",
+        "cmd-12bf9ffe15c94f94"
+      ],
+      "summary": "Backgrounded reboot acknowledged immediately; boot_id changed from a6255ea7... to 6e1dab00...; postgres restarted as standby with all 6 rows intact and node2 shows it streaming again."
+    },
+    {
+      "requirement": "node2 (primary) restart: acknowledgement returned pre-disconnect, changed boot identity proven, primary role and cluster health recovered",
+      "command_ids": [
+        "cmd-4895d7e20a0a46a9",
+        "cmd-2b47656672184e53",
+        "cmd-bf6443d8b20f4280"
+      ],
+      "summary": "Backgrounded reboot acknowledged immediately; boot_id changed from e50e3a2d... to 6e424fae...; node2 resumed as writable primary (pg_is_in_recovery=f) with both node1 and node3 reconnected as streaming standbys and all 6 rows intact."
+    },
+    {
+      "requirement": "Final post-all-restarts cluster health and data consistency",
+      "command_ids": [
+        "cmd-5a0054833da04049",
+        "cmd-76bca3eba1a64a37",
+        "cmd-609eca7bde8646f8"
+      ],
+      "summary": "New row written on node2 (primary) after all three sequential restarts; row count of 7 confirmed identical on both node1 and node3 standbys."
+    }
+  ]
+}

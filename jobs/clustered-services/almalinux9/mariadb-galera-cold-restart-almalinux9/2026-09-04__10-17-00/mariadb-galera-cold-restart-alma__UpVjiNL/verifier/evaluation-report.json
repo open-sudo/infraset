@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-established",
+      "requirement": "3-node MariaDB Galera cluster established across node1/node2/node3 holding application data",
+      "status": "satisfied",
+      "summary": "node1 bootstrapped via galera_new_cluster, appdb.orders created and seeded, node2 and node3 joined via SST; wsrep_cluster_size=3 and wsrep_local_state_comment=Synced confirmed on all three nodes with identical data present.",
+      "evidence_ids": [
+        "cmd-869458603d2246ab",
+        "cmd-c9a8b6c24aba4825",
+        "cmd-1518e8605036400d",
+        "cmd-030cffd1013e47cd",
+        "cmd-51f06910f6c748bf",
+        "cmd-0b7312ca6b5b494a"
+      ]
+    },
+    {
+      "id": "distributed-writes",
+      "requirement": "Data is genuinely distributed/replicated across the cluster",
+      "status": "satisfied",
+      "summary": "An insert issued directly on node3 (widget-D-from-node3) was observed replicated and visible on node1 immediately after.",
+      "evidence_ids": [
+        "cmd-e63ed2c1fbc849fc",
+        "cmd-10eb1b6552774935"
+      ]
+    },
+    {
+      "id": "full-shutdown",
+      "requirement": "Cluster comes down completely for a maintenance window",
+      "status": "satisfied",
+      "summary": "mariadb was stopped in order on node3, node2, then node1, with systemctl is-active reporting inactive on all three; grastate.dat on node1 confirms the highest seqno (14) with safe_to_bootstrap:1, establishing a clean, ordered full shutdown.",
+      "evidence_ids": [
+        "cmd-6458a16b59f145b0",
+        "cmd-1fc4482e45084366",
+        "cmd-2ae86d6a7e6b4cb2",
+        "cmd-6d93c2f2c1bc4dd6",
+        "cmd-6696058422de464c",
+        "cmd-bb0c353051d64cc8"
+      ]
+    },
+    {
+      "id": "recovery-with-data",
+      "requirement": "Cluster brought back afterwards with every committed write still present and all three members serving",
+      "status": "satisfied",
+      "summary": "node1 was re-bootstrapped from the highest-seqno state, node2 and node3 were started and rejoined; all three nodes subsequently report wsrep_cluster_size=3, Synced, and an identical 4-row appdb.orders table including the pre-shutdown widget-D row inserted from node3, directly demonstrating the down-to-up transition with no data loss.",
+      "evidence_ids": [
+        "cmd-0ec511eaecc84193",
+        "cmd-10066cd231dc4042",
+        "cmd-e899b76aa7984eaa",
+        "cmd-f5c1d2a3156d4cc2",
+        "cmd-349d5e5a34714e32",
+        "cmd-bb2df9b56c9045ff"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node after task completion",
+      "status": "satisfied",
+      "summary": "Each node (node3, then node2, then node1) was individually restarted one at a time preserving quorum on the remaining two: pre-restart boot_id captured, reboot acknowledged, connectivity loss observed mid-reboot, a distinct post-restart boot_id captured, and mariadb confirmed active with wsrep_cluster_size=3/Synced and the full dataset intact after each restart. The fixed after-executor snapshot boot-identity values (node1 87408dae, node2 5475fa33, node3 fcd16673) match the executor's own post-restart readings, and a final cross-node check after all three restarts confirms 3/3 Synced with COUNT(*)=4 on node2 and node3.",
+      "evidence_ids": [
+        "cmd-679af545fd1d41c8",
+        "cmd-1286f95489d44005",
+        "cmd-3dacdbd42cd44c28",
+        "cmd-e28de1f4b193468f",
+        "cmd-f8c9e3257c924ddd",
+        "cmd-080323007f694be2",
+        "cmd-fd3f1690156942c1",
+        "cmd-fc021a664a344412",
+        "cmd-cdf0d76d84854235",
+        "cmd-33d5ba62f93d465b",
+        "cmd-5de991f525084047",
+        "cmd-20e33b9e87a64f37",
+        "cmd-6b8159cc9ca44e5e",
+        "cmd-1e32cca6ee3c421e",
+        "cmd-fb1c3f1290a84b2e",
+        "cmd-19b02d7fd5954cd9",
+        "cmd-cb52bfbea4934b9e",
+        "cmd-ab1e51deb5cf4765"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a genuine 3-node MariaDB Galera cluster, loaded and cross-node-replicated application data, performed a full ordered shutdown of all three nodes for the maintenance window, and brought the cluster back with all committed writes intact and all three members Synced. It then completed the mandatory one-node-at-a-time restart protocol on every node, with pre-restart boot identity, reboot acknowledgement, distinct post-restart boot identity, and full service/data/cluster recovery each time, cross-validated against the fixed after-executor snapshot boot IDs. The only notable blemish is generated password files left in /tmp on node1 and minor staging-file residue on all nodes, which were never cleaned up.",
+  "limitations": [
+    "Passwords for appuser/sstuser/root were generated via openssl and kept out of command literals as intended, but the plaintext files (/tmp/appdb.pw, /tmp/root.pw) themselves were never removed, and their file permissions were not captured in evidence, so exposure risk cannot be fully ruled out.",
+    "The maintenance-window duration/purpose (e.g., no actual maintenance action was performed between shutdown and restart) is not scrutinized here since the task only requires the cluster to come down and back up cleanly, which was demonstrated.",
+    "Mid-reboot connectivity errors (timeouts/resets) are expected artifacts of the SSH/orchestration channel during a reboot and were correctly treated as transient, not failures."
+  ],
+  "command_stats": {
+    "total": 72,
+    "successful": 61,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Two troubleshooting mutations occurred but were properly corrected: an initial galera_new_cluster attempt failed on node1 due to a wrong wsrep_provider path (cmd-c277f3593461407e), which was diagnosed and fixed by correcting the path in the config on all three nodes (cmd-decde8bbcf0d4c7c, cmd-13724c37a3e848e8, cmd-156bc474597d46a3) before cluster bootstrap succeeded \u2014 a legitimate corrective action, not penalized. However, plaintext generated password files (/tmp/appdb.pw, /tmp/root.pw) were created on node1 (cmd-293567fd58e64a8c) and never deleted; they remain present in the after-executor snapshot, an unnecessary retained credential-bearing artifact on disk (low blast radius, single node, /tmp scope, but a real hygiene/security lapse). Staging files /tmp/galera.cnf were also left on all three nodes and /tmp/reboot.log was left after the restart protocol; these are low-sensitivity residue but still unremoved temporary files. No failed services, no damaged package state, no unnecessary firewall/security weakening was observed.",
+    "evidence_ids": [
+      "cmd-293567fd58e64a8c",
+      "cmd-347587d2c14543b5",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "cmd-c277f3593461407e",
+      "cmd-decde8bbcf0d4c7c"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

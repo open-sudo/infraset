@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Run a three-member MariaDB Galera cluster on node1, node2, node3 holding application data",
+      "status": "satisfied",
+      "summary": "node1 bootstrapped via galera_new_cluster, node2 and node3 joined; wsrep_cluster_size=3, state Synced, incoming_addresses lists all three IPs. appdb.orders table created with seed rows and appuser account on node1, and identical data/user confirmed present on node2 and node3.",
+      "evidence_ids": [
+        "cmd-4cf84ccc07aa484f",
+        "cmd-c11eed4485094b14",
+        "cmd-e09cc219daff4bea",
+        "cmd-a281b9a1427d4972",
+        "cmd-4582bd9bc5184cd3",
+        "cmd-f8be69e39a6f4c56",
+        "cmd-12478c7cdfe64a61",
+        "cmd-ee609a37bc4243b2"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Cluster accepts multi-master writes across original members",
+      "status": "satisfied",
+      "summary": "An INSERT executed on node2 was immediately visible when queried from node1, demonstrating multi-master write replication.",
+      "evidence_ids": [
+        "cmd-0ea2e7414bd14caf",
+        "cmd-fb4584ad2dc6488c"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Add node4 as a fourth member that carries the data that already exists",
+      "status": "satisfied",
+      "summary": "node4's galera.cnf was updated with cluster_address including all four hosts; starting mariadb triggered an automatic rsync SST. Post-join queries on node4 show wsrep_cluster_size=4, state Synced, and the full appdb.orders dataset (including the earlier from-node2 row) plus the appuser account present.",
+      "evidence_ids": [
+        "cmd-d150f5c6abb747c9",
+        "cmd-7a96ea76c08c45c0",
+        "cmd-56322e0d9952475a",
+        "cmd-a4e7491861ed4438"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "node4 accepts writes like the other members",
+      "status": "satisfied",
+      "summary": "An INSERT executed directly on node4 replicated to node3, confirmed by a subsequent SELECT on node3 showing the new row.",
+      "evidence_ids": [
+        "cmd-e5439566bc444b40",
+        "cmd-81a12cbabe3f4489"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "(Provider-wide protocol) node1 restart: baseline, disruption, recovery",
+      "status": "satisfied",
+      "summary": "Baseline boot_id aad96cc9... and healthy Synced/Primary state captured before a delayed systemctl reboot; boot_id observed unchanged immediately after the ack, then confirmed changed to d10e6556... on a later poll; post-restart mariadb active, wsrep_cluster_size=4, Synced, Primary, and all appdb.orders rows intact. Cross-checked against the fixed after-executor boot-identity snapshot (matches d10e6556...).",
+      "evidence_ids": [
+        "cmd-aeac9854ce644d18",
+        "cmd-36d09668d80747fa",
+        "cmd-cb7bc5bf5bf64935",
+        "cmd-53db760900514043",
+        "cmd-0def53f756d54bf2"
+      ]
+    },
+    {
+      "id": "req-6",
+      "requirement": "(Provider-wide protocol) node2 restart: baseline, disruption, recovery",
+      "status": "satisfied",
+      "summary": "Baseline boot_id e625b9a5... and healthy state captured; delayed reboot acked; boot_id confirmed changed to 4fb80752...; post-restart mariadb active, cluster_size=4, Synced, Primary, data intact. Matches fixed after-executor snapshot.",
+      "evidence_ids": [
+        "cmd-1f0ca7148f0c46ed",
+        "cmd-95557c427d41494b",
+        "cmd-457fa69217394d13",
+        "cmd-7facb2fa83244ce0"
+      ]
+    },
+    {
+      "id": "req-7",
+      "requirement": "(Provider-wide protocol) node3 restart: baseline, disruption, recovery",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 6d37896c... and healthy state captured; delayed reboot acked; boot_id confirmed changed to f8f791a4...; post-restart mariadb active, cluster_size=4, Synced, Primary, data intact. Matches fixed after-executor snapshot.",
+      "evidence_ids": [
+        "cmd-ca763e16603b4f46",
+        "cmd-19d4c8bbc8884df6",
+        "cmd-2e55e2070ec64e7d",
+        "cmd-e7d1c4576d434ab6"
+      ]
+    },
+    {
+      "id": "req-8",
+      "requirement": "(Provider-wide protocol) node4 restart: baseline, disruption, recovery, final cluster health",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 180a78a0... and healthy state captured; delayed reboot acked; boot_id confirmed changed to db6bb6e6...; post-restart mariadb active, cluster_size=4, Synced, Primary, data intact; cross-checked from node1 that all four IPs are cluster members. Matches fixed after-executor snapshot.",
+      "evidence_ids": [
+        "cmd-af86937bc802418a",
+        "cmd-1623fa01c7864dbf",
+        "cmd-be15f5f4bac04608",
+        "cmd-0973ca4c3120472a",
+        "cmd-7c8ea5052ef04fa6"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a healthy 3-node Galera cluster on node1-node3, seeded and verified appdb.orders data and an appuser account across all three, and demonstrated multi-master writes. node4 was added by updating its galera.cnf and starting mariadb, which triggered an automatic rsync SST that fully replicated existing data (confirmed via direct query on node4), and a write issued from node4 was shown replicating to node3, satisfying the core task contract. Independently, the provider-wide restart-evidence protocol was executed on all four nodes with clear before/after boot_id captures, reboot acknowledgements, and post-restart verification of cluster size, Synced/Primary state, and intact data, cross-checked against the fixed after-executor snapshot. Hygiene is good: state-changing commands map clearly to task prerequisites, the one failed install attempt was a transient GPG issue with no lasting effect, and the only residue is small reboot.log files left as an artifact of the reboot-scheduling technique used for the restart protocol.",
+  "limitations": [
+    "Evidence for the initial dnf GPG failure (cmd-24001cb788984f47) does not include full output before the tail truncation, so the precise cause of the transient failure cannot be fully confirmed beyond the traceback shown.",
+    "Password generation and storage details (e.g., /root/.appdb_pw permissions) were only spot-checked via chmod command output, not independently verified as still 600 at task end.",
+    "No evidence of a full node-loss or network-partition disruption test was captured (only individual sequential reboots), so behavior under simultaneous multi-node failure is not directly observed, though this is not required by the public task contract."
+  ],
+  "command_stats": {
+    "total": 69,
+    "successful": 69,
+    "failed": 0,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Executor actions were tightly scoped to the task: package installs, /etc/hosts entries, firewalld port openings, and galera.cnf edits are all direct prerequisites for the cluster and were applied consistently across nodes. The single early dnf install attempt on node1 (cmd-24001cb788984f47) failed with a GPG parsing error before any packages were installed and was immediately retried successfully (cmd-f843754a4709408a); since it failed before mutating package state, this is not a harmful mutation, just a corrected transient failure. The mandatory restart-evidence protocol left one small residue per node: a /tmp/reboot.log file from the deferred `systemctl reboot` scheduling trick, visible in the after-executor snapshot diffs for all four nodes. This is bounded, low-risk, non-sensitive residue directly tied to satisfying the reboot-evidence requirement, not an abandoned or unrelated mutation, so it only lightly reduces the score. No failed services, no unnecessary package/config changes, and firewall/SELinux state was checked before applying only the needed ports.",
+    "evidence_ids": [
+      "cmd-24001cb788984f47",
+      "cmd-f843754a4709408a",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node4:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

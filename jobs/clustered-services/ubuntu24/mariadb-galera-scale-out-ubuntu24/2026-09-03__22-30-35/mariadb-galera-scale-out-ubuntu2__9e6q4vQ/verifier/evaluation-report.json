@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Run a three-member MariaDB Galera cluster on node1, node2, node3 holding application data",
+      "status": "satisfied",
+      "summary": "node1 bootstrapped via galera_new_cluster (cluster_size=1, Synced), node2 and node3 sequentially joined (cluster_size=2 then 3, both Synced). appdb.orders table created and seeded with 3 rows on node1, confirmed replicated (cnt=3) on both node2 and node3, and a write issued from node2 replicated to node1 and node3, confirming synchronous multi-master operation across the original three members.",
+      "evidence_ids": [
+        "cmd-c30134c3e68f4876",
+        "cmd-b13961c01b5045fb",
+        "cmd-00a1308fe45245f3",
+        "cmd-18ba3822588a44ba",
+        "cmd-1389f4069e884e55",
+        "cmd-851916b7fb6b4f44",
+        "cmd-e1f5883ad38f46be",
+        "cmd-6807cfbf54564d30",
+        "cmd-385c88eab5c743f8",
+        "cmd-cec3743d47d74257",
+        "cmd-11532d08709c4d20",
+        "cmd-a4af144d847841fb"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Add node4 as a fourth member that carries the data that already exists",
+      "status": "satisfied",
+      "summary": "node4 mariadb was started with the same gcomm cluster address; it completed SST and joined reporting cluster_size=4/Synced, with all 4 rows of appdb.orders (including the prior write-from-node2) present immediately after join, and wsrep_incoming_addresses listing all four node IPs.",
+      "evidence_ids": [
+        "cmd-6a8d599706904021",
+        "cmd-5349eecfa1884d21",
+        "cmd-b679b94069e24d2d",
+        "cmd-72682f81b3374229"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node4 should accept writes like the other members",
+      "status": "satisfied",
+      "summary": "A write issued directly on node4 ('write-from-node4') was subsequently visible on node1 and node3 with cluster_size=4 confirmed, demonstrating node4 participates as a full read/write member of the multi-master cluster.",
+      "evidence_ids": [
+        "cmd-279391825393489d",
+        "cmd-c82dbbf711ab4de2",
+        "cmd-09e3832cfac14122"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Provider-wide node-restart evidence protocol: baseline, ack, changed boot identity, recovered service/data/cluster state on every managed node",
+      "status": "satisfied",
+      "summary": "For each of node1-node4, a baseline boot_id plus Synced/cluster_size=4/wsrep_ready=ON/5-row count was captured, a reboot was acknowledged, the connection dropped (Connection reset by peer), a new boot_id was observed on reconnect, and post-restart checks confirmed mariadb active, cluster_size=4, Synced, wsrep_ready=ON, and the same 5-row order count before proceeding to the next node. The independent fixed lifecycle after_executor snapshot boot-identity values for all four nodes exactly match the executor's post-reboot boot_id observations, corroborating the transition.",
+      "evidence_ids": [
+        "cmd-a435d27e34484dc1",
+        "cmd-3fb119cc67534cb3",
+        "cmd-7f138efb646e44f0",
+        "cmd-2b25fd2978a9401a",
+        "cmd-1b2ef4fb51a24b55",
+        "cmd-99b4bba1f95a4a7f",
+        "cmd-2ee8bbb1b44d4756",
+        "cmd-913349e1a4a243b9",
+        "cmd-38239584713e40c3",
+        "cmd-37cbb89b18de4bb7",
+        "cmd-65c12fdfcf624388",
+        "cmd-217005133aa04bb9",
+        "cmd-99443f13512f4526",
+        "cmd-dad90ebcba934591",
+        "cmd-71740f0ef0e74eed",
+        "cmd-3887cc8945b64582",
+        "cmd-3a499c41f0b645cf",
+        "cmd-a5ba7f7773c84f1f",
+        "cmd-df815664418446ff",
+        "cmd-644c5d0575064135",
+        "cmd-83b8d5551b114552",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a working 4-member MariaDB Galera cluster from scratch: node1-node3 formed a 3-node cluster holding seeded application data with verified multi-master replication, and node4 joined via SST carrying the existing data and successfully accepting and propagating its own writes to the other members. The mandatory sequential restart protocol was executed and evidenced on all four nodes with clear baseline/ack/changed-boot-id/recovery transitions, corroborated by the independent fixed lifecycle boot-identity snapshots. The only notable hygiene issue is a small abandoned artifact (two unused random-secret files left in /tmp on node1) from an apparently superseded credential-generation attempt.",
+  "limitations": [
+    "Actual appuser password value was never exposed in the transcript (redacted in the heredoc), so its final value/security cannot be independently verified, though this is standard operational practice and not a task requirement.",
+    "Cannot directly confirm whether the abandoned /tmp/app_pw.txt and /tmp/root_pw.txt files on node1 were later deleted, since no later command references or removes them in the captured timeline."
+  ],
+  "command_stats": {
+    "total": 82,
+    "successful": 69,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Nearly all executor mutations map cleanly to task steps (hosts population, package install, galera.cnf authoring, cluster bootstrap/join, schema/data creation, sequential reboots) and none show residue-causing failures, orphaned services, or weakened security exposure (bind-address 0.0.0.0 is required for cluster/client connectivity and is consistent across all nodes). One minor unnecessary mutation: cmd-ca089fc855004b7f generated two random secrets and wrote them to /tmp/app_pw.txt and /tmp/root_pw.txt on node1, but the actual appuser account creation in cmd-e1f5883ad38f46be used a freshly-generated inline APP_PW instead of reading these files, so the two /tmp files were an abandoned artifact never referenced again and not shown to be cleaned up (no cleanup command for them appears in the transcript). This is low-risk (random unused bytes, not a live secret tied to any account) but is unretracted residue in /tmp. Post-executor listening-socket and temp-file diffs are otherwise fully explained by the new mariadbd process (3306/4567) and boot-cycle systemd-private directories, with no failed services or package-health issues on any node before or after.",
+    "evidence_ids": [
+      "cmd-ca089fc855004b7f",
+      "cmd-e1f5883ad38f46be",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node4:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

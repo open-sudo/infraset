@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "baseline-cluster",
+      "requirement": "Three-member etcd cluster running and healthy on node1/node2/node3, holding application keys",
+      "status": "satisfied",
+      "summary": "No pre-existing cluster was found on any node, so the executor bootstrapped a fresh 3-member etcd 2.2.5 cluster from packages. cmd-d1f3b913ebcc481b shows all three members (node1/node2/node3) listed and reported healthy, and cmd-ab18e55cc9174b92/cmd-b8ce556becaf4d7f/cmd-177b424ffc984168 show application keys written under /app/config, /app/feature-flags, /app/secrets and confirmed readable from node3, satisfying the 'holding application keys' baseline described in the task.",
+      "evidence_ids": [
+        "cmd-d1f3b913ebcc481b",
+        "cmd-ab18e55cc9174b92",
+        "cmd-b8ce556becaf4d7f",
+        "cmd-177b424ffc984168"
+      ]
+    },
+    {
+      "id": "node3-loss-simulated",
+      "requirement": "node3 member permanently lost (unrecoverable local data) while node1/node2 quorum and application data remain intact",
+      "status": "satisfied",
+      "summary": "cmd-118bee8a074744ed stops etcd on node3 and deletes /var/lib/etcd/default, simulating unrecoverable loss. cmd-b01a7a784f1042be directly shows node1/node2 remaining healthy with node3 reported unreachable and application key db_host still readable, confirming quorum and data survived the loss.",
+      "evidence_ids": [
+        "cmd-118bee8a074744ed",
+        "cmd-b01a7a784f1042be"
+      ]
+    },
+    {
+      "id": "member-replacement",
+      "requirement": "Dead node3 member replaced with a new working member on the same system (node3), restoring the cluster to three members",
+      "status": "satisfied",
+      "summary": "cmd-68dc4dba6d7a4c36 removes the dead member ID (9e27ac9b72d2dc69) via etcdctl member remove while node1/node2 stay healthy. cmd-8f4be003f4e54af5 adds a new node3 member (a42e73c624ed3d37). cmd-78c1a239beeb49b1 reconfigures node3 with ETCD_INITIAL_CLUSTER_STATE=existing and a fresh data dir, then starts etcd. cmd-ea2317f4e05b4f67 confirms the cluster returned to 3/3 healthy members with the new node3 ID.",
+      "evidence_ids": [
+        "cmd-68dc4dba6d7a4c36",
+        "cmd-8f4be003f4e54af5",
+        "cmd-78c1a239beeb49b1",
+        "cmd-ea2317f4e05b4f67"
+      ]
+    },
+    {
+      "id": "keys-intact-post-replacement",
+      "requirement": "Existing application keys intact on the replaced member and across the cluster after replacement",
+      "status": "satisfied",
+      "summary": "cmd-be7baa28e94543f1 shows all original keys (db_host, db_port, new-ui, api-key-ref) readable directly on the new node3 member after it synced. cmd-71db8390e7b94fe0/cmd-2c7efd1699544c82/cmd-8f34eea30f8f4527 confirm a post-replacement marker key replicated cluster-wide, providing direct confirmation of a working, in-sync replacement member.",
+      "evidence_ids": [
+        "cmd-be7baa28e94543f1",
+        "cmd-71db8390e7b94fe0",
+        "cmd-2c7efd1699544c82",
+        "cmd-8f34eea30f8f4527"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a 3-member etcd cluster from scratch (no pre-existing cluster was present per the prepare baseline), wrote application keys, simulated an unrecoverable loss of the node3 member, and performed a standard etcd member-remove/member-add replacement that restored the cluster to 3 healthy members with all original and a post-replacement marker key verified present cluster-wide, including directly on the new node3 member. All material task outcomes are directly evidenced. The independent node-restart evidence protocol was also completed for all three nodes with pre-restart boot IDs, reboot acknowledgements, changed post-restart boot IDs (cross-checked against the fixed lifecycle boot-identity snapshots), and confirmed recovered etcd/cluster/data state after each individual reboot. One bounded misconfiguration during initial bootstrap (a single-node 'localhost' cluster forming on node1) was detected and fully corrected via a clean config rewrite and data wipe before the real 3-member cluster was formed, leaving no residue.",
+  "limitations": [
+    "The task instruction implies a cluster that already existed and lost node3; because the prepare baseline was empty, the executor had to bootstrap the entire cluster itself first, so 'permanent loss' was simulated rather than genuinely pre-existing \u2014 a reasonable adaptation given the environment but not a true pre-existing-cluster scenario.",
+    "The initial single-node 'localhost' cluster misconfiguration on node1 (visible in cmd-7a7b09285d834f82's journal) was not fully root-caused in the trace; it was corrected but the exact cause of the erroneous initial-cluster value is not explained in captured evidence.",
+    "The node-restart evidence protocol is supplemental per instructions and not part of the public task contract, so while it was thoroughly and consistently evidenced (and cross-checked against the fixed lifecycle snapshots), it does not itself factor into the material task outcome scoring."
+  ],
+  "command_stats": {
+    "total": 59,
+    "successful": 48,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Most state-changing commands map directly to bootstrapping the cluster, simulating loss, and executing the replacement \u2014 all necessary. One troubleshooting detour occurred: cmd-3d40e20868b84150/cmd-f04fdebde75149c0/cmd-4ab2710c34e34af2 appended config to /etc/default/etcd on all three nodes and cmd-0d7933d7de314828/cmd-8e33a7e5f7f3495b/cmd-d09df058279640ad started etcd, but cmd-7a7b09285d834f82's journal shows node1 actually bootstrapped as a single-node 'localhost' cluster (a misconfiguration, likely from stray/duplicate variable ordering in the appended file) rather than the intended 3-member cluster \u2014 an unintended, if bounded, mutation. The executor detected this (cmd-ea12af6190a942ea, cmd-38c06ee730fe405a, cmd-17c7d36ad48647c7, cmd-d0599f8f6a0b41e2 diagnostics) and fully corrected it: cmd-fb9a770f2a934ffa/cmd-fad01b93da3b4021/cmd-88204b1b9900479d stop etcd, overwrite /etc/default/etcd with a clean single definition, and wipe the resulting bad data directory on all three nodes before restarting the daemons correctly. This was a low-risk, fully reverted detour rather than retained residue. No unrelated packages, exposed services, or damaged package state are evident; lifecycle snapshots show only expected boot-identity/temp-file churn from the required reboots, with no other package-health or failed-service deltas.",
+    "evidence_ids": [
+      "cmd-3d40e20868b84150",
+      "cmd-0d7933d7de314828",
+      "cmd-7a7b09285d834f82",
+      "cmd-fb9a770f2a934ffa",
+      "cmd-fad01b93da3b4021",
+      "cmd-88204b1b9900479d",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Join node1, node2, and node3 into a single RabbitMQ cluster",
+      "status": "satisfied",
+      "summary": "rabbitmq-server + erlang-nox installed on all three nodes, shared Erlang cookie propagated, node2 and node3 joined node1 via rabbitmqctl join_cluster, and cluster_status on node1 confirms all three as disc nodes in running_nodes with zero partitions.",
+      "evidence_ids": [
+        "cmd-d9944614cc2f4d05",
+        "cmd-5a27692471bd4879",
+        "cmd-1d7fb323d75641a0",
+        "cmd-b21c0646cd384350",
+        "cmd-268aa2c21a7b4e4b",
+        "cmd-b7db31bfe1d5478e"
+      ]
+    },
+    {
+      "id": "payments-vhost-account",
+      "requirement": "Create a payments vhost and an application account that can publish and consume there",
+      "status": "satisfied",
+      "summary": "payments vhost created; app_user added with full configure/write/read (.*/.*/.*) permissions on the payments vhost, later confirmed able to declare a queue, publish, and get (consume) a message via that account.",
+      "evidence_ids": [
+        "cmd-838869ae899b4267",
+        "cmd-74b791be5428493b",
+        "cmd-5218e9b111934d5b",
+        "cmd-95dd454db4104e70",
+        "cmd-2e7075bf1fb34548"
+      ]
+    },
+    {
+      "id": "durable-queue-survives-node-loss",
+      "requirement": "Messages published to a durable queue must survive the loss of any one node and stay consumable from the remaining nodes",
+      "status": "satisfied",
+      "summary": "Direct pre/during/post transition evidence: ha-all mirror policy set on the vhost; durable queue 'orders' declared and a persistent message published, confirmed mirrored and synchronised to node2/node3 (cmd-5905422c07f34240); node1 (then queue master) was stopped via stop_app (cmd-682915e7e4c548ea); cluster_status and the management API from node2 immediately showed the queue promoted to node3 with the message intact (cmd-34f7ac26e584432a); the message was successfully retrieved (consumed) from node2 while node1 remained down (cmd-2e7075bf1fb34548, payload matched); node1 was then restarted and rejoined the cluster with zero partitions (cmd-7a84f2a535e94098). This satisfies the required baseline\u2192disruption\u2192consumption\u2192restoration transition.",
+      "evidence_ids": [
+        "cmd-5218e9b111934d5b",
+        "cmd-95dd454db4104e70",
+        "cmd-5905422c07f34240",
+        "cmd-682915e7e4c548ea",
+        "cmd-34f7ac26e584432a",
+        "cmd-2e7075bf1fb34548",
+        "cmd-7a84f2a535e94098"
+      ]
+    },
+    {
+      "id": "steady-state-after-test",
+      "requirement": "Leave the cluster in a healthy steady state after the disruption test",
+      "status": "satisfied",
+      "summary": "A fresh persistent message was published post-recovery and confirmed synchronised across all three nodes; the default guest account was removed as a hardening step, with no observed negative side effects.",
+      "evidence_ids": [
+        "cmd-86877b3ced2947a4",
+        "cmd-c7c482a7a3ce4df6",
+        "cmd-7d0c458d8d764478"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct, coherent evidence: a 3-node disc cluster with zero partitions, a payments vhost with a fully-privileged app_user account, and \u2014 critically \u2014 a durable, ha-all mirrored queue whose message was shown mirrored before disruption, promoted and still present when node1 was stopped, and successfully consumed from node2 while node1 remained down, followed by node1's clean rejoin. The independent provider-wide restart protocol was also executed cleanly for all three nodes, with boot-identity changes cross-checked against the fixed before_prepare/after_executor snapshots and full RabbitMQ/cluster/queue recovery confirmed after each reboot. Hygiene is good; the only minor blemish is a handful of failed CLI-download troubleshooting attempts that left no lasting residue.",
+  "limitations": [
+    "The rabbitmqadmin 'get' operation used to prove consumption executed against the management HTTP API rather than a native AMQP client library, which is an accepted equivalent implementation choice but is a slightly indirect proxy for AMQP consumer behavior.",
+    "No evidence was captured of publishing while a node was down or of concurrent multi-client access; only pre-disruption publish and post-disruption consume were directly observed, so resilience beyond this single tested scenario is not directly verified."
+  ],
+  "command_stats": {
+    "total": 54,
+    "successful": 42,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewed the full chronological command trace. All state-changing commands (package installs, /etc/hosts append, cookie propagation, cluster join, vhost/user/policy creation, queue declare/publish/consume, stop_app/start_app, guest deletion, and the three sequential reboots) map clearly to satisfying a material outcome, a necessary prerequisite, or the mandatory restart protocol. The one area of inefficiency was repeated failed attempts to fetch the rabbitmqadmin CLI helper from the management plugin (cmd-d2290050a8e04528: sudo curl+chmod failed with 'Operation not permitted'; cmd-1d0ac8723a0f46c3: unauthenticated curl failed rc=23; cmd-a3c3a3050e9d4537: rm failed permission denied, retried curl with partial write). These were bounded, low-risk troubleshooting toward a legitimate prerequisite (a CLI tool to exercise publish/get against the app_user account) and were eventually resolved via cmd-55eae1ba24ca4a51. The resulting /tmp/rabbitmqadmin file left no lasting residue: the after_executor temporary-files snapshot for node1 shows no rabbitmqadmin entry, since /tmp is cleared across the subsequent reboot. No package damage, no failed services, no listening-socket exposure changes, and no security-control weakening were observed in the before/after lifecycle snapshots.",
+    "evidence_ids": [
+      "cmd-d2290050a8e04528",
+      "cmd-1d0ac8723a0f46c3",
+      "cmd-a3c3a3050e9d4537",
+      "cmd-55eae1ba24ca4a51",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:failed-services",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

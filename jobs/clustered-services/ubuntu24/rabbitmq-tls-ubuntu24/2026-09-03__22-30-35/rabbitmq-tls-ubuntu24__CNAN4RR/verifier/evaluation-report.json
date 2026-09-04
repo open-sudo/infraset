@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-cluster",
+      "requirement": "Run a RabbitMQ cluster across node1, node2, and node3",
+      "status": "satisfied",
+      "summary": "RabbitMQ 3.12.1 installed on all three nodes, clustered via classic_config peer discovery and rabbitmqctl join_cluster; cluster_status from node1 shows all three rabbit@node1/2/3 as Running Nodes and Disk Nodes. Cluster membership was reconfirmed after sequential reboots of all three nodes.",
+      "evidence_ids": [
+        "cmd-be7d6f77a6074d4a",
+        "cmd-e4d7fa283807455b",
+        "cmd-480cb70069d34250",
+        "cmd-b8422c1068f345fd",
+        "cmd-c0b33b43a49c41f6",
+        "cmd-50c92e0b646e497b",
+        "cmd-49eea0e447c14703",
+        "cmd-51a5df80709f4323",
+        "cmd-b1410821de2b498e"
+      ]
+    },
+    {
+      "id": "req-2-amqp-tls-owncauth",
+      "requirement": "Serve AMQP over TLS using a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A self-signed CA (CN=rabbitmq-cluster-ca) was generated on node1, distributed to node2/node3, and used to issue per-node server certs with correct SANs; rabbitmq.conf disables plaintext AMQP (listeners.tcp = none) and enables only the TLS listener on 5671 referencing this CA/cert/key. A pika client over TLS successfully published/consumed a message through node2, and the plaintext listener disable was confirmed via ss showing only port 5671 for AMQP.",
+      "evidence_ids": [
+        "cmd-64695435c0644102",
+        "cmd-ca8db7f1a02e4edf",
+        "cmd-80edba6961ff41ec",
+        "cmd-8b8f1eb4daf641d5",
+        "cmd-d01238fdae624a98",
+        "cmd-ac4f9ae4e857446d",
+        "cmd-edb81c61d73c4f89",
+        "cmd-c5d17bfda71c4ff9",
+        "cmd-ccc1b278336b46ee",
+        "cmd-579ad770d70b4198",
+        "cmd-7f9fd4510c5e47e6"
+      ]
+    },
+    {
+      "id": "req-3-mtls-only-ca-clients",
+      "requirement": "Accept only client connections presenting a certificate issued by the cluster CA",
+      "status": "satisfied",
+      "summary": "rabbitmq.conf sets ssl_options.verify=verify_peer and fail_if_no_peer_cert=true. A connection attempt without any client cert was rejected with a TLS 'certificate_required' alert (also confirmed in the RabbitMQ log), and a connection using a self-signed non-CA client cert was rejected by the server with a 'bad certificate' TLS alert via an actual AMQP/pika client. A connection using a CA-issued client cert succeeded and completed publish/consume.",
+      "evidence_ids": [
+        "cmd-edb81c61d73c4f89",
+        "cmd-c45861d6df354ce7",
+        "cmd-60ba0cf06d054c3d",
+        "cmd-d61c2c66c181490d",
+        "cmd-579ad770d70b4198"
+      ]
+    },
+    {
+      "id": "req-4-mgmt-cluster-only",
+      "requirement": "Keep the management interface reachable only from within the cluster",
+      "status": "satisfied",
+      "summary": "management.tcp.ip is bound to each node's own cluster IP (not 0.0.0.0), confirmed by ss showing the 15672 listener only on the node's private address both before and after reboot. iptables INPUT rules additionally allow port 15672 only from the three cluster IPs and DROP all other sources, persisted via iptables-persistent/netfilter-persistent so the rules survive reboot (confirmed present after all three node reboots).",
+      "evidence_ids": [
+        "cmd-edb81c61d73c4f89",
+        "cmd-7f9fd4510c5e47e6",
+        "cmd-88ec1a4132f0448f",
+        "cmd-73a72a4a1b7c46c1",
+        "cmd-efa49e344f434600",
+        "cmd-f98c364136bd440d",
+        "cmd-49eea0e447c14703",
+        "cmd-51a5df80709f4323",
+        "cmd-b1410821de2b498e"
+      ]
+    },
+    {
+      "id": "req-5-node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart boot identity/healthy state, restart acknowledgement, differing post-restart boot identity, recovered service/data/cluster state on every managed node",
+      "status": "satisfied",
+      "summary": "All three nodes were sequentially rebooted with clear before/after boot_id changes (node1: 29011044\u21927c1541ec, node2: 1e0cb179\u21928a3a4541, node3: c96a02ae\u21924d82d6d3, matching the fixed before-prepare and after-executor snapshots), each followed by confirmation of rabbitmq-server active, full 3-node cluster membership, firewall rules intact, and correct TLS/management listener bindings. After all three reboots, an end-to-end AMQP-over-TLS publish/consume test with a CA-issued client cert succeeded and an untrusted-cert connection was rejected, and a previously published quorum-queue message was still present, demonstrating full data/service recovery.",
+      "evidence_ids": [
+        "cmd-d035b4280bc0403d",
+        "cmd-d35fa0e2529c4434",
+        "cmd-49eea0e447c14703",
+        "cmd-4d0a08d75b664f58",
+        "cmd-ef72e87556af4428",
+        "cmd-51a5df80709f4323",
+        "cmd-b667b3b0fd7b492f",
+        "cmd-47fd097438ee4998",
+        "cmd-b1410821de2b498e",
+        "cmd-aa47a67b58e54622",
+        "global:before_prepare:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the task contract are directly demonstrated by evidence: a working 3-node RabbitMQ cluster, an AMQP-over-TLS listener secured with a cluster-created CA (plaintext AMQP disabled), mutual-TLS enforcement rejecting both no-cert and non-CA-cert connections while accepting CA-issued client certs (verified with a real pika AMQP client, not just openssl s_client), and a management interface restricted to cluster IPs via both bind address and iptables with DROP-by-default, persisted across reboot. The independently-required node-restart evidence protocol was executed thoroughly on all three nodes with clear boot-id transitions and full post-reboot functional verification including data (quorum queue message) survival. Hygiene is reduced by an abandoned SSH-key provisioning attempt and some unremoved test artifacts (tester user/password file, test client certs), none of which are destructive or affect functional correctness.",
+  "limitations": [
+    "The executor's own final report and selected evidence list were essentially placeholder/test values ('test'/'cmd-test') referencing unknown command IDs, so this evaluation relied entirely on the raw command timeline and lifecycle snapshots rather than the executor's self-reported evidence mapping.",
+    "The openssl s_client output for the untrusted-cert test (cmd-c45861d6df354ce7) is ambiguous on its face ('Verify return code: 0 (ok)') but is corroborated as an actual rejection by the RabbitMQ server log and by the separate pika-based untrusted-cert test (cmd-d61c2c66c181490d), which is treated as the authoritative check.",
+    "No test was captured for a scenario where the management port is probed from outside the cluster's IP range with an actual established TCP attempt (only firewall rule listing and local bind inspection were captured); reachability restriction is inferred from configuration plus rule tables rather than an external negative connectivity test.",
+    "Executor evidence item 1 referenced unknown command IDs: cmd-test"
+  ],
+  "command_stats": {
+    "total": 87,
+    "successful": 80,
+    "failed": 7,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.6,
+    "summary": "Most state-changing commands map clearly to task outcomes (CA/cert generation, TLS config, cluster join, admin user, iptables restriction, reboot verification). However several unnecessary or unreverted mutations were found: (1) SSH keypair/authorized_keys were provisioned on all three nodes (cmd-ae2e3a680a18400f, cmd-b02e7848305c4d6b, cmd-3c3f7911a1394e39) as an apparent cross-node distribution attempt, but the subsequent SSH connection failed (cmd-a78542834fee4a64) and the executor pivoted to an HTTP-based cookie share instead \u2014 the SSH keys/authorized_keys entries were never used again and were left in place, an abandoned experiment with no cleanup. (2) A 'tester' RabbitMQ user was created purely for verification (cmd-efaa9307d8bb45eb) with its password persisted to /root/.testpw on node1 and never removed \u2014 residual test credential material. (3) Client test certificates/keys and test scripts (/tmp/client-cert.pem, client-key.pem, amqp_test.py, untrusted-cert.pem, untrusted-key.pem, etc.) remain on node1 per the after-executor temp-files diff, unremoved test residue. The temporary HTTP cookie-share server was, by contrast, properly torn down (cmd-ab59ea2775d94239). None of these residues are destructive or broad in scope, but they represent unrestored, unnecessary state.",
+    "evidence_ids": [
+      "cmd-ae2e3a680a18400f",
+      "cmd-b02e7848305c4d6b",
+      "cmd-3c3f7911a1394e39",
+      "cmd-a78542834fee4a64",
+      "cmd-efaa9307d8bb45eb",
+      "cmd-ab59ea2775d94239",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

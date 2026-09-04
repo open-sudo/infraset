@@ -1,0 +1,90 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-04T21:24:19.662814+00:00",
+      "outcome": "cluster_expired",
+      "finished_at": "2026-09-04T21:43:07.213804+00:00",
+      "error": "The Antrieb managed cluster lease expired at 2026-09-04T21:43:07.158000+00:00",
+      "diagnosis": {
+        "summary": "The evidence shows the task was actually completed successfully: by 21:42:07 all four nodes reported a synced 4-member Galera cluster in Primary state, with pre-existing data intact and writes made on both node2 and node4 replicated cluster-wide, and the cluster survived a full rolling reboot of all four nodes. The attempt terminated not from a functional failure but because the cluster lease expired at 21:43:07, about a minute after the last successful verification, before a structured report could be returned. Time was likely lost earlier to a failed privileged file write (heredoc redirect without sudo/tee) and RHEL7/MariaDB-10.6 package dependency resolution problems (missing rsync/perl-Socket chains) plus yum installs exceeding the platform's 120s proxy timeout.",
+        "evidence": [
+          {
+            "source": "21:25:04\u201321:25:08, all 4 nodes",
+            "finding": "`cat > /etc/yum.repos.d/mariadb.repo <<EOF` failed with 'Permission denied' on node1-4; the repo file was never created via this command."
+          },
+          {
+            "source": "21:26:18, node1",
+            "finding": "yum install failed with unresolved deps: MariaDB-server-10.6.28 requires rsync and perl(Socket), neither present."
+          },
+          {
+            "source": "21:28:14, node1",
+            "finding": "Manual install of rsync/perl-Socket RPMs from vault.centos.org failed on further missing perl module deps (MODULE_COMPAT, Carp, Exporter, etc.)."
+          },
+          {
+            "source": "21:33:52 and 21:35:57, node3 & node4",
+            "finding": "`yum install -y MariaDB-server ... galera-4 rsync nc` exceeded the platform's 120s proxy read timeout and were reported as 'failed', though the command may have continued server-side."
+          },
+          {
+            "source": "21:36:02, node4",
+            "finding": "Immediately after the timeout, rpm -q shows MariaDB-server/galera-4 still NOT installed on node4."
+          },
+          {
+            "source": "21:36:06\u201321:36:12, node1",
+            "finding": "By this point node1 does show MariaDB-server-10.6.28 and galera-4-26.4.27 installed, with libgalera_smm.so present \u2014 so installation eventually succeeded on at least node1."
+          },
+          {
+            "source": "21:38:42, node2",
+            "finding": "`mysql -e ...` returned 'ERROR 1045: Access denied for user root@localhost' \u2014 auth was not yet in a usable state at that point."
+          },
+          {
+            "source": "21:40:56 onward, node1",
+            "finding": "wsrep_cluster_size=4, wsrep_local_state_comment=Synced, wsrep_cluster_status=Primary, and `SELECT COUNT(*) FROM appdb.orders` returns 5 rows."
+          },
+          {
+            "source": "21:41:01\u201321:42:03, node2/3/4 sequential reboots",
+            "finding": "Each node was rebooted, came back with a new boot_id, mariadb.service reported active, and each independently reported wsrep_cluster_size=4/Synced/Primary with 5 rows in appdb.orders \u2014 cluster survived a rolling reboot of all four nodes."
+          },
+          {
+            "source": "21:42:07, node1 (final recorded command)",
+            "finding": "wsrep_incoming_addresses lists all 4 node IPs; appdb.orders contains rows explicitly tagged 'WrittenOnNode2' and 'WrittenOnNode4', confirming multi-master writes were accepted and replicated across the 4-node cluster."
+          },
+          {
+            "source": "Attempt termination metadata",
+            "finding": "Lease expired at 21:43:07, about one minute after the last successful verification command and with no structured report returned."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "The task was functionally completed \u2014 a 4-node Galera cluster (node1-4) was running, synced, Primary, with pre-existing and node-local writes replicated everywhere, and it survived a full rolling reboot \u2014 but the attempt ran out of lease time before the executor could submit its structured completion report.",
+            "confidence": "high"
+          },
+          {
+            "cause": "Early time was lost to two friction points: (1) a heredoc redirect into /etc/yum.repos.d/ without sudo/tee, which silently failed and had to be reworked, and (2) RHEL7/MariaDB-10.6 dependency resolution requiring manual RPM fetches from vault.centos.org for rsync/perl-Socket, which itself hit further unresolved perl module deps.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "Foreground `yum install` calls for the full MariaDB+Galera package set on node3/node4 exceeded the platform's 120-second proxy read timeout, which likely triggered retries or re-verification steps that consumed additional lease time even though the install may have completed server-side.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "A transient root@localhost auth issue on node2 (Access denied) required extra troubleshooting before verification could proceed, though it was resolved by 21:40:56.",
+            "confidence": "low"
+          }
+        ],
+        "next_attempt_guidance": [
+          "Write privileged files via `sudo tee /etc/yum.repos.d/mariadb.repo` (or write to /tmp then `sudo mv`) instead of a bare heredoc redirect \u2014 the redirect itself is not run as root even inside an exec that has sudo available.",
+          "For MariaDB-10.6 on RHEL7, expect rsync and perl(Socket)-family packages to be missing from base repos; either enable EPEL/vault.centos.org base repos first or pre-stage the full perl dependency chain (Carp, Exporter, XSLoader, strict, warnings::register) rather than pulling rsync/perl-Socket one-off.",
+          "Run `yum install` for the full MariaDB+Galera package set in background with output redirected to a log file and poll it, per the platform's streaming-command pattern, rather than a single foreground call \u2014 this avoids the 120s proxy timeout seen on node3/node4 and avoids ambiguity about whether the install actually completed.",
+          "Verify package install state explicitly (`rpm -q MariaDB-server galera-4`) on every node immediately after each install step before moving on, since one node silently lagged behind the others in this attempt.",
+          "Use `sudo mysql` (unix_socket auth) for verification instead of `mysql -u root -p...` to avoid the transient 'Access denied for root@localhost' seen on node2.",
+          "Budget lease time conservatively: this attempt reached full success (4/4 nodes Synced+Primary, cross-node writes replicated, survived rolling reboot) but the lease expired ~60s later with no report submitted \u2014 submit the structured completion report as soon as the success criteria are confirmed rather than doing additional optional checks.",
+          "The working end-state pattern (bootstrap node1-3, join node4 via wsrep_cluster_address pointing at the existing 3, then verify writes from node2 and node4 replicate cluster-wide) is validated by this run's final checks and can be reused directly on a fresh cluster."
+        ]
+      }
+    }
+  ]
+}

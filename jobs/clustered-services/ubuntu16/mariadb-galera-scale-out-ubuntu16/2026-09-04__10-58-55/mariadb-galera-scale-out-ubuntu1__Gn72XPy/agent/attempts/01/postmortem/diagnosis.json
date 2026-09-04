@@ -1,0 +1,55 @@
+{
+  "evidence": [
+    {
+      "source": "15:25:01\u201315:25:04 SHOW STATUS queries on node1\u20134",
+      "finding": "All four nodes reported wsrep_cluster_size=4, wsrep_local_state_comment=Synced, and identical appdb.orders COUNT(*)=5 \u2014 the 4-node Galera cluster with shared data was up and consistent across all members."
+    },
+    {
+      "source": "15:14:46\u201315:18:56 apt-get purge/install commands on node2, node3, node4",
+      "finding": "Three consecutive attempts to purge mariadb-server (10.0) and install mariadb-server-10.1 + rsync each timed out with 'AntriebMCPError: ... 120-second Proxy Read Timeout', run synchronously in the foreground rather than backgrounded per platform guidance."
+    },
+    {
+      "source": "15:19:08\u201315:19:20 pkill/dpkg --configure -a on all four nodes",
+      "finding": "Executor had to force-kill dpkg/debconf/apt-get processes left running after the timed-out installs, then repair the package state with dpkg --configure -a, before the cluster could be verified \u2014 direct evidence of disruption caused by the earlier synchronous install approach."
+    },
+    {
+      "source": "15:25:07\u201315:25:49 reboot sequence on node4, then node3",
+      "finding": "Both node4 and node3 were rebooted and successfully rejoined the cluster (Synced, Primary, cluster_size=4, correct data), confirming Galera auto-rejoin worked for at least 2 of 4 nodes."
+    },
+    {
+      "source": "15:25:51 reboot command on node2",
+      "finding": "Immediately after issuing the reboot command for node2 (the third node in the resilience test), the record shows outcome 'cluster_expired' with error 'The Antrieb managed cluster lease expired' \u2014 this is also the recorded termination cause for the whole attempt."
+    },
+    {
+      "source": "All selected records",
+      "finding": "No SELECT/UPDATE/INSERT write command specifically targeting node4 appears in the selected evidence \u2014 only read-only COUNT(*) queries were run against it, so 'node4 accepts writes' is not directly demonstrated in the audit, only inferred from Galera's default multi-master behavior once a node reports wsrep_cluster_status=Primary."
+    }
+  ],
+  "likely_causes": [
+    {
+      "cause": "The attempt was terminated by cluster lease expiry (a session time/quota boundary), not by a functional defect in the cluster setup \u2014 the 4-node cluster was already Synced/Primary with consistent data at the last full observation.",
+      "confidence": "high"
+    },
+    {
+      "cause": "Time was lost earlier in the session to three back-to-back apt-get purge/install commands that exceeded the 120s synchronous exec limit, followed by manual process-killing and dpkg repair across all four nodes. This ate into the session's time budget and likely contributed to the lease expiring during the reboot-resilience verification pass instead of after it.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "Running the reboot-resilience check serially, node-by-node, at the very end of the session (node4, then node3, then node2 in progress) left no slack for the third/fourth node's verification before the lease ran out.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "The default Ubuntu 16.04 mariadb-server package (10.0) was deemed insufficient and replaced with 10.1, suggesting either a version/package mis-selection early on or a deliberate upgrade \u2014 either way it required a disruptive purge+reinstall cycle across 3 nodes.",
+      "confidence": "low"
+    }
+  ],
+  "next_attempt_guidance": [
+    "Decide the MariaDB/Galera package and version up front (check whether Ubuntu 16.04's default mariadb-server 10.0 supports wsrep/Galera adequately, or plan directly for a 10.1+ repo) to avoid a mid-run purge-and-reinstall across all data nodes.",
+    "Never run apt-get purge/install synchronously in the foreground when it may exceed ~120s; use the redirect+background+poll pattern (`cmd > /tmp/out.log 2>&1 & echo $! > pid; tail /tmp/out.log` in follow-up execs) as specified in the platform primer.",
+    "If an install does hang, confirm via `ps`/log tail that it's actually stuck (not just slow) before force-killing dpkg/debconf/apt processes; killing mid-transaction is what necessitated the dpkg --configure -a repair across 4 nodes.",
+    "After confirming cluster_size=4 / Synced / Primary with matching row counts, explicitly perform a write (INSERT/UPDATE) directed at node4 and re-verify it replicates to node1\u20133, to directly prove node4 'accepts writes like the other members' rather than relying on read-only checks.",
+    "Run reboot-resilience verification (if desired) earlier in the session or in parallel across nodes rather than serially at the end, so a lease/time boundary doesn't cut off verification partway through.",
+    "Track remaining session/lease time budget and prioritize confirming the core requirement (4-node cluster with shared data, node4 accepting writes) before spending remaining time on supplementary resilience testing like reboots."
+  ],
+  "summary": "The redacted audit shows the core task was very likely achieved: by 15:25 UTC all four nodes (node1\u20134) independently reported wsrep_cluster_size=4, wsrep_local_state_comment=Synced, wsrep_cluster_status=Primary, and identical appdb.orders row counts, and node4 and node3 both successfully rejoined the cluster after a reboot. The attempt was not terminated by a technical failure in the cluster itself but by the Antrieb managed cluster lease expiring, which struck exactly as the executor issued a reboot to node2 as the third step of a serial reboot-resilience check. Earlier in the session, three synchronous apt-get purge/install commands (replacing mariadb-server 10.0 with 10.1) each hit the 120-second proxy timeout and required manual process-killing and dpkg repair across all nodes \u2014 this likely consumed session time that would otherwise have been available to complete verification before the lease expired. One evidence gap: no write operation specifically targeting node4 is present in the selected records, so 'node4 accepts writes' is inferred from Galera Primary state rather than directly observed."
+}

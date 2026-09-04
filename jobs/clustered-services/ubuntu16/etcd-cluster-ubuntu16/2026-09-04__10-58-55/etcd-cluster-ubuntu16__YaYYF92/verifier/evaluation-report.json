@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Build a three-member etcd cluster across node1, node2, and node3",
+      "status": "satisfied",
+      "summary": "After correcting a stale single-member bootstrap (data dir wipe and simultaneous restart), etcdctl cluster-health and member list from node1 show all three members (node1, node2, node3) healthy with correct peer/client URLs bound to each node's real IP (10.100.70.10/.11/.12), confirming a genuine static 3-member cluster rather than three independent single-node instances.",
+      "evidence_ids": [
+        "cmd-7bd30133c9294e0d"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "A key written through any member must be readable from the others",
+      "status": "satisfied",
+      "summary": "A key written on node1 (/bench/key1) was read back correctly from node2 and node3, and a key written on node3 (/bench/key2) was read back correctly from node1 and node2, demonstrating bidirectional replication across all three members.",
+      "evidence_ids": [
+        "cmd-068851360a724781",
+        "cmd-d22cb9aab7f446c7",
+        "cmd-0a2aa6332fa445c5",
+        "cmd-3292652e6aa54a6b",
+        "cmd-3b22f1f0ca0f4d95",
+        "cmd-5998ba4d972e4de4"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Cluster keeps serving reads and writes while one member is unavailable",
+      "status": "satisfied",
+      "summary": "etcd was stopped on node3 (systemctl stop, confirmed inactive). With node3 down, cluster-health from node1 showed node3 unreachable but the 2/3 quorum cluster still healthy, and a new key (/bench/key3) was successfully written and read from node1, then independently read from node2 -- directly demonstrating continued availability during a bounded, real disruption rather than only via configuration.",
+      "evidence_ids": [
+        "cmd-32713107eaab4e99",
+        "cmd-88a596d61d7c453d",
+        "cmd-093a6dcf76194551"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Bring the unavailable member back up to date when it returns",
+      "status": "satisfied",
+      "summary": "node3's etcd service was restarted, cluster-health returned to 3/3 healthy, and node3 itself successfully read back /bench/key3 (written while it was down) and /bench/key1, directly showing it resynchronized rather than merely rejoining without catching up.",
+      "evidence_ids": [
+        "cmd-77e3b929ed6044b6",
+        "cmd-bf7851af41c4414b"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the task -- forming a 3-member etcd cluster, cross-member key replication, continued read/write availability during a real single-member outage, and resynchronization of the returning member -- are directly demonstrated with concrete before/after command output, not just configuration or executor claims. The mandatory provider-wide node-restart protocol was also executed and evidenced coherently on all three nodes, with boot-identity changes cross-checked against the fixed after-prepare/after-executor snapshots (exact match), and etcd/cluster health and all three test keys confirmed present after each reboot. The build process included a stale single-member bootstrap that required two corrective data-dir wipe-and-restart cycles before the cluster formed correctly; these are treated as legitimate corrective actions rather than unnecessary mutations since no real data existed yet and the end state is fully healthy, though a few /tmp/etcd.conf files were left behind as minor residue.",
+  "limitations": [
+    "Only two of the three possible source-member write directions were exercised (node1->others, node3->others); node2 was never used as the write source, though this is a reasonable sampling of the requirement.",
+    "No listening-socket evidence explicitly shows etcd's ports bound in the lifecycle snapshots (the listening-sockets observation returned empty on all nodes at all phases), so cluster network exposure relies on the etcdctl health/member-list output rather than a socket-level check.",
+    "/tmp/etcd.conf files created during configuration were not cleaned up on any node; low-risk but unaddressed residue."
+  ],
+  "command_stats": {
+    "total": 57,
+    "successful": 54,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "The executor's first bootstrap attempt (cmd-67bfa40a06a44bd0, cmd-5df1c1145d424493, cmd-d9be9c4cd8b34e2e -- sequential 'systemctl restart etcd' with ETCD_INITIAL_CLUSTER_STATE=new) produced a single-member cluster instead of the intended 3-member cluster, visible in cmd-e700500a47a2414e (only node1's own member listed). The executor diagnosed this via read-only checks (cmd-ddb0e6759dbc4882, cmd-143bd2b3355942e1) and corrected it in two passes: first a partial data-dir wipe and simultaneous restart (cmd-f41c730371a64c6a/cmd-be13e7f4e63248ba/cmd-80bdbb4228c143b4 + cmd-9aa95edc4a4a49b4/cmd-9531de0ece1745bc/cmd-e35c14f2d96a4d27), which still failed (cmd-15f5996d676541e7 shows single member again), then a full removal of /var/lib/etcd/default (cmd-10c7f4ceed0d4098, cmd-8dc5eafa7d6342b9, cmd-e17b10c407d743c7) followed by a truly simultaneous restart (cmd-03681c778dcf4bab, cmd-ea02cf1b6c3f4de2, cmd-41e964d673b147f5) that succeeded. These repeated stop/wipe/restart cycles are corrective actions directly tied to achieving the required 3-member cluster (no data had been written yet, so the wipes were low-risk and fully superseded by the working end state) rather than unrelated experiments, so they are not treated as unnecessary mutations, but they reflect an imperfect first attempt worth noting. One minor residue: /tmp/etcd.conf was created on each node (cmd-09d5be4165ed463e, cmd-5e4367d7a703483e, cmd-ad5228ffa37d4492) and copied into /etc/default/etcd but the /tmp copies were never cleaned up -- bounded, low-risk leftover files, not reverted. No failed services, unexpected listening sockets, or package-manager damage appear in the after-executor snapshot; the only differences from after-prepare are the expected boot-identity changes and per-boot systemd-private tmp directories from the required reboot protocol.",
+    "evidence_ids": [
+      "cmd-67bfa40a06a44bd0",
+      "cmd-e700500a47a2414e",
+      "cmd-f41c730371a64c6a",
+      "cmd-15f5996d676541e7",
+      "cmd-10c7f4ceed0d4098",
+      "cmd-7bd30133c9294e0d",
+      "cmd-09d5be4165ed463e",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

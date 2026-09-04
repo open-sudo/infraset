@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-established",
+      "requirement": "Three-member Galera cluster established across node1/node2/node3, holding application data",
+      "status": "satisfied",
+      "summary": "After bootstrap+join, cmd-1878a63d1de5497e shows wsrep_cluster_size=3, status Primary, state Synced, with incoming addresses for all three nodes. appdb.orders was created and 3 rows inserted on node1 (cmd-15a01f4aa0fd4d8f, later a 4th row via cmd-9448d2b48966424f) and independently confirmed present via SELECT on node2 (cmd-51b89be833eb4e8c) and node3 (cmd-dab8bf5aa99c4156).",
+      "evidence_ids": [
+        "cmd-1878a63d1de5497e",
+        "cmd-15a01f4aa0fd4d8f",
+        "cmd-51b89be833eb4e8c",
+        "cmd-dab8bf5aa99c4156",
+        "cmd-9448d2b48966424f"
+      ]
+    },
+    {
+      "id": "full-shutdown",
+      "requirement": "Cluster brought down completely for a maintenance window",
+      "status": "satisfied",
+      "summary": "node2 stopped (cmd-609bd1a1d4ae46db, is-active -> inactive), node3 stopped (cmd-411775ea183f4213, inactive), node1 stopped last (cmd-593ed91256834b08, inactive) with grastate.dat showing safe_to_bootstrap:1 for a clean shutdown record. All three were confirmed inactive in sequence, directly showing a full-cluster down state.",
+      "evidence_ids": [
+        "cmd-609bd1a1d4ae46db",
+        "cmd-411775ea183f4213",
+        "cmd-593ed91256834b08"
+      ]
+    },
+    {
+      "id": "restart-with-data-and-membership",
+      "requirement": "Cluster brought back after maintenance with every committed write present and all three members serving",
+      "status": "satisfied",
+      "summary": "node1 rebootstrapped via galera_new_cluster (cmd-e8d0521337b74fc7) and immediately showed all 4 committed rows. node2 (cmd-a94accf73a0642b6) and node3 (cmd-bd9ca2581f41440c) rejoined and started successfully. Post-recovery checks (cmd-f60e959387cb46ea, cmd-b776074d00734afb, cmd-90c3a5352e1141a8) confirm cluster_size=3, Primary, Synced, and identical 4-row dataset on every node; final cross-check (cmd-067a2c141b444181) reconfirms size 3, all incoming addresses, and correct row count/sum.",
+      "evidence_ids": [
+        "cmd-e8d0521337b74fc7",
+        "cmd-a94accf73a0642b6",
+        "cmd-bd9ca2581f41440c",
+        "cmd-f60e959387cb46ea",
+        "cmd-b776074d00734afb",
+        "cmd-90c3a5352e1141a8",
+        "cmd-067a2c141b444181"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide sequential node-restart evidence protocol on all managed nodes (baseline, ack, changed boot identity, recovered service/data/cluster state)",
+      "status": "satisfied",
+      "summary": "Each node shows a pre-restart boot_id baseline, an async systemctl reboot acknowledgement, connection loss during the transition, a distinct post-restart boot_id, and confirmed mariadb active with cluster_size=3/Synced (Primary for node1 and node3) and the full 4-row dataset intact. This is cross-checked by the fixed before_prepare/after_executor boot-identity snapshots, which independently show matching boot_id changes for all three nodes (fb2aa416->758116b3, 45c22b1f->e1ae058d, bccb87ac->d21d7a69) and healthy listening sockets (3306/4567) post-restart with no failed services.",
+      "evidence_ids": [
+        "cmd-d99b5f7586494056",
+        "cmd-07ec0fbb942d4e82",
+        "cmd-eb5a4f3594f644fc",
+        "cmd-2c8c4f138f054b6c",
+        "cmd-8fa182627f964662",
+        "cmd-c366b29ffd4a4a2f",
+        "cmd-023ab093a9824f57",
+        "cmd-0d811259f1cf4a32",
+        "cmd-297e82cabf154964",
+        "cmd-e023ca327d834bdb",
+        "cmd-6d77ad9155aa464a",
+        "cmd-b71a4c1157e84208",
+        "cmd-5a684bfb9dc6464d",
+        "cmd-a0a9f30433d54fca",
+        "cmd-fc0868410be94163",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node1:listening-sockets",
+        "global:after_executor:node1:failed-services"
+      ]
+    }
+  ],
+  "overall_summary": "The executor deployed a working 3-node MariaDB Galera cluster from scratch, loaded application data, performed a full simultaneous shutdown of all three nodes for a maintenance window, and brought the cluster back with all four committed rows present and all three members rejoined and Synced. It additionally executed the mandatory per-node reboot protocol on all three nodes with clear before/after boot-identity evidence, disconnection during reboot, and confirmed post-reboot cluster/data recovery, corroborated by the fixed lifecycle boot-identity and listening-socket snapshots. All four material outcomes are satisfied with direct, coherent evidence. Hygiene is good but not perfect: a debugging package (strace) and various /tmp log artifacts from install/reboot/troubleshooting were left behind on all nodes, and root/SST secret files remain on disk in plaintext form (though permission-restricted).",
+  "limitations": [
+    "Evidence for the maintenance shutdown relies on sequential systemctl stop calls with only the final node's is-active check confirming inactivity at that moment; there is no single simultaneous cluster-wide snapshot proving all three were down at the exact same instant, though the ordering and grastate.dat capture support a genuine full shutdown.",
+    "Root and SST auth passwords are stored as plaintext files (mode 600) on all three nodes and were not removed after use; this is standard for lab automation but represents residual sensitive material.",
+    "Minor executor-created residue (extra installed strace package, assorted /tmp log files) remains on all three nodes per the after_executor snapshot; this does not affect cluster functionality but is a hygiene deduction."
+  ],
+  "command_stats": {
+    "total": 112,
+    "successful": 93,
+    "failed": 19,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing troubleshooting was purposeful and properly resolved: the custom SELinux policy module built via audit2allow/semodule -i (cmd-c590b47a3f7d4740) was explicitly removed (semodule -r, cmd-e81381aeb5a246e1) and replaced with the supported daemons_enable_cluster_mode boolean, and the corrupted /var/lib/mysql on node2 after a failed SST was deliberately wiped and reinitialized (cmd-1449dcc85bab45df, cmd-1b0a6bc53c104558) as a corrective action rather than residue. However, several low-risk items were left behind and are unnecessary mutations relative to the task: the strace package was installed for debugging (cmd-b2b7310c66f143f4) and never removed; numerous /tmp log/pid files from install and reboot attempts (install.log, gnc.log, gnc2.log, mariadbd.log, strace.log, reboot.log, start.log, etc.) remain on all three nodes per the after_executor temporary-files diff; and plaintext secret files (/root/.sst_pass, /root/.mysql_root_pass) remain readable on disk (chmod 600) rather than being cleaned up after cluster-wide propagation. None of these are broad, destructive, or security-weakening beyond minor residue, so hygiene is scored as good but not perfect.",
+    "evidence_ids": [
+      "cmd-b2b7310c66f143f4",
+      "cmd-c590b47a3f7d4740",
+      "cmd-e81381aeb5a246e1",
+      "cmd-1449dcc85bab45df",
+      "cmd-1b0a6bc53c104558",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,107 @@
+{
+  "status": "completed",
+  "summary": "Configured PostgreSQL 15 streaming replication across node1 (primary, writable) and node2/node3 (async streaming standbys, read-only). Installed PGDG + CentOS7 vault + EPEL7-archive repos to satisfy RHEL7 dependency gaps, initialized the primary, created a replicator role, opened firewalld port 5432, took pg_basebackup-based standbys with -R (auto standby.signal + primary_conninfo), and verified live replication of writes from primary to both standbys and read-only enforcement on standbys. Completed the mandatory one-at-a-time restart protocol on all three nodes (standbys first, primary last), proving changed boot IDs and full recovery of PostgreSQL service, replication streaming, and committed data on each node.",
+  "actions_performed": [
+    "Inspected OS/repo state on node1-3 (RHEL 7.9, no configured yum repos)",
+    "Killed a stuck 'yum -q check' health-check process holding the yum lock on all three nodes and recovered node3's corrupted rpmdb",
+    "Installed the PGDG RHEL7 repo on all nodes and disabled EOL pgdg9-14 sub-repos (pgdg12 upstream returned HTTP 410)",
+    "Added CentOS-7 vault base/extras repos and an EPEL7 archive repo to satisfy postgresql15 dependency chain (libicu, libzstd)",
+    "Installed postgresql15-server/contrib on node1, node2, node3",
+    "Initialized the primary DB on node1, set wal_level=replica, max_wal_senders, max_replication_slots, hot_standby, listen_addresses='*'",
+    "Added pg_hba.conf rules on node1 for replication and client connections from the cluster subnet",
+    "Opened firewalld port 5432/tcp on all three nodes",
+    "Started postgresql-15 on node1 and created a 'replicator' role with a generated password (passed via secret_env, never printed in final report)",
+    "Created appdb.demo table and seed row on primary",
+    "Ran pg_basebackup with -R from node1 to node2 and node3 to bootstrap standbys (redid node2's backup once after a stale-WAL failure caused by the firewall delay)",
+    "Started postgresql-15 on node2/node3, confirmed pg_stat_replication showed both streaming and pg_is_in_recovery()=true on standbys",
+    "Verified writes on primary replicate to both standbys and that standbys reject INSERTs (read-only)",
+    "Captured boot_id/service/replication baseline on all three nodes",
+    "Restarted node2, then node3, then node1 (primary) one at a time via systemctl reboot, polling each until exec was available again",
+    "Verified changed boot_id, postgresql-15 active, replication re-established, and demo table data intact after each restart",
+    "Performed a final post-restart write on primary and confirmed it replicated to both standbys",
+    "Removed the temporary plaintext replication password file from node1"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 configured as writable PostgreSQL primary",
+      "command_ids": [
+        "cmd-bd9c008b5e9a4232",
+        "cmd-a175e5cc55a84ba6",
+        "cmd-667ae2b1716b4a1d"
+      ],
+      "summary": "initdb run, postgresql-15 service active, appdb/demo table created and seeded on node1"
+    },
+    {
+      "requirement": "node2 and node3 configured as read-only streaming standbys",
+      "command_ids": [
+        "cmd-4a0988cb207c4168",
+        "cmd-837283c0e6904b7a",
+        "cmd-087ad07c37b941a3",
+        "cmd-99c28d9eb5114342",
+        "cmd-ee40d57af8774f30",
+        "cmd-bedeb0e0a9134d0b"
+      ],
+      "summary": "pg_basebackup with -R created standby.signal + primary_conninfo on both nodes; pg_stat_replication on node1 shows both node2 (10.100.169.11) and node3 (10.100.169.12) in 'streaming' state"
+    },
+    {
+      "requirement": "primary is writable; standbys are read-only",
+      "command_ids": [
+        "cmd-3b8b8a09ce344007",
+        "cmd-c534490500d34335",
+        "cmd-8c2220e92bbd4823"
+      ],
+      "summary": "INSERT succeeded on node1; identical INSERT failed with 'cannot execute INSERT in a read-only transaction' on node2 and node3"
+    },
+    {
+      "requirement": "Changes committed on primary are visible on both standbys",
+      "command_ids": [
+        "cmd-3b8b8a09ce344007",
+        "cmd-a8b18c1a5ef04046",
+        "cmd-0ee1ad99830e41b3"
+      ],
+      "summary": "Row inserted on node1 ('live replication check') appeared in appdb.demo on both node2 and node3"
+    },
+    {
+      "requirement": "node1 mandatory restart: baseline, restart, changed boot id, recovery",
+      "command_ids": [
+        "cmd-3ea916054c7947ff",
+        "cmd-10c002fb80fe4fd6",
+        "cmd-2a4da23bf4f8452b",
+        "cmd-63edb8781b304de8",
+        "cmd-1cb69a3f893f4189"
+      ],
+      "summary": "Baseline boot_id 9ed9e820...; systemctl reboot acknowledged then connection dropped; node reachable again; new boot_id c9807cdb... (changed); postgresql-15 active, primary not in recovery, data intact, both standbys reconnected as streaming"
+    },
+    {
+      "requirement": "node2 mandatory restart: baseline, restart, changed boot id, recovery",
+      "command_ids": [
+        "cmd-e5a9ff4febd84ae5",
+        "cmd-d228e21574d849fc",
+        "cmd-779da1e9ace84e0c",
+        "cmd-2aa3e979e139435a",
+        "cmd-6eb0cc7f0e1f4315"
+      ],
+      "summary": "Baseline boot_id a8e7c48c...; systemctl reboot acknowledged; node reachable again; new boot_id 00401e61... (changed); postgresql-15 active, standby recovering, demo rows intact, resumed streaming confirmed on primary"
+    },
+    {
+      "requirement": "node3 mandatory restart: baseline, restart, changed boot id, recovery",
+      "command_ids": [
+        "cmd-e98aa5385b3041aa",
+        "cmd-e203ca2a059f4afd",
+        "cmd-ba14dde38e2e4209",
+        "cmd-8b3b18bbfafa484f",
+        "cmd-303568b1f1834ed6"
+      ],
+      "summary": "Baseline boot_id 151c4aa9...; systemctl reboot acknowledged; node reachable again; new boot_id f4f718ed... (changed); postgresql-15 active, standby recovering, demo rows intact, resumed streaming confirmed on primary"
+    },
+    {
+      "requirement": "Full cluster health verified after all restarts (final end-to-end proof)",
+      "command_ids": [
+        "cmd-2d56e91afc01476e",
+        "cmd-acb4f4be79014a54",
+        "cmd-423c065305784818"
+      ],
+      "summary": "Post-restart INSERT on primary ('post-restart verification') replicated to and visible on both node2 and node3"
+    }
+  ]
+}

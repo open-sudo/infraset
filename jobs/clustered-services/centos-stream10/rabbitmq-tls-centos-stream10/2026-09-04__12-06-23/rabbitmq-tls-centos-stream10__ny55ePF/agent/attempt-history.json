@@ -1,0 +1,82 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-04T16:27:35.956913+00:00",
+      "outcome": "cluster_expired",
+      "finished_at": "2026-09-04T16:47:31.886165+00:00",
+      "error": "The Antrieb managed cluster lease expired",
+      "diagnosis": {
+        "summary": "The attempt built a working 3-node RabbitMQ cluster with AMQP TLS and CA-issued client-cert verification (confirmed by openssl s_client showing 'Verify return code: 0'), and quorum-queue replication across all three nodes was demonstrated. However, the audit trail shows a persistent, never-resolved fault: essentially every `rabbitmqctl list_queues` call from ~16:41 onward times out with `{:badrpc, {:timeout, 60.0, \"Some queue(s) are unresponsive...\"}}` on all three nodes, both before and after two deliberate node reboots (node2 and node3), even though `rabbitmq-diagnostics check_running`/`check_alarms` reported healthy. The executor was still investigating this (tailing node3's log, re-checking TLS) when the cluster lease expired mid-command \u2014 the run ended on infrastructure lease exhaustion, not a reported task failure. Separately, the observed `ss -tlnp` output shows the management port bound to `0.0.0.0:15672` (all interfaces) with no firewall/iptables commands visible in the (partial) audit log, which is inconsistent with the task's requirement to keep the management UI reachable only from within the cluster \u2014 though the audit only contains 21 of 82 terminal records, so a firewall step may have been issued but not captured.",
+        "evidence": [
+          {
+            "source": "node1 16:29:52 ssh attempt",
+            "finding": "Initial passwordless SSH from node1 to node2/node3 failed with 'Permission denied (publickey,gssapi-keyex,gssapi-with-mic,password)' \u2014 cluster SSH key setup was not yet in place/propagated."
+          },
+          {
+            "source": "node1 16:45:16 scp of client_cert.pem/client_key.pem to node2",
+            "finding": "scp to node2 succeeded (return_code 0), showing SSH between nodes was working later in the run \u2014 the earlier failure was transient or resolved by that point, but no command in the visible log explicitly shows the fix."
+          },
+          {
+            "source": "node1/node2/node3 16:41\u201316:47 rabbitmqctl list_queues calls",
+            "finding": "Repeated `{:badrpc, {:timeout, 60.0, \"Some queue(s) are unresponsive, use list_unresponsive_queues command.\"}}` across multiple nodes and after two full node reboots \u2014 a recurring, unresolved symptom."
+          },
+          {
+            "source": "node3 16:47:11 rabbitmq-diagnostics check_running/check_alarms",
+            "finding": "Node reported 'fully booted and running' with no alarms even while list_queues was timing out \u2014 indicates the hang is scoped to specific queue processes, not overall node health."
+          },
+          {
+            "source": "node2 16:45:20 openssl s_client with CA + client cert",
+            "finding": "'Verify return code: 0 (ok)' confirms TLS handshake succeeded with a CA-issued client certificate against port 5671 \u2014 the core TLS/mTLS requirement was functioning."
+          },
+          {
+            "source": "node2 16:45:06 ss -tlnp",
+            "finding": "15672 (management) listening on 0.0.0.0:*, and 5671 (AMQP TLS) listening on *:5671 \u2014 no evidence in the captured commands of a firewall rule restricting 15672 to cluster-internal sources."
+          },
+          {
+            "source": "node1 16:40:05 quorum_setup.py + list_queues",
+            "finding": "Quorum queue 'ha_test_q' created with members on rabbit@node1, rabbit@node2, rabbit@node3 \u2014 cluster formation and quorum replication succeeded at that point in time."
+          },
+          {
+            "source": "node2/node3 16:43\u201316:46 reboot sequence",
+            "finding": "Both node2 and node3 were deliberately rebooted (`systemctl reboot`) and rejoined the cluster automatically afterward (rabbitmq-server active, cluster_status shows all 3 running nodes) \u2014 service persistence across reboot worked."
+          },
+          {
+            "source": "node3 16:47:31 final command",
+            "finding": "Cluster lease expired mid-command while executor was tailing rabbit@node3.log and re-checking TLS on port 5671 against node3, investigating the unresponsive-queue symptom \u2014 run ended due to lease exhaustion, not a reported application error."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "A specific queue process (likely the classic, non-mirrored queues `cluster_test_q` or `tls_test_q`, or a leader/follower sync issue on `ha_test_q`) became stuck/unresponsive, causing `list_queues` RPC calls to hang cluster-wide even though the nodes themselves were healthy.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "Mnesia/queue state desynchronization triggered by the two mid-task node reboots (node2 then node3) \u2014 reboots were issued while the cluster and its queues were mid-setup, which may have left one or more queue replicas in a bad state.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "Management interface was left bound to all interfaces (0.0.0.0:15672) without a compensating firewall rule, meaning the 'management reachable only within cluster' requirement was likely not satisfied at the time of lease expiry.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "Early SSH key propagation to node2/node3 was racy at cluster startup (permission denied before authorized_keys took effect), which may have delayed inter-node setup steps and pushed the run closer to the lease timeout.",
+            "confidence": "low"
+          }
+        ],
+        "next_attempt_guidance": [
+          "Verify SSH key propagation completes (retry loop, not single attempt) before proceeding with any node2/node3 setup steps, since the first SSH attempt failed with Permission denied.",
+          "After creating quorum/classic queues, immediately run `rabbitmqctl list_queues` (or `rabbitmq-diagnostics check_running`) with a short timeout to catch an unresponsive-queue condition early, rather than only discovering it ~10+ minutes later.",
+          "Avoid rebooting nodes while cluster/queue setup is still in progress; if reboot-resilience needs to be tested, do it as a distinct, later step after confirming `list_queues` returns cleanly and all queues are healthy.",
+          "If `list_queues` hangs again, use `rabbitmqctl list_unresponsive_queues` (as the error message itself suggests) to identify the specific stuck queue rather than repeatedly retrying the full listing.",
+          "Explicitly bind or firewall the management port (15672) to cluster-internal addresses only (e.g., via RabbitMQ's `management.tcp.ip` config or iptables/firewalld rules scoped to CLUSTER_HOSTS), and verify with `ss -tlnp` plus an external-reachability check that it is not exposed on 0.0.0.0.",
+          "Budget time conservatively \u2014 this attempt was still mid-debugging when the cluster lease expired, so front-load TLS/mTLS and management-interface restriction verification before spending extended time on reboot/resilience testing.",
+          "Since cluster access is unavailable for this attempt, treat all conclusions about current state as historical; a fresh cluster must re-verify TLS, client-cert enforcement, management-interface scope, and queue responsiveness from scratch."
+        ]
+      }
+    }
+  ]
+}

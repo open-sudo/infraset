@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "replication-topology",
+      "requirement": "Configure PostgreSQL streaming replication across node1, node2, node3 with node1 as writable primary",
+      "status": "satisfied",
+      "summary": "pg_basebackup -R succeeded from node1 to both node2 and node3; both entered standby recovery mode (pg_is_in_recovery=t) and appear in pg_stat_replication on node1 in 'streaming' state. node1 remained the read-write primary throughout, confirmed by successful INSERTs executed there.",
+      "evidence_ids": [
+        "cmd-613bbcfeaae84c7f",
+        "cmd-a40949ce43fc4f13",
+        "cmd-35ae4e7da900423a",
+        "cmd-a3bbae34f6dd4597",
+        "cmd-187a122a6b58430b",
+        "cmd-73ab0b3010b4459a"
+      ]
+    },
+    {
+      "id": "tls-ca",
+      "requirement": "Carry replication traffic over TLS using a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A self-signed CA (ca.key/ca.crt, CN=pg-replication-ca) was generated on node1; per-node server certs and a replicator client cert were issued from it and installed on all nodes. postgresql.conf on all nodes enables ssl=on with the cluster CA/cert/key paths. Standby primary_conninfo shows sslmode='verify-full', and pg_stat_ssl on the primary shows ssl=t for both replica connections with client_dn=/CN=replicator, directly confirming TLS-secured, CA-authenticated replication streams.",
+      "evidence_ids": [
+        "cmd-e1fcc1234ac945c3",
+        "cmd-4d5c7428203d4da4",
+        "cmd-b05b7b02a3584ee4",
+        "cmd-844caa29901d4221",
+        "cmd-a2278825df384749",
+        "cmd-187a122a6b58430b"
+      ]
+    },
+    {
+      "id": "cert-restricted-access",
+      "requirement": "Accept replication connections only from peers presenting a certificate issued by the cluster CA",
+      "status": "satisfied",
+      "summary": "pg_hba.conf on node1 requires hostssl + cert + clientcert=verify-full for the replicator role, scoped to the node2/node3 IPs. Legitimate replicas connect successfully presenting the CA-issued client cert (client_dn=/CN=replicator). A negative test using a self-signed certificate from a different CA (same CN) was directly rejected by the server with 'SSL error: tlsv1 alert unknown ca', which is direct behavioral proof of CA-based access enforcement rather than just configuration.",
+      "evidence_ids": [
+        "cmd-f3f1266a05f24ace",
+        "cmd-187a122a6b58430b",
+        "cmd-ab7e1cba6d9a4936",
+        "cmd-8c22df7133dc409d"
+      ]
+    },
+    {
+      "id": "write-propagation",
+      "requirement": "Data written on the primary must propagate correctly to both replicas (implicit functional requirement of a working replication cluster)",
+      "status": "satisfied",
+      "summary": "A row inserted on node1 (id=1, 'hello-from-primary') was observed on both node2 and node3 shortly after; a second insert made after the full rolling restart (id=2) also propagated to both replicas, confirming a working, durable replication data path.",
+      "evidence_ids": [
+        "cmd-73ab0b3010b4459a",
+        "cmd-e4e1e54a33e34b97",
+        "cmd-f8f81a7b44cc4b6e",
+        "cmd-1b571e4d81564ea5",
+        "cmd-cb7e201fe1e64e1b",
+        "cmd-34dba19b98104083"
+      ]
+    },
+    {
+      "id": "restart-node3",
+      "requirement": "Provider-wide restart evidence protocol: node3 pre-restart baseline, restart, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id df9e2dce captured, healthy standby state implicit from prior streaming confirmation. Reboot issued and acknowledged; post-restart boot_id 728dd650 differs (also cross-checked against the fixed after-prepare/after-executor snapshots). Post-restart, PostgreSQL is active, standby recovery=true, repl_test data intact, and node1 shows node3 reconnected as a streaming replica.",
+      "evidence_ids": [
+        "cmd-b45ed0834a9142ed",
+        "cmd-340d327b8df1485a",
+        "cmd-c43e13b7de214a92",
+        "cmd-2f6fd43d840d4acd",
+        "cmd-6a71b6b215644408"
+      ]
+    },
+    {
+      "id": "restart-node2",
+      "requirement": "Provider-wide restart evidence protocol: node2 pre-restart baseline, restart, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id 37344ae4 captured. Reboot issued and acknowledged; post-restart boot_id 23f38bf0 differs (cross-checked against fixed snapshot). Post-restart, PostgreSQL is active, standby recovery=true, repl_test data intact, and node1 shows both replicas still streaming, confirming full recovery of role and data.",
+      "evidence_ids": [
+        "cmd-3ab8896244994efe",
+        "cmd-9484f4d2e8e84b32",
+        "cmd-6ff7864641ea4e2a",
+        "cmd-6f60efb234124e1b",
+        "cmd-4486981e40674958"
+      ]
+    },
+    {
+      "id": "restart-node1",
+      "requirement": "Provider-wide restart evidence protocol: node1 (primary) pre-restart baseline, restart, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id 4d70780a captured. Reboot issued and acknowledged, performed only after both replicas had already been restarted and recovered, preserving read availability. Post-restart boot_id 2e3b1c4f differs (cross-checked against fixed snapshot). Post-restart, PostgreSQL is active with ssl=on, both replicas reconnected as streaming, and a fresh insert on the primary propagated to both replicas, directly demonstrating full recovery of the primary's writable and TLS-replication roles.",
+      "evidence_ids": [
+        "cmd-c00caf1a16b9442e",
+        "cmd-6fa2eb6a133f477c",
+        "cmd-71725320109448de",
+        "cmd-1b571e4d81564ea5",
+        "cmd-cb7e201fe1e64e1b",
+        "cmd-34dba19b98104083"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a fully functional TLS-secured PostgreSQL streaming replication cluster: node1 is the writable primary, node2/node3 are standbys seeded via pg_basebackup, and all replication traffic is encrypted and authenticated using a cluster-created CA. Direct evidence (pg_stat_replication, pg_stat_ssl with client_dn) confirms both replicas are streaming over verified TLS connections, and a negative test with a differently-signed certificate was concretely rejected ('unknown ca'), proving enforcement rather than just configuration. Write propagation was verified both before and after a full, correctly-sequenced rolling restart (replicas first, primary last) of all three nodes, with boot-identity changes, service/recovery-state recovery, and data integrity all directly observed and cross-checked against the fixed lifecycle snapshots. Minor hygiene issues exist: an abandoned SSH-based cert-distribution attempt left unused keys/host entries on all nodes, and the primary retained an unnecessary copy of the client certificate/key it doesn't use.",
+  "limitations": [
+    "The pg_hba.conf rule as evidenced restricts replication access to node2/node3's specific /32 IPs in addition to requiring the CA-issued client certificate; this is a reasonable and stricter implementation choice but was not independently tested against an intermediate scenario (valid cert from a non-whitelisted IP), so only the CA-based rejection path was directly observed.",
+    "The SSH-based certificate distribution residue (keys, authorized_keys, /etc/hosts entries) on all three nodes was never explicitly cleaned up; while low risk, it was not verified whether these entries could be leveraged for unintended access.",
+    "Evidence for the primary's own recovery focused on replication/SSL state and a post-restart insert; deeper internal consistency checks (e.g. WAL continuity, checkpoint state) across the primary's restart were not separately probed beyond the standard systemd status and psql checks shown."
+  ],
+  "command_stats": {
+    "total": 62,
+    "successful": 54,
+    "failed": 8,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Most state-changing commands map clearly to the task: package installs, CA/cert generation and distribution (via a bounded, self-terminated python http.server that was explicitly killed with cmd-61b6381e57f04b46), postgresql.conf/pg_hba.conf edits, role creation, data-directory wipe+reseed via pg_basebackup on the two replicas (a necessary prerequisite for standby setup), and the negative-test self-signed certificate (bounded, low-risk, confined to /tmp). One early restart attempt (cmd-26d0edce163849c0) failed because relative cert paths were used, and was promptly corrected with absolute paths in cmd-b05b7b02a3584ee4 -- a legitimate corrective action, not an unnecessary mutation. Two lower-severity items are unnecessary/residual mutations: (1) an SSH key/authorized_keys/etc/hosts setup on all three nodes (cmd-e0136376e63d4a40, cmd-81821c1bfb674433, cmd-fdf84d9d42824400) was attempted for cert distribution but sshd was not running (cmd-a62cbee53c6b4018), so the executor pivoted to HTTP transfer instead; the SSH keys/authorized_keys entries and /etc/hosts additions were never used or cleaned up and remain as residue on all nodes. (2) On node1 (the primary), the replicator client key/cert and CA were also copied into /var/lib/postgresql/replicator.* (cmd-3a11f8d6b284419e), which the primary does not need since it only acts as a TLS server for replication, not a client; this is harmless but unnecessary retained residue. Neither weakens security or is destructive, so severity is modest.",
+    "evidence_ids": [
+      "cmd-e0136376e63d4a40",
+      "cmd-81821c1bfb674433",
+      "cmd-fdf84d9d42824400",
+      "cmd-a62cbee53c6b4018",
+      "cmd-3a11f8d6b284419e",
+      "cmd-26d0edce163849c0",
+      "cmd-b05b7b02a3584ee4",
+      "cmd-8c884383d05f45e4",
+      "cmd-61b6381e57f04b46"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "PostgreSQL streaming replication running across node1 (primary), node2 and node3 (standbys)",
+      "status": "satisfied",
+      "summary": "node1 initialized as primary with wal_level=replica, replication role created; node2 and node3 cloned via pg_basebackup -R and confirmed streaming in pg_stat_replication on node1, with matching ledger data and pg_is_in_recovery=true on both standbys.",
+      "evidence_ids": [
+        "cmd-14ff9a1cc5b343cf",
+        "cmd-a7a42c8873054e01",
+        "cmd-fdf2cf5ffbee476b",
+        "cmd-57d41f47763341f3",
+        "cmd-fc63cfbc6a6749a9",
+        "cmd-c2c7ccd15f4a4dfe",
+        "cmd-646e7bef730747ab"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "When the primary is lost, a standby takes over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "A final committed write ('last-committed-before-outage') was confirmed replayed on both standbys (matching WAL LSNs) before node1's postgresql was stopped to simulate primary loss. node2 was promoted with pg_ctl promote, confirmed pg_is_in_recovery=false, and all 5 pre-outage rows plus a new write were present, showing zero committed-data loss during a bounded, directly observed disruption and recovery.",
+      "evidence_ids": [
+        "cmd-3b252ae4e9234d31",
+        "cmd-c27829c7fcc14ef4",
+        "cmd-98cfa595a4ac4c48",
+        "cmd-e3f411b083f741fb",
+        "cmd-ffb8767aa3a9489e",
+        "cmd-b8939f3faae94ad5",
+        "cmd-9822c01924c14929"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Recovered former primary (node1) rejoins as standby of whichever node is now primary; surviving standby (node3) also follows the new primary",
+      "status": "satisfied",
+      "summary": "node3's primary_conninfo was repointed to node2 and confirmed streaming with full data; node1 was rebuilt via pg_basebackup from node2 and rejoined as a standby (standby.signal present, pg_is_in_recovery=true). A final cluster-wide write (id 38) was confirmed present on both node1 and node3, and pg_stat_replication on node2 showed both connected.",
+      "evidence_ids": [
+        "cmd-e9e1dbc7287b4774",
+        "cmd-ec6c786d3e524836",
+        "cmd-925bef48eafa4899",
+        "cmd-708d08158c764c65",
+        "cmd-20388eceadb04833",
+        "cmd-eedc5365a3974f32",
+        "cmd-235419117a5b4bd8",
+        "cmd-18648ccb616e4c4a"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node with pre-restart boot identity/health, restart acknowledgement, changed post-restart boot identity, and recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "All three nodes show a captured pre-restart boot_id and healthy PostgreSQL/replication state, a reboot acknowledgement via systemctl reboot, a directly observed connection loss followed by a different boot_id, and recovered postgresql active state with correct role (primary on node2, standbys on node1/node3) and intact row count (7) and reconnected replication. Boot-identity transitions match the fixed lifecycle snapshot cross-check exactly (node1 c2ffc729\u219231dcade0, node2 d6298ced\u21922888cca7, node3 c207ab79\u21926b3540a2). Nodes were rebooted one at a time, preserving quorum/availability of at least one other node throughout.",
+      "evidence_ids": [
+        "cmd-b81757b85c224c61",
+        "cmd-df54a3421e9144d1",
+        "cmd-a06f03a7e5114d18",
+        "cmd-4f57755d78f644d5",
+        "cmd-2bf7c8bc82c44598",
+        "cmd-a157d6a871144a28",
+        "cmd-e6c75ea3b40041b3",
+        "cmd-f8a522b5c68940d4",
+        "cmd-3381e9ba14a44e59",
+        "cmd-216f97d2458a4256",
+        "cmd-2c4c3300babc40f5",
+        "cmd-2e2c0b17957a43f8",
+        "cmd-2747d085ce3c4888",
+        "cmd-b56e7fdef58c4873",
+        "cmd-460bda15ddbb4085",
+        "cmd-7b9858bdba7648ea",
+        "cmd-ce6a89c568be48f3",
+        "cmd-795fcad243dc491a",
+        "cmd-76bb2f26299c484e",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a three-node PostgreSQL 16 streaming replication cluster (node1 primary, node2/node3 async standbys), demonstrated a bounded primary-loss failover with a directly observed pre-outage write, standby catch-up confirmation, promotion of node2 to writable primary with zero committed-data loss, repointing of node3, and rejoining of the former primary (node1) as a fresh standby \u2014 all directly evidenced with before/after data checks. The independent node-restart protocol was also completed on all three nodes with matching boot-identity transitions confirmed against the fixed lifecycle snapshot, and recovered service/replication/data state after each reboot, performed sequentially to preserve availability. All material task outcomes are satisfied with direct, coherent evidence.",
+  "limitations": [
+    "A credential exposure incident and subsequent stuck-restart recovery were self-reported/inferred from command sequences rather than directly labeled as incidents in raw evidence; their severity is assessed from context rather than an explicit incident record.",
+    "The after_prepare snapshot is an alias of before_prepare (prepare phase disabled), so preparer-vs-executor state separation relies entirely on the executor timeline rather than an independent after-prepare capture."
+  ],
+  "command_stats": {
+    "total": 93,
+    "successful": 84,
+    "failed": 7,
+    "indeterminate": 2,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "Overall the mutation trail is well-scoped to the task, but several issues lower hygiene. (1) An initial replicator credential was briefly exposed via a debug sed/echo command (self-reported by the executor), requiring two password rotations (cmd-82a060703a69411d, cmd-4305f763e1c442e0) \u2014 a bounded, self-corrected mistake but still an unnecessary exposure that should not have occurred. (2) On node2 and node3, an attempt to add application_name to primary_conninfo and restart via `pg_ctl ... restart -m fast` (cmd-0e9a7f7c700042d5, cmd-e97c9ecc855f4076) timed out at the proxy level and left postgresql in a stuck/inactive-but-still-running state (cmd-63e7afc80df2483b, cmd-cbd52541b55e4952), requiring manual intervention (`pg_ctl stop` then `systemctl start`) to recover (cmd-ad4692d31caf460c, cmd-39280d5f8aa2434a). This was a self-inflicted disruption to already-working standbys, though it was fully corrected and did not cause data loss. (3) An empty, unused leftover file /tmp/pw.txt was created on node2 (cmd-b9fb1c05b7fd46a4) and never cleaned up, visible in the after-executor snapshot \u2014 low-risk residue but an abandoned artifact. Firewalld changes (opening the postgresql service) and dnf installs were necessary prerequisites and are not penalized. No failed services or package-health issues remained in the final snapshot.",
+    "evidence_ids": [
+      "cmd-82a060703a69411d",
+      "cmd-4305f763e1c442e0",
+      "cmd-0e9a7f7c700042d5",
+      "cmd-e97c9ecc855f4076",
+      "cmd-63e7afc80df2483b",
+      "cmd-cbd52541b55e4952",
+      "cmd-ad4692d31caf460c",
+      "cmd-39280d5f8aa2434a",
+      "cmd-b9fb1c05b7fd46a4",
+      "global:after_executor:node2:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

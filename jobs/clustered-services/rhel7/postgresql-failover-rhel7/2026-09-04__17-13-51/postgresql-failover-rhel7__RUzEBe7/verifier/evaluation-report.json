@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-baseline-replication",
+      "requirement": "Set up PostgreSQL streaming replication with node1 as writable primary and node2/node3 as standbys, with live writes propagating",
+      "status": "satisfied",
+      "summary": "node1 was installed with PostgreSQL 9.2.24 (RHEL7 base-channel packages, after PGDG repo attempts failed due to a missing libzstd dependency chain), configured for hot-standby replication, and a replicator role was created. node2 and node3 were built as standbys via pg_basebackup and confirmed streaming. pg_stat_replication on node1 showed both standbys in 'streaming' state, and a live INSERT on node1 (baseline-row-2-live-test) was directly observed replicated to both node2 and node3 via SELECT queries.",
+      "evidence_ids": [
+        "cmd-ee00a7ce848c46e5",
+        "cmd-aac1ece4005e4224",
+        "cmd-be71de82a0d046b1",
+        "cmd-b91c58b6e1d048d0",
+        "cmd-2ef6f77c18af4808",
+        "cmd-cc3b51f3dd7144f7",
+        "cmd-8b2e0ea61b4140b6",
+        "cmd-df131c9f91c841cc"
+      ]
+    },
+    {
+      "id": "req-2-failover-no-data-loss",
+      "requirement": "When the primary is lost, a standby must take over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "Before stopping node1, a third committed row (pre-failover-committed-row) was confirmed replicated to both standbys (count=3 on node2 and node3). node1 (primary) was then stopped, node2 was promoted via pg_ctl promote, pg_is_in_recovery() returned 'f' (writable), and all 3 pre-failover rows were confirmed present plus a new post-promotion write succeeded, directly demonstrating zero committed-data loss and restored writability.",
+      "evidence_ids": [
+        "cmd-911693b9228d47d7",
+        "cmd-c33de2895f8f4b04",
+        "cmd-7bbff54dfa3a418a",
+        "cmd-03b96f1342564e9f",
+        "cmd-1bea63d15a60421d",
+        "cmd-d60d5d88d1d64ae4"
+      ]
+    },
+    {
+      "id": "req-3-rejoin-as-standby",
+      "requirement": "The recovered former primary must come back as a standby of whichever system is primary, and the surviving standby must follow the new primary",
+      "status": "satisfied",
+      "summary": "node3 was repointed to node2 (copying the new timeline history file since PG 9.2 cannot fetch it over the replication stream) and confirmed 'streaming' with all 4 rows present. node1 was wiped and rebuilt as a standby of node2 via pg_basebackup, confirmed 'streaming' with all 4 rows and pg_is_in_recovery()=t. node2's pg_stat_replication confirmed both node1 and node3 connected as standbys.",
+      "evidence_ids": [
+        "cmd-4ae068cdcf5048ea",
+        "cmd-3d6cfbcac862416f",
+        "cmd-bc46aae78a5b4197",
+        "cmd-463c2fbe00ac4562",
+        "cmd-5a6b1865078c41ed",
+        "cmd-635209b447034f89"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up PostgreSQL 9.2 streaming replication across node1 (primary), node2, and node3 (standbys), directly verified live write propagation, then executed and directly evidenced a full primary-loss failover: node1 was stopped, node2 was promoted to writable primary with all pre-failover committed rows intact plus a successful post-promotion write, node3 was repointed to follow node2, and node1 was rebuilt from scratch as a standby of node2 -- all confirmed via direct pg_stat_replication and repl_check queries at each transition. The independent provider-wide node-restart protocol was also executed and evidenced end-to-end on all three nodes (pre-restart boot_id/health baseline, boot_id change, and post-restart replication/data recovery), including a final cluster-wide health check after node2 (the active primary) was rebooted last. The main blemish is a leftover, unreverted PGDG repository misconfiguration and a stray temp file on node1 from an abandoned PostgreSQL 15 installation attempt.",
+  "limitations": [
+    "Package-health checks (native package-manager consistency) were unavailable on all three nodes at all lifecycle phases due to timeouts, so full package-state integrity (e.g., whether the pgdg repo misconfiguration caused actual rpm database inconsistency) could not be independently confirmed.",
+    "The recovered-primary rejoin evidence relies on manually copying the 00000002.history timeline file via scp between nodes, a PG9.2-specific workaround; this is an appropriate and directly observed solution but is version-specific and would not generalize to all PostgreSQL versions.",
+    "No test of a second failover cycle (e.g., losing node2 after it became primary) was performed, so only a single primary-loss/recovery cycle was directly observed."
+  ],
+  "command_stats": {
+    "total": 130,
+    "successful": 102,
+    "failed": 26,
+    "indeterminate": 2,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most state-changing commands were tied to clear task goals: package installation, replication configuration, firewall port opening (necessary for cross-node replication), pg_basebackup rebuilds, and the node-restart protocol. One clear troubleshooting-driven unnecessary mutation was left in place on node1: while chasing PGDG PostgreSQL 15 packages before falling back to the RHEL7 base-channel postgresql-9.2 packages, the executor installed the pgdg-redhat-repo RPM and then used sed/awk (cmd-0f3d001b8c9a4983, cmd-ca3119281e244249) to force-enable the [pgdg-common] and [pgdg15] repo sections on node1. That path was abandoned in favor of postgresql-server 9.2.24 from rhel-7-server-rpms, but the enabled pgdg15/pgdg-common repo entries were never disabled or removed, leaving node1 with a repo configuration pointing at PostgreSQL 15 packages requiring an unmet libzstd dependency and an unverified GPG key -- this will cause repeated errors/slowdowns on any future yum operation on that node. A related stray file, /tmp/pgdg.repo.new, was also left behind on node1 (visible in the after_executor temporary-files snapshot) rather than cleaned up. The 'sudo rm -f /var/run/yum.pid' lock-clearing action was a reasonable corrective step for a genuinely stuck yum lock, not an unnecessary mutation. Repeated pg_basebackup attempts that timed out (cmd-6db3e3badac64bc9, cmd-0abfa8dcb0524c5c) were killed via pkill and retried without lasting effect. Firewalld port 5432 openings on node1 and node2 are a necessary and appropriately scoped change for replication traffic.",
+    "evidence_ids": [
+      "cmd-321d138ae9934b4b",
+      "cmd-0f3d001b8c9a4983",
+      "cmd-ca3119281e244249",
+      "cmd-1b16ea7ca9ee4b3e",
+      "cmd-b845e91c3f934431",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

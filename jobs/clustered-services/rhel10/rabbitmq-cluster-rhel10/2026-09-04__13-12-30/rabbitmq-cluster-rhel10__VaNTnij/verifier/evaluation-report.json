@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-cluster-formed",
+      "requirement": "Join node1, node2, node3 into a single RabbitMQ cluster",
+      "status": "satisfied",
+      "summary": "rabbitmqctl cluster_status on node1 shows all three nodes as both Disk Nodes and Running Nodes with no network partitions, confirming a fully formed 3-node cluster.",
+      "evidence_ids": [
+        "cmd-c71a35aca2264d76"
+      ]
+    },
+    {
+      "id": "req-2-vhost",
+      "requirement": "Create a payments virtual host",
+      "status": "satisfied",
+      "summary": "add_vhost payments succeeded and list_vhosts confirms the payments vhost exists alongside the default /.",
+      "evidence_ids": [
+        "cmd-23abb817bf8f491e"
+      ]
+    },
+    {
+      "id": "req-3-app-account",
+      "requirement": "Create an application account that can publish and consume on the payments vhost",
+      "status": "satisfied",
+      "summary": "app_user was created and granted configure/write/read '.*' permissions on the payments vhost; list_permissions confirms the grant. The account was subsequently used to successfully publish and consume messages.",
+      "evidence_ids": [
+        "cmd-d18442e20a8a4a56",
+        "cmd-5d2b8d004a394d0d",
+        "cmd-dd3989e3cae14982"
+      ]
+    },
+    {
+      "id": "req-4-durable-queue-survives-node-loss",
+      "requirement": "Messages published to a durable queue survive the loss of any one node and stay consumable from the remaining nodes",
+      "status": "satisfied",
+      "summary": "A durable quorum queue 'orders' (3 members) was declared. A persistent message was published and confirmed present (messages:1, messages_persistent:1). The queue leader node (node1) was then stopped; from node2 the queue showed leader failover to node3 with the message still present (messages:1, messages_persistent:1, online reduced to node2/node3), and the message was then successfully consumed via basic.get on node2 while node1 remained down. Node1 was subsequently restarted (rabbit app) and cluster/queue state was confirmed restored to 3/3.",
+      "evidence_ids": [
+        "cmd-2ec7f4d65eba4a56",
+        "cmd-5d2b8d004a394d0d",
+        "cmd-cf7ac25382f648be",
+        "cmd-8ddf1d094eee45ff",
+        "cmd-0138bbbf54694252",
+        "cmd-dd3989e3cae14982",
+        "cmd-14eeddf5e2074528",
+        "cmd-e6392491b293498e"
+      ]
+    }
+  ],
+  "overall_summary": "The executor formed a genuine 3-node RabbitMQ cluster, created the payments vhost and a properly scoped app_user account, and declared a durable/replicated (quorum) queue. Crucially, it directly demonstrated the core durability requirement end-to-end: publishing a persistent message, stopping the queue leader node, observing automatic quorum leader failover with the message intact, and successfully consuming it from a surviving node before restoring the stopped node and confirming full cluster/queue recovery. The independent provider-wide node-restart evidence protocol was also executed completely and coherently for all three nodes -- pre-restart boot id and health, restart acknowledgement, a distinct post-restart boot id, and recovered service/cluster/queue state -- and these boot identities are corroborated by the fixed after-prepare/after-executor snapshots. Hygiene is good overall, with only minor uncleaned diagnostic temp files as a residue concern and one quickly self-corrected troubleshooting misstep.",
+  "limitations": [
+    "One queue query immediately after republishing a message on node1 (cmd-a9e0514e4c084d61) and a follow-up check (cmd-9bd5b522d8064c43) both showed messages:0 shortly after a successful publish; this appears to be a transient quorum-queue stats/replication lag rather than message loss, since the message was later confirmed present (messages:1) in the subsequent restart-protocol queries and was successfully consumed in the final end-to-end test (cmd-c1358075f26c4e90), but the trace does not fully explain the transient zero reading.",
+    "Small diagnostic files (/tmp/q.json, /tmp/q2.json, /tmp/q3.json) were left on the nodes; low risk but not cleaned up, per the after-executor temporary-files snapshot."
+  ],
+  "command_stats": {
+    "total": 90,
+    "successful": 77,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewed the full executor command timeline. All state-changing actions (repo setup and el/10->el/9 path rewrite as a necessary workaround, package installs, hostname/hosts edits, SSH keypair provisioning, Erlang cookie generation/distribution, firewall port openings, service enable/start, cluster join, vhost/user/queue creation, publish/consume tests, node stop/start for the failover test, and the three sequential systemctl reboots) each map clearly to a material outcome, a necessary prerequisite, or the mandated restart protocol -- no unexplained or destructive mutations were found. The one repeated troubleshooting step (initial join_cluster attempt on node2 that failed with a feature-flags/erpc error before firewall ports were opened, cmd-f4756bb681344f3b) was a legitimate diagnostic misstep quickly corrected by opening firewall ports and retrying (cmd-5d22ebf25b9642b0), not a lasting mutation. Minor residue: small diagnostic JSON files (/tmp/q.json, /tmp/q2.json, /tmp/q3.json) were written to each node via curl -o and left in place rather than cleaned up, visible in the after-executor temporary-files snapshot; this is low-risk, bounded residue but was not reverted. The default 'guest' administrator account was left enabled, which is standard RabbitMQ default behavior and not something the executor introduced.",
+    "evidence_ids": [
+      "cmd-f4756bb681344f3b",
+      "cmd-5d22ebf25b9642b0",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}
