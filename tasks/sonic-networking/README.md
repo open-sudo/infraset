@@ -1,6 +1,6 @@
 # SONiC networking tasks
 
-Ten switching and fabric scenarios built around a SONiC appliance, each issued
+Nine switching and fabric scenarios built around a SONiC appliance, each issued
 against eight general-purpose Linux operating systems. The appliance is fixed;
 only the operating system of the hosts attached to it changes.
 
@@ -26,7 +26,6 @@ after bridge operations, so enabling it globally is not enough.
 | `vlan-access-segmentation` | hard | two-segment | 1 + 2 | Untagged access ports placing each host in its own VLAN |
 | `inter-vlan-routing` | medium | two-segment | 1 + 2 | A routed interface inside each VLAN, forwarding across the boundary |
 | `transit-traffic-acl` | medium | two-segment | 1 + 2 | Filtering one port out of traffic passing through the switch |
-| `jumbo-frame-path` | medium | two-segment | 1 + 2 | An 8000-byte payload crossing the switch unfragmented |
 | `dhcp-relay` | hard | two-segment | 1 + 2 | Address assignment reaching a host on the far segment |
 | `configdb-persistence` | medium | two-segment | 1 + 2 | Routed configuration returning by itself after a restart |
 | `dynamic-route-exchange` | hard | dual-site | 2 + 2 | Two switches learning each other's network through a protocol |
@@ -36,11 +35,18 @@ The nodes column is appliances plus Linux hosts. Appliances are allocated
 first, so `node1` is SONiC in every task and `node1`/`node2` are both SONiC in
 the two-appliance families.
 
-Three families are behavioral rather than configuration-only.
-`jumbo-frame-path` has to show an unfragmented payload arriving,
+Two families are behavioral rather than configuration-only.
 `configdb-persistence` has to survive a restart, and `redundant-uplinks` has to
 keep two hosts talking across one link being taken out of service. Each is
 demonstrated by a single bounded, reversible state change.
+
+A tenth family, `jumbo-frame-path`, was removed after its first campaign. It
+asked for an 8000-byte payload to cross the switch unfragmented, and it failed
+on all eight operating systems: across those runs no do-not-fragment ping above
+2000 bytes ever drew a reply, even where the executor had set an MTU of 9000 on
+every interface in the path. The virtual fabric caps the path MTU regardless of
+what a guest configures, so the task was unachievable as written and measured
+only that ceiling.
 
 `dynamic-route-exchange` carries a constraint worth knowing about: SONiC boots
 with FRR already running as AS 65100 with a full Clos template of placeholder
@@ -71,7 +77,7 @@ DHCP, so addressing on them is the executor's to arrange.
 | `ubuntu16` | Ubuntu 16.04 |
 | `ubuntu24` | Ubuntu 24.04 |
 
-Run all 10 tasks for one operating system from the repository root:
+Run all 9 tasks for one operating system from the repository root:
 
 ```bash
 ./run-task.sh ./tasks/sonic-networking/ubuntu24
