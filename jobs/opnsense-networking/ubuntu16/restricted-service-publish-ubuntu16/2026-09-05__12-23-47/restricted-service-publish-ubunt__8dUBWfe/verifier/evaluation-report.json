@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node2's HTTP service on TCP 8080 exists and is reachable on the private network shared with node1",
+      "status": "satisfied",
+      "summary": "python3 http.server started on node2:8080 serving 'hello from node2 on 8080'; confirmed reachable directly from node1 via curl (200 OK) both before and after the restart cycle.",
+      "evidence_ids": [
+        "cmd-c7cec11866664849",
+        "cmd-1adb20fb7fd246bc"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Publish node2's port 8080 service on TCP port 80 of node1's (management/LAN) address",
+      "status": "satisfied",
+      "summary": "A DNAT rule was added to node1's OPNsense config (rdr proto tcp dest port 80 -> 10.100.196.11:8080), reloaded into pf, and shown active in pfctl -s nat both immediately after configuration and after node1's reboot, confirming persistence.",
+      "evidence_ids": [
+        "cmd-173126e8d4d34942",
+        "cmd-b449e55a09c24e8f",
+        "cmd-8e9366c45f874c52"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node3 can reach the published service on node1:80",
+      "status": "satisfied",
+      "summary": "curl from node3 to http://10.100.196.10:80/ returns HTTP 200 with node2's content, both right after configuration and after node1's/node3's reboots, directly demonstrating the intended access path end-to-end.",
+      "evidence_ids": [
+        "cmd-40f04b66fc2845db",
+        "cmd-0c2e5441b4654ced",
+        "cmd-a41a4728763d443a",
+        "cmd-64b399ca807541e4"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "The published port 80 stays refused for every other source address (not node3)",
+      "status": "satisfied",
+      "summary": "After removing the auto-generated unrestricted pass rule and disabling the anti-lockout http-redirect override, curl from node2 (a different source on the same LAN) to node1:80 returns 'Connection refused' \u2014 a true TCP reject, not a timeout/drop. This behavior was re-verified after node1's and node2's reboots. Only one alternate source (node2) was available/tested in this 3-node topology, which is a reasonable proxy for 'every other source' given the environment.",
+      "evidence_ids": [
+        "cmd-fa79f8445086415a",
+        "cmd-4a13e923115042a2",
+        "cmd-823d11094cdb41e9",
+        "cmd-d28e2cbaf60f44f9"
+      ]
+    },
+    {
+      "id": "req-5-node1-restart",
+      "requirement": "Provider-wide restart protocol: node1 healthy baseline, restart, boot-identity change, recovered pf/NAT and functional state",
+      "status": "satisfied",
+      "summary": "Baseline kern.boottime captured pre-reboot with functional pf/NAT and working self-check; reboot issued; SSH timeouts confirm the node went down; post-reboot boottime differs; pf rules/NAT rules and node3-success/node2-refused behavior were re-verified after boot.",
+      "evidence_ids": [
+        "cmd-13e0ef90cb484a96",
+        "cmd-470a9ac8be534b8f",
+        "cmd-91ad879186044c3f",
+        "cmd-d4e540fd378a4e93",
+        "cmd-8e9366c45f874c52",
+        "cmd-0c2e5441b4654ced",
+        "cmd-4a13e923115042a2"
+      ]
+    },
+    {
+      "id": "req-5-node2-restart",
+      "requirement": "Provider-wide restart protocol: node2 healthy baseline, restart, boot-identity change, recovered service/state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id captured; an initial unprivileged reboot attempt failed harmlessly (auth required, no state change, confirmed unchanged boot_id/uptime), then sudo reboot succeeded \u2014 SSH refused confirms downtime, new boot_id and uptime=0 confirm restart. The ephemeral HTTP service was manually restarted post-boot and end-to-end behavior (node3 success, node2 refused) was re-verified.",
+      "evidence_ids": [
+        "cmd-e9af3272f2f346e3",
+        "cmd-764b03ea96cd4f85",
+        "cmd-b33683edfee94521",
+        "cmd-07ad892f3b5442fc",
+        "cmd-8c4cc65bd055428f",
+        "cmd-5131b7ef8f0b4378",
+        "cmd-a41a4728763d443a",
+        "cmd-823d11094cdb41e9"
+      ]
+    },
+    {
+      "id": "req-5-node3-restart",
+      "requirement": "Provider-wide restart protocol: node3 healthy baseline, restart, boot-identity change, recovered access",
+      "status": "satisfied",
+      "summary": "Baseline boot_id captured before reboot; sudo reboot issued; post-boot boot_id changed and uptime=0 confirm restart; curl from node3 to node1:80 still succeeds after reboot, confirming recovery of the allowed access path.",
+      "evidence_ids": [
+        "cmd-a41f169e81184afb",
+        "cmd-021c433d73a344e9",
+        "cmd-64b399ca807541e4"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly published node2:8080 on node1's single management/LAN address port 80 via a source-scoped DNAT rule with NAT reflection, and ensured all other sources (tested via node2) get a genuine TCP connection-refused rather than a silent drop or default pass-through, by removing the auto-generated unrestricted pass rule and disabling the anti-lockout http-redirect override. Both the positive (node3 success) and negative (node2 refused) behaviors were directly demonstrated multiple times, including after each node's reboot. The mandatory per-node restart protocol was fully and directly evidenced for all three nodes: pre-restart baseline, restart action, changed boot identity, and post-restart functional recovery, including a legitimately corrected failed reboot attempt on node2 due to missing sudo privileges.",
+  "limitations": [
+    "Only one alternate source address (node2) was available for testing the 'refused for every other source' requirement in this 3-node topology; no test with a wholly external/unrelated source address was possible.",
+    "Node1 has only a single configured network interface with an address (10.100.196.10) despite the topology defining separate mgmt and lan networks, so 'management address' and the flat LAN address are the same in this environment \u2014 consistent with the executor's own findings but not independently re-derivable from the topology metadata alone."
+  ],
+  "command_stats": {
+    "total": 61,
+    "successful": 54,
+    "failed": 5,
+    "indeterminate": 2,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All observed state-changing executor commands map clearly to task requirements or the mandatory restart protocol: config.xml edits and configctl reloads to add/scope the DNAT rule, remove the auto-generated unrestricted pass rule, and disable the anti-lockout http-redirect override so the reject rule takes effect; starting/restarting node2's HTTP test service; and the three node reboots with their pre/post verification. Two commands (cmd-86dfe1edc1b1462e, cmd-182e1dedea5941fd) hit a 120s proxy timeout while starting/confirming the HTTP server but did not corrupt state \u2014 the subsequent command confirmed the server was running, so these were transient tooling delays, not unnecessary mutations. node2's initial unprivileged 'nohup reboot' (cmd-e9af3272f2f346e3) failed to actually reboot (confirmed unchanged boot_id/uptime) due to missing sudo privileges and was immediately corrected with 'sudo -n reboot' (cmd-b33683edfee94521) \u2014 a legitimate corrective retry, not residue. Lifecycle diffs show only expected residue: node2's /tmp/www, /tmp/http.log, /tmp/http.pid (the published service itself) and normal OPNsense-internal /tmp/tmpcfd_* churn on node1, consistent with routine config-save activity rather than executor-caused mess.",
+    "evidence_ids": [
+      "cmd-86dfe1edc1b1462e",
+      "cmd-182e1dedea5941fd",
+      "cmd-e9af3272f2f346e3",
+      "cmd-764b03ea96cd4f85",
+      "cmd-b33683edfee94521",
+      "global:after_executor:node2:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

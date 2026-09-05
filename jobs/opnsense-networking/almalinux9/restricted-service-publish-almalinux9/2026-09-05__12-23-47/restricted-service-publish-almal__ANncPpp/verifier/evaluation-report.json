@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node2 runs an HTTP service on TCP port 8080 reachable over the private network it shares with node1",
+      "status": "satisfied",
+      "summary": "Executor discovered no service or private-link addressing existed yet, then created/enabled simplehttp.service (python http.server) on node2:8080, configured the previously-unconfigured private link (node1 vtnet1/opt1=10.50.50.1, node2 eth1=10.50.50.2), and confirmed reachability from node1 over that link (curl returned hello-from-node2). This establishes the prerequisite state the task description assumed.",
+      "evidence_ids": [
+        "cmd-a16a37f9ccd74195",
+        "cmd-217fb50e673448cb",
+        "cmd-61fc8c5bb4b94e34",
+        "cmd-a442e38729534f04",
+        "cmd-82c7c9545a534bc0"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "The service is published on TCP port 80 of node1's management address",
+      "status": "satisfied",
+      "summary": "A pf NAT rdr rule (lan mgmt:80 -> 10.50.50.2:8080) plus an associated pass rule were added to node1's config.xml and applied via configctl filter reload; pfctl -s nat directly shows the active rdr rule.",
+      "evidence_ids": [
+        "cmd-072990481e8e48f7",
+        "cmd-f12a31fd0693423c",
+        "cmd-11670c2ed73a4342"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node3 can reach the service at node1's management address on port 80",
+      "status": "satisfied",
+      "summary": "curl from node3 to http://10.100.201.10:80/ returned HTTP 200 with the expected body both before and after all three node restarts.",
+      "evidence_ids": [
+        "cmd-f0c0e23b1d4349ef",
+        "cmd-0a482c002ca04e83",
+        "cmd-365b825d90574a05",
+        "cmd-bd44392ff3d04753"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "The published port 80 on node1's management address stays refused/inaccessible for every other source address",
+      "status": "satisfied",
+      "summary": "The executor found and neutralized an OPNsense anti-lockout rule (disablehttpredirect) that had been passing all sources to port 80, then confirmed the final pf ruleset only passes 10.100.201.12 (node3) to port 80. curl from node2 (the other node on the same management network) to port 80 timed out both before and after restarts, consistent with default-deny/drop behavior for non-permitted sources. Only node2 was tested as an alternate source (node3 and node2 are the only peers on that network besides node1 itself), which is reasonable coverage given the topology, though the observed behavior is a silent drop/timeout rather than an active TCP reset \u2014 a minor terminology nuance, not a functional gap.",
+      "evidence_ids": [
+        "cmd-271a7e37167747e3",
+        "cmd-a69aaf20a22a4c9e",
+        "cmd-c8a481a36ee24980",
+        "cmd-b88a36d2efda4c33",
+        "cmd-9989d702f1294585"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are satisfied with direct evidence: node2's HTTP service was stood up and made reachable on the private link with node1, published via a pf NAT rule on node1's management address port 80, confirmed reachable by node3 (HTTP 200), and confirmed inaccessible to node2 as an alternate source both before and after a full round of node restarts. The executor also independently ran the provider-wide restart evidence protocol on all three nodes, capturing pre-restart baselines, restart acknowledgements, changed boot identities, and fully recovered functional state (interfaces, NAT/filter rules, service, and end-to-end reachability) on each \u2014 this is well-documented and coherent with the fixed after-executor snapshot's boot-identity changes.",
+  "limitations": [
+    "The 'refused for other sources' behavior was verified only from node2, the only other node sharing node1's management network besides node3; no independent third source was available to test.",
+    "The refusal manifests as a connection timeout/silent drop rather than an active TCP reset; this satisfies the functional intent of the requirement but is a different failure mode than a literal 'connection refused'.",
+    "The listening-sockets lifecycle observation for node1 (OPNsense) is marked unsupported for both snapshots, so pf-level port state on node1 could not be cross-checked via the fixed collector independent of executor-run pfctl commands."
+  ],
+  "command_stats": {
+    "total": 54,
+    "successful": 51,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "Reviewed all state-changing executor commands chronologically. Every mutation traces to a clear purpose: creating the required service (cmd-a16a37f9ccd74195), enabling the previously-unconfigured private link on both nodes (cmd-217fb50e673448cb, cmd-61fc8c5bb4b94e34), adding a route to avoid asymmetric routing (cmd-7e5916fd52de427c), restricting node2's firewall to the private interface (cmd-033464644d0f4ac2), adding the NAT/filter rules that implement publishing (cmd-072990481e8e48f7, cmd-f12a31fd0693423c), and disabling the anti-lockout redirect that was defeating the source restriction (cmd-a69aaf20a22a4c9e), diagnosed via read-only investigation (cmd-7ec9e28918c84ade through cmd-b681153d8db1410c). One early attempt (cmd-c574e2377faf49f8, 'configctl interface reload') failed with 'Action not allowed or missing' and caused no state change; the executor immediately corrected course with the proper 'configctl interface reconfigure opt1' (cmd-217fb50e673448cb). The three reboots (cmd-9a790529f9524d8f, cmd-419d8c1271d74fc7, cmd-200ca59fe5c54c11) are accounted for by the separate node-restart evidence protocol. No unnecessary, abandoned, or unreverted experimental mutations were found; no security controls were weakened (the anti-lockout change only removed an overly-permissive redirect exception, and the final state is more restrictive, not less).",
+    "evidence_ids": [
+      "cmd-c574e2377faf49f8",
+      "cmd-217fb50e673448cb",
+      "cmd-a69aaf20a22a4c9e",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

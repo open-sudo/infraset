@@ -1,0 +1,98 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) as the router between lan-a (10.60.1.0/24, vtnet1/opt1, peer node2) and lan-b (10.60.2.0/24, vtnet2/opt2, peer node3). Added pf rules on both opt interfaces that block+log TCP/23 in either direction while passing all other traffic, and confirmed logged block entries in /var/log/filter/ for attempts from node2 and node3. All three nodes were restarted one at a time using native reboot mechanisms; boot identities changed on each and the block+log behavior plus general inter-LAN routing (ping) were re-verified after every restart.",
+  "actions_performed": [
+    "Identified node1 as OPNsense/FreeBSD router with unconfigured vtnet1/vtnet2; node2/node3 as RHEL9 hosts with unconfigured enp8s0 second NICs",
+    "Added opt1 (vtnet1, 10.60.1.1/24) and opt2 (vtnet2, 10.60.2.1/24) interfaces to /conf/config.xml on node1 and reconfigured them via configctl",
+    "Assigned static IPs to node2 enp8s0 (10.60.1.2/24, via nmcli persistent profile lan-a) and node3 enp8s0 (10.60.2.2/24, via nmcli persistent profile lan-b), with static routes to the other LAN via node1",
+    "Confirmed via ARP table that node2 is on opt1/lan-a and node3 is on opt2/lan-b",
+    "Added pf filter rules in config.xml: block+log TCP port 23 on opt1 and opt2, plus pass-all rules for other traffic on each; applied with configctl filter reload",
+    "Verified telnet(23) connection attempts from node2->node3 and node3->node2 both time out (dropped) and are logged in /var/log/filter/filter_20260905.log with block action and the telnet rule label",
+    "Verified normal traffic (ICMP) still routes correctly between lan-a and lan-b",
+    "Captured pre-restart boot identity baselines (kern.boottime on node1, /proc/sys/kernel/random/boot_id on node2/node3) and healthy state",
+    "Restarted node1 via 'shutdown -r now', polled until SSH returned, confirmed new kern.boottime, confirmed config.xml-derived interfaces/pf rules persisted, re-verified ping success and telnet block+log",
+    "Restarted node2 via 'systemctl reboot', polled until reachable, confirmed new boot_id, confirmed nmcli network profile persisted, re-verified ping and telnet block",
+    "Restarted node3 via 'systemctl reboot', polled until reachable, confirmed new boot_id, confirmed nmcli network profile persisted, re-verified ping and telnet block, and captured a fresh log entry for a node3-origin refused telnet attempt"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 routes between lan-a and lan-b",
+      "command_ids": [
+        "cmd-48e24efb609b4646",
+        "cmd-68c7c8e2054943df",
+        "cmd-8ff1c9519448403e"
+      ],
+      "summary": "node2 (lan-a, 10.60.1.2) and node3 (lan-b, 10.60.2.2) configured on separate subnets behind node1's opt1/opt2 interfaces; cross-LAN ping succeeds through node1."
+    },
+    {
+      "requirement": "Refuse TCP port 23 between the two networks",
+      "command_ids": [
+        "cmd-be298d7dacbd456b",
+        "cmd-59056aee9ea34695",
+        "cmd-e33fdf392ecc436d",
+        "cmd-09b653ee9e9a444f"
+      ],
+      "summary": "pf block rules for tcp/23 added on opt1 and opt2 and confirmed active in the ruleset; connection attempts on port 23 from node2->node3 and node3->node2 both time out (blocked)."
+    },
+    {
+      "requirement": "Record every refused attempt in a log on node1",
+      "command_ids": [
+        "cmd-232a31654cf7462a",
+        "cmd-edfd3c503c174865"
+      ],
+      "summary": "filterlog entries in /var/log/filter/filter_20260905.log show 'block' action with the telnet rule label for both directions of blocked port-23 traffic."
+    },
+    {
+      "requirement": "Show a log entry produced by an attempt made from node2",
+      "command_ids": [
+        "cmd-232a31654cf7462a"
+      ],
+      "summary": "Log line: src 10.60.1.2 (node2) -> dst 10.60.2.2 (node3) port 23, action=block, matching the telnet block rule label 78176ca0c89f923b82051ce4f25554fa on vtnet1."
+    },
+    {
+      "requirement": "Baseline health/boot identity before restarts",
+      "command_ids": [
+        "cmd-a76450b737d846e9",
+        "cmd-48dd6689e16b4562",
+        "cmd-12c36b4c460a4ed4"
+      ],
+      "summary": "Captured kern.boottime on node1 (sec=1788629261) and boot_id on node2 (377b5195...) and node3 (583ddd53...) plus healthy interface/route state prior to any restart."
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-bdc39ba7f3464ac7",
+        "cmd-269d85c5c8b14b62",
+        "cmd-a86119be763c4012",
+        "cmd-5439cc5ae3cd4ad9",
+        "cmd-e8f19135a5684697",
+        "cmd-6ba8032b02e042a2",
+        "cmd-38eecb8b9a66462e"
+      ],
+      "summary": "Reboot acknowledged, node became unreachable, then returned with new kern.boottime (1788629665); opt1/opt2 interfaces and pf telnet-block rules persisted from config.xml; post-reboot ping succeeded and a new blocked/logged telnet attempt from node2 was captured."
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-d060609f051a4746",
+        "cmd-132bf3d3f914474d",
+        "cmd-2e7f875c469b4b61",
+        "cmd-271474930a24495a"
+      ],
+      "summary": "Reboot acknowledged, node unreachable, then returned with new boot_id (a2597d9a... vs 377b5195...); nmcli lan-a profile reapplied enp8s0 IP/route automatically; post-reboot ping to node3 succeeded and telnet to node3 still blocked."
+    },
+    {
+      "requirement": "node3 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-3416ea41810b4862",
+        "cmd-e6c3b25eda434469",
+        "cmd-0ea4bc21ecfa43f3",
+        "cmd-3a6268fe324e4eef",
+        "cmd-76bd4da0e24049e5",
+        "cmd-648040d8d9674fd0",
+        "cmd-bd7a218c65c24d7d"
+      ],
+      "summary": "Reboot acknowledged, node unreachable, then returned with new boot_id (c043a424... vs 583ddd53...); nmcli lan-b profile reapplied enp8s0 IP/route automatically; post-reboot ping to node2 succeeded, telnet to node2 blocked, and a fresh logged block entry for the node3-origin attempt was captured on node1."
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-ipsec-tunnel",
+      "requirement": "Build an IPsec tunnel between node1 and node2 over the transit network",
+      "status": "satisfied",
+      "summary": "swanctl --list-sas on both node1 and node2 shows IKE_SA ESTABLISHED (IKEv2, PSK auth) and CHILD_SA INSTALLED (TUNNEL mode, ESP:AES_GCM_16-128) between 10.255.255.1 and 10.255.255.2 on the transit link, with matching SPI pairs on both sides confirming a live, mutually-agreed tunnel.",
+      "evidence_ids": [
+        "cmd-4f0a33e48199434a",
+        "cmd-cdff6fa7088e4994"
+      ]
+    },
+    {
+      "id": "req-2-private-network-transport",
+      "requirement": "Carry node3's private network (behind node1) and node4's private network (behind node2) over the tunnel so they can reach each other by private address",
+      "status": "satisfied",
+      "summary": "Traffic selectors on the CHILD_SA are 172.16.1.0/24 <-> 172.16.2.0/24, matching node3/node4's private subnets. Bidirectional ping from node3 (172.16.1.10) to node4 (172.16.2.10) and back succeeded with 0% packet loss.",
+      "evidence_ids": [
+        "cmd-87a8c0dfbce74ccc",
+        "cmd-179997824793412e",
+        "cmd-ef548d8812464ba6"
+      ]
+    },
+    {
+      "id": "req-3-encryption-in-transit",
+      "requirement": "Ensure traffic between the private networks is encrypted in transit (not exposed on the shared transit network)",
+      "status": "satisfied",
+      "summary": "A tcpdump capture on node1's transit interface (vtnet1), running concurrently with the node3->node4 ping test, shows only ESP packets between 10.255.255.1 and 10.255.255.2 with no plaintext ICMP or private-address traffic visible on the wire.",
+      "evidence_ids": [
+        "cmd-3122854d18a042ff",
+        "cmd-c301a50b7ebc43fa",
+        "cmd-ef548d8812464ba6"
+      ]
+    },
+    {
+      "id": "req-4-node1-restart",
+      "requirement": "Provider-wide restart evidence protocol: node1 pre-restart baseline, restart, and recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot time (17:13:17) and healthy IPsec SA captured, reboot acknowledged, node unreachable during the transition, then reachable with a changed boot time (17:29:21). Post-restart evidence shows interfaces up, IPsec SA re-ESTABLISHED, and node3->node4 ping succeeding.",
+      "evidence_ids": [
+        "cmd-1226f68b6ad34d45",
+        "cmd-62ece1b4d9f644e7",
+        "cmd-86d5113c26c244e4",
+        "cmd-251c0a88794f4a22",
+        "cmd-7bc62c04d3194707",
+        "cmd-73b5b53076964ffb"
+      ]
+    },
+    {
+      "id": "req-5-node2-restart",
+      "requirement": "Provider-wide restart evidence protocol: node2 pre-restart baseline, restart, and recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot time (17:13:17) captured, reboot acknowledged, node unreachable then reachable with changed boot time (17:30:00). Post-restart shows IPsec SA re-ESTABLISHED and node4->node3 ping succeeding.",
+      "evidence_ids": [
+        "cmd-e6facc8261974061",
+        "cmd-ead48cc48f4a414a",
+        "cmd-53f29ed4a3fa49cc",
+        "cmd-9f705d75fb684c08",
+        "cmd-e73a5daf34124bd4",
+        "cmd-9ac343addafd45a0"
+      ]
+    },
+    {
+      "id": "req-6-node3-restart",
+      "requirement": "Provider-wide restart evidence protocol: node3 pre-restart baseline, restart, and recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (3dba43a5...) captured, reboot acknowledged, node unreachable then reachable with a new boot_id (74193578...). Private IP/route on eth1 did not survive reboot (ephemeral ip-command config); executor corrected this with persistent ifcfg-eth1/route-eth1 files, then confirmed recovery via successful node3->node4 ping.",
+      "evidence_ids": [
+        "cmd-9981a039d7494bac",
+        "cmd-efccc977ef084e7c",
+        "cmd-9c7f1c09d14f45b3",
+        "cmd-8270f85042eb4873",
+        "cmd-4d0e5ecb217840e0",
+        "cmd-a1fe586efd684149",
+        "cmd-42c5d401413547aa"
+      ]
+    },
+    {
+      "id": "req-7-node4-restart",
+      "requirement": "Provider-wide restart evidence protocol: node4 pre-restart baseline, restart, and recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (b35fad86...) captured, reboot acknowledged, node unreachable then reachable with a new boot_id (5af86a28...). Persistent ifcfg-eth1 addressing (proactively applied before this reboot) remained intact, and node3->node4 ping confirmed full recovery.",
+      "evidence_ids": [
+        "cmd-e59514c8e556427f",
+        "cmd-ef63435388a843c2",
+        "cmd-959e629d393d4aa1",
+        "cmd-5671dfa00e804f67",
+        "cmd-2c3bc451b2ce4cbb",
+        "cmd-12e6f43e0e8e4fda"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a functioning IKEv2/PSK IPsec tunnel between node1 and node2 over the transit network, correctly carrying the 172.16.1.0/24 and 172.16.2.0/24 private subnets, and directly demonstrated encrypted end-to-end connectivity between node3 and node4 with a concurrent tcpdump showing only ESP traffic on the transit link. All four nodes were taken through a full restart cycle with pre-restart baseline, boot-identity change, and post-restart recovery of IPsec SAs and connectivity, including a legitimate mid-protocol fix for non-persistent RHEL7 interface addressing on node3. Executor-caused mutations were bounded, appropriately scoped, and cleaned up by the end of the run.",
+  "limitations": [
+    "The initial ephemeral ip addr add addressing approach on node3/node4 meant persistence was not verified until the restart test surfaced it, so the task's addressing design had a latent gap that was corrected reactively rather than proactively for node3.",
+    "Package-manager-health checks were unavailable (timed out) for node3 and node4 in both before-prepare and after-executor snapshots, so package/dependency integrity could not be independently cross-checked.",
+    "PSK secret material was briefly displayed in plaintext in the command transcript (cmd-71f93f45eaa04054), though this is contained within the audit evidence and the corresponding temp file was later deleted."
+  ],
+  "command_stats": {
+    "total": 151,
+    "successful": 132,
+    "failed": 19,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Executor mutations were generally scoped, necessary, and cleaned up. Diagnostic IP addresses (172.31.99.3/24, 172.31.98.4/24) were assigned to node3/node4 eth1 for bridge/ARP topology discovery (cmd-45dcbbe0d53d47be, cmd-81833d071314469a) before final addressing was applied; this was a bounded, low-risk mutation that was subsequently overwritten by the production address via an explicit flush (cmd-fd02f0665e9446a6), so it left no residue. The generated PSK was briefly displayed in plaintext via cat (cmd-71f93f45eaa04054) but the corresponding temp file was deleted at the end of the run (cmd-9b18fef64ae24052, cmd-0722abbb4de241f2), along with tcpdump capture files and reboot logs across all four nodes (cmd-c7d64723bb05474f, cmd-3e0d4d59986443fc, cmd-300bc4d78f7d4b75, cmd-283414e01cb3410c). No firewall rules were left overly permissive (rules scoped to specific peer addresses/protocols on the transit interface), and no failed or conflicting services were left running. The node3/node4 eth1 addressing initially used non-persistent ip addr add commands, a design gap surfaced only during the restart test and then corrected with persistent ifcfg files -- functionally fine, though ideally applied from the start rather than discovered via the restart check.",
+    "evidence_ids": [
+      "cmd-45dcbbe0d53d47be",
+      "cmd-81833d071314469a",
+      "cmd-fd02f0665e9446a6",
+      "cmd-71f93f45eaa04054",
+      "cmd-9b18fef64ae24052",
+      "cmd-0722abbb4de241f2",
+      "cmd-c7d64723bb05474f",
+      "cmd-3e0d4d59986443fc",
+      "cmd-300bc4d78f7d4b75",
+      "cmd-283414e01cb3410c",
+      "cmd-a1fe586efd684149"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

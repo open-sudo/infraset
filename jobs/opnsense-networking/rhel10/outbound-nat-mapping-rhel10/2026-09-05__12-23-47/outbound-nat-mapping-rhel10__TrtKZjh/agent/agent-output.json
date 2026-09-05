@@ -1,0 +1,114 @@
+{
+  "status": "completed",
+  "summary": "Configured OPNsense node1 to route between lan-a (10.60.1.0/24, opt1/vtnet1) and lan-b (10.60.2.0/24, opt2/vtnet2). Added static addressing on node2 (10.60.1.11) and node3 (10.60.2.12) with routes via node1, firewall pass rules on both new interfaces, and a manual/hybrid outbound NAT rule that SNATs traffic sourced from 10.60.1.0/24 egressing via opt2 to node1's lan-b address (10.60.2.1). Verified node2->node3 connections are observed by node3 as arriving from 10.60.2.1 (node1), while node3->node2 connections keep node3's real address. Restarted all three nodes one at a time (OPNsense native reboot, systemctl reboot for RHEL nodes), proved changed boot identity on each (kern.boottime on node1, boot_id on node2/node3), and re-verified the NAT/routing behavior and connectivity after each restart, plus a final full end-to-end re-test after all three nodes were rebooted.",
+  "actions_performed": [
+    "Inspected node1 (OPNsense), node2/node3 (RHEL10) network topology and interfaces",
+    "Read OPNsense filter.inc/SNatRule.php source to determine correct config.xml schema for outbound NAT rules",
+    "Edited node1 /conf/config.xml: added opt1 (vtnet1, 10.60.1.1/24) and opt2 (vtnet2, 10.60.2.1/24) interfaces, pass rules for both, switched outbound NAT to hybrid mode with SNAT rule for 10.60.1.0/24 -> opt2 interface address",
+    "Applied config via configctl interface reconfigure opt1/opt2 and configctl filter reload",
+    "Configured node2 enp8s0 (10.60.1.11/24) and node3 enp8s0 (10.60.2.12/24) via nmcli with static routes to the opposite lan via node1",
+    "Verified via Python TCP client/server that node2->node3 connections appear sourced from 10.60.2.1 and node3->node2 connections keep original 10.60.2.12 source",
+    "Captured pre-restart boot identity and health evidence on all three nodes",
+    "Restarted node1 via /usr/local/etc/rc.reboot, node2 and node3 via systemctl reboot, one at a time, waiting for each to recover before proceeding",
+    "Verified changed boot identity (kern.boottime for node1, boot_id for node2/node3) and re-verified interfaces/routes/NAT/connectivity/mapping behavior after each restart",
+    "Ran a final full mapping verification across all three nodes after all restarts completed",
+    "Cleaned up temporary firewalld ports opened for testing"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 on lan-a to node3 on lan-b connections appear to node3 as originating from a chosen address on node1",
+      "command_ids": [
+        "cmd-e1444b5b8b714b47",
+        "cmd-3ea770f46b804215"
+      ],
+      "summary": "node2 python client shows its own local addr as 10.60.1.11, but node3's listening server logged the incoming connection as ('10.60.2.1', ...) -- node1's lan-b (opt2) address"
+    },
+    {
+      "requirement": "connections in the other direction (node3 -> node2) keep their original source address (no NAT)",
+      "command_ids": [
+        "cmd-3d15f5809a25473b",
+        "cmd-eaf8d538c36c40d4"
+      ],
+      "summary": "node3 python client used its real address 10.60.2.12 to connect to node2, and node2's server observed the connection as ('10.60.2.12', ...) -- unNATed"
+    },
+    {
+      "requirement": "NAT/routing config in OPNsense config.xml and applied pf ruleset",
+      "command_ids": [
+        "cmd-033026598a1146d9",
+        "cmd-1b3d562ab39b41ee",
+        "cmd-a25aab24f9404b07",
+        "cmd-14699b25528d4a77",
+        "cmd-94f77e32966f4200"
+      ],
+      "summary": "config.xml updated with opt1/opt2 interfaces and hybrid-mode SNAT rule; interfaces came up with correct IPs; filter reload succeeded; pfctl -s nat shows 'nat on vtnet2 inet from 10.60.1.0/24 to any -> (vtnet2:0)'; pfctl -s rules shows pass rules on vtnet1/vtnet2"
+    },
+    {
+      "requirement": "node1 (OPNsense) healthy baseline before restart",
+      "command_ids": [
+        "cmd-edc7a2a339c74cae"
+      ],
+      "summary": "kern.boottime = Sat Sep 5 17:04:34 2026; opt1/opt2 interfaces up with correct IPs; NAT rule present"
+    },
+    {
+      "requirement": "node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-1d1fddfe2d5d45f5",
+        "cmd-44a3956ee0654e06",
+        "cmd-34ef8d1be2144c43"
+      ],
+      "summary": "rc.reboot issued and acknowledged before disconnect; subsequent exec timed out (node down); later exec succeeded with kern.boottime = 17:10:32 2026, a later boot time proving restart"
+    },
+    {
+      "requirement": "node1 post-restart recovery of NAT/routing/filter state and functional mapping",
+      "command_ids": [
+        "cmd-eef58a27745a4f76",
+        "cmd-5b28036901644bcb",
+        "cmd-2a1ebffff16d4d60",
+        "cmd-ddbae480d6344256"
+      ],
+      "summary": "post-reboot ifconfig/pfctl show opt1/opt2 IPs, SNAT rule, and pass rules intact; live test connection from node2 observed by node3 as arriving from 10.60.2.1"
+    },
+    {
+      "requirement": "node2 healthy baseline before restart",
+      "command_ids": [
+        "cmd-9f5e1f6835c1410c"
+      ],
+      "summary": "boot_id b17495e3-5cde-49a9-b0d1-ab2e1461726a captured with enp8s0 configured at 10.60.1.11/24"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-6b1b90475018410f",
+        "cmd-969b820ee8e64c76",
+        "cmd-ed7dee9e8468419c",
+        "cmd-9e5722b6c3474969"
+      ],
+      "summary": "systemctl reboot issued and acknowledged; subsequent exec timed out; later exec returned new boot_id de1fe960-91ec-4881-89d8-e706a79bc0f2 (changed from baseline); post-reboot ip addr/route and ping to node3 succeeded, confirming NetworkManager persisted static config"
+    },
+    {
+      "requirement": "node3 healthy baseline before restart",
+      "command_ids": [
+        "cmd-12fdafe793a14973"
+      ],
+      "summary": "boot_id 19062a82-6390-435d-a09f-4dba1593d529 captured with enp8s0 configured at 10.60.2.12/24"
+    },
+    {
+      "requirement": "node3 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-adf3bc2322754dd0",
+        "cmd-ead78605519343d9",
+        "cmd-da71bf30621a429a",
+        "cmd-aae4296149644059"
+      ],
+      "summary": "systemctl reboot issued and acknowledged; subsequent exec timed out; later exec returned new boot_id 92f36b90-aa38-46bc-a568-5821a89f0045 (changed from baseline); post-reboot ip addr/route and ping to node2 succeeded"
+    },
+    {
+      "requirement": "final end-to-end verification of NAT mapping after all three nodes restarted",
+      "command_ids": [
+        "cmd-fc3e0dfea35b4efc",
+        "cmd-a208fd6c8d894edd"
+      ],
+      "summary": "node2 client showed local addr 10.60.1.11; node3 server observed the connection as arriving from 10.60.2.1, confirming the SNAT mapping survived all restarts"
+    }
+  ]
+}

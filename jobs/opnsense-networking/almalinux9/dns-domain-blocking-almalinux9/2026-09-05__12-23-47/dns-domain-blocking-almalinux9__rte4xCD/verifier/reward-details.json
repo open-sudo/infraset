@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 provides normal name resolution for node2 and node3 on the shared private network",
+      "status": "satisfied",
+      "summary": "After repointing node2/node3 DNS to node1 (10.100.42.10), dig queries for example.com from both node2 (cmd-6573d779255e4102) and node3 (cmd-d2a9c65b07c249d4) return correct public IPs, matching node1's own local resolution (cmd-4db62210d9a34827). This holds both before and after the full restart cycle (cmd-4b8c844dbe934ca9, cmd-32559770f20a49c0).",
+      "evidence_ids": [
+        "cmd-4db62210d9a34827",
+        "cmd-6573d779255e4102",
+        "cmd-d2a9c65b07c249d4",
+        "cmd-4b8c844dbe934ca9",
+        "cmd-32559770f20a49c0"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "blocked.example and all subdomains resolve to nothing usable from both node2 and node3",
+      "status": "satisfied",
+      "summary": "Unbound's DNSBL plugin was configured with an exact blocklist entry and wildcard entry for blocked.example returning NXDOMAIN (cmd-1915859e878e4ab2, cmd-5377cb416db64370, cmd-230e230f669c4b9b). Verified NXDOMAIN for both blocked.example and sub.blocked.example on node1 itself, and via dig/getent from node2 and node3 (getent rc=2, i.e., not found) both before and after the restart cycle (cmd-6573d779255e4102, cmd-d2a9c65b07c249d4, cmd-4b8c844dbe934ca9, cmd-32559770f20a49c0).",
+      "evidence_ids": [
+        "cmd-4db62210d9a34827",
+        "cmd-6573d779255e4102",
+        "cmd-d2a9c65b07c249d4",
+        "cmd-4b8c844dbe934ca9",
+        "cmd-32559770f20a49c0"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node2 and node3 are configured to use node1 for DNS, with the change persisted across restarts",
+      "status": "satisfied",
+      "summary": "nmcli was used to set ipv4.dns=10.100.42.10 and ipv4.ignore-auto-dns=yes on both nodes (cmd-f6ab4519890e452d, cmd-7875d1c5f1b64b47), confirmed written into NetworkManager keyfiles (cmd-eb9ad1332deb4579, cmd-20e12cf709f6418f). Post-reboot resolv.conf on both nodes still shows nameserver 10.100.42.10 (cmd-7f2ef4b9142a4fae, cmd-62dc627aecd241bb), confirming persistence across a real reboot rather than only static config.",
+      "evidence_ids": [
+        "cmd-f6ab4519890e452d",
+        "cmd-7875d1c5f1b64b47",
+        "cmd-eb9ad1332deb4579",
+        "cmd-20e12cf709f6418f",
+        "cmd-7f2ef4b9142a4fae",
+        "cmd-62dc627aecd241bb"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all three managed nodes (pre-restart baseline, restart ack, changed boot identity, recovered service/data/cluster state)",
+      "status": "satisfied",
+      "summary": "node2: baseline boot_id 54bd1c3e... and healthy DNS (cmd-642377955a6d4b33), reboot ack (cmd-26d1371e93d841bc), new boot_id 7b89ce38... (cmd-803f90ae1b5c4fa9), recovered resolv.conf/DNS (cmd-7f2ef4b9142a4fae). node3: baseline boot_id 4a743885... (cmd-fe2cba7a775e4310), reboot ack (cmd-8b5d20e8227e4f50), new boot_id c4ea5ab5... (cmd-cfb0674534ff448f), recovery (cmd-62dc627aecd241bb). node1: baseline kern.boottime 16:24:15 (cmd-edcc2f4f617645f6), reboot ack (cmd-883186d843374f1a), new kern.boottime 16:29:08 (cmd-61e5d604217f4a8a), unbound process restarted with DNSBL intact (cmd-591246e0a62b4bbb). End-to-end client verification from node2/node3 after node1's own restart confirms full cluster recovery (cmd-4b8c844dbe934ca9, cmd-32559770f20a49c0). The fixed after_executor snapshot boot-identity values for all three nodes match these executor-observed post-restart identities, cross-confirming the transitions.",
+      "evidence_ids": [
+        "cmd-642377955a6d4b33",
+        "cmd-26d1371e93d841bc",
+        "cmd-803f90ae1b5c4fa9",
+        "cmd-7f2ef4b9142a4fae",
+        "cmd-fe2cba7a775e4310",
+        "cmd-8b5d20e8227e4f50",
+        "cmd-cfb0674534ff448f",
+        "cmd-62dc627aecd241bb",
+        "cmd-edcc2f4f617645f6",
+        "cmd-883186d843374f1a",
+        "cmd-61e5d604217f4a8a",
+        "cmd-591246e0a62b4bbb",
+        "cmd-4b8c844dbe934ca9",
+        "cmd-32559770f20a49c0",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly configured node1's Unbound DNSBL to return NXDOMAIN for blocked.example and its subdomains while resolving all other names normally, repointed node2 and node3 to use node1 as their DNS server via persisted NetworkManager configuration, and verified the intended behavior end-to-end both before and after a full sequential restart of all three nodes. The restart-evidence protocol was completed for all three nodes with matching pre/post boot identities cross-checked against the fixed lifecycle snapshots, and DNS behavior (both normal resolution and blocking) was shown to survive the restarts.",
+  "limitations": [
+    "NetworkManager-wait-online.service is shown failed on node2 and node3 in the after_executor snapshot but was not present in before_prepare; the trace does not establish root cause (likely boot-time race unrelated to DNS config) or whether it was noticed/addressed by the executor.",
+    "DNS blocking verification relied on drill/dig/getent rather than testing arbitrary application-level DNS consumers, though this is a reasonable and standard verification method.",
+    "No test was shown for IPv6 AAAA blocking behavior for blocked.example, only implicit via drill/dig A record queries and getent hosts, though getent hosts covers both families by default."
+  ],
+  "command_stats": {
+    "total": 54,
+    "successful": 43,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "All state-changing commands trace to a clear purpose: the config.xml edit and unbound restart implement the block, nmcli changes implement the DNS repointing (with backup of config.xml via .bak per executor report), bind-utils installs support testing, and the reboot sequence fulfills the mandated restart-evidence protocol. No abandoned troubleshooting mutations or unnecessary experiments were found in the timeline. One notable but likely benign side effect: after_executor snapshots show NetworkManager-wait-online.service in a failed state on both node2 and node3, which was not present in before_prepare; this appeared as a byproduct of the required reboot rather than a discretionary executor action, but it was not investigated or remediated by the executor and is cited here as residual state worth flagging. Minor /tmp residue (dnf.log, reboot.log, systemd-private dirs) is expected byproduct of required package installs and reboots, not executor negligence.",
+    "evidence_ids": [
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:before_prepare:node2:failed-services",
+      "global:before_prepare:node3:failed-services",
+      "cmd-1915859e878e4ab2",
+      "cmd-230e230f669c4b9b",
+      "cmd-cd8290f3a0e74c2c",
+      "cmd-d2a9c65b07c249d4"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

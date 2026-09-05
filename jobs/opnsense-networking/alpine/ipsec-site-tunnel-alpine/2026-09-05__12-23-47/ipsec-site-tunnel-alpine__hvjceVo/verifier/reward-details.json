@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Build an IPsec tunnel between node1 and node2 over the shared transit network",
+      "status": "satisfied",
+      "summary": "swanctl --list-sas on node1 (cmd-6634a1c8ba8f4173) shows IKE_SA ESTABLISHED and CHILD_SA INSTALLED (AES_GCM_16-128) between transit addresses 10.10.10.1 and 10.10.10.2. Configuration was applied via config.xml + php rc.reload_all + pluginctl -c ipsec on both firewalls, and management access was verified intact after reconfiguration.",
+      "evidence_ids": [
+        "cmd-6634a1c8ba8f4173",
+        "cmd-9eb30cdfe3594309",
+        "cmd-66b9377f16324347",
+        "cmd-d5ab647373e0449a",
+        "cmd-cd6f0ba837c740ba"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Carry the private networks (node3's lan-a and node4's lan-b) over the IPsec tunnel",
+      "status": "satisfied",
+      "summary": "The child SA in swanctl --list-sas shows local_ts 10.0.1.0/24 and remote_ts 10.0.2.0/24, confirming the tunnel is configured to carry the two private subnets rather than only the transit addresses.",
+      "evidence_ids": [
+        "cmd-6634a1c8ba8f4173"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node3 and node4 reach each other by their private addresses",
+      "status": "satisfied",
+      "summary": "node3 (10.0.1.2) successfully pinged node4 (10.0.2.2) with 0% loss, and node4 pinged node3 with 0% loss, using routes via each local OPNsense gateway.",
+      "evidence_ids": [
+        "cmd-d3edb80ef3a547c5",
+        "cmd-3b41ab8ca25049c5",
+        "cmd-609c6ee416f74b7b",
+        "cmd-b1f8c6a93cff4515"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Traffic between the private networks is encrypted in transit across the shared transit network",
+      "status": "satisfied",
+      "summary": "CHILD_SA packet/byte counters incremented in step with a node3->node4 ping, and a tcpdump capture on node1's transit interface vtnet1 during the same test window shows only an ESP packet between the transit addresses, no plaintext 10.0.x.x ICMP traffic. The capture window and the immediately following ping test overlap closely enough to support the conclusion, though exact packet-to-ping timing correspondence is not perfectly aligned.",
+      "evidence_ids": [
+        "cmd-44b6b6ccf3b546c2",
+        "cmd-be80cf55c80744ef",
+        "cmd-d3edb80ef3a547c5"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "node1 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered service/connectivity state",
+      "status": "satisfied",
+      "summary": "Baseline kern.boottime=1788626088 with established SAs captured; shutdown -r acknowledged; post-restart kern.boottime=1788627593 (changed, cross-checked against the fixed after-executor snapshot) with re-established IKE/CHILD SAs; node3->node4 ping recovered.",
+      "evidence_ids": [
+        "cmd-0c6f79e578b94894",
+        "cmd-481ab096fbd44aca",
+        "cmd-a8ea15da25e84d9d",
+        "cmd-1dda692ed6814a9d"
+      ]
+    },
+    {
+      "id": "req-6",
+      "requirement": "node2 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered service/connectivity state",
+      "status": "satisfied",
+      "summary": "Baseline kern.boottime=1788626087 with established SAs; shutdown -r acknowledged; post-restart kern.boottime=1788627635 (changed) with re-established SAs; node4->node3 ping recovered.",
+      "evidence_ids": [
+        "cmd-4583e248218b4d3f",
+        "cmd-e6e9aec424b34bf7",
+        "cmd-63960bd856724d6e",
+        "cmd-9b3ea56b0d58408c"
+      ]
+    },
+    {
+      "id": "req-7",
+      "requirement": "node3 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered service/connectivity state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id=47019498... with working ping captured; reboot issued; post-restart boot_id=3e4d9289... (changed, matches fixed after-executor snapshot) with persisted /etc/network/interfaces automatically restoring eth1 addressing/route and ping to node4 recovered.",
+      "evidence_ids": [
+        "cmd-56611ee32b7a4c93",
+        "cmd-abcaec7d32d74b82",
+        "cmd-dee6d03d664a44cf"
+      ]
+    },
+    {
+      "id": "req-8",
+      "requirement": "node4 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered service/connectivity state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id=b1305252... with working ping captured; reboot issued (connection dropped mid-command as expected for a reboot); post-restart boot_id=c5363588... (changed) with persisted /etc/network/interfaces restoring eth1 addressing/route and ping to node3 recovered.",
+      "evidence_ids": [
+        "cmd-4fc9dfe3173744bb",
+        "cmd-10000d734a6f4bb0",
+        "cmd-b1e07c9693a241c9"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a working strongSwan/swanctl IPsec site-to-site tunnel between node1 and node2 over the transit network, carrying node3's and node4's private subnets, and directly demonstrated encrypted end-to-end reachability (established/installed SAs, successful private-address pings in both directions, and a tcpdump capture showing only ESP on the transit link during test traffic) while preserving firewall management access throughout reconfiguration. The mandatory one-at-a-time restart protocol was completed on all four nodes with matching pre/post boot-identity changes (cross-checked against the fixed lifecycle snapshots) and confirmed recovery of IPsec SAs and end-to-end connectivity after each restart. Hygiene is reduced by a handful of bounded, non-destructive unnecessary mutations (an abandoned SSH-key transfer attempt, iterative interface-alias trial-and-error during topology discovery, a temporary firewall-rule interface swap, and small leftover diagnostic files) that were not fully cleaned up but caused no lasting functional harm.",
+  "limitations": [
+    "The tcpdump-based encryption evidence (cmd-be80cf55c80744ef) and the specific ping test it is meant to correlate with (cmd-d3edb80ef3a547c5 / cmd-c42d8c89e0cf4b3a) are not perfectly time-synchronized in the timeline, so the exact packet-to-ping correspondence is inferred rather than directly time-locked.",
+    "tcpdump was unavailable on the Alpine nodes (node3/node4), so encryption verification relied solely on the OPNsense-side transit capture rather than a dual-ended capture.",
+    "The ~/.ssh/id_ed25519 and authorized_keys mutation on node1 from the abandoned SCP-based PSK transfer attempt was not observed to be reverted in the captured evidence; its final content/impact could not be independently confirmed from the trace."
+  ],
+  "command_stats": {
+    "total": 205,
+    "successful": 152,
+    "failed": 53,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most executor mutations were purposeful (interface/tunnel configuration, firewall rules, restart protocol) and were applied through config.xml + rc.reload_all/pluginctl in a controlled way, preserving management access throughout. However several unnecessary or unresolved mutations remain: (1) an SSH keypair/authorized_keys write attempt on node1 to enable scp-based PSK transfer (cmd-450c3fc2b5c34629) failed with 'Permission denied' and was abandoned in favor of a python http.server transfer, leaving an unused ~/.ssh/id_ed25519 and an authorized_keys append on node1 that were never cleaned up; (2) an extended trial-and-error sequence of ifconfig alias/-alias additions and removals on node1 and node2 transit/lan interfaces while discovering the true physical topology (e.g. cmd-7e14d683597b4606, cmd-3d857813d8dd4c33, cmd-d79d7cc2b8754007, cmd-49006cfddf6244e6, cmd-f85c6a9ed232429d and similar) \u2014 these were bounded, low-risk, and ultimately superseded by the final config.xml-driven interface assignment plus rc.reload_all, but represent unnecessary intermediate mutations rather than pure discovery; (3) a firewall filter-interface troubleshooting loop that temporarily patched a rule's interface from 'enc0' to 'ipsec' and back (cmd-b9a06946b7b64b0c, cmd-fbff073b1bbf45fb) \u2014 self-corrected and left in the correct final state; (4) leftover diagnostic artifacts on node3/node4 (/tmp/tcp1.log, /tmp/tcp1.pid from a failed tcpdump attempt, and /tmp/reboot.log) that were never removed, visible in the after-executor temporary-files snapshot. None of these residues are destructive, broad, or security-weakening, and the core tunnel/firewall/restart mutations were all deliberate and tied to the task outcome.",
+    "evidence_ids": [
+      "cmd-450c3fc2b5c34629",
+      "cmd-7e14d683597b4606",
+      "cmd-3d857813d8dd4c33",
+      "cmd-d79d7cc2b8754007",
+      "cmd-b9a06946b7b64b0c",
+      "cmd-fbff073b1bbf45fb",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node4:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

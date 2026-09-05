@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-snat-lana-to-lanb",
+      "requirement": "node2 (lan-a) -> node3 (lan-b) connections are observed by node3 as arriving from a node1 address rather than node2's own address",
+      "status": "satisfied",
+      "summary": "TCP client on node2 (real address 10.50.10.2) connected to node3:5001 (cmd-e072fa5b9f0a4a34, local addr 10.50.10.2:41142). node3's server log recorded the peer address as ('10.50.20.1', 3038) -- node1's LANB-facing interface address, not node2's real address (cmd-7bf2310f5f0b4bbf). This matches the active pf outbound NAT rule 'nat on vtnet2 inet from 10.50.10.0/24 to any -> (vtnet2:0)' (cmd-f99826db6b85453e). Re-verified after node1's reboot with a second live TCP test (cmd-cc948a018a1c413a, cmd-90e22d0127c14e2e) showing the same translation to 10.50.20.1.",
+      "evidence_ids": [
+        "cmd-e072fa5b9f0a4a34",
+        "cmd-7bf2310f5f0b4bbf",
+        "cmd-f99826db6b85453e",
+        "cmd-cc948a018a1c413a",
+        "cmd-90e22d0127c14e2e"
+      ]
+    },
+    {
+      "id": "req-2-original-source-reverse",
+      "requirement": "node3 (lan-b) -> node2 (lan-a) connections keep their original source address (no NAT applied in this direction)",
+      "status": "satisfied",
+      "summary": "TCP client on node3 (real address 10.50.20.2) connected to node2:5002 with local addr 10.50.20.2:38722 (cmd-f13cdd2aea624f56). node2's server log recorded the peer exactly as ('10.50.20.2', 38722) -- node3's real, unmodified address (cmd-9223c69a649745e8), confirming no SNAT was applied to the reverse direction. This reverse-direction check was not re-run after the node reboots, so persistence of this specific behavior across restart is not directly re-demonstrated, though the underlying rule set was shown unchanged post-reboot (cmd-c77780021bb045e7).",
+      "evidence_ids": [
+        "cmd-f13cdd2aea624f56",
+        "cmd-9223c69a649745e8",
+        "cmd-c77780021bb045e7"
+      ]
+    },
+    {
+      "id": "req-3-routing-connectivity",
+      "requirement": "node1 routes between lan-a and lan-b (prerequisite connectivity for the NAT behavior)",
+      "status": "satisfied",
+      "summary": "node1 was configured with opt1 (vtnet1, 10.50.10.1/24, LANA) and opt2 (vtnet2, 10.50.20.1/24, LANB) interfaces, IP forwarding was confirmed enabled (cmd-385bb9db0faa45be), pass rules were added for both interfaces, and cross-network ICMP/TCP connectivity was verified end to end (cmd-ea2c69fa9deb4f49, cmd-9217657d1d204f52, and the successful TCP tests above).",
+      "evidence_ids": [
+        "cmd-75a117fee27d4632",
+        "cmd-385bb9db0faa45be",
+        "cmd-ea2c69fa9deb4f49",
+        "cmd-9217657d1d204f52",
+        "cmd-15e6799dbe204317"
+      ]
+    }
+  ],
+  "overall_summary": "The core task requirement -- asymmetric NAT where node2->node3 traffic on node1 is translated to a node1 (LANB) address while node3->node2 traffic keeps its original source -- is directly demonstrated with live TCP connections and matching pf NAT rule state, both before and after a full one-at-a-time reboot of all three managed nodes. Boot-identity changes and post-restart functional recovery are shown for node1 (with a repeat live NAT test) and structurally for node2/node3 (interface/route persistence via ifcfg/route files), satisfying the mandated restart-evidence protocol. Minor gaps: the reverse-direction (node3->node2, no-NAT) behavior was not re-tested after the reboots, and node1's config.xml backup files' final disposition is unconfirmed, but neither undermines the demonstrated functional outcome.",
+  "limitations": [
+    "The reverse-direction (node3->node2, unmodified source) behavior was verified only before the reboot cycle, not re-tested afterward.",
+    "The final presence or removal of /conf/config.xml.bak1/.bak2/.bak3 backup files on node1 is not directly confirmed in the captured evidence.",
+    "node2 and node3 package-health checks were unavailable (timed out) in both baseline and post-executor snapshots, so package state consistency cannot be independently verified.",
+    "Post-restart recovery for node2 and node3 is evidenced primarily via interface/route state and boot-id change rather than a repeated end-to-end NAT test in both directions from those nodes."
+  ],
+  "command_stats": {
+    "total": 84,
+    "successful": 62,
+    "failed": 22,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Executor actions were closely scoped to the task. Temporary TCP test servers/scripts and firewalld test ports on node2/node3 were opened for testing and then removed (cmd-e143aae7a663488b, cmd-d1d2737658f94960, cmd-c41f37dbf5454407, cmd-2218cd27a0a448ca, confirmed clean via cmd-e5292309c2534fad/cmd-f59dd69023c34eca), and the final post-reboot test port on node3 (5003) was also removed (cmd-90e22d0127c14e2e). One troubleshooting misstep occurred on node1: the first outbound NAT rule was written with incorrect field names (source/destination instead of from/to per SNatRule.php's parser, cmd-5e55616697484822), which was corrected in a follow-up edit (cmd-95715b6c78d044f1) and confirmed active (cmd-f99826db6b85453e) -- a bounded, low-risk corrective edit rather than an unnecessary mutation. The executor left /conf/config.xml.bak1/.bak2/.bak3 backup copies on node1 (created by cmd-b47e9f050c964661, cmd-5e55616697484822, cmd-95715b6c78d044f1); these are low-risk residue not explicitly cleaned up, and their final presence is not directly confirmed or denied in the evidence. Reboot commands on all three nodes (cmd-79d13705a66a4158, cmd-f994fa465d93435d, cmd-21d8b572169848e4) were a required part of the mandated restart protocol, not unnecessary mutations. The observed /tmp churn (tmpcfd_* files, systemd-private-* directories) reflects normal OS/session churn tied to the new boot IDs, not executor-caused residue.",
+    "evidence_ids": [
+      "cmd-5e55616697484822",
+      "cmd-95715b6c78d044f1",
+      "cmd-f99826db6b85453e",
+      "cmd-e143aae7a663488b",
+      "cmd-c41f37dbf5454407",
+      "cmd-2218cd27a0a448ca",
+      "cmd-e5292309c2534fad",
+      "cmd-f59dd69023c34eca",
+      "cmd-90e22d0127c14e2e"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

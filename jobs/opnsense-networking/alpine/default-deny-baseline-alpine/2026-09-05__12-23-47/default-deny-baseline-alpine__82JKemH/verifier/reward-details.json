@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "single-path-8080",
+      "requirement": "Exactly one path opened through node1: TCP/8080 from node2 (lan-a) to node3 (lan-b); all other cross-network flows remain refused",
+      "status": "satisfied",
+      "summary": "pfctl ruleset on node1 shows a single pass rule ('pass in quick on vtnet1 ... proto tcp from (vtnet1:network) to 10.60.2.10 port = http-alt') plus default block-drop rules on vtnet1/vtnet2 networks. Functional tests confirm: node2->node3 TCP/8080 succeeds and delivers payload; node2->node3 TCP/9090 fails; ICMP (ping) node2->node3 fails; reverse direction node3->node2 TCP/8080 fails. This pattern holds both before and after all three node restarts.",
+      "evidence_ids": [
+        "cmd-0a6781b9b70547f9",
+        "cmd-99439cfceab84659",
+        "cmd-273624c9744d4262",
+        "cmd-7da03480b7ac4041",
+        "cmd-83619572deb34a27",
+        "cmd-e6b0318f5c1d4e56",
+        "cmd-292916058a584d8c",
+        "cmd-b35e6fdecf5f4e47",
+        "cmd-7937918df9894cb6",
+        "cmd-eff769b6b2604655"
+      ]
+    },
+    {
+      "id": "default-deny-preserved",
+      "requirement": "Existing default-deny behavior between lan-a and lan-b otherwise preserved, and management/exec access to node1 unaffected",
+      "status": "satisfied",
+      "summary": "Block-drop rules for traffic not matching the opt1/opt2 networks remain in the pf ruleset after the change, and node1 remained reachable via the exec channel (alive/date check) after the filter reload.",
+      "evidence_ids": [
+        "cmd-e6b0318f5c1d4e56",
+        "cmd-fd641f8125a245ba",
+        "cmd-fad5d6b2eb374a02"
+      ]
+    },
+    {
+      "id": "node1-restart",
+      "requirement": "node1 provider-wide restart evidence: pre-restart healthy baseline, restart acknowledgement, changed boot identity, recovered service/config/traffic state",
+      "status": "satisfied",
+      "summary": "Pre-restart pfctl rules captured showing opt1/opt2 rules active; 'shutdown -r now' issued and acknowledged; connection timeouts during downtime; new kern.boottime (2026-09-05 16:35:58 vs original 2026-06-15 02:56:41) confirms restart; post-restart interfaces, forwarding sysctl, and pf rules confirmed intact; end-to-end TCP/8080 retest succeeded post-restart with expected denial behavior unchanged.",
+      "evidence_ids": [
+        "cmd-78a80cc1e3694fc9",
+        "cmd-2110e79a60484efd",
+        "cmd-f8813a28551d40a4",
+        "cmd-99874c51ffb34263",
+        "cmd-e6b0318f5c1d4e56",
+        "cmd-292916058a584d8c",
+        "cmd-b35e6fdecf5f4e47"
+      ]
+    },
+    {
+      "id": "node2-restart",
+      "requirement": "node2 provider-wide restart evidence: pre-restart healthy baseline, restart acknowledgement, changed boot identity, recovered service/network/traffic state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id captured; 'reboot' issued; connection resets/timeouts observed during downtime; new boot_id confirms restart; post-restart check found the static IP persisted via /etc/network/interfaces but the route to 10.60.2.0/24 did not (runtime-only) \u2014 this gap was identified and corrected by adding a persistent post-up route, after which TCP/8080 connectivity was re-verified working.",
+      "evidence_ids": [
+        "cmd-58877921c49b43cc",
+        "cmd-c1eb273265894a58",
+        "cmd-92b244fdac0e4ec6",
+        "cmd-82aba6ac921e4ef1",
+        "cmd-7ca4f77487504fb7",
+        "cmd-087c73dcdba646ab"
+      ]
+    },
+    {
+      "id": "node3-restart",
+      "requirement": "node3 provider-wide restart evidence: pre-restart healthy baseline, restart acknowledgement, changed boot identity, recovered service/network/traffic state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id captured; persistent post-up route pre-added before reboot (informed by the node2 lesson); 'reboot' issued and acknowledged; connection resets/timeouts observed; new boot_id confirms restart; post-restart check shows both static IP and route persisted automatically; retest confirms TCP/8080 succeeds while TCP/9090 and ICMP remain refused.",
+      "evidence_ids": [
+        "cmd-65d77ceb42a04301",
+        "cmd-6c99ff1710ad49fd",
+        "cmd-cca2072a5bcd4396",
+        "cmd-23ded1416b614cd4",
+        "cmd-4b455b672f3d4ff9",
+        "cmd-7937918df9894cb6",
+        "cmd-eff769b6b2604655"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established the single required path (TCP/8080, node2 lan-a -> node3 lan-b) through node1's pf firewall while preserving default-deny for all other cross-network flows, verified this both before and after restarting all three managed nodes, and captured coherent boot-identity, service, and traffic-recovery evidence for each restart, including catching and fixing a route-persistence gap on node2 before it affected the node3 restart. The only shortcoming is some uncleaned temporary test-listener log/pid files left on node2 and node3, a minor hygiene issue with no security or functional impact.",
+  "limitations": [
+    "Management-path preservation on node1 was confirmed via a generic exec 'alive'/date check rather than an explicit SSH-based test, so the specific mechanism preserving admin access is inferred rather than directly demonstrated.",
+    "Some restart-window connection failures show as generic timeouts/resets without further diagnostic detail, which is expected but limits visibility into the exact node-down interval.",
+    "Left-over test artifacts (nc logs/pids) on node2/node3 were not independently confirmed as harmless beyond their filenames; no evidence they hold sensitive data, but full cleanup was not demonstrated."
+  ],
+  "command_stats": {
+    "total": 83,
+    "successful": 56,
+    "failed": 27,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Executor commands were largely read-only discovery, targeted config edits (pf rule, interface IPs/routes), and bounded diagnostic nc listeners used to validate the firewall behavior \u2014 all with a clear causal link to the task or to the mandated restart-evidence protocol. The one notable gap is uncleaned test artifacts: netcat listener log/pid files (/tmp/8080.log, /tmp/9090.log, /tmp/8080b.log, /tmp/8080c.log, /tmp/8080d.log, /tmp/nc*.pid, /tmp/reboot.log) were left behind on node2 and node3 as shown in the after-executor temporary-files diff, rather than being fully cleaned up after each verification round (only some kill commands succeeded, e.g. cmd-bd0036d6ecec45e0 and cmd-eff769b6b2604655 returned failure on kill). This is low-risk, non-security-relevant residue confined to /tmp, not a retained service or exposed port, so it only mildly penalizes hygiene. No unnecessary or destructive mutations, no weakened security controls, and no failed/conflicting services were observed; the 'configctl interface reload' failure (cmd-06af0fadcd6d4a86) was a no-op discovery attempt with no state change, immediately followed by the correct 'reconfigure opt1/opt2' commands.",
+    "evidence_ids": [
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "cmd-bd0036d6ecec45e0",
+      "cmd-eff769b6b2604655",
+      "cmd-06af0fadcd6d4a86"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

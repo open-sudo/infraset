@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 routes between lan-a and lan-b (interfaces configured with reachable subnets on both sides)",
+      "status": "satisfied",
+      "summary": "node1 vtnet1/vtnet2 assigned 10.50.1.1/24 and 10.50.2.1/24, persisted into /conf/config.xml and applied via configctl interface reconfigure (cmd-a64e5f731e884d28), interfaces show up with descriptions lan-a(opt1)/lan-b(opt2) (cmd-3d3e439b33d1432b). node2 and node3 configured with matching subnets and static routes toward the opposite subnet via node1 through persistent nmcli profiles (cmd-a89048a198a04876, cmd-dc1362cac4a44049). Bidirectional ping from node1 to both peers succeeds (cmd-75ecb12722f24e48, cmd-3d3e439b33d1432b, cmd-7f6bd83fd04347ef), and IP forwarding is confirmed enabled on node1 (cmd-507512ed88a647bf).",
+      "evidence_ids": [
+        "cmd-75ecb12722f24e48",
+        "cmd-9f12cf4fbd6d4a8b",
+        "cmd-a64e5f731e884d28",
+        "cmd-3d3e439b33d1432b",
+        "cmd-a89048a198a04876",
+        "cmd-dc1362cac4a44049",
+        "cmd-507512ed88a647bf"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "The permitted port set (8080, 8443, 9000) is expressed as a single named alias object on node1, and a single rule references it instead of one rule per port",
+      "status": "satisfied",
+      "summary": "An MVC Firewall/Alias entry 'node3_allowed_tcp_ports' and one filter rule were created via a config-editing script (cmd-3446811c8e684b7f, 'alias + rule added'), applied with configctl filter reload (cmd-d84d269988494f6a). pfctl -sr shows the compiled ruleset contains three per-port pass rules on vtnet1 from 10.50.1.10 to 10.50.2.10 (8080/8443/9000) that all share one identical rule label '32f8e7f51f166f3b235fd399d4f713ca' (cmd-d9510e076b214e5e), which is direct behavioral evidence of a single authored rule referencing a multi-value alias rather than three hand-written rules (pf gives each authored rule a distinct label; three ports under one label indicates one source rule expanded from an alias). The alias XML content itself was not printed in the captured evidence, so this outcome rests on the pf-expansion signature rather than a direct listing of the alias object.",
+      "evidence_ids": [
+        "cmd-3446811c8e684b7f",
+        "cmd-d84d269988494f6a",
+        "cmd-d9510e076b214e5e",
+        "cmd-7ef0fbeffbf1448b"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node2 can reach node3 over TCP on 8080, 8443, and 9000, while other ports remain blocked",
+      "status": "satisfied",
+      "summary": "With socat listeners on node3 (cmd-8d5b31fec4ba4a04), TCP round-trips from node2 to node3 succeed on 8080/8443/9000 (cmd-a4d8da4a2f324add) after also opening those ports in node3's local firewalld zone (cmd-56d82d8fec784776), and connection attempts on unlisted port 7000 time out, confirming default-deny still applies (cmd-2ecbca656c9d46f4). pf state table shows the expected traffic (cmd-621e1b870dc24aa9).",
+      "evidence_ids": [
+        "cmd-8d5b31fec4ba4a04",
+        "cmd-56d82d8fec784776",
+        "cmd-a4d8da4a2f324add",
+        "cmd-2ecbca656c9d46f4",
+        "cmd-621e1b870dc24aa9"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all managed nodes (node1, node2, node3) with healthy baseline, restart, changed boot identity, and recovered state",
+      "status": "satisfied",
+      "summary": "For each node: a pre-restart boot identity was captured (cmd-98577cb519d544ab for node2, cmd-c991163a52eb452f for node3, cmd-4183fe3d10774f70 for node1), a native reboot was issued (cmd-28833d6d937a4371, cmd-ecb14c74d5454c3a, cmd-12130c822e674e25), connectivity dropped and returned with a different boot identity (cmd-1c2a39b17185402b, cmd-9038a05023c64660, cmd-a560e14c599f4a46 \u2014 matches the fixed after_executor boot-identity cross-check for all three nodes), and post-restart state was verified: interface/route/nmcli config on node2 (cmd-97fee87a95f342cb), interface/route/firewalld ports on node3 (cmd-5b8f13498f7444a6), and on node1 the persisted interface config plus the alias-derived pf rule and a fresh end-to-end TCP retest (cmd-43fd2b8777dc4a31, cmd-40bd6ec152374d94, cmd-7c38b9ae6f1a41b9) all confirming full functional recovery.",
+      "evidence_ids": [
+        "cmd-98577cb519d544ab",
+        "cmd-28833d6d937a4371",
+        "cmd-1c2a39b17185402b",
+        "cmd-97fee87a95f342cb",
+        "cmd-c991163a52eb452f",
+        "cmd-ecb14c74d5454c3a",
+        "cmd-9038a05023c64660",
+        "cmd-5b8f13498f7444a6",
+        "cmd-4183fe3d10774f70",
+        "cmd-12130c822e674e25",
+        "cmd-a560e14c599f4a46",
+        "cmd-43fd2b8777dc4a31",
+        "cmd-40bd6ec152374d94",
+        "cmd-7c38b9ae6f1a41b9"
+      ]
+    }
+  ],
+  "overall_summary": "The task's material outcomes are all satisfied with direct evidence: node1 routes between lan-a and lan-b with persisted, verified interface/route configuration; the port set is expressed as a single OPNsense alias referenced by one rule (evidenced indirectly but convincingly via a shared pf rule label across three expanded per-port rules); node2 reaches node3 on 8080/8443/9000 while port 7000 remains blocked; and the mandatory restart protocol was completed for all three nodes with observed boot-identity changes and full functional recovery, corroborated by the fixed lifecycle boot-identity snapshots. The only notable gap is that the alias object's actual content (8080/8443/9000) was never printed directly, so the alias-based design relies on the pf rule-expansion signature rather than a first-hand listing of the alias. Minor, low-severity temp-file residue was left on node3 from a failed nc attempt and un-deleted socat log/pid files.",
+  "limitations": [
+    "The OPNsense alias object's stored content (port list) was never directly printed/listed in captured evidence; its existence and correctness are inferred from the pf rule-expansion pattern (three ports sharing one rule label) rather than observed directly.",
+    "A read-only diagnostic command on node1 (cmd-8750fecb12724231) printed CLUSTER_SSH_PRIVKEY material to stdout; this is environmental (cluster credentials in env vars) rather than an executor-created exposure, but it is noted as a limitation on the safety of captured logs.",
+    "Minor unremoved temp-file residue (nc*.log/.pid, socat_*.log/.pid) remains on node3 per the after_executor snapshot; low severity given its bounded, non-destructive nature."
+  ],
+  "command_stats": {
+    "total": 75,
+    "successful": 63,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands map clearly to the task or the restart protocol: interface/IP configuration on all three nodes, alias/rule creation, firewalld port opens (a necessary prerequisite since OPNsense's rule only governs the inter-subnet hop), and the sequenced reboots. A few troubleshooting mutations occurred but were bounded and effectively self-corrected: an ephemeral 'ip addr add' on node2/node3 (cmd-ca51e6748e054c8e, cmd-e6aef0652cd14290) was superseded by the persistent nmcli profile shortly after (cmd-a89048a198a04876, cmd-dc1362cac4a44049), and a failed manual 'ip route add' attempt (cmd-d17c16a8704e4ad6, cmd-79903702bde94a2d) did not mutate state (both errored with 'invalid gateway'). A follow-up nmcli gateway-clear (cmd-c2bf35a292eb4681, cmd-9a19df29067247dc) was a legitimate corrective step to avoid a duplicate default route. The main unresolved residue is on node3: a first, failed attempt to use 'nc' as a TCP listener (cmd-d92a2af46c604a95) left behind /tmp/nc8080.log, /tmp/nc8080.pid, /tmp/nc8443.log/.pid, /tmp/nc9000.log/.pid, /tmp/nc7000.log/.pid, and the socat listener log/pid files from both the pre- and post-restart verification runs (/tmp/socat_*.log/.pid for 7000/8080/8443/9000) were killed (cmd-517102599f4e415d, cmd-3dd3499d6eef4e26) but their log/pid files were never deleted \u2014 all visible as retained residue in the after_executor temporary-files snapshot for node3. This is low-severity (small, non-destructive, non-executing artifacts) but constitutes abandoned files that were not cleaned up.",
+    "evidence_ids": [
+      "cmd-ca51e6748e054c8e",
+      "cmd-e6aef0652cd14290",
+      "cmd-a89048a198a04876",
+      "cmd-dc1362cac4a44049",
+      "cmd-d17c16a8704e4ad6",
+      "cmd-79903702bde94a2d",
+      "cmd-c2bf35a292eb4681",
+      "cmd-9a19df29067247dc",
+      "cmd-d92a2af46c604a95",
+      "cmd-517102599f4e415d",
+      "cmd-3dd3499d6eef4e26",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

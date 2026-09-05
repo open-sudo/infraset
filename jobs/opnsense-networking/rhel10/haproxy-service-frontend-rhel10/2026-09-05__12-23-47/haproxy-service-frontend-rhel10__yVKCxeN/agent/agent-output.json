@@ -1,0 +1,101 @@
+{
+  "status": "completed",
+  "summary": "Configured OPNsense HAProxy on node1 (10.100.109.10, port 80) to load-balance across identifying HTTP servers on node2 (10.100.109.11:8080) and node3 (10.100.109.12:8080), and verified node4 receives alternating round-robin responses through that single entry point. Completed the mandatory one-at-a-time restart protocol on all four nodes, proving boot-identity change and full service/LB recovery on each.",
+  "actions_performed": [
+    "Surveyed all 4 nodes: node1 is OPNsense/FreeBSD with only a LAN interface (10.100.109.10/24, same subnet as node2-4, which is also its management/exec address); node2-4 are RHEL10 with firewalld active.",
+    "Created /opt/webroot/index.html identifying each host and a systemd webserver.service (python3 http.server) on port 8080 on node2 and node3; opened firewalld port 8080/tcp on each.",
+    "Installed the os-haproxy plugin on node1 via pkg.",
+    "Configured HAProxy via the OPNsense HAProxy MVC model (PHP scripts run through php CLI): two static servers (node2_8080, node3_8080), one backend 'web_pool' (mode http, algorithm roundrobin; disabled default src-IP stick-table persistence after discovering it pinned all requests to a single backend), and one frontend 'web_frontend' bound to 10.100.109.10:80; saved config.xml incrementally (servers, then backend, then frontend) because ModelRelationField validation only recognizes already-persisted state.",
+    "Ran `configctl template reload OPNsense/HAProxy` (required since direct model saves don't auto-regenerate the staged haproxy.conf) then `configctl haproxy start`; confirmed haproxy bound to 10.100.109.10:80.",
+    "Verified round-robin load balancing from node1 itself and from node4 across both backends (alternating node2/node3 responses).",
+    "Captured baseline boot identity (kern.boottime on node1 FreeBSD; /proc/sys/kernel/random/boot_id on node2/3/4) and health evidence (webserver active + curl 8080 on node2/3; haproxy running + curl 80 through the LB on node1) for all 4 nodes.",
+    "Restarted node2, then node3, then node4, then node1 one at a time using a backgrounded, delayed native reboot (systemctl reboot / /sbin/reboot) so the exec acknowledgement returned before disconnection.",
+    "Polled each node after its restart until exec was available again, and confirmed each node's boot identity changed from its captured baseline.",
+    "After each restart, captured direct post-restart proof: node2/node3 webserver.service active and serving on 8080 again; node4 able to curl the LB entry point; node1's haproxy process running and re-bound to 10.100.109.10:80 automatically after boot.",
+    "Ran a final end-to-end verification from node4 after all four restarts, confirming alternating node2/node3 responses through node1's HAProxy entry point on port 80."
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 and node3 serve HTTP on 8080 identifying which host answered",
+      "command_ids": [
+        "cmd-b0479d21f2254c4d",
+        "cmd-79336bb32a3c4bd2",
+        "cmd-e0c4e12d3c3f4601",
+        "cmd-989cca8bd06a4581",
+        "cmd-170ad81e9e334233"
+      ],
+      "summary": "Created and started systemd webserver.service on node2/node3, each returning 'Hello from <hostname> (<ip>)'; node1 confirmed reachability to both on port 8080."
+    },
+    {
+      "requirement": "node1 presents one entry point on TCP 80 of its management address spreading requests across both hosts",
+      "command_ids": [
+        "cmd-0b1baa990d454530",
+        "cmd-f92a3da7224f4f96",
+        "cmd-3a15e3d044c7469d",
+        "cmd-268f97b12a584c1f",
+        "cmd-85a1df38998c4ba2",
+        "cmd-9c4c17745f334a08",
+        "cmd-e807c1c3424f46e8",
+        "cmd-8e5915db55414ab4"
+      ],
+      "summary": "Installed os-haproxy, configured servers/backend(roundrobin, persistence disabled)/frontend bound to 10.100.109.10:80 via the HAProxy model, regenerated the template, started the service, and confirmed alternating node2/node3 responses when curling from node1 itself."
+    },
+    {
+      "requirement": "node4 receives answers from each host through node1's entry point",
+      "command_ids": [
+        "cmd-7902a3efc024494b",
+        "cmd-09a650cc585e4e00",
+        "cmd-fe721ce08ba244a6",
+        "cmd-ef42f85c5f6142de"
+      ],
+      "summary": "Repeated curl loops from node4 against http://10.100.109.10:80/ show alternating 'Hello from node2' and 'Hello from node3' responses, both before and after each node restart."
+    },
+    {
+      "requirement": "node2 restart: baseline, ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-6d8b93469d8a40d6",
+        "cmd-8fa410be09c5468a",
+        "cmd-ca57aed1f7c449e6",
+        "cmd-5500b3fa6d794d13",
+        "cmd-154d6d222b0b47a2",
+        "cmd-c89d876598854b01"
+      ],
+      "summary": "Baseline boot_id 21972395-...; backgrounded systemctl reboot acknowledged; connection reset during reboot; boot_id changed to e11a3c5d-...; webserver.service active and curl 8080 healthy; LB round-robin restored from node1."
+    },
+    {
+      "requirement": "node3 restart: baseline, ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-fdc69b04dd8f411f",
+        "cmd-63a05bdf6e0044fb",
+        "cmd-ae680f06600c4893",
+        "cmd-5a85f231ee4e4164",
+        "cmd-7b02fa74305a41c7",
+        "cmd-09a650cc585e4e00"
+      ],
+      "summary": "Baseline boot_id 2db46909-...; backgrounded systemctl reboot acknowledged; connection timeout/reset during reboot; boot_id changed to 73caec72-...; webserver.service active and curl 8080 healthy; node4 confirmed LB round-robin restored."
+    },
+    {
+      "requirement": "node4 restart: baseline, ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-40581f51a9bc411b",
+        "cmd-b92811e6e9924de5",
+        "cmd-215df83390f848a4",
+        "cmd-cd62a4975f984755",
+        "cmd-fe721ce08ba244a6"
+      ],
+      "summary": "Baseline boot_id 368725cb-...; backgrounded systemctl reboot acknowledged; connection timeout/reset during reboot; boot_id changed to f8ac3258-...; post-restart curl from node4 through the LB entry point succeeded, alternating between both backends."
+    },
+    {
+      "requirement": "node1 restart: baseline, ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a31e159674524f8a",
+        "cmd-e27c64118b224994",
+        "cmd-65a848e44dc6483a",
+        "cmd-2110d06289ce4711",
+        "cmd-b74e08c3eed04190",
+        "cmd-ef42f85c5f6142de"
+      ],
+      "summary": "Baseline kern.boottime 17:02:14; backgrounded /sbin/reboot acknowledged; SSH connection timed out during reboot; kern.boottime changed to 17:08:19; haproxy automatically running again bound to 10.100.109.10:80; node4 end-to-end curl loop confirmed full recovery of the load-balanced entry point."
+    }
+  ]
+}

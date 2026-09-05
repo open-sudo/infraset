@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Build an IPsec tunnel between node1 and node2 over the shared transit network",
+      "status": "satisfied",
+      "summary": "swanctl --list-sas on both node1 and node2 shows the IKEv2 SA ESTABLISHED (local 10.99.99.1/remote 10.99.99.2 and vice versa) and the child SA INSTALLED in TUNNEL mode, matching PSK/IKEv2 config confirmed via swanctl.conf and OPNsense Swanctl model getConfig() output. Direct, coherent evidence on both endpoints.",
+      "evidence_ids": [
+        "cmd-2b30efebe0b049f9",
+        "cmd-4150b36861ba451f",
+        "cmd-515c70c925684cbf",
+        "cmd-c8e70d1da8944668",
+        "cmd-94ab81ce08ea4795",
+        "cmd-878b9e323c3549ed",
+        "cmd-9aef47fc59f94a3f"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Carry the private networks (lan-a 10.10.10.0/24, lan-b 10.20.20.0/24) over the tunnel so node3 and node4 reach each other by private address",
+      "status": "satisfied",
+      "summary": "After fixing OPNsense-specific gaps (legacy ipsec.enable flag, enc0 dynamic interface registration, pf rule interface rewrite), node3 successfully pings node4's private IP 10.20.20.2 and node4 pings node3's private IP 10.10.10.2, both 0% loss, with the tunnel's ESP SA byte/packet counters incrementing to confirm real traffic flow through the tunnel rather than a coincidental path.",
+      "evidence_ids": [
+        "cmd-ff8144480d034a39",
+        "cmd-6ea9339d27f14f14",
+        "cmd-b959279f55074aef",
+        "cmd-644678c9d6b1434a"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Traffic between the private networks is encrypted in transit across the shared transit network",
+      "status": "satisfied",
+      "summary": "tcpdump captured on node1's transit interface (vtnet1) during an active node3->node4 ping shows exclusively ESP packets between 10.99.99.1 and 10.99.99.2 in both directions; no plaintext ICMP is visible on the wire, directly confirming encryption.",
+      "evidence_ids": [
+        "cmd-e3113b349dce43ea"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Private networks (lan-a, lan-b) have no other path between them besides the tunnel, per the stated topology",
+      "status": "satisfied",
+      "summary": "Topology discovery confirms node3 and node4 each have only a management NIC (enp1s0) and a single private-side NIC (enp8s0) with no direct adjacency to the other private network; all successful private-address reachability observed in the trace flows exclusively through the IPsec tunnel, consistent with the stated isolated-networks premise.",
+      "evidence_ids": [
+        "cmd-afcda682b47047fa",
+        "cmd-8a02c78c307b4c5d",
+        "cmd-21d5528f5c1c482d",
+        "cmd-027bee0dd4fd4143"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all 4 managed nodes (pre-restart baseline, restart ack, changed boot identity, recovered state)",
+      "status": "satisfied",
+      "summary": "All four nodes show a captured pre-restart boot identity/healthy state, a restart acknowledgement, a distinct post-restart boot identity, and a recovered functional state. node1 and node2 (OPNsense) recovered the IPsec SA and enc0 pf rules fully automatically from persisted config.xml with no manual steps. node3 and node4 (RHEL) required re-adding the private-side IP (initial `ip addr add` was ephemeral and got wiped by NetworkManager reconciliation), which the executor diagnosed and fixed by switching to a persistent nmcli profile; a final end-to-end ping in both directions after all four restarts confirms full recovery. The interim disruption on node3/node4 is a genuine observed transition, not a gap in evidence.",
+      "evidence_ids": [
+        "cmd-be46cbce4da74941",
+        "cmd-13f1675560f948b4",
+        "cmd-875559bb5e57455a",
+        "cmd-e03be8ae91cc40b1",
+        "cmd-872268035bc4412e",
+        "cmd-b45014f1f29942c5",
+        "cmd-0312ee0dbbf84c05",
+        "cmd-b37d974cd2434303",
+        "cmd-67898d629911408e",
+        "cmd-ea553411a04d4128",
+        "cmd-0599cfecad1b4673",
+        "cmd-857c5d5326dd4560",
+        "cmd-e08a9bf069404ea3",
+        "cmd-b6e6e3ed55c0486a",
+        "cmd-8bfd666e5ca940e3",
+        "cmd-547f699e3dc34bc4",
+        "cmd-6b1f7a2d09604264",
+        "cmd-adf9173a0d58496a",
+        "cmd-74e46d9dafbb4fe5",
+        "cmd-404d6691767c4ece",
+        "cmd-5ecbfc90da5644dc",
+        "cmd-49286115a8c544ac",
+        "cmd-9f40138230e947d2",
+        "cmd-3772db29a1be48a0",
+        "cmd-d75d2237a74a449a"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a working PSK/IKEv2 route-based IPsec tunnel between node1 and node2 over the transit network, correctly diagnosed and fixed two OPNsense-specific gaps (legacy ipsec.enable flag and dynamic enc0 pf-interface registration), and directly demonstrated bidirectional node3<->node4 reachability over their private addresses with tcpdump-confirmed ESP-only traffic on the transit link. All four managed nodes were restarted with pre/post boot-identity evidence and a directly observed recovery: node1/node2 recovered fully automatically from persisted config, while node3/node4 required (and received) a diagnosed fix for an ephemeral-address/NetworkManager-reconciliation issue, ending in a confirmed full end-to-end recovery. Hygiene is good overall: early troubleshooting IP assignments were fully reverted, and only minor reboot-related residue (a failed NetworkManager-wait-online unit and a few scratch log files on the RHEL nodes) remains.",
+  "limitations": [
+    "The instruction's premise that private networks have 'no path between them' other than the tunnel is inferred from interface/topology inspection rather than an exhaustive negative-path test.",
+    "node3/node4 post-restart recovery was not fully automatic \u2014 it required manual re-addressing and a persistence fix (ip addr add ephemeral, then nmcli), which is captured in the trace but represents a deviation from a clean automatic recovery.",
+    "A new 'NetworkManager-wait-online.service' failed unit appeared on node3 and node4 after the executor's restart testing and was not explicitly investigated or cleared, though it did not block IPsec/private-address functionality in the final verification."
+  ],
+  "command_stats": {
+    "total": 198,
+    "successful": 170,
+    "failed": 28,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Most state-changing commands were purposeful: discovery/topology mapping (ARP inspection), an initial round of temporary /24 addresses assigned to vtnet1/vtnet2 on node1/node2 and enp8s0 on node3/node4 to test connectivity before the transit/private topology was finalized (cmd-bcabc0c6018d4755, cmd-63eecab2c1ce4a13, cmd-a5841eaf37954a28, cmd-970217a483514aa3) were bounded, low-risk troubleshooting experiments that did not contribute to the final solution and were then fully reverted (cmd-575ffb8bd1494f72, cmd-6101aacd4dae423c, cmd-ed5f46d9e40c47f9, cmd-3f9ad0f606a14e79) before the real addressing was applied via config.xml edits. All subsequent config.xml edits, ipsec_configure_do() invocations, and pf interface-registration fixes (enc0) were necessary prerequisites directly tied to the material IPsec/routing outcome and were retained. The mandated reboots of all 4 nodes left node3 and node4 with a residual 'NetworkManager-wait-online.service' failed unit not present at baseline, and small leftover scratch files (/tmp/tcpd3.log, /tmp/tcpd4.log, /tmp/ping_verify.log, /tmp/reboot.log) \u2014 minor, low-risk residue tied to the reboot-testing protocol rather than unrelated mutation.",
+    "evidence_ids": [
+      "cmd-bcabc0c6018d4755",
+      "cmd-575ffb8bd1494f72",
+      "cmd-63eecab2c1ce4a13",
+      "cmd-6101aacd4dae423c",
+      "cmd-a5841eaf37954a28",
+      "cmd-ed5f46d9e40c47f9",
+      "cmd-970217a483514aa3",
+      "cmd-3f9ad0f606a14e79",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node4:failed-services",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node4:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

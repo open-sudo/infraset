@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "routing",
+      "requirement": "node1 routes between lan-a and lan-b",
+      "status": "satisfied",
+      "summary": "node1 initially had only vtnet0 configured; executor added opt1 (vtnet1/lan-a) and opt2 (vtnet2/lan-b) interfaces via config.xml edits and configctl reconfigure, confirmed ip.forwarding=1, and successfully pinged both node2 (10.50.1.10) and node3 (10.50.2.10) from node1 across the two subnets.",
+      "evidence_ids": [
+        "cmd-20cfd8669f8c4682",
+        "cmd-92515fbfdde84a06",
+        "cmd-ab939c23f3eb4e2b",
+        "cmd-91a171e7ff5147c2",
+        "cmd-785e24166d1540c6",
+        "cmd-8e6175bf41154f77"
+      ]
+    },
+    {
+      "id": "single-alias",
+      "requirement": "Express the set of TCP ports (8080, 8443, 9000) as a single named object on node1 and reference it from the rule instead of one rule per port",
+      "status": "satisfied",
+      "summary": "A single OPNsense alias 'NODE3_ALLOWED_TCP_PORTS' was created with content 8080/8443/9000, and exactly one pass rule was added on interface opt1 referencing the alias by name in the destination port field. After 'configctl filter reload', pfctl -sr shows all three expanded port-match lines sharing the identical rule label (ef5120e9...), directly confirming a single authored rule/alias object drives all three ports rather than three separate rules.",
+      "evidence_ids": [
+        "cmd-97cd0f9290bf4623",
+        "cmd-b05c702cb2514813",
+        "cmd-63e99872d8c8451f"
+      ]
+    },
+    {
+      "id": "reachability",
+      "requirement": "node2 can reach node3 on TCP 8080, 8443, and 9000; other ports remain blocked",
+      "status": "satisfied",
+      "summary": "Baseline pre-rule connections to all three ports were CLOSED/blocked. After adding the alias-based rule on node1 and (as a necessary secondary fix) opening the same ports in node3's own firewalld \u2014 diagnosed via pflog0 capture showing node3's ICMP admin-prohibited replies \u2014 all three ports opened successfully from node2, while port 9001 (outside the alias) timed out/blocked, both before and after node restarts.",
+      "evidence_ids": [
+        "cmd-39b512c47961409b",
+        "cmd-3bc343df17854b68",
+        "cmd-5e6fb2e50eee430d",
+        "cmd-262872d714f8423c",
+        "cmd-d38b84a59f5246df",
+        "cmd-636b9b97cd6148bc",
+        "cmd-745053711e9f4010",
+        "cmd-6f4fac94e6234425"
+      ]
+    },
+    {
+      "id": "restart-node1",
+      "requirement": "Provider-wide restart evidence protocol for node1 (OPNsense)",
+      "status": "satisfied",
+      "summary": "Healthy baseline boot time (16:53:25) and working interfaces/rule captured pre-restart; 'shutdown -r now' issued and acknowledged; node was unreachable during reboot; polling confirmed a new boot time (17:00:32); post-restart interfaces, the alias-derived pf rule, and end-to-end TCP connectivity on all three ports were reverified.",
+      "evidence_ids": [
+        "cmd-bf5e51aed983471e",
+        "cmd-adcbb099d38742f9",
+        "cmd-496b9b94c1a842ce",
+        "cmd-0ffca184cd61443d",
+        "cmd-a8fb1be7d8e245e1",
+        "cmd-1b79c577317d49f6",
+        "cmd-636b9b97cd6148bc",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-node2",
+      "requirement": "Provider-wide restart evidence protocol for node2",
+      "status": "satisfied",
+      "summary": "Baseline boot_id (b953e8ce...) and working static IP/route captured; 'shutdown -r now' issued; connection timed out during reboot; polling confirmed a new boot_id (a3a25632...); post-restart static IP/route and end-to-end TCP connectivity to node3 were reverified.",
+      "evidence_ids": [
+        "cmd-417eb3ec26d04cf2",
+        "cmd-f63f10200c5947da",
+        "cmd-3cf0ad7482c14a8c",
+        "cmd-fe69e2782fd54b31",
+        "cmd-7da08a8b19df4727",
+        "cmd-96d247846c514a62",
+        "cmd-745053711e9f4010",
+        "global:after_executor:node2:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-node3",
+      "requirement": "Provider-wide restart evidence protocol for node3",
+      "status": "satisfied",
+      "summary": "Baseline boot_id (03273aa8...) plus firewalld port state captured; 'shutdown -r now' issued; connection timed out during reboot; polling confirmed a new boot_id (991eed2c...); post-restart static IP/route, persisted firewalld port openings, and end-to-end connectivity from node2 were reverified.",
+      "evidence_ids": [
+        "cmd-1e4178ca1f3e48e2",
+        "cmd-e71ec5aa5f694cc3",
+        "cmd-d88fda391d074eb5",
+        "cmd-c8c3bcba747647c5",
+        "cmd-b69f8c2cfb7b46c3",
+        "cmd-43048835587744e9",
+        "cmd-6f4fac94e6234425",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct evidence: node1 was configured to route between lan-a and lan-b, a single named port alias (NODE3_ALLOWED_TCP_PORTS containing 8080/8443/9000) was created and referenced by exactly one firewall rule (confirmed via pfctl showing one shared rule label expanded to three port matches), and end-to-end TCP reachability from node2 to node3 was verified on the three allowed ports while an unlisted port (9001) remained blocked. The executor also correctly diagnosed and fixed a secondary host-level firewalld block on node3 that was blocking the intended traffic despite the correct OPNsense rule. The mandatory provider-wide restart protocol was completed and well-evidenced on all three nodes, each showing a healthy pre-restart baseline, a restart acknowledgement, a changed boot identity, and full recovery of routing, the alias/rule, firewalld state, and connectivity post-restart.",
+  "limitations": [
+    "Minor temporary-file residue (helper scripts, .bak config backups, and log files from restart/verification tooling) was left behind on node1/node2/node3 without an explicit cleanup step being shown in the trace, though this residue is non-destructive and low-risk."
+  ],
+  "command_stats": {
+    "total": 98,
+    "successful": 83,
+    "failed": 15,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Executor commands were almost entirely read-only diagnostics, targeted config.xml edits (with .bak backups made before each edit \u2014 cmd-ab939c23f3eb4e2b, cmd-97cd0f9290bf4623), and bounded verification tooling (socat listeners, tcpdump, python socket probes) that was torn down after use (pkill tcpdump at cmd-0200d6f05a7d43c9; pkill socat at cmd-e4ed27385f114257/e030fe8c4a53442c/8e1a313864b54ab6/47fa5e07948d46f6, each confirmed by a follow-up 'ss' check showing no listeners). Opening node3's firewalld ports 8080/8443/9000 (cmd-262872d714f8423c) was a necessary, narrowly-scoped prerequisite discovered via root-cause diagnosis (cmd-5e6fb2e50eee430d), not an unnecessary mutation, and it persisted through restart as required functionality. Minor residue: temporary Python helper scripts (/tmp/add_ifaces.py, /tmp/add_alias_rule.py) and config.xml.bak.* backup files on node1, plus leftover /tmp/reboot.log, /tmp/out.log, and socat_*.log files on node2/node3 from the restart protocol, were not explicitly cleaned up in the trace \u2014 low-risk, non-destructive log/script residue only, visible in the after-executor temporary-files diff.",
+    "evidence_ids": [
+      "cmd-ab939c23f3eb4e2b",
+      "cmd-97cd0f9290bf4623",
+      "cmd-262872d714f8423c",
+      "cmd-5e6fb2e50eee430d",
+      "cmd-0200d6f05a7d43c9",
+      "cmd-e4ed27385f114257",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

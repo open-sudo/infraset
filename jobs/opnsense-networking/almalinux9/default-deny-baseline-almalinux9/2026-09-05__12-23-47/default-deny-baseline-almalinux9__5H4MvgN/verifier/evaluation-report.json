@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 opens exactly one path: TCP/8080 from lan-a (opt1/vtnet1) to lan-b (opt2/vtnet2)",
+      "status": "satisfied",
+      "summary": "config.xml was edited to add opt1 (vtnet1, 10.50.1.1/24) and opt2 (vtnet2, 10.50.2.1/24) interfaces plus a single pass rule for tcp/8080 opt1->opt2 (cmd-cfdb879110cf4775). After 'configctl filter reload', pfctl -sr confirms exactly one pass rule referencing vtnet1/vtnet2 (port=http-alt) alongside the pre-existing default-deny block rules and untouched vtnet0 management rules (cmd-a51389a296334f38, cmd-26b68c3e844146f0, cmd-7aed8e99e5044260).",
+      "evidence_ids": [
+        "cmd-cfdb879110cf4775",
+        "cmd-a51389a296334f38",
+        "cmd-26b68c3e844146f0",
+        "cmd-7aed8e99e5044260"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node2 (lan-a) can reach node3 (lan-b) on TCP/8080",
+      "status": "satisfied",
+      "summary": "After node3 was addressed and an HTTP listener started on 10.50.2.10:8080, and node3's local firewalld was opened for 8080 (needed since node3 also has a local firewall independent of node1), curl from node2 to 10.50.2.10:8080 returned HTTP 200 (cmd-ad1c3668ca2a4360), and this was reconfirmed after every subsequent restart (cmd-4cc03d6588674d18, cmd-5ba25ec2da8142b7, cmd-b3ab957edba34f12).",
+      "evidence_ids": [
+        "cmd-ad1c3668ca2a4360",
+        "cmd-4cc03d6588674d18",
+        "cmd-5ba25ec2da8142b7",
+        "cmd-b3ab957edba34f12"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Every other flow between lan-a and lan-b remains refused (both directions, other ports/protocols)",
+      "status": "satisfied",
+      "summary": "From node2: ICMP to node3 and TCP/9090 both time out/fail while 8080 succeeds (cmd-ad1c3668ca2a4360). From node3 (reverse direction): ICMP to node2 fails and a curl to node2:8080 times out, showing the pass rule is directional and no return path exists (cmd-411f67d862344fc2). This refusal persists identically after the full restart cycle (cmd-b3ab957edba34f12).",
+      "evidence_ids": [
+        "cmd-ad1c3668ca2a4360",
+        "cmd-411f67d862344fc2",
+        "cmd-b3ab957edba34f12"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide restart evidence protocol: pre-restart baseline, restart ack, changed boot identity, recovered state for node1, node2, node3",
+      "status": "satisfied",
+      "summary": "Each node's pre-restart boot identity was captured (node2 717db5a2 cmd-7a94edb661994d45; node3 84419b90 cmd-e3b861276aa4490c; node1 kern.boottime 1788625456 cmd-4b9ed9f05d344ced/cmd-b3f274f1a2a64d08), a background 'shutdown -r now' ack was issued for each (cmd-4337ede283594560, cmd-a34fc80ffa2241ce, cmd-4b9ed9f05d344ced), connectivity loss and reconnection were observed (cmd-4dd885d4ac6c4d1e/cmd-32d7f97ba7f24168, cmd-9f80e866260c4f27/cmd-d9a7891f42b04f56, cmd-b2c2e0eb36de4a4f/cmd-613787667b024a9c/cmd-cf91b22b0e0a4f30), and post-restart boot identities differed and were confirmed changed (node2 a599f9e6 cmd-354139fd711c4a31; node3 d411a254 cmd-72e8fbc7cc0e4b0f; node1 kern.boottime 1788625760 cmd-f0bc3058c5674d7d). Recovered state was re-verified for each node after its restart.",
+      "evidence_ids": [
+        "cmd-7a94edb661994d45",
+        "cmd-e3b861276aa4490c",
+        "cmd-4b9ed9f05d344ced",
+        "cmd-4337ede283594560",
+        "cmd-a34fc80ffa2241ce",
+        "cmd-354139fd711c4a31",
+        "cmd-72e8fbc7cc0e4b0f",
+        "cmd-f0bc3058c5674d7d",
+        "cmd-4cc03d6588674d18",
+        "cmd-8c422af49d5545f2",
+        "cmd-5ba25ec2da8142b7",
+        "cmd-b3ab957edba34f12"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly implemented a single directional pass rule (TCP/8080, lan-a->lan-b) on node1's OPNsense firewall, confirmed via pfctl that no other lan-a<->lan-b traffic is permitted, and demonstrated end-to-end functional behavior in both directions (8080 succeeds one way, everything else including the reverse direction is refused). All three nodes were also put through a full restart cycle with pre/post boot-identity capture and functional re-verification, satisfying the independent restart-evidence protocol. The only notable hygiene issue is a test HTTP listener and its log/pid files left running on node3 after task completion, which is low-risk but unnecessary residue.",
+  "limitations": [
+    "No test of other TCP ports besides 9090 and 8080, and no other protocols (e.g., UDP) between the networks -- port 9090 and ICMP stand in as representative 'other flow' probes.",
+    "Reverse-direction (node3->node2) testing only covered ICMP and TCP/8080, not an additional arbitrary port, though the directional nature of the single pf rule makes this a low risk.",
+    "No independent confirmation that node2's local firewall (if any) does not also gate the 8080 path, though no local firewall blocking was observed on node2."
+  ],
+  "command_stats": {
+    "total": 55,
+    "successful": 43,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Discovery-phase mutations were bounded and reverted: temporary IPs assigned via ifconfig on node1's vtnet1/vtnet2 (cmd-a7a6a4b9f7d949c0) and via 'ip addr add' on node2/node3 (cmd-192d5fb1ff464800, cmd-77bd8f2a79464387) were used only to confirm interface-to-node pairing via ARP, and the temporary node2/node3 addresses were explicitly removed before the final nmcli-persisted addressing was applied (cmd-5381c633aad6465b, cmd-294c447b313c4e45); the node1 ifconfig addresses were superseded (not conflicting) once config.xml/opt1/opt2 were applied. Opening node3's local firewalld port 8080 (cmd-dd17f65a4be8492e, cmd-5b2fc94c991c4981) was a necessary prerequisite since node3 has its own independent firewall blocking the test listener. The one residue item is a test HTTP listener (python3 -m http.server) started on node3 to prove port-8080 reachability, which was left running after task completion and persisted across the node3 restart (cmd-5cd859d64857452b, cmd-8c422af49d5545f2), along with its /tmp/http8080.log and .pid files -- a low-risk but retained artifact not otherwise required by the task. A config.xml backup (.bak) was made before editing, which is a safe, standard precaution.",
+    "evidence_ids": [
+      "cmd-a7a6a4b9f7d949c0",
+      "cmd-192d5fb1ff464800",
+      "cmd-77bd8f2a79464387",
+      "cmd-5381c633aad6465b",
+      "cmd-294c447b313c4e45",
+      "cmd-dd17f65a4be8492e",
+      "cmd-5b2fc94c991c4981",
+      "cmd-5cd859d64857452b",
+      "cmd-8c422af49d5545f2",
+      "global:after_executor:node3:listening-sockets",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

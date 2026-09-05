@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 routes between lan-a and lan-b (node2 <-> node3 traffic transits node1)",
+      "status": "satisfied",
+      "summary": "node1 opt1/opt2 (vtnet1/vtnet2) were configured with static IPs 10.0.10.1/24 and 10.0.20.1/24, ip forwarding enabled (net.inet.ip.forwarding=1), and node2/node3 given matching static addresses plus cross-subnet static routes via node1. tcpdump on node1's pflog showed SYN packets passing out on vtnet2 for traffic from node2 to node3, and end-to-end TCP connects succeeded, confirming node1 is actively routing between the two LANs.",
+      "evidence_ids": [
+        "cmd-a29c1d53fac24a89",
+        "cmd-9a9188060c3c429f",
+        "cmd-00e2def9792f4297",
+        "cmd-5e00edbeb32e4556",
+        "cmd-f0cc227735d743dd",
+        "cmd-50491d99c28c4091",
+        "cmd-98c5e8964c6946f2",
+        "cmd-bbce7f7553174eef"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "A single named object (alias) on node1 containing TCP ports 8080, 8443, 9000",
+      "status": "satisfied",
+      "summary": "A port-type firewall alias named 'node3_svc_ports' with content 8080/8443/9000 was created in node1's config.xml and confirmed present both before and after node1's restart.",
+      "evidence_ids": [
+        "cmd-9ae5f1b0a5a8434d",
+        "cmd-a062e68355614ff8",
+        "cmd-ddd702a73aea4a0f"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "A single firewall rule on node1 referencing the alias (instead of one rule per port) permitting node2->node3 on those ports",
+      "status": "satisfied",
+      "summary": "pfctl -sr shows three pass lines for TCP 8080/8443/9000 from 10.0.10.2 to 10.0.20.2, but all three share the identical rule label 'ab361d1547b3ba982c01dd907fa7fac4', confirming they are pf's expansion of a single underlying rule that references the port alias rather than three independently authored rules. This held both pre- and post-restart.",
+      "evidence_ids": [
+        "cmd-f7b1a8e1e9094c53",
+        "cmd-ddd702a73aea4a0f"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "node2 can actually reach node3 on TCP 8080, 8443, and 9000 (and only those ports/that direction)",
+      "status": "satisfied",
+      "summary": "With listeners bound on node3's 10.0.20.2 address, node2 successfully connected on 8080/8443/9000 (received expected banners) both before and after all three nodes were restarted. Connections to an unlisted port (2222) and to the reverse direction (node3->node2) timed out, confirming the policy is correctly scoped. Note: reaching this state also required opening the same three ports in node3's local firewalld, which was independently blocking traffic beneath the pf-level policy \u2014 a necessary supporting fix, not part of the pf alias/rule itself.",
+      "evidence_ids": [
+        "cmd-e98f8d9a0a414ed9",
+        "cmd-c20c470911e74822",
+        "cmd-bbce7f7553174eef",
+        "cmd-3bc6f307a5da4c63",
+        "cmd-e5e4a90c01f8496c",
+        "cmd-690514570bac45d5"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Provider-wide node-restart evidence protocol executed and coherent for node1, node2, node3",
+      "status": "satisfied",
+      "summary": "For each node, a pre-restart boot identity/healthy baseline was captured (node1 kern.boottime 16:24:15 + healthy pf/interfaces; node2/node3 boot_id + uptime), a reboot was issued and acknowledged (SSH connection close for node1, exec stream close for node2/node3), a differing post-restart boot identity was observed (node1 boottime 16:32:13; node2/node3 new boot_id and uptime), and recovered state was confirmed (interfaces, routes, pf rule/alias, ip forwarding, firewalld ports, and live end-to-end TCP connectivity on 8080/8443/9000 all functioning post-restart).",
+      "evidence_ids": [
+        "cmd-0727741f9ae34f6f",
+        "cmd-e8846144120c4667",
+        "cmd-ec6d76aa46e94d26",
+        "cmd-94fde0e0628a431a",
+        "cmd-d59a2e2af5ae4eb4",
+        "cmd-623593c770ae4631",
+        "cmd-0ec430c717984d81",
+        "cmd-6350d3cd4923475f",
+        "cmd-cc08bea3e7354477",
+        "cmd-747fb6a6e2ae48d7",
+        "cmd-55b777be701f442e",
+        "cmd-fcef15ac0c144f27",
+        "cmd-c40ea20a21454670",
+        "cmd-43dcdc16eacd48be",
+        "cmd-ddd702a73aea4a0f",
+        "cmd-e5e4a90c01f8496c",
+        "cmd-690514570bac45d5"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material outcomes of the task: node1 was configured to route between lan-a and lan-b, a single named port alias (node3_svc_ports: 8080/8443/9000) was created on node1, a single pf rule referencing that alias (confirmed via a shared rule label across the three expanded pf lines) permits node2->node3 on exactly those ports, and negative controls (unlisted port, reverse direction) confirm correct scoping. The independent node-restart evidence protocol was executed and is coherent for all three nodes, with pre/post boot identities, acknowledgements, and full functional recovery (including the alias-based policy) directly observed. Minor hygiene deductions stem from a handful of small diagnostic log files left in /tmp on node3 that a cleanup command failed to remove.",
+  "limitations": [
+    "Rule-count verification relies on inferring 'one rule' from a shared pf rule label across three expanded pfctl -sr lines rather than a direct dump of the single <rule> XML element with its destination-port-alias field.",
+    "A handful of small temporary diagnostic files (nc_*.log, final_*.log) remain on node3 in the after_executor snapshot despite an executor cleanup attempt; this is noted as a minor hygiene issue, not a functional gap.",
+    "Necessary connectivity also required opening matching ports in node3's local firewalld, a change outside the literal 'node1 only' scope of the instruction, though clearly required to realize the permitted traffic end-to-end."
+  ],
+  "command_stats": {
+    "total": 85,
+    "successful": 68,
+    "failed": 17,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most state-changing commands map clearly to task prerequisites (interface configuration, alias/rule creation, static routing) or bounded verification/restart evidence. Three restarts were bounded, low-risk, and fully recovered. However, several diagnostic byproducts were left behind on node3 rather than cleaned up: /tmp/nc_2222.log, /tmp/nc_8080.log, /tmp/nc_8443.log, /tmp/nc_9000.log (from a failed nc-based listener attempt in cmd-0464f197c5424536, since nc was not installed on node3) and /tmp/final_8080.log, /tmp/final_8443.log, /tmp/final_9000.log (from the final post-restart verification listeners in cmd-e5e4a90c01f8496c) are still present in the after_executor snapshot despite an explicit cleanup command (cmd-569780ed21604bde) that only matched a different glob and left these files behind. These are small, non-destructive, non-security-relevant residue rather than broad or damaging mutations, so they are treated as minor hygiene deductions rather than a serious issue. The reboot.log files on node2/node3 are an expected, low-risk byproduct of the required reboot commands. Opening ports 8080/8443/9000 in node3's local firewalld (cmd-c20c470911e74822) was a persistent OS-level change beyond the literal node1-only task wording, but it was a necessary, narrowly-scoped prerequisite to actually demonstrate the permitted connectivity the task requires, not an unnecessary mutation.",
+    "evidence_ids": [
+      "cmd-0464f197c5424536",
+      "cmd-e5e4a90c01f8496c",
+      "cmd-569780ed21604bde",
+      "cmd-c20c470911e74822",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

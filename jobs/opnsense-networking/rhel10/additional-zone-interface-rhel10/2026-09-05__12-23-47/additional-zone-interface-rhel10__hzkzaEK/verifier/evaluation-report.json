@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "identify-interface",
+      "requirement": "Identify which of node1's unconfigured interfaces faces lan-b and connects to node3",
+      "status": "satisfied",
+      "summary": "Executor methodically assigned test addresses to node1's vtnet1 and vtnet2, and to node3's enp8s0, then used pings to rule out vtnet1 (100% loss to node3, cmd-e2ffaa9b0827443c) and confirm vtnet2<->node3 enp8s0 as the live lan-b link (cmd-296f376a482b4686, ttl=64 success).",
+      "evidence_ids": [
+        "cmd-8e352d1b9b7646cc",
+        "cmd-c3bfb8cd21ba426e",
+        "cmd-5b95423eb2f643e3",
+        "cmd-e2ffaa9b0827443c",
+        "cmd-296f376a482b4686"
+      ]
+    },
+    {
+      "id": "zone-creation",
+      "requirement": "Bring node1's lan-b-facing interface into service as its own zone with an address on lan-b",
+      "status": "satisfied",
+      "summary": "config.xml was edited to add a new 'optb' interface (vtnet2, LANB, 172.31.98.1/24) and a filter pass rule; configctl interface reconfigure optb applied it live (interface shows description 'LANB (optb)' and the assigned address), and pfctl -s rules shows the zone-scoped bogon blocks and pass rule for vtnet2/optb. This was independently reconfirmed as persisted after node1's reboot (config.xml still contains the <optb> stanza and the address/rule are live).",
+      "evidence_ids": [
+        "cmd-0dff4c634c064f75",
+        "cmd-c0a7f28fe0e147d9",
+        "cmd-7d24b8450c3d4fb1",
+        "cmd-2dcc0b8174254ed4"
+      ]
+    },
+    {
+      "id": "node3-to-node1",
+      "requirement": "node3 reaches node1 on lan-b",
+      "status": "satisfied",
+      "summary": "node3's enp8s0 was given a persistent static 172.31.98.2/24 address via its existing NetworkManager profile (autoconnect yes), and pings from node3 to 172.31.98.1 succeeded both before and after node3's and node1's reboots.",
+      "evidence_ids": [
+        "cmd-db0140422bb24a5f",
+        "cmd-725dc49d62a445ff",
+        "cmd-609b1e8e595a478e",
+        "cmd-9dc490d9aecd49ed"
+      ]
+    },
+    {
+      "id": "node3-to-node2-via-node1",
+      "requirement": "node3 reaches node2 on lan-a through node1",
+      "status": "partially_satisfied",
+      "summary": "The executor proved node1 CAN forward traffic between node3 and node2 (forced /32 host route on node3 via node1's lan-b IP produced ttl=63 and tcpdump showed ingress on vtnet2 / egress on vtnet0, cmd-67301369c79b4e8f, cmd-e441d823eae24df5). However, this forced route was then deleted (cmd-4549030444f547b5), and in the final, persisted state (including after all three reboots) node3's ping to node2 (10.100.55.11) shows ttl=64 (cmd-9dc490d9aecd49ed), indicating traffic travels directly over the pre-existing shared 10.100.55.0/24 segment rather than through node1's new lan-b/lan-a zone boundary. The earliest baseline ping (cmd-e76f45cb563443e4, before any change was made) already succeeded with ttl=64, showing this direct reachability pre-dated the task and was never re-routed through node1 in the final configuration. Functional reachability to node2 exists, but the 'through node1' routing behavior implied by the instruction is not the persisted, default path.",
+      "evidence_ids": [
+        "cmd-67301369c79b4e8f",
+        "cmd-e441d823eae24df5",
+        "cmd-4549030444f547b5",
+        "cmd-9dc490d9aecd49ed",
+        "cmd-e76f45cb563443e4"
+      ]
+    },
+    {
+      "id": "restart-node2",
+      "requirement": "Provider-wide restart evidence protocol: node2 baseline, restart, changed boot identity, recovery",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 7223d5b7... captured, systemctl reboot issued, exec timed out during the transition, then boot_id changed to e825dbf5... with restored connectivity to node1.",
+      "evidence_ids": [
+        "cmd-ddd8cf7f20424789",
+        "cmd-bfbacadb8cfa4ab7",
+        "cmd-e0e60bd162d14e29",
+        "cmd-d9f678119b454052",
+        "cmd-6fc006d2c014425d"
+      ]
+    },
+    {
+      "id": "restart-node3",
+      "requirement": "Provider-wide restart evidence protocol: node3 baseline, restart, changed boot identity, recovery",
+      "status": "satisfied",
+      "summary": "Baseline boot_id e625b9a5... captured, systemctl reboot issued, connection errors during transition, boot_id changed to 907c48c4..., static lan-b address and connectivity to node1 and node2 confirmed recovered.",
+      "evidence_ids": [
+        "cmd-4549030444f547b5",
+        "cmd-20757e6a58a54af5",
+        "cmd-242d274b38e249df",
+        "cmd-0759f6dd1f2d4314",
+        "cmd-609b1e8e595a478e"
+      ]
+    },
+    {
+      "id": "restart-node1",
+      "requirement": "Provider-wide restart evidence protocol: node1 (OPNsense) baseline, restart, changed boot identity, recovery",
+      "status": "satisfied",
+      "summary": "Baseline kern.boottime Sat Sep 5 16:52:44 2026 captured, /sbin/reboot issued, SSH connection refused/timed out during transition, post-restart kern.boottime Sat Sep 5 16:59:01 2026 (changed), and the optb zone/address/rule and node3 connectivity were reverified as persisted.",
+      "evidence_ids": [
+        "cmd-3fd534840a894257",
+        "cmd-c187059a46e342bb",
+        "cmd-4621c287b2bc46a3",
+        "cmd-71c8cf2b4f6b48fd",
+        "cmd-2dcc0b8174254ed4",
+        "cmd-9dc490d9aecd49ed"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly identified node1's unconfigured lan-b-facing interface (vtnet2, matched to node3's enp8s0), brought it into service as a distinct OPNsense zone ('optb'/LANB) with a static address and firewall pass rule, and gave node3 a persistent static address on that segment \u2014 all confirmed live and, notably, persisted across a full reboot of node1. node3's reachability to node1 on lan-b is well-established both before and after reboots. However, the claim that node3 reaches node2 'through node1' is only proven under an artificial, temporarily forced host route that was removed afterward; in the actual final/persisted state (both before and after all reboots), node3 reaches node2 directly over the pre-existing shared 10.100.55.0/24 segment (ttl=64), not via node1's new zone. This means the cross-zone-forwarding requirement is functionally demonstrated as possible but not established as the persisted, default behavior. The mandatory restart protocol was completed satisfactorily for all three nodes with clear boot-identity changes and recovery verification.",
+  "limitations": [
+    "The distinction between the task's 'lan-a' network and the observed 10.100.55.0/24 subnet (which also carries what the topology labels 'mgmt') could not be independently confirmed from the evidence beyond the executor's own interface-identification tests, so the semantic mapping of 'lan-a' to node2's enp1s0 is inferred rather than directly verified against network-level ground truth.",
+    "The forwarding-through-node1 requirement was only demonstrated under a temporary forced route; whether any additional configuration exists (outside captured evidence) that would make this the default path could not be ruled out, but no such configuration was found in the traced commands or final config.xml excerpts shown.",
+    "The cause of node2's post-executor NetworkManager-wait-online.service failure is not explained in the trace and could not be attributed with confidence to executor action or pre-existing/reboot-related transient state."
+  ],
+  "command_stats": {
+    "total": 49,
+    "successful": 40,
+    "failed": 9,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.7,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.9286,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands map clearly to discovery, zone creation, or restart evidence collection. Diagnostic test-address assignments on node1's vtnet1/vtnet2 and node3's enp8s0 (cmd-c3bfb8cd21ba426e, cmd-5b95423eb2f643e3, cmd-02210ab2d03a4e6a) were a bounded, low-risk interface-identification exercise, superseded by the final static configuration, and left no residue since node1 uses mfs-backed /tmp (wiped by reboot) and node3's addressing was overwritten by the persistent NetworkManager profile. The forced /32 host route added on node3 to prove cross-zone forwarding (cmd-67301369c79b4e8f) was a deliberate, bounded diagnostic that was explicitly reverted afterward (cmd-4549030444f547b5) and did not remain in the final state. A /conf/config.xml.bak backup file was left on node1 (created implicitly by the config.xml edit script) as a minor, low-risk residue consistent with standard change-management practice. Background tcpdump processes and their log files (cmd-7894c824e99d4090) were bounded (4-packet captures) and did not persist in the after-executor temp-file inventory. No failed services, exposed ports, or damaged package state are attributable to the executor; node2's post-executor 'NetworkManager-wait-online.service failed' appears unrelated to executor actions on node1/node3 and is not explained in the trace.",
+    "evidence_ids": [
+      "cmd-c3bfb8cd21ba426e",
+      "cmd-5b95423eb2f643e3",
+      "cmd-67301369c79b4e8f",
+      "cmd-4549030444f547b5",
+      "cmd-7894c824e99d4090",
+      "global:after_executor:node2:failed-services"
+    ]
+  },
+  "reward": 0.9286,
+  "provisional_reward": 0.9286
+}

@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-routing",
+      "requirement": "node1 routes/forwards traffic between lan-a (node2) and lan-b (node3)",
+      "status": "satisfied",
+      "summary": "node1's vtnet1/opt1 (10.10.1.1) and vtnet2/opt2 (10.10.2.1) were both configured and up with correct ARP entries for node2 and node3 respectively; net.inet.ip.forwarding=1; a direct ping from node2 across node1 to node3's lan-b address succeeded, and subsequent TCP flows in both directions traversed node1 successfully.",
+      "evidence_ids": [
+        "cmd-f7fc06bd337e4bca",
+        "cmd-83b597c2f0444ad0",
+        "cmd-7d3734f8d50b42e4",
+        "cmd-ab38a45eceb747f9",
+        "cmd-6362bb482f104a24",
+        "cmd-5565f4fa3aa24e62"
+      ]
+    },
+    {
+      "id": "req-2-forward-nat",
+      "requirement": "node2->node3 connections observed by node3 as arriving from a node1 (lan-b) address rather than node2's own address",
+      "status": "satisfied",
+      "summary": "pf state table on node1 shows the forward flow translated from 10.10.1.2 (node2) to 10.10.2.1 (node1's lan-b address) with the rdr-style state entry `10.10.2.1:45437 (10.10.1.2:45803) -> 10.10.2.2:5555`; independently, node3's own `ss -tn` output for a separate test connection shows the peer address as 10.10.2.1, confirming node3 itself observes the translated address, not node2's real address. The outbound NAT rule (`nat on vtnet2 inet from 10.10.1.0/24 to any -> (vtnet2:0)`) is scoped to the lan-a subnet exiting via opt2/vtnet2 only, matching the hybrid-mode approach described.",
+      "evidence_ids": [
+        "cmd-e1247a4c20334a18",
+        "cmd-521ad57166734031",
+        "cmd-4f5d86e05cf941b0"
+      ]
+    },
+    {
+      "id": "req-3-reverse-no-nat",
+      "requirement": "node3->node2 connections keep their original (untranslated) source address",
+      "status": "satisfied",
+      "summary": "pf state table shows node3-initiated flows (e.g., port 5557, 5558) as plain, unmapped states of the form `10.10.1.2:5557 <- 10.10.2.2:44695` / `10.10.2.2:44695 -> 10.10.1.2:5557` with no parenthetical translated address, confirming pf applied no NAT in this direction.",
+      "evidence_ids": [
+        "cmd-6dc30380e2c64590"
+      ]
+    },
+    {
+      "id": "req-4-restart-node1",
+      "requirement": "Provider-wide restart evidence protocol on node1: pre-restart baseline, restart, changed boot identity, recovered config/service state",
+      "status": "satisfied",
+      "summary": "Pre-restart kern.boottime (16:38:10) captured, reboot issued, several timeout polls, then a new kern.boottime (16:48:12) confirmed a genuine reboot. Post-reboot state shows opt1/opt2 interfaces, NAT rule, and pf rules persisted, and a fresh TCP flow through node1 shows the NAT translation still functioning, directly demonstrating recovery. Cross-checked against the fixed after_executor boot-identity snapshot, which matches 16:48:12.",
+      "evidence_ids": [
+        "cmd-e29e16a006dc4e94",
+        "cmd-f1b4c3b96a384c0c",
+        "cmd-ec31b3805749419a",
+        "cmd-8776910518164632",
+        "cmd-29a4cc49cdc94741",
+        "cmd-2a3813bb86804cc0"
+      ]
+    },
+    {
+      "id": "req-5-restart-node2",
+      "requirement": "Provider-wide restart evidence protocol on node2: pre-restart baseline, restart, changed boot identity, recovered config/service state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (c5c55f3a...) captured, reboot issued, multiple connection-reset/timeout polls during the outage window, then a new boot_id (24b55a5d...) confirmed. eth1 static config and route persisted via /etc/network/interfaces, and a live post-reboot NAT-translated flow to node3 succeeded, demonstrating functional recovery. Matches fixed after_executor snapshot boot_id.",
+      "evidence_ids": [
+        "cmd-f60f41716fe741ba",
+        "cmd-78b1ec4240c34082",
+        "cmd-fec1a388ce4f4088",
+        "cmd-6bacbc8cca1f427c",
+        "cmd-2a5bb1c18d7a4ac0",
+        "cmd-c6ba1b8c508d4cbf"
+      ]
+    },
+    {
+      "id": "req-6-restart-node3",
+      "requirement": "Provider-wide restart evidence protocol on node3: pre-restart baseline, restart, changed boot identity, recovered config/service state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (970954da...) captured, reboot issued, connection-reset/timeout polls during outage, then a new boot_id (a2d9ab23...) confirmed. eth1 static config and route persisted, and the final end-to-end test after all three nodes were restarted confirmed both the NAT'd forward flow and the untranslated reverse flow still work, directly showing both task-specific and general recovery. Matches fixed after_executor snapshot boot_id.",
+      "evidence_ids": [
+        "cmd-bd9be6b581714516",
+        "cmd-0dc18056aec2440d",
+        "cmd-42d72c2eabbe4c69",
+        "cmd-dab86074196d4bca",
+        "cmd-4220d18ec1924329",
+        "cmd-1c62784c43974743"
+      ]
+    }
+  ],
+  "overall_summary": "All three material task outcomes are satisfied with direct evidence: node1 routes/forwards between lan-a and lan-b, node2->node3 traffic is observably NAT'd to a node1 (lan-b) address as seen both in node1's pf state table and independently in node3's own socket table, and node3->node2 traffic remains untranslated per the pf state table. The mandatory provider-wide restart protocol was fully and correctly executed on all three nodes with pre-restart baselines, genuine boot-identity changes, and post-restart functional re-verification of both routing/NAT behavior, cross-checked against the fixed lifecycle boot-identity snapshots.",
+  "limitations": [
+    "Hygiene assessment relies on the bounded /tmp inventory snapshots; some leftover nc/tcpdump test files from the final test round were not explicitly confirmed as cleaned up, though they are low-risk log/pid artifacts.",
+    "No packet capture from a fully independent (non-executor-initiated) client was available to corroborate the NAT translation; evidence instead relies on the executor's own nc-based test flows and node1's pf state table plus node3's ss output, which is treated as adequate given internal cross-consistency."
+  ],
+  "command_stats": {
+    "total": 116,
+    "successful": 84,
+    "failed": 31,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "The vast majority of state-changing commands (interface bring-up, config.xml edits, NAT/pf rule additions, configctl reloads, reboots) map directly to satisfying the task or the mandatory restart protocol. A handful of read-only or failed discovery attempts (e.g. cmd-c0ca834c7dcd4459 'configctl interface reload all' -> Action not allowed, cmd-5b239eec9cb047e4 'ifconfig vtnet2' -> bad value, cmd-2cf30e7103584b0d timed-out grep) caused no state change and are not penalized. The only unnecessary residue is a set of ad-hoc nc/tcpdump test artifacts left in /tmp on node2 (nc3.log, nc4.log, nc8.log, reboot.log) and node3 (nc.pid, nc2.log, nc5.log, nc6.log, nc7.log, nc_recv.log, reboot.log, tcpdump.log, td.pid), confirmed present in the after_executor snapshot; these are bounded, low-risk log/pid files from verification listeners (some explicitly pkilled via cmd-0e282c3f72b14da7/cmd-800d40a1b7fd4469, but later rounds of listeners were not cleaned up). No failed services, no damaged package state (apk health check identical pre/post), and no weakened security exposure were observed.",
+    "evidence_ids": [
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "cmd-0e282c3f72b14da7",
+      "cmd-800d40a1b7fd4469",
+      "cmd-c0ca834c7dcd4459",
+      "cmd-5b239eec9cb047e4"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

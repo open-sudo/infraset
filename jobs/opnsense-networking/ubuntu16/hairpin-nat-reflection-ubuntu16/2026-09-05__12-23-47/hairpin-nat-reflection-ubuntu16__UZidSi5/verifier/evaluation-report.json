@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-publish-port80",
+      "requirement": "Publish node2's HTTP service (port 8080 on the private LAN) on TCP port 80 of node1's outward-facing address on that same network.",
+      "status": "satisfied",
+      "summary": "Executor discovered node1 (OPNsense) already listened on 80 with lighttpd/webgui redirect, disabled that redirect (cmd-8874d6f21f6349a6), and added a DNAT/rdr rule redirecting tcp/80 on vtnet0 (10.100.189.10, the LAN-facing address shared with node2/node3) to 10.100.189.11:8080 (cmd-e55f87d7e3ef4ad0, confirmed via pfctl -s nat in cmd-6826aafcf4e94c23, cmd-7766fac3ebc84e24, cmd-579f907efbdc4daf, cmd-be155d227dd04923). A direct curl from node3 to http://10.100.189.10:80/ returned the node2 service body (cmd-4ef3116b49904946, cmd-651c06f7025d4f72, cmd-64049fe7be4e42c3), including after node1's reboot, confirming the port-80 publication persisted.",
+      "evidence_ids": [
+        "cmd-e55f87d7e3ef4ad0",
+        "cmd-8874d6f21f6349a6",
+        "cmd-6826aafcf4e94c23",
+        "cmd-4ef3116b49904946",
+        "cmd-be8956383767417d",
+        "cmd-64049fe7be4e42c3"
+      ]
+    },
+    {
+      "id": "req-2-hairpin-reflection",
+      "requirement": "Arrange for node3 (on the same private network as node2) to reach the service through node1's outward-facing address rather than by contacting node2 directly.",
+      "status": "satisfied",
+      "summary": "Initial DNAT-only configuration failed hairpin reflection: node3's SYNs to 10.100.189.10:80 were forwarded to 10.100.189.11:8080 (visible via tcpdump cmd-dc9083405a3a4c5e) but timed out (cmd-8c3f618e44094c5b, cmd-d754dcb42aa945d5, cmd-e7fd16e23c834813, cmd-e21642e89eaa4976, cmd-6901d07139774cae) because return traffic bypassed node1, breaking the handshake \u2014 this is the expected root cause requiring NAT reflection/outbound SNAT. The executor added an outbound SNAT rule and switched outbound NAT mode to hybrid (cmd-57847aeea8514892), after which pfctl -s nat showed the added SNAT entry for traffic destined to 10.100.189.11 (cmd-579f907efbdc4daf) and node3's curl to 10.100.189.10:80 immediately succeeded (cmd-4ef3116b49904946), repeatable after separate reboots of node2 (cmd-d4c4bdef3c5a4419), node3 (cmd-651c06f7025d4f72), and node1 (cmd-64049fe7be4e42c3). This demonstrates a genuine before/after fix with the mechanism (NAT reflection via SNAT) directly observed.",
+      "evidence_ids": [
+        "cmd-8c3f618e44094c5b",
+        "cmd-dc9083405a3a4c5e",
+        "cmd-e21642e89eaa4976",
+        "cmd-57847aeea8514892",
+        "cmd-579f907efbdc4daf",
+        "cmd-4ef3116b49904946",
+        "cmd-651c06f7025d4f72",
+        "cmd-64049fe7be4e42c3"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully published node2's port-8080 HTTP service on node1's shared-LAN address port 80 via a pfSense/OPNsense DNAT rule, and after diagnosing a real hairpin-NAT failure (node3's traffic hit node2 directly on the reply path, breaking the handshake), added the outbound SNAT rule needed for proper NAT reflection. Working end-to-end connectivity from node3 through node1's address was demonstrated repeatedly, including after independent reboots of all three nodes, satisfying both material requirements with direct before/after evidence. The provider-wide restart protocol was also fully executed and evidenced for all three nodes (pre-reboot boot identity/healthy state, restart acknowledgement, new boot identity, and recovered service state), consistent with the fixed lifecycle boot-identity snapshots. Minor hygiene concerns exist around unverified cleanup of diagnostic tcpdump logs/scripts and a possibly-lingering promiscuous interface mode, but these are low-risk and did not affect functional correctness. Note: the executor's own final report/evidence-selection payload was a placeholder ('Test'/'cmd-1') and was not used as evidence per instructions; this assessment relies solely on the raw command timeline and lifecycle snapshots.",
+  "limitations": [
+    "Executor's self-reported summary and evidence selection were placeholder text referencing a nonexistent command ID and could not be used; assessment relies entirely on the raw command trace.",
+    "Cannot fully confirm whether /tmp/tcp*.log, pid files, and ad hoc python scripts created during troubleshooting on node1 were removed, since the bounded temp-files snapshot does not explicitly list or exclude them.",
+    "Cannot confirm whether vtnet0 was returned from PROMISC mode after a tcpdump session was forcibly killed with SIGKILL, since no explicit post-check of interface flags was captured after the final tcpdump run.",
+    "Executor evidence item 1 referenced unknown command IDs: cmd-1"
+  ],
+  "command_stats": {
+    "total": 80,
+    "successful": 69,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most state changes (systemd unit + web root creation on node2 via sudo, config.xml edits and configctl reloads on node1, SNAT/DNAT rule additions) were necessary prerequisites or the final solution and were verified functional and persistent across reboots. However, several diagnostic tcpdump sessions were started/killed repeatedly on node1 (cmd-27254be13bc9498a, cmd-5ee5e1461ca54240, cmd-c4159841a75141a2, cmd-dc9083405a3a4c5e) writing /tmp/tcp1.log..tcp4.log plus pid files and ad hoc python scripts (/tmp/nat_pf.py, /tmp/disable_redirect.py, /tmp/snat.py); the after-executor temp-files snapshot does not explicitly confirm removal of these files, though it also does not list them, so cleanup cannot be fully verified from the bounded snapshot (limitation, not a confirmed residue). One tcpdump session was killed with SIGKILL (cmd-c4159841a75141a2) after leaving the interface in PROMISC mode (visible in cmd-ba962c23d930427a); whether promiscuous mode was reset afterward by a later tcpdump run exiting cleanly (the final cmd-dc9083405a3a4c5e used 'timeout 15' allowing graceful exit) was not explicitly re-checked. These are bounded, low-risk, non-destructive residues rather than broad or damaging mutations.",
+    "evidence_ids": [
+      "cmd-27254be13bc9498a",
+      "cmd-5ee5e1461ca54240",
+      "cmd-c4159841a75141a2",
+      "cmd-dc9083405a3a4c5e",
+      "cmd-ba962c23d930427a",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

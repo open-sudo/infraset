@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Open exactly one path through node1: node2 (lan-a) reaches node3 (lan-b) on TCP port 8080",
+      "status": "satisfied",
+      "summary": "A single pf pass rule was added to node1's config.xml (proto tcp, src 10.10.1.2, dst 10.10.2.2, port 8080, interface opt1/vtnet1) and reloaded via 'configctl filter reload'. pfctl -sr output was grepped for 'quick on vtnet1' both before (cmd-fc41fcb7c18548a4) and after (cmd-a61f6c8409b8451d) the node1 restart, each time returning a count of exactly 1 matching rule with the correct 5-tuple. All pre-existing default-deny block rules for the lan-a/lan-b subnets remain unchanged in the full pfctl -sr dump (cmd-c9f7064fccfd4bae).",
+      "evidence_ids": [
+        "cmd-372591ab9b7b4920",
+        "cmd-c9f7064fccfd4bae",
+        "cmd-fc41fcb7c18548a4",
+        "cmd-a61f6c8409b8451d"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Every other flow between lan-a and lan-b remains refused (other ports, ICMP, reverse direction)",
+      "status": "satisfied",
+      "summary": "From node2, curl to node3:8080 returns HTTP 200 while curl to node3:9999 times out and ping to node3 has 100% loss (cmd-a12c6e9cae51483e). From node3, curl to node2:8080 (reverse direction) also times out with 100% ping loss (cmd-efbf0f16b1d249e5), confirming the pass rule is correctly scoped to a single unidirectional flow rather than opening the whole host or interface pair.",
+      "evidence_ids": [
+        "cmd-a12c6e9cae51483e",
+        "cmd-efbf0f16b1d249e5",
+        "cmd-c6060aae9fcb41dd"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "The intended path (and only that path) survives a full restart of all managed nodes",
+      "status": "satisfied",
+      "summary": "Pre-restart baselines captured boot_id/kern.boottime on all three nodes (cmd-820bc0a8608a49d5, cmd-451e6b1307124700, cmd-1b68fe4751f34d52). Each node was restarted individually and polled until reachable with a different boot identity (cmd-926c118e242a4486 boot_id changed fbdf5b2c->9f6adb93; cmd-5ca6433de0fa4303 changed 98aa35f5->18fba1e4; cmd-a9cc75ca89664db8 kern.boottime changed 17:20:34->17:29:16). Post-restart, IP addressing, routes, the firewalld port, and the single pf pass rule were confirmed recovered (cmd-7d1f7839cf2e40bd, cmd-b2ac7a8492724750, cmd-a61f6c8409b8451d), and an end-to-end retest reproduced the same allow-8080/deny-other/deny-icmp pattern (cmd-bdecc334186a42f1).",
+      "evidence_ids": [
+        "cmd-820bc0a8608a49d5",
+        "cmd-926c118e242a4486",
+        "cmd-451e6b1307124700",
+        "cmd-5ca6433de0fa4303",
+        "cmd-1b68fe4751f34d52",
+        "cmd-a9cc75ca89664db8",
+        "cmd-bdecc334186a42f1"
+      ]
+    }
+  ],
+  "overall_summary": "The executor added exactly one pf pass rule on node1 (opt1/vtnet1, TCP, 10.10.1.2 -> 10.10.2.2:8080), verified via pfctl -sr rule counting that it is the only rule of its kind both before and after a full node restart cycle. Functional testing directly demonstrated the intended flow succeeds (HTTP 200 on 8080) while all other probed flows (other TCP port, ICMP, and the reverse direction) remain blocked, both pre- and post-restart. The mandatory provider-wide restart protocol was completed on all three nodes with clear pre-restart boot identity, restart acknowledgement, changed post-restart boot identity, and recovered network/firewall state, satisfying the availability/recovery evidentiary bar. Supporting infrastructure changes (static addressing on node2/node3 since lan-a/lan-b were dhcp:false, and opening node3's local firewalld port) were necessary prerequisites/dependencies for the demonstrated flow, not scope creep.",
+  "limitations": [
+    "Only ports 8080 and 9999 plus ICMP were tested as negative controls; other protocols (UDP, other TCP ports) between lan-a and lan-b were not individually probed, though the unchanged default-deny block rules in the full pfctl -sr dump support the broader refusal claim.",
+    "A small amount of leftover temp-file residue from a failed diagnostic command and reboot scheduling on node2/node3 was not cleaned up, though it is inert and non-security-relevant.",
+    "The pf rule reload path used several failed/no-op interface-activation attempts before succeeding; these did not leave residue but reflect some trial-and-error rather than a single clean action."
+  ],
+  "command_stats": {
+    "total": 86,
+    "successful": 67,
+    "failed": 19,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Almost all state-changing commands map clearly to a material outcome: node1 interface/config.xml edits and pf rule addition (task requirement), node2/node3 static addressing and routes (necessary prerequisite given dhcp:false lan segments with no prepare phase), node3 firewalld port opening (necessary to demonstrate the end-to-end node2->node3:8080 flow since node3 has its own independent default-deny), and the temporary HTTP test server on node3 which was explicitly started and cleaned up (cmd-b8a585d5a6d3461e start, cmd-5fdd224b42144008 and cmd-98c38e7666624234 cleanup). Several early node1 interface-activation attempts (configctl interface reload, php interface_configure() calls) failed or no-op'd before the working 'configctl interface reconfigure' command succeeded (cmd-8c8818af30184870, cmd-a0b5763803ab4ace, cmd-0a8be130af464c6a, cmd-d5ff2382c8364369) \u2014 these are troubleshooting iterations toward the same prerequisite rather than unrelated mutations, and left no residue. One diagnostic command on node2 attempted tcpdump capture that failed because tcpdump was not installed (cmd-0112f38c78a040d6) and its output/pid files (/tmp/n2.log, /tmp/n2.pid) were never removed; the reboot scheduling one-liners on node2/node3 also left small /tmp/reboot.log files. These are bounded, low-risk, non-security-relevant residue items visible in the after-executor temp-file diff, not reverted.",
+    "evidence_ids": [
+      "cmd-0112f38c78a040d6",
+      "cmd-656b97ab7643449d",
+      "cmd-39f12eced8c54cae",
+      "cmd-f7a8c68a42c2450b",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

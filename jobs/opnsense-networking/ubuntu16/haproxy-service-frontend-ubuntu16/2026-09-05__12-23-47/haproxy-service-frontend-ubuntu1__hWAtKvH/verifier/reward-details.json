@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node2 and node3 each serve HTTP on TCP port 8080 on the shared private network, returning content identifying which host answered",
+      "status": "satisfied",
+      "summary": "Both nodes run a systemd-managed Python HTTP server on 0.0.0.0:8080 that returns 'Hello from <hostname>'. Verified locally (curl localhost:8080 on each node) and from node4 hitting each node's private IP directly on port 8080, producing distinct identifying responses.",
+      "evidence_ids": [
+        "cmd-c5d577c289584fce",
+        "cmd-a25b44c807254f63",
+        "cmd-0f2270577ef44918"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node1 presents one entry point on TCP port 80 of its management address that spreads requests across both node2 and node3",
+      "status": "satisfied",
+      "summary": "OPNsense os-haproxy plugin configured with a frontend bound to 10.100.139.10:80 (node1's management address, confirmed via sockstat showing haproxy listening there) and a roundrobin backend containing node2:8080 and node3:8080. Repeated curls to that single address alternate cleanly between 'Hello from node2' and 'Hello from node3', confirming load spreading. Freeing port 80 required disabling the webgui's HTTP-to-HTTPS redirect, a necessary prerequisite rather than an unrelated mutation.",
+      "evidence_ids": [
+        "cmd-a89c0a1fa9194c29",
+        "cmd-7db4754ea605428f"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node4 shows it receives answers from each of node2 and node3 through the node1 entry point",
+      "status": "satisfied",
+      "summary": "node4 curl loops directed solely at 10.100.139.10:80 (not the backend IPs) show alternating 'Hello from node2' / 'Hello from node3' responses, both before and after the mandated restart cycle, directly demonstrating both backends being reached through the single entry point from an external client.",
+      "evidence_ids": [
+        "cmd-5304cba95fe54b37",
+        "cmd-3d12e673d4cd4e58",
+        "cmd-99412732ad954922"
+      ]
+    },
+    {
+      "id": "req-4-restart-node1",
+      "requirement": "(Provider-wide protocol) node1 restart evidence: pre-restart healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline kern.boottime 17:37:48 with haproxy healthy and load balancer serving traffic; shutdown -r now acknowledged; SSH unreachable during reboot; boottime changed to 17:42:25 confirming a real restart; haproxy auto-started post-restart and load balancing verified again. Cross-checked against the fixed after-executor boot-identity snapshot, which matches.",
+      "evidence_ids": [
+        "cmd-e7f4f29dc6e64145",
+        "cmd-6cb05c13da6d4178",
+        "cmd-905c9d1f7e0d41eb",
+        "cmd-b964cb850c074457",
+        "cmd-292bd32b520d45b5"
+      ]
+    },
+    {
+      "id": "req-5-restart-node2",
+      "requirement": "(Provider-wide protocol) node2 restart evidence",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 0d49f077 with webapp.service active; sudo shutdown -r now acknowledged (connection closed); SSH connection refused during reboot; boot_id changed to 1ce0735c; webapp.service active and haproxy still able to reach node2 after restart.",
+      "evidence_ids": [
+        "cmd-3165f6a85e684055",
+        "cmd-d8638b6d1a284fa9",
+        "cmd-ad1709a72abd4112",
+        "cmd-5898b3ca91ae4e8f",
+        "cmd-52429ea6d18d4ead",
+        "cmd-3ca2015e6b2a4662"
+      ]
+    },
+    {
+      "id": "req-6-restart-node3",
+      "requirement": "(Provider-wide protocol) node3 restart evidence",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 225ffbf7 with webapp.service active; reboot acknowledged; SSH refused; boot_id changed to 6054c68c; webapp.service active and reachable through the load balancer after restart.",
+      "evidence_ids": [
+        "cmd-8080b790c96a4b08",
+        "cmd-a03d2ad7df07436d",
+        "cmd-6f2040add4474ee9",
+        "cmd-65ba8d5b8ae0466b",
+        "cmd-3057bc32c08f4fe2",
+        "cmd-3559acfe9a3148d3"
+      ]
+    },
+    {
+      "id": "req-7-restart-node4",
+      "requirement": "(Provider-wide protocol) node4 restart evidence",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 6ab98831 with a successful curl through the load balancer; reboot acknowledged; SSH refused during reboot; boot_id changed to afe2b1bf; post-restart curl loop against the entry point again alternates between both backends, confirming client-side recovery.",
+      "evidence_ids": [
+        "cmd-88c0e3b9787a4a9f",
+        "cmd-f8e0461b0b304a11",
+        "cmd-3f592b421c044447",
+        "cmd-3e48d15a6b4c47a5",
+        "cmd-99412732ad954922"
+      ]
+    }
+  ],
+  "overall_summary": "All three material task outcomes are directly and coherently demonstrated: node2/node3 serve identifying content on 8080, node1's HAProxy frontend on 10.100.139.10:80 round-robins across both, and node4 observably receives alternating responses from both backends through that single entry point. The separately mandated node-restart evidence protocol was executed on all four nodes with complete baseline/restart/boot-identity-change/recovery chains, cross-checked against the fixed after-executor boot-identity snapshot with matching values. Hygiene is good: the commands used were oriented toward the goal, failed permission attempts left no residue, and the only residue risk is a few uncleaned helper scripts in /tmp on node1, which is low-risk and bounded.",
+  "limitations": [
+    "The after-executor temporary-files snapshot does not explicitly confirm removal of /tmp/hap.py, /tmp/hap_fix.py, /tmp/hap_fix2.py, and /tmp/webgui_fix.py on node1, so residual helper scripts cannot be fully ruled out, though this is low risk.",
+    "Health-check configuration for the HAProxy backend was left disabled ('health checking is DISABLED' in the generated config), so backend failure detection was not verified as part of this evidence, though it was not a stated task requirement.",
+    "The preparation_comparison shows no changes since after_prepare is an alias of before_prepare (prepare disabled), so all observed state changes are attributable to the executor."
+  ],
+  "command_stats": {
+    "total": 73,
+    "successful": 60,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "The executor's state-changing commands are all traceable to a necessary purpose: installing os-haproxy, deploying the identifying webapp services, iteratively fixing the HAProxy XML config (missing uuid attributes, missing connectionBehaviour field) until it validated, and disabling the webgui's HTTP redirect to free port 80 for the load balancer \u2014 a required prerequisite for binding haproxy on port 80 of the management address, not an unrelated exposure change. The early no-sudo attempts to write /opt/webapp and /etc/systemd/system/webapp.service (cmd-75e392ace0854be8, cmd-76be4a15d7154016) failed with permission denied and left no residue. The config.xml edits were preceded by a shutil.copy backup (config.xml.bak-haproxy), a low-risk, reversible practice. Minor residue: several one-off Python helper scripts (/tmp/hap.py, /tmp/hap_fix.py, /tmp/hap_fix2.py, /tmp/webgui_fix.py) on node1 were not shown to be cleaned up, though the after-executor temp-file snapshot does not explicitly list them (may be outside the snapshot's directory coverage), so this is a small, bounded, low-risk gap rather than a significant hygiene issue. No failed services, no broad or destructive mutations, and no weakened security controls beyond the necessary redirect disablement were observed.",
+    "evidence_ids": [
+      "cmd-6ef9f3511a494633",
+      "cmd-5f083e63eda84c38",
+      "cmd-6f98f67afb1243cd",
+      "cmd-6a11a68d27fb457e",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

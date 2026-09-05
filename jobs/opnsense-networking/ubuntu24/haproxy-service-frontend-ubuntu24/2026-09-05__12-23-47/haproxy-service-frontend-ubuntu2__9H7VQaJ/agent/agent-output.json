@@ -1,0 +1,98 @@
+{
+  "status": "completed",
+  "summary": "Deployed HAProxy on node1 (OPNsense) with a frontend bound to its management address 10.100.122.10:80 that round-robins to backend HTTP servers on node2 and node3 (Python http.server on port 8080, each identifying its own hostname/IP). Verified node4 receives alternating responses from both backends through this single entry point, both before and after sequentially restarting all four nodes with independent boot-identity proof and post-restart recovery verification.",
+  "actions_performed": [
+    "Surveyed all 4 nodes: node1 is OPNsense (FreeBSD/pf) with a single LAN interface 10.100.122.10/24 shared with node2/node3/node4 (Ubuntu 24.04)",
+    "Installed a simple-http systemd service on node2 and node3 serving distinct hostname-identifying content on TCP 8080",
+    "Verified node1 could reach both backends over 8080 before touching HAProxy",
+    "Installed the os-haproxy plugin via pkg on node1",
+    "Edited /conf/config.xml (with backup) to add two HAProxy servers (node2, node3 on 8080), one roundrobin backend pool, and one frontend bound to 10.100.122.10:80 forwarding to the pool",
+    "Reloaded the HAProxy template, ran configtest (haproxy -c), confirmed the generated config, and started the haproxy service",
+    "Confirmed the existing pf pass rule for tcp/80 to self already permitted the new listener without weakening SSH management access",
+    "Verified round-robin load balancing from node4 through node1:80 alternating between node2 and node3 responses",
+    "Captured baseline boot identity (kern.boottime for FreeBSD node1, boot_id for Linux nodes 2-4) and service health for all nodes",
+    "Sequentially restarted node1, node2, node3, node4 one at a time using native reboot mechanisms (shutdown -r / reboot), polling until each came back",
+    "Proved changed boot identity for each node post-restart and verified HAProxy (node1), backend HTTP services (node2/node3), and end-to-end load-balanced access from node4 all recovered"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 and node3 each serve HTTP on 8080 identifying which host answered",
+      "command_ids": [
+        "cmd-d520becd01c04bbb",
+        "cmd-6a8bb823c9bb463d"
+      ],
+      "summary": "Installed and started simple-http systemd service on node2 and node3; curl localhost:8080 on each returns 'Hello from node2 (10.100.122.11)' and 'Hello from node3 (10.100.122.12)' respectively"
+    },
+    {
+      "requirement": "node1 reaches both backends over the shared private network prior to LB config",
+      "command_ids": [
+        "cmd-d0b8cc34993e47cc"
+      ],
+      "summary": "fetch from node1 to http://10.100.122.11:8080 and http://10.100.122.12:8080 both succeed and return the distinct hostname content"
+    },
+    {
+      "requirement": "node1 presents one entry point on TCP 80 of its management address that spreads requests across both hosts",
+      "command_ids": [
+        "cmd-e2f14d1fec2246df",
+        "cmd-7a17629c71f04e2b",
+        "cmd-17a227070fee4b13",
+        "cmd-4c43d56556904f10"
+      ],
+      "summary": "config.xml edited to add HAProxy servers/backend/frontend, template reload rendered a valid haproxy.conf with frontend bind 10.100.122.10:80 balancing roundrobin across node2/node3:8080, config passed haproxy -c syntax check, and haproxy started listening on 10.100.122.10:80 (sockstat confirms)"
+    },
+    {
+      "requirement": "firewall does not block the new entry point / SSH management path preserved",
+      "command_ids": [
+        "cmd-7ae1410562e547e9"
+      ],
+      "summary": "pfctl -s rules shows a pre-existing pass rule for tcp/http (port 80) to self on vtnet0, plus the untouched ssh pass rule, so no risky filter reload was needed"
+    },
+    {
+      "requirement": "node4 receives answers from each of node2 and node3 through node1's entry point",
+      "command_ids": [
+        "cmd-cf5ea1eb400d44cc"
+      ],
+      "summary": "8 sequential curls from node4 to http://10.100.122.10:80/ alternate perfectly between 'Hello from node2' and 'Hello from node3'"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-27ca02eb2fae496b",
+        "cmd-9be4efcc5a79404e",
+        "cmd-31cea92272da478b",
+        "cmd-87dd671166594aea",
+        "cmd-76a4fffb03134e8d"
+      ],
+      "summary": "Baseline kern.boottime=1788630765 (17:52:45); shutdown -r issued; post-restart kern.boottime=1788631007 (17:56:47) proves reboot; haproxy running again on 10.100.122.10:80 and node4 load-balanced curls succeed post-restart"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b0a9a56c8a9f49f5",
+        "cmd-80ef8e0457d740e4",
+        "cmd-75a3eac6c9014522",
+        "cmd-8a175521fd9c41a9"
+      ],
+      "summary": "Baseline boot_id=17b362d1-c234-4169-bc4e-114d01fdf401; reboot issued; post-restart boot_id=a81d7065-4069-4122-b159-11a32a322021 differs, proving restart; simple-http service active and curl localhost:8080 returns node2 content post-restart"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-8969b4294feb4a67",
+        "cmd-cff6c32d22aa490e",
+        "cmd-da7a8742db374554"
+      ],
+      "summary": "Baseline boot_id=29011044-5356-46eb-ba9c-1470170355a7; reboot issued; post-restart boot_id=dfe88611-3f70-43e3-9e7e-1b298951af7a differs, proving restart; simple-http active and curl localhost:8080 returns node3 content post-restart"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-02baf9b82e9b459a",
+        "cmd-9268b67eb83d4fe9",
+        "cmd-76af3bdadc97486e",
+        "cmd-6f90965f40d24ef6"
+      ],
+      "summary": "Baseline boot_id=b19a635d-d450-4e08-b323-57cdfe4431e5; reboot issued; post-restart boot_id=20ccb9b0-6992-47f7-9a16-15532042a4a0 differs, proving restart; post-restart node4 successfully performs 8 load-balanced curls through node1 alternating node2/node3 answers"
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense/Unbound) as the DNS resolver for the shared private network. node2 and node3 now use node1 (10.100.109.10) as their nameserver, resolving all domains normally except blocked.example and every subdomain under it, which return NXDOMAIN (via an Unbound DNSBL custom wildcard policy with nxdomain=1). Verified with raw DNS queries (rcode=3/NXDOMAIN, 0 answers) versus normal domains (rcode=0 with answers). All three nodes were individually restarted via native reboot, boot identities were proven to change, and post-restart DNS service/config/blocking behavior was verified as fully recovered on each.",
+  "actions_performed": [
+    "Inspected node1 (OPNsense/FreeBSD) DNS stack: found Unbound (unboundplus) bound to :53, dnsmasq disabled on :53053",
+    "Discovered node2/node3 (RHEL9) were using platform gateway 10.100.109.1 for DNS, not node1 - confirmed via failed lookup of node1's own internal hostname from node2",
+    "Added an Unbound DNSBL custom blocklist policy in /conf/config.xml (OPNsense/unboundplus/dnsbl/blocklist) with wildcards=blocked.example and nxdomain=1",
+    "Regenerated Unbound templates (configctl template reload 'OPNsense/Unbound/*'), rebuilt dnsbl.json (blocklists.py update), and restarted Unbound (pluginctl -c unbound_start)",
+    "Verified existing OPNsense 'Default allow LAN to any' firewall rule already permits LAN clients to reach port 53 on node1 - no firewall change needed",
+    "Confirmed via dnsbl_match.py that blocked.example and subdomains are explicitly policy-blocked while example.com passes",
+    "Repointed node2 and node3 DNS to 10.100.109.10 via nmcli (ipv4.dns + ipv4.ignore-auto-dns) making it persistent across NetworkManager",
+    "Verified via raw DNS query bytes from node2 that blocked.example/subdomains return rcode=3 (NXDOMAIN) with 0 answers, while example.com returns rcode=0 with answers",
+    "Captured pre-restart boot identities (FreeBSD kern.boottime; Linux /proc/sys/kernel/random/boot_id) for all 3 nodes",
+    "Restarted node1, node2, node3 sequentially (one at a time) via native 'shutdown -r now', polled until exec available again, confirmed boot identity changed on each",
+    "Re-verified DNS service, DNSBL config persistence, and blocked/unblocked resolution behavior on all 3 nodes post-restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 provides DNS resolution for node2 and node3 (normal domains resolve)",
+      "command_ids": [
+        "cmd-16fc0fe80d4c4caa",
+        "cmd-4cfd6fca9ff7437f",
+        "cmd-bdd1abf2b5594403",
+        "cmd-fe6a01d980a04aaf"
+      ],
+      "summary": "example.com resolves to a valid IP from node1 itself and from node2/node3 (via raw DNS query showing rcode=0 with answers)"
+    },
+    {
+      "requirement": "blocked.example and everything under it resolves to nothing usable from both node2 and node3",
+      "command_ids": [
+        "cmd-fe6a01d980a04aaf",
+        "cmd-4cfd6fca9ff7437f",
+        "cmd-bdd1abf2b5594403",
+        "cmd-1d8ec5f34c794624"
+      ],
+      "summary": "Raw DNS query from node2 shows rcode=3 (NXDOMAIN) with 0 answers for blocked.example and deeply.nested.blocked.example; node3 lookups for blocked.example and anything.blocked.example fail; policy engine dnsbl_match.py explicitly reports Block action for blocked.example and sub.blocked.example while Pass for example.com"
+    },
+    {
+      "requirement": "node2 and node3 configured to use node1 as nameserver (not the platform default gateway)",
+      "command_ids": [
+        "cmd-a7ef557c6c694c10",
+        "cmd-0d1cd551958f4648",
+        "cmd-c1f09223b90b4ee1"
+      ],
+      "summary": "Confirmed node2 could NOT resolve node1's internal record via the old default gateway resolver (proving it wasn't using node1), then repointed both nodes' resolv.conf to 10.100.109.10 via nmcli"
+    },
+    {
+      "requirement": "Firewall permits LAN DNS queries to node1",
+      "command_ids": [
+        "cmd-f836950c603646da",
+        "cmd-8acfcf67299b40cd"
+      ],
+      "summary": "Existing OPNsense 'Default allow LAN to any rule' in filter config and corresponding pf rule (pass in quick from LAN network to any) already covers port 53 to self, verified in pf ruleset dump"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-3ae9cd241ce840dc",
+        "cmd-fe47eeafc7a34b55",
+        "cmd-8be3bf67ee0d4baa",
+        "cmd-378d27ac53e440ac",
+        "cmd-2ee0ac1cb4f54ba5"
+      ],
+      "summary": "Baseline kern.boottime=17:21:57 captured; reboot acknowledged; node unreachable during reboot; post-reboot kern.boottime=17:28:06 (changed); Unbound running with DNSBL config intact and blocking verified working post-restart"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-e77c1f073d634899",
+        "cmd-0d67fa00a7f94468",
+        "cmd-81e56a738e724a95",
+        "cmd-0832c1553d084f06",
+        "cmd-118c216727a648a5",
+        "cmd-8666ac711a494b71"
+      ],
+      "summary": "Baseline boot_id=c2f29441-...; reboot acknowledged; connection timed out/reset during reboot; post-reboot boot_id=5fa8fcf4-... (changed); resolv.conf still points to 10.100.109.10 and blocking/normal resolution verified working"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-31b6876ff3da4150",
+        "cmd-a0dcc1c517bd47f0",
+        "cmd-29c922550b4a4395",
+        "cmd-8b23680dedcc46fb",
+        "cmd-c337c399b7e7453b",
+        "cmd-ce7b1c1211c84abc"
+      ],
+      "summary": "Baseline boot_id=6aa805ba-...; reboot acknowledged; connection timed out during reboot (polled twice); post-reboot boot_id=3329cd0a-... (changed); resolv.conf still points to 10.100.109.10 and blocking/normal resolution verified working"
+    }
+  ]
+}

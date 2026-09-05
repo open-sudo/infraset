@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node1 routes between lan-a (node2) and lan-b (node3), i.e. opt1/opt2 interfaces are correctly configured and traffic actually crosses node1",
+      "status": "satisfied",
+      "summary": "cmd-816a30142d2a4427 shows vtnet1/opt1 (10.50.10.254/24, LAN_A) and vtnet2/opt2 (10.50.20.254/24, LAN_B) UP and active on node1 after configctl interface reconfigure. End-to-end functional test cmd-d752200246b64aa3 confirms TCP traffic from node2 (lan-a) actually reaches node3 (lan-b) through node1 on the permitted ports, directly demonstrating routing works, not just interface configuration.",
+      "evidence_ids": [
+        "cmd-816a30142d2a4427",
+        "cmd-d752200246b64aa3"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Create a single named port-alias object on node1 for ports 8080/8443/9000 and reference it from the rule instead of writing one rule per port",
+      "status": "satisfied",
+      "summary": "cmd-563326d26a0a47ad added the alias and a single pass rule via config.xml edit. cmd-1e011a46173140bb shows the compiled pf.conf template (rules.debug) contains one macro definition `node3_svc_ports = \"{ 8080 8443 9000 }\"` and exactly one rule statement `pass in quick on vtnet1 ... port $node3_svc_ports`, i.e. one authored rule referencing the named object. The later `pfctl -sr` view showing three expanded port-specific lines under the same rule label is pf's normal internal expansion of a port-list macro and does not indicate three separately authored rules.",
+      "evidence_ids": [
+        "cmd-563326d26a0a47ad",
+        "cmd-1e011a46173140bb"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node2 can reach node3 on TCP 8080, 8443, 9000 and other ports (e.g. 22) remain blocked",
+      "status": "satisfied",
+      "summary": "cmd-d752200246b64aa3 shows nc -zv from node2 to node3 succeeding on 8080/8443/9000 and failing on 22. This was re-verified after all three nodes were independently restarted (cmd-4b0144b61e8a4d2c), showing the same successful/blocked pattern, confirming the policy is durable and not a one-off artifact.",
+      "evidence_ids": [
+        "cmd-d752200246b64aa3",
+        "cmd-4b0144b61e8a4d2c"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all managed nodes (node1, node2, node3) with pre-restart baseline, restart acknowledgement, changed boot identity, and recovered state",
+      "status": "satisfied",
+      "summary": "For each node the trace shows a pre-restart baseline (cmd-516dc8866e014d19, cmd-92cef896ee8d40e7, cmd-c1516a49df0a47d2), a restart acknowledgement (cmd-bcb271d0ba4647ca, cmd-a481c16dad624beb, cmd-372a629e49c74c35), a subsequent connection timeout confirming disruption on node1 (cmd-c75b9e4758994b67), and a changed boot identity on all three nodes with recovered interface/routing/firewall state (cmd-a9d38324d6e94207/cmd-071c5b5f3e614cc6 for node1; cmd-44663d07f6b24a3a/cmd-d37295de465d4266 for node2; cmd-59c955d1f6644524/cmd-e2650ab0ce074028 for node3). This is cross-checked by the fixed after-prepare/after-executor boot-identity snapshots, which independently confirm all three boot identities changed between capture points.",
+      "evidence_ids": [
+        "cmd-516dc8866e014d19",
+        "cmd-92cef896ee8d40e7",
+        "cmd-c1516a49df0a47d2",
+        "cmd-bcb271d0ba4647ca",
+        "cmd-c75b9e4758994b67",
+        "cmd-a9d38324d6e94207",
+        "cmd-071c5b5f3e614cc6",
+        "cmd-a481c16dad624beb",
+        "cmd-44663d07f6b24a3a",
+        "cmd-d37295de465d4266",
+        "cmd-372a629e49c74c35",
+        "cmd-59c955d1f6644524",
+        "cmd-e2650ab0ce074028",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material outcomes of the task: node1 routes between lan-a and lan-b, a single named port alias (node3_svc_ports) was created and referenced by one firewall rule (not per-port rules), and node2's access to node3 was verified end-to-end on ports 8080/8443/9000 while other ports (22) remained blocked. The independent node-restart evidence protocol was also completed for all three nodes with pre-restart baselines, acknowledged restarts, changed boot identities, and confirmed recovery of interfaces, firewall configuration, and the full connectivity policy, cross-checked by the fixed lifecycle boot-identity snapshots. Hygiene is good overall, with a minor unnecessary/no-op sysctl mutation on node2 and unconfirmed cleanup status of two small config-editing scripts on node1.",
+  "limitations": [
+    "Cleanup status of /tmp/add_interfaces.py and /tmp/add_rule.py on node1 could not be confirmed from the available temporary-files snapshots.",
+    "The pfctl -sr expansion of the port-list macro into three per-port lines under one rule label is normal pf behavior and was treated as consistent with a single authored rule, but this relies on the assumption that /tmp/rules.debug reflects the actual authored pf.conf template rather than a post-load rewrite.",
+    "node1's boot identity was tracked via kern.boottime rather than a UUID-style boot id (no BSD equivalent available), which is a weaker but still valid uniqueness signal compared to node2/node3's boot_id."
+  ],
+  "command_stats": {
+    "total": 59,
+    "successful": 49,
+    "failed": 10,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most state-changing commands map directly to satisfying the task: interface reconfiguration (cmd-816a30142d2a4427), alias/rule creation (cmd-563326d26a0a47ad), filter reload (cmd-c53c3ee6f9a0463c), IP/route assignment and its persistence into /etc/network/interfaces.d/ens7.cfg on node2/node3 (cmd-72b666e965c6411c, cmd-f12dacc9b4a34af1, cmd-b4c686538c414857, cmd-fb86e12005d54fb9, cmd-4ffefa7b58954de6) to support the mandatory restart protocol, and the three node restarts. Test-only nc listeners created on node3 (cmd-ce6dcf50e85d4ca8, cmd-e2650ab0ce074028) were explicitly killed afterward (cmd-f4d8ac93072a4be4, cmd-9e32e3d012014ee2), though their transient log files (/tmp/nc_8080.log etc.) remain visible in the after_executor snapshot \u2014 low-risk residue, not reverted. One unnecessary mutation: cmd-f12dacc9b4a34af1 also ran `sudo -n sysctl -w net.ipv4.ip_forward=0` on node2, which has no connection to any task requirement (node2 is not a router) and was not reverted, though it is a no-op since 0 is the standard non-forwarding default for a host. The scripts /tmp/add_interfaces.py and /tmp/add_rule.py created via base64 decode on node1 (cmd-a02148ef826a44ac, cmd-563326d26a0a47ad) do not appear in either the before_prepare or after_executor /tmp inventories, so their cleanup status cannot be confirmed one way or the other. Several failed diagnostic/discovery commands (bad ifconfig syntax, unauthorized configctl actions, unprivileged ip commands, missing /etc/netplan) did not mutate state and are not hygiene concerns.",
+    "evidence_ids": [
+      "cmd-f12dacc9b4a34af1",
+      "cmd-ce6dcf50e85d4ca8",
+      "cmd-f4d8ac93072a4be4",
+      "cmd-e2650ab0ce074028",
+      "cmd-9e32e3d012014ee2",
+      "global:after_executor:node3:temporary-files",
+      "global:before_prepare:node1:temporary-files",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

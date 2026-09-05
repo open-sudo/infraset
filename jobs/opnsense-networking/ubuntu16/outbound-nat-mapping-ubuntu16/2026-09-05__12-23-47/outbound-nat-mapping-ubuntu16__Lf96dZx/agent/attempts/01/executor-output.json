@@ -1,0 +1,58 @@
+{
+  "status": "blocked",
+  "summary": "Configured node1 (OPNsense) as a router between two subnets on its single LAN interface: a VIP alias 10.100.251.1/24 (lan-b) alongside the existing 10.100.250.0/24 (lan-a), a manual outbound-NAT rule that translates lan-a sources to 10.100.251.1 when they talk to lan-b, and a firewall pass rule allowing lan-b-sourced traffic through \u2014 this satisfies the requirement that node2->node3 traffic appear to originate from an address on node1 while node3->node2 traffic keeps its original source. However, while moving node3 into the new lan-b subnet, restarting systemd-networkd on node3 to apply its new static address took its only NIC down, and it has not recovered after ~13 minutes of polling from node1, node2, and via the exec tool itself (which also depends on SSH reachability to the node's configured IP). Node3 is currently unreachable by every available means, so the NAT behavior could not be verified end-to-end with live traffic, and the mandatory node-restart evidence protocol could not be executed for node3 (nor safely attempted for node1/node2 while node3 is down). Node1 and node2 remain healthy and reachable throughout.",
+  "actions_performed": [
+    "Surveyed topology: node1 (OPNsense/FreeBSD) interface vtnet0 (\"lan\") on 10.100.250.0/24; node2 and node3 (Ubuntu 16.04, systemd-networkd) both originally sat on that same flat /24 via DHCP with no router between them, so cross-node traffic never transited node1",
+    "Inspected node1's /conf/config.xml, OPNsense filter/NAT source (filter.inc, SNatRule.php, Rule.php) and actions_interface.conf to determine the correct config.xml schema and configctl verbs for outbound NAT and virtual IPs",
+    "Edited node1 /conf/config.xml (backed up to config.xml.bak-natsetup): added a virtualip ipalias 10.100.251.1/24 on the lan interface (lan-b), added a firewall pass rule allowing source 10.100.251.0/24 (lan-b) to any, switched nat/outbound mode to hybrid, and added a manual outbound-NAT rule translating source 10.100.250.0/24 (lan-a) -> destination 10.100.251.0/24 (lan-b) to target 10.100.251.1",
+    "Applied node1 changes via `configctl interface vip configure` and `configctl filter reload`; verified with `pfctl -s nat` and `pfctl -s rules` that the NAT rule and pass rule were installed as pf rules",
+    "Added a persistent route on node2 (systemd-networkd drop-in + live `ip route add`) directing 10.100.251.0/24 via node1 (10.100.250.10)",
+    "Rewrote node3's systemd-networkd config to assign a static address 10.100.251.12/24 with a route to 10.100.250.0/24 via 10.100.251.1, then ran `sudo systemctl restart systemd-networkd` on node3 to apply it",
+    "That restart caused node3's ens2 interface to stop responding to ARP entirely; confirmed via tcpdump on node1's vtnet0 that the platform gateway is also failing to ARP-resolve node3's original address, and via repeated ping/ssh attempts from node1 and node2 that node3 is unreachable at both its old (10.100.250.12) and new (10.100.251.12) addresses",
+    "Polled node3 via direct exec and via ping/ssh from node1/node2 over roughly 13 minutes with no recovery; captured boot-identity baselines for all three nodes before the disruption (node1 kern.boottime, node2 and node3 /proc/sys/kernel/random/boot_id) but could not re-check node3's boot identity post-incident since it is unreachable",
+    "Did not proceed with the mandatory per-node restart-and-verify protocol for node1 or node2, to avoid compounding the outage while node3's status is unresolved"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 routes between lan-a and lan-b with node2->node3 traffic NAT'd to an address on node1",
+      "command_ids": [
+        "cmd-f81d4ee011684124",
+        "cmd-0f22b371dc24487e",
+        "cmd-9ee688c866514bdf",
+        "cmd-d188aa2ab4e74f9a"
+      ],
+      "summary": "config.xml originally had only a single 'lan' interface (10.100.250.0/24) with no NAT rules; after edits, ifconfig shows the new 10.100.251.1/24 alias live on vtnet0, and `pfctl -s nat`/`pfctl -s rules` show the installed NAT rule ('nat on vtnet0 inet from 10.100.250.0/24 to 10.100.251.0/24 -> 10.100.251.1') and the new pass rule for the 10.100.251.0/24 source, but this could not be exercised with live node2->node3 traffic because node3 went unreachable before the test."
+    },
+    {
+      "requirement": "connections in the reverse direction (node3->node2) keep their original source",
+      "command_ids": [
+        "cmd-d188aa2ab4e74f9a"
+      ],
+      "summary": "The NAT rule installed via pf is scoped strictly to source 10.100.250.0/24 -> destination 10.100.251.0/24; no NAT rule exists for the reverse direction, so node3-originated traffic would not be translated. Not verified with live traffic due to node3 being unreachable."
+    },
+    {
+      "requirement": "healthy baseline captured before node restarts",
+      "command_ids": [
+        "cmd-a2cf2893db3847ca",
+        "cmd-1c5aaea5fba54cb0",
+        "cmd-5c95498de5ea49b7",
+        "cmd-d1f8e50d109448be",
+        "cmd-6936d039387d4331",
+        "cmd-0624425a5a104625"
+      ],
+      "summary": "Captured initial healthy state and boot identities for all three nodes (node1 kern.boottime via sysctl, node2 and node3 boot_id via /proc/sys/kernel/random/boot_id) before making any changes."
+    },
+    {
+      "requirement": "node restart / recovery evidence protocol (node3)",
+      "command_ids": [
+        "cmd-047e290d47500046ac",
+        "cmd-045e288edcf14f5c",
+        "cmd-157e5fd1f49b4ea2",
+        "cmd-0bd852683cc54336",
+        "cmd-392c1ad2e86f4e80",
+        "cmd-93dda0ba275e46e3"
+      ],
+      "summary": "node3 became unreachable immediately after `sudo systemctl restart systemd-networkd` was used to apply its new static IP; repeated exec, ping, and ssh attempts from node1/node2 over ~13 minutes all failed ('No route to host' / ARP incomplete), and tcpdump on node1 confirms even the platform gateway cannot ARP-resolve node3. No changed boot identity or recovered state could be observed for node3, so restart persistence cannot be claimed for it. The restart protocol was not attempted for node1 or node2 to avoid compounding the outage while node3's status is unresolved."
+    }
+  ]
+}
