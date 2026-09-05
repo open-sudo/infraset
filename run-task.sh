@@ -75,12 +75,16 @@ agent_name="${INFRASET_AGENT_NAME:-claude-code}"
 jobs_root="${INFRASET_JOBS_DIR:-$script_dir/jobs}"
 n_attempts="${INFRASET_N_ATTEMPTS:-1}"
 parallel_limit="${INFRASET_PARALLEL:-1}"
-# The provider agent keeps its own executor timeout and defaults it to 1200s,
-# which silently overrides the [agent] timeout_sec a task declares. Pass it
-# explicitly so tasks are not cut off earlier than they asked for. Keep this
-# below the Antrieb cluster lease so an overrun ends as a scored timeout with
-# the executor's own report rather than as a cluster that disappeared.
-agent_timeout_sec="${INFRASET_AGENT_TIMEOUT_SEC:-2100}"
+# Fallback for a task that declares no [agent] timeout_sec of its own. A task
+# that declares one wins: task.toml is what the runtime enforces and this
+# kwarg is ignored for it. Observed directly -- a task asking for 1200 stopped
+# at 1200 and one asking for 1800 stopped at 1800, both while this was set to
+# 2100. To give a generated task more time, change its catalog entry and
+# regenerate rather than setting this. Every generated task now asks for 2400,
+# which matches the Antrieb cluster lease, so a task that runs its budget out
+# leaves the verifier nothing to inspect; raise the lease before relying on
+# the full window.
+agent_timeout_sec="${INFRASET_AGENT_TIMEOUT_SEC:-2400}"
 
 usage() {
   printf '%s\n' \
@@ -108,8 +112,10 @@ usage() {
     "may run at the same time." \
     "" \
     "Environment equivalents: INFRASET_PARALLEL and INFRASET_N_ATTEMPTS." \
-    "Set INFRASET_AGENT_TIMEOUT_SEC to change the executor timeout (default:" \
-    "$agent_timeout_sec); keep it below the Antrieb cluster lease." \
+    "INFRASET_AGENT_TIMEOUT_SEC sets the executor timeout (default:" \
+    "$agent_timeout_sec) only for a task that declares no [agent] timeout_sec." \
+    "A task that declares one wins, so change the task, or its catalog entry," \
+    "to give it more time. Keep either below the Antrieb cluster lease." \
     "Set CREDENTIALS_FILE to override the default credentials file at" \
     "\$HOME/credentials.env." >&2
 }

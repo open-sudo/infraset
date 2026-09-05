@@ -29,7 +29,7 @@ difficulty = "{difficulty}"
 category = "infrastructure"
 
 [agent]
-timeout_sec = 900
+timeout_sec = 2400
 
 [verifier]
 timeout_sec = 1200

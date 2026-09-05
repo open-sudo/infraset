@@ -43,10 +43,10 @@ difficulty = "{difficulty}"
 category = "infrastructure"
 
 [agent]
-timeout_sec = 1200
+timeout_sec = {agent_timeout_sec}
 
 [verifier]
-timeout_sec = 1500
+timeout_sec = {verifier_timeout_sec}
 environment_mode = "shared"
 
 [environment]
@@ -215,6 +215,11 @@ def validate_catalog(catalog: dict[str, object]) -> tuple[list[dict], list[dict]
     for task in tasks:
         if task.get("difficulty") not in {"easy", "medium", "hard"}:
             raise ValueError(f"task {task.get('slug')!r} has an unsupported difficulty")
+        # The task config is what the runtime enforces: an --agent-kwarg
+        # timeout passed on the command line does not override it.
+        for key in ("agent_timeout_sec", "verifier_timeout_sec"):
+            if not isinstance(task.get(key), int):
+                raise ValueError(f"task {task.get('slug')!r} is missing {key}")
         topology = task.get("topology")
         if topology not in TOPOLOGIES:
             raise ValueError(
@@ -293,7 +298,11 @@ def generate() -> int:
             write(task_root / "instruction.md", clean_block(task["instruction"]))
             write(
                 task_root / "task.toml",
-                TASK_CONFIG.format(difficulty=task["difficulty"]),
+                TASK_CONFIG.format(
+                    difficulty=task["difficulty"],
+                    agent_timeout_sec=task["agent_timeout_sec"],
+                    verifier_timeout_sec=task["verifier_timeout_sec"],
+                ),
             )
             write(
                 task_root / "environment" / "harbor_antrieb.toml",
