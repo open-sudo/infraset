@@ -17,14 +17,18 @@ ${HOME}/infraset/tasks/greenfield/<slug>/
 ${HOME}/infraset/tasks/brownfield/<slug>/
 ${HOME}/infraset/tasks/complex/greenfield/<slug>/
 ${HOME}/infraset/tasks/complex/brownfield/<slug>/
-${HOME}/infraset/tasks/os-comparison/<os>/<slug>-<os>/
+${HOME}/infraset/tasks/<matrix-category>/<os>/<slug>-<os>/
 ```
 
-Use `os-comparison/` only for a controlled matrix in which the same public request
-is instantiated on multiple operating systems. Keep each task family's
-`instruction.md` identical across the matrix and vary only the environment and any
-strictly necessary platform initialization. Include the OS ID in every concrete
-task directory name because task and job names are globally unique.
+Use a `<matrix-category>/` layout only for a controlled matrix in which the same
+public request is instantiated on multiple operating systems, such as
+`single-node-os-comparison/`, `multi-node-os-comparison/`, `clustered-services/`,
+`vyos-networking/`, or `openwrt-networking/`. A matrix category is generated from
+its own `catalog.toml` by a script under `scripts/`, so add task families to the
+catalog and regenerate rather than editing concrete task directories by hand. Keep
+each task family's `instruction.md` identical across the matrix and vary only the
+environment and any strictly necessary platform initialization. Include the OS ID in
+every concrete task directory name because task and job names are globally unique.
 
 Create:
 
