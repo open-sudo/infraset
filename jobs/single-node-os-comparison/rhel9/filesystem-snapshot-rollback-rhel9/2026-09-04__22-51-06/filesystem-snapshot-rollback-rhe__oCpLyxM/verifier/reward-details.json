@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "snapshot-recoverability",
+      "requirement": "Application data under /srv/data kept recoverable through filesystem snapshots",
+      "status": "satisfied",
+      "summary": "A dedicated LVM-backed filesystem was created for /srv/data (loop-backed since the RHEL9 disk had no volume manager), baseline application data was written and a manifest recorded, and an LVM snapshot (lv_data_snap1) was taken capturing that state. After the restore was verified, a fresh snapshot (lv_data_snap_current) was created so recoverability continues going forward, and a systemd unit ensures the loop/VG/mount are reattached on boot so the mechanism persists.",
+      "evidence_ids": [
+        "cmd-e1d0ccbd37d34002",
+        "cmd-40dcde09395e48ad",
+        "cmd-88782f95714e4124",
+        "cmd-3a664bec52144a76",
+        "cmd-1e76be8871b741d1"
+      ]
+    },
+    {
+      "id": "modify-then-restore",
+      "requirement": "After the directory is modified, restore the exact content captured by an earlier snapshot",
+      "status": "satisfied",
+      "summary": "Post-snapshot, files under /srv/data were corrupted, deleted, changed, and an extra file added, producing checksums that diverged from baseline. lvconvert --merge against lv_data_snap1 restored lv_data, and a post-restore find+sha256sum diff against the saved baseline manifest showed an exact match (MATCH_BASELINE), directly demonstrating byte-for-byte recovery of the earlier snapshot's content.",
+      "evidence_ids": [
+        "cmd-fe501d36158946d7",
+        "cmd-ba5c2df4cc584590",
+        "cmd-6221eb62e100487a"
+      ]
+    },
+    {
+      "id": "node-restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart healthy baseline, restart acknowledgement, changed boot identity, and recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "Pre-restart state captured boot_id 377b5195..., srv-data.service active, /srv/data mounted, snapshot present, and checksums matching baseline. A backgrounded systemctl reboot returned an acknowledgement before disconnect; the node briefly timed out and then returned with a new boot_id (bbe2c88e...), directly cross-checked against the fixed after-prepare/after-executor boot-identity snapshots. Post-restart checks confirm srv-data.service active, /srv/data mounted again via the systemd unit, the snapshot LV present, and checksums still matching the original baseline (MATCH_BASELINE_AFTER_REBOOT), demonstrating full recovery through a real restart.",
+      "evidence_ids": [
+        "cmd-721062f927de4b1d",
+        "cmd-e6a57d97c13e4301",
+        "cmd-247b6b9ccddb4e0d",
+        "cmd-8693814e5bea42f9",
+        "cmd-3fcd96f68444463f",
+        "cmd-2894ae5b7ba24cfb",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established a working filesystem-snapshot mechanism for /srv/data on node1 (LVM on a loop-backed volume group, since the base image had no volume manager), captured a baseline, took a snapshot, corrupted the live data, and used lvconvert --merge to restore it to the exact byte-for-byte content of the earlier snapshot, verified by sha256 checksum comparison. A follow-on snapshot preserves ongoing recoverability, and a systemd unit makes the setup persist across reboot. The required node-restart evidence protocol was also fully and coherently demonstrated: healthy pre-restart baseline, restart acknowledgement, a changed boot identity cross-checked against fixed lifecycle snapshots, and full post-restart recovery of the service, mount, snapshot, and data integrity.",
+  "limitations": [
+    "A handful of small log/checksum files were left under /tmp after the executor's work; they are low-risk artifacts of legitimate evidence collection rather than task residue, but were not cleaned up.",
+    "The loop-device-backed LVM setup is a reasonable workaround for the RHEL9 image lacking a spare block device or existing volume manager, but is a nonstandard production pattern that the task instruction did not explicitly require or prohibit."
+  ],
+  "command_stats": {
+    "total": 21,
+    "successful": 17,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "All state-changing commands trace to a clear purpose: installing lvm2 (prerequisite), creating the loop-backed PV/VG/LV and xfs filesystem (required substrate since the RHEL9 disk had no volume manager), writing baseline data and a checksum manifest (evidence for later comparison), creating and merging the LVM snapshot (the core task mechanism), the corruption step (required divergence proof), creating a follow-on snapshot for ongoing recoverability, installing a systemd unit so the loop/VG/mount survive reboot (necessary for the restart-persistence check), and the reboot itself (required by the fixed node-restart protocol). No unnecessary or unexplained mutations, failed services, or weakened security controls were observed; failed-services and listening-socket comparisons show no new exposure after the reboot. Minor residue: several bounded log/checksum artifacts (/tmp/lvm_install.log, /tmp/current.sha256, /tmp/post_reboot.sha256, /tmp/reboot.log) were left in /tmp rather than cleaned up, a low-severity, non-destructive leftover from legitimate evidence collection.",
+    "evidence_ids": [
+      "cmd-6090b3e42c444d27",
+      "cmd-ebcf7d6a876f439d",
+      "cmd-17fc455e5bb249d3",
+      "cmd-1e76be8871b741d1",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

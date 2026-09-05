@@ -1,0 +1,63 @@
+{
+  "status": "completed",
+  "summary": "Deployed a rootless podman container (nginx:alpine) on node1 running under the unprivileged appsvc account, published on port 8080, managed by a systemd user Quadlet unit (webapp.container) with linger enabled so it starts at boot without any active login session. Verified via a full node reboot that the boot identity changed and the service/container auto-recovered and served HTTP 200 with the process owned by appsvc.",
+  "actions_performed": [
+    "Installed podman on node1 (RHEL 10) via dnf (first attempt hit a transient GPG parse error; retry succeeded)",
+    "Created unprivileged user appsvc with subuid/subgid ranges auto-allocated (524288:65536)",
+    "Enabled systemd linger for appsvc (loginctl enable-linger) so its user manager starts at boot without login",
+    "Pulled docker.io/library/nginx:alpine rootlessly as appsvc",
+    "Created ~appsvc/.config/containers/systemd/webapp.container Quadlet unit publishing 8080:80 with WantedBy=default.target",
+    "Started the generated webapp.service and confirmed the generator auto-created the default.target.wants symlink for boot autostart",
+    "Opened firewalld port 8080/tcp permanently and reloaded",
+    "Captured healthy baseline: boot_id, service/container status, HTTP 200 check",
+    "Issued systemctl reboot on node1 (ack returned before disconnect), polled until exec was reachable again",
+    "Verified changed boot_id/uptime post-reboot, confirmed no interactive login session for appsvc (only the lingering user-manager entry), confirmed webapp.service active, container running, HTTP 200, and nginx master process owned by appsvc"
+  ],
+  "evidence": [
+    {
+      "requirement": "Rootless container app runs as appsvc, serving on port 8080",
+      "command_ids": [
+        "cmd-1908868aece548a8",
+        "cmd-fd85c74254f34ebf",
+        "cmd-9be533e57f4c4483",
+        "cmd-5d0d2daf93674330",
+        "cmd-0740bb0934684363"
+      ],
+      "summary": "appsvc user created (uid 1000); nginx:alpine pulled rootlessly; Quadlet unit defines PublishPort=8080:80; podman ps shows systemd-webapp container Up with 0.0.0.0:8080->80/tcp; process ownership check (post-reboot) shows nginx master process owned by appsvc, not root"
+    },
+    {
+      "requirement": "App starts at boot while appsvc has no active login session (healthy baseline)",
+      "command_ids": [
+        "cmd-6a4e8ea8c6be4644",
+        "cmd-963d013d874a453a",
+        "cmd-6df7859ad13b4414",
+        "cmd-4dc06296899f4320"
+      ],
+      "summary": "loginctl enable-linger set Linger=yes; /var/lib/systemd/linger/appsvc marker present; generator auto-created default.target.wants/webapp.service symlink; pre-restart baseline captured: boot_id 03408ac4-bfe4-4151-98bd-1966b0a205af, webapp.service active, container up, HTTP 200 via $NODE_IP:8080"
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-db00ca6d35924e57"
+      ],
+      "summary": "systemctl reboot issued on node1; command returned 'reboot command issued' before the connection dropped"
+    },
+    {
+      "requirement": "Proof of changed boot identity (actual restart, not just elapsed time)",
+      "command_ids": [
+        "cmd-8c2d47a5d8ea4733",
+        "cmd-561adbda40184e04"
+      ],
+      "summary": "Poll immediately after reboot timed out (node offline mid-restart); subsequent poll succeeded with new boot_id cbea0e05-be39-407a-bfeb-deaa75f04134 and uptime 6.60s, proving a real reboot occurred"
+    },
+    {
+      "requirement": "Post-restart recovery: service/container healthy, no login session, data/state intact",
+      "command_ids": [
+        "cmd-c8474170bcec4b08",
+        "cmd-b17087e3edb34fe5",
+        "cmd-b59aa218944e443b"
+      ],
+      "summary": "loginctl list-sessions shows only the lingering user-manager entry for appsvc (no interactive login); user@1000.service active; webapp.service is-active=active; podman ps shows systemd-webapp container Up 12s automatically after boot; curl to $NODE_IP:8080 returns HTTP 200; nginx master process (pid 915) confirmed owned by user appsvc"
+    }
+  ]
+}

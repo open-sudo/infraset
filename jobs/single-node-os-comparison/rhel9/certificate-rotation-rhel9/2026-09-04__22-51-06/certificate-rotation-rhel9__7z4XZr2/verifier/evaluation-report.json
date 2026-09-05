@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on port 8443 on node1",
+      "status": "satisfied",
+      "summary": "nginx server block for 8443 (both IPv4/IPv6) was deployed and verified live: curl to https://$NODE_IP:8443/ returned http_code=200 and openssl s_client confirmed a matching certificate served. The after-executor lifecycle snapshot independently confirms nginx listening on 0.0.0.0:8443 and [::]:8443 post-reboot.",
+      "evidence_ids": [
+        "cmd-ec1e38b0d78247dd",
+        "cmd-0eea9f01eb3b46bc",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "auto-renewal",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "renew-cert.sh checks expiry with `openssl x509 -checkend 180` and is driven every minute by /etc/cron.d/renew-cert under crond. journalctl -t renew-cert shows a steady cadence of 'issued new cert' events roughly every ~2 minutes, always well ahead of the 5-minute certificate lifetime, both before and after the node reboot.",
+      "evidence_ids": [
+        "cmd-014dd29b4dff4dcd",
+        "cmd-04fc50c54c6f4af7",
+        "cmd-2ff1cb3422be4089",
+        "cmd-4cefad40b8284b66"
+      ]
+    },
+    {
+      "id": "live-pickup",
+      "requirement": "Service picks up each new certificate while continuing to answer requests",
+      "status": "satisfied",
+      "summary": "A 1-second-interval HTTPS+serial polling loop directly observed the certificate serial change from ...CF4D to ...CF4E exactly at a cron-triggered `nginx -s reload`, with zero non-200 responses across the whole window (84 consecutive 200s on the old cert, 24 on the new one, no failures). A second such transition (...CF4E to ...CF4F) was observed after the node reboot with the same zero-downtime result, confirming the graceful-reload mechanism works both initially and after restart.",
+      "evidence_ids": [
+        "cmd-2ff1cb3422be4089",
+        "cmd-32e095f84faf4c51",
+        "cmd-eaa34ca393984207",
+        "cmd-4cefad40b8284b66",
+        "cmd-588650339c9f4bc2"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed and demonstrating recovery on node1",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 583ddd53..., uptime, active/enabled nginx+crond, valid cert, HTTPS 200. Reboot was acknowledged (backgrounded systemctl reboot returned before disconnect), connection loss was observed, and a new boot_id (3c674d6d...) and advanced uptime were confirmed after reconnection \u2014 corroborated independently by the fixed after_executor boot-identity snapshot showing the same boot_id. Post-restart recovery showed nginx/crond active, cert retained with correct SELinux cert_t labels, HTTPS answering 200, and a live cron-triggered renewal with zero-downtime reload firing again on schedule after reboot.",
+      "evidence_ids": [
+        "cmd-3627dd483fc04741",
+        "cmd-c0fc2bf2b1f147cf",
+        "cmd-720e2b5af3ac47ea",
+        "cmd-19f3c88fc4f84fad",
+        "cmd-d9a14bb2572f4079",
+        "cmd-8a577180d49b4b55",
+        "cmd-ac483b4439cf4e6f",
+        "cmd-4cefad40b8284b66",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task \u2014 HTTPS on 8443, automatic pre-expiry certificate renewal, and zero-downtime pickup of each renewed certificate \u2014 are directly and repeatedly demonstrated in captured evidence, both before and after a full node reboot. The mandatory restart protocol was executed cleanly with a genuine boot-identity change (cross-checked against the fixed lifecycle snapshots) and complete, evidence-backed recovery of services, certificate state, and the renewal/reload cycle. Operational hygiene is good: troubleshooting mutations were root-cause fixes or bounded, reverted diagnostics, with only minor, low-risk residue (a leftover CA-bootstrap script and the nginx default port-80 listener).",
+  "limitations": [
+    "A single evidence-collection command (cmd-67493bc8361c410c) failed with a proxy read timeout during a sleep/verify loop; this did not affect the outcome since the same watch log was successfully inspected in the immediately following command.",
+    "The gen-ca.sh script's continued presence in /usr/local/bin and the default nginx port-80 listener were not addressed by the executor; these are minor and not explicitly prohibited by the task, but represent unreviewed surface area."
+  ],
+  "command_stats": {
+    "total": 50,
+    "successful": 44,
+    "failed": 5,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "The executor's mutations were almost all directly tied to satisfying the task or fixing root causes it introduced. Two SELinux mislabeling incidents (cmd-5c54e4f1fda84e11 failed start, fixed by cmd-3fff6c43fe1e4d73 semanage/restorecon) and a cron PATH bug (diagnosed via cmd-4a3ede3c42e64b70, fixed by cmd-924bfcf4efe14963) were legitimate corrective actions, not unnecessary experiments. cmd-614aec6ce2fc4fc5 (force-renew-test.sh with an artificially long checkend threshold) mutated live state by forcing an extra cert issuance/reload cycle purely to validate the SELinux/reload fix \u2014 a bounded, low-risk diagnostic action whose temp script was later deleted in cmd-212779e12984434b, so it counts as an unnecessary mutation but one that was fully reverted (no residual script) with no adverse effect. Temporary watch logs and helper scripts under /tmp were cleaned up in the final cmd-212779e12984434b. Minor residue: /usr/local/bin/gen-ca.sh, a one-time CA-bootstrap script, was left in place rather than removed, and the nginx package's default port 80 listener (visible in the after_executor snapshot) was never disabled \u2014 neither was explicitly requested by the task, but both are low-risk, non-destructive, and plausibly intentional/incidental rather than harmful.",
+    "evidence_ids": [
+      "cmd-5c54e4f1fda84e11",
+      "cmd-3fff6c43fe1e4d73",
+      "cmd-4a3ede3c42e64b70",
+      "cmd-924bfcf4efe14963",
+      "cmd-614aec6ce2fc4fc5",
+      "cmd-212779e12984434b",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

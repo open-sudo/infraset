@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Establish a native filesystem snapshot capability for /srv/data on node1 so application data is recoverable via snapshots",
+      "status": "satisfied",
+      "summary": "Root disk is plain ext4 with no spare disk/LVM, so the executor created a loopback-backed btrfs image, formatted it, created a 'data' subvolume, and mounted it at /srv/data via /etc/fstab. This provides a genuine native filesystem snapshot mechanism (btrfs subvolume snapshot) rather than an ad-hoc copy-based backup.",
+      "evidence_ids": [
+        "cmd-d8b443dc14cc45d7",
+        "cmd-e492863de9f8431d",
+        "cmd-f40b61b5a51b4921",
+        "cmd-c883599eb0724c18"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Capture a snapshot of baseline application data under /srv/data before modification",
+      "status": "satisfied",
+      "summary": "Baseline files (app.conf, records.csv, uploads/file1.txt) were written and hashed, then a read-only btrfs snapshot 'snap-baseline' of the /srv/data subvolume was created and confirmed via 'btrfs subvolume list'.",
+      "evidence_ids": [
+        "cmd-fcea56463fda4afc",
+        "cmd-35450bc1ddf44d8e"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Modify /srv/data after the snapshot to create a divergence to recover from",
+      "status": "satisfied",
+      "summary": "app.conf was overwritten, records.csv deleted, and an unexpected junk.txt added; hashes captured immediately afterward differ from the baseline, directly demonstrating the corrupted state.",
+      "evidence_ids": [
+        "cmd-ade1e3a3eafd4af6"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Restore the exact content captured by the earlier snapshot after modification",
+      "status": "satisfied",
+      "summary": "The live 'data' subvolume was swapped for a writable snapshot of snap-baseline and remounted; post-restore SHA-256 hashes for all three files exactly match the original pre-modification baseline hashes, directly proving exact content recovery.",
+      "evidence_ids": [
+        "cmd-174f285c241444db",
+        "cmd-4c1bc77a00de4fda",
+        "cmd-fcea56463fda4afc"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Provider-wide node-restart evidence protocol: healthy baseline, restart, changed boot identity, and recovered service/data state on node1",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (901ef286...) and healthy mount/data state were captured, 'shutdown -r now' was issued and acknowledged (stream closed as node went down), polling failed while down then succeeded with a new boot_id (a960268e...), and post-reboot verification shows /srv/data auto-remounted via fstab with identical file hashes and all three btrfs subvolumes (data, snapshots/snap-baseline, corrupted subvolume) intact. This is corroborated by the fixed before_prepare/after_executor lifecycle boot-identity snapshots showing the same two boot IDs.",
+      "evidence_ids": [
+        "cmd-ac6a6cf697414d8d",
+        "cmd-abfb38f2115c4496",
+        "cmd-77913087aa324218",
+        "cmd-41c57aaacb574d32",
+        "cmd-96acf33ae1dd44b5"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a working btrfs-on-loopback snapshot mechanism for /srv/data (necessary given the ext4-only root disk with no spare storage), demonstrated a full baseline-capture -> snapshot -> corrupt -> restore cycle with SHA-256 hashes proving exact content recovery, and additionally ran a complete node-restart evidence protocol (pre-restart healthy state, reboot, boot-identity change, post-reboot data/subvolume recovery) that is cross-confirmed by the fixed lifecycle boot-identity snapshots. All material task outcomes are directly and coherently evidenced. The only minor hygiene note is a retained (renamed, not deleted) old subvolume inside the backing image, which is low-risk and does not affect functionality.",
+  "limitations": [
+    "The after_prepare lifecycle snapshot is an alias of before_prepare (prepare was disabled), so preparer-vs-executor change separation relies entirely on the before_prepare vs after_executor comparison.",
+    "The loopback/btrfs-on-image approach is a workaround for the lack of a spare disk or LVM; it is a reasonable and evidence-supported implementation choice but differs from snapshotting a dedicated block device."
+  ],
+  "command_stats": {
+    "total": 15,
+    "successful": 12,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Reviewed all 15 executor commands chronologically. Discovery commands (cmd-d8b443dc14cc45d7, cmd-e492863de9f8431d) were read-only. All state-changing commands (loop image creation/mkfs, subvolume creation and fstab entry, baseline data write, snapshot, corruption, restore swap, reboot) map directly to a required step of the demonstrated snapshot/restore workflow or the restart evidence protocol. Cleanup was performed for the top-level mount helper (cmd-b9cb1703013e4ab9 unmounts and removes /mnt/srv-data-top). One minor residue: the pre-restore 'data' subvolume was renamed to 'data-corrupted-<timestamp>' rather than deleted (visible in cmd-174f285c241444db and still present in cmd-96acf33ae1dd44b5's subvolume list post-reboot); this is a small, low-risk retained artifact inside the loop-backed image (not exposed on the host filesystem) and a reasonable safety choice (avoids destructive deletion) rather than an unnecessary or risky mutation, but it is leftover state that was not cleaned up.",
+    "evidence_ids": [
+      "cmd-b9cb1703013e4ab9",
+      "cmd-174f285c241444db",
+      "cmd-96acf33ae1dd44b5",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,79 @@
+{
+  "status": "completed",
+  "summary": "Deployed a rootless podman-based nginx web app on node1 (AlmaLinux 9) running as the unprivileged system account appsvc, serving on port 8080 via a Podman Quadlet-generated systemd --user unit (webapp.service) wired into appsvc's default.target. Enabled loginctl linger for appsvc so its systemd user manager (and the container) starts at boot without any active login session. Performed the mandatory single-node restart: captured a baseline boot_id and healthy service/HTTP state, issued a backgrounded `shutdown -r now`, polled until node1 was reachable again, confirmed the boot_id changed (proving an actual reboot), and verified post-reboot that appsvc still had zero login sessions (state=lingering), webapp.service was active, a freshly-started container was running, and curl to $NODE_IP:8080 returned HTTP 200.",
+  "actions_performed": [
+    "Inspected node1: AlmaLinux 9.6, no docker/podman installed, no appsvc user existing",
+    "Installed podman via dnf",
+    "Created system user appsvc (useradd -r -m, nologin shell)",
+    "Allocated subuid/subgid ranges for appsvc required for rootless podman",
+    "Enabled loginctl linger for appsvc; confirmed user@995.service starts with 'No sessions'",
+    "Pulled docker.io/library/nginx:alpine as appsvc via rootless podman and smoke-tested a manual run on port 8080 (HTTP 200)",
+    "Removed the manual container and authored a Podman Quadlet unit at /home/appsvc/.config/containers/systemd/webapp.container publishing 8080:80, Restart=always, WantedBy=default.target",
+    "Reloaded appsvc's systemd --user daemon; confirmed webapp.service auto-generated and listed under default.target dependencies",
+    "Started webapp.service; confirmed HTTP 200 on $NODE_IP:8080 with zero login sessions for appsvc",
+    "Captured pre-restart boot_id (c2ffc729...) and baseline healthy state",
+    "Issued backgrounded 'shutdown -r now' on node1 so the ack returned before disconnection",
+    "Polled node1 exec until it succeeded again after a connection timeout, confirming the reboot occurred",
+    "Captured post-restart boot_id (04202496...), confirming it changed from baseline",
+    "Verified post-reboot: fresh uptime, appsvc has zero login sessions (State=lingering), webapp.service active, a new container instance running, and HTTP 200 from $NODE_IP:8080"
+  ],
+  "evidence": [
+    {
+      "requirement": "Container runs as unprivileged appsvc account",
+      "command_ids": [
+        "cmd-1c28142215164271",
+        "cmd-be0c8f6cfc3d405c",
+        "cmd-884048192ded4c6c"
+      ],
+      "summary": "appsvc created as uid 995 with no shell login; podman/systemctl commands executed as appsvc via sudo -u appsvc; webapp.service cgroup shows path user-995.slice/user@995.service, and container process tree runs under that slice."
+    },
+    {
+      "requirement": "Web app serves on port 8080",
+      "command_ids": [
+        "cmd-87d19c739778472a",
+        "cmd-884048192ded4c6c"
+      ],
+      "summary": "curl to $NODE_IP:8080 returned HTTP 200 both during manual smoke test and after starting via the systemd unit; podman ps shows 0.0.0.0:8080->80/tcp mapping."
+    },
+    {
+      "requirement": "Starts at boot while appsvc has no active login session",
+      "command_ids": [
+        "cmd-0ce2d76d4b5441c7",
+        "cmd-06e3d8c616764eba",
+        "cmd-83b0761683224938"
+      ],
+      "summary": "loginctl enable-linger appsvc set Linger=yes; user@995.service is active with 'No sessions' in loginctl list-sessions; webapp.service confirmed as a dependency of appsvc's default.target via systemctl --user list-dependencies."
+    },
+    {
+      "requirement": "Pre-restart healthy baseline",
+      "command_ids": [
+        "cmd-be4fe7faab114bb4",
+        "cmd-83b0761683224938",
+        "cmd-884048192ded4c6c"
+      ],
+      "summary": "Captured baseline boot_id c2ffc729-a31e-486e-95de-cf2023dea95c, confirmed webapp.service active and HTTP 200 prior to reboot."
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-3da2ebcd93ed487a"
+      ],
+      "summary": "Backgrounded 'shutdown -r now' returned pid immediately (reboot triggered pid 11609) before the node disconnected."
+    },
+    {
+      "requirement": "Node restart confirmed via changed boot identity",
+      "command_ids": [
+        "cmd-f47c2f12692544f5",
+        "cmd-e7300bbc18a14235"
+      ],
+      "summary": "Immediately after reboot trigger, exec timed out (node down); subsequent poll succeeded with boot_id 04202496-7eea-43c9-9716-78ce8ad58f70, differing from the pre-restart boot_id, proving an actual restart occurred."
+    },
+    {
+      "requirement": "Post-restart recovery: service, data, and no-login-session condition all restored",
+      "command_ids": [
+        "cmd-706b4cf814864fc3"
+      ],
+      "summary": "After reboot: uptime shows fresh boot time (22:57:16), loginctl reports 'No sessions' and State=lingering for appsvc, webapp.service is active, podman ps shows a freshly started container (new container ID, 7s uptime), and curl to $NODE_IP:8080 returns HTTP 200."
+    }
+  ]
+}

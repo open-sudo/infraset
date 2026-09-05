@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "managed-service",
+      "requirement": "inventory-api runs as a managed (OpenRC) service on node1",
+      "status": "satisfied",
+      "summary": "An OpenRC init script was created at /etc/init.d/inventory-api, added to the default runlevel via rc-update, and started under a dedicated 'inventory' user; rc-service status confirmed 'started' and the process was verified reachable via curl for /health, GET/POST /inventory.",
+      "evidence_ids": [
+        "cmd-4df2a4f8e48444cd",
+        "cmd-a3d35dd5cadf4637",
+        "cmd-fa3f00f59e5c4a84"
+      ]
+    },
+    {
+      "id": "oom-protection-applied",
+      "requirement": "inventory-api is configured so the kernel will not select it as the OOM victim",
+      "status": "satisfied",
+      "summary": "The init script's start_post hook sets oom_score_adj to -1000 on the running pid; this was directly confirmed by reading /proc/<pid>/oom_score_adj immediately after start.",
+      "evidence_ids": [
+        "cmd-4df2a4f8e48444cd",
+        "cmd-fa3f00f59e5c4a84"
+      ]
+    },
+    {
+      "id": "oom-transition-demonstrated",
+      "requirement": "Service keeps serving when a memory-hungry process drives the system OOM, and the kernel stops the hog instead",
+      "status": "satisfied",
+      "summary": "A memory-hog process (oom_score_adj=1000) was launched and allowed to exhaust the node's ~2GB RAM with no swap; dmesg captured the kernel OOM killer invocation and confirmed it selected and killed only the hog (pid 3202, oom_score_adj 1000), while inventory-api (pid 3096, oom_score_adj -1000) was left running in the same OOM task dump. Post-event curl GET/POST calls and rc-service status confirmed inventory-api continued serving without interruption or restart, and data written before, during, and after the event persisted.",
+      "evidence_ids": [
+        "cmd-d57fad8a0be2492e",
+        "cmd-90dfa6e9cbc147b3",
+        "cmd-0b9535e0746145f8",
+        "cmd-8fcda61f19be4dde"
+      ]
+    },
+    {
+      "id": "restart-recovery",
+      "requirement": "Service, OOM protection, and data survive a full node restart (mandatory restart protocol)",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (b0ab50e6...) and healthy baseline were captured, a backgrounded reboot was issued and acknowledged, the outage was directly observed through repeated failed polls, and a new boot_id (f55da554...) confirmed the restart. Post-restart, inventory-api auto-started under the default runlevel with a new pid, oom_score_adj was re-applied to -1000 by start_post, and /health and /inventory returned the same persisted data including the item added right after the OOM test. This is corroborated by the fixed lifecycle boot-identity observations, which independently show the same before/after boot_id change.",
+      "evidence_ids": [
+        "cmd-953d663edef948a3",
+        "cmd-e97b6a1310af4104",
+        "cmd-d45ec956f497478f",
+        "cmd-a8f57d12bb4c4304",
+        "cmd-ee0f14c36c944f3c",
+        "cmd-1985dec61eab4a8b"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are satisfied with direct evidence: inventory-api runs as an OpenRC-managed service on node1, is configured with oom_score_adj=-1000, and a real OOM event (induced by a separate memory-hog process) was captured via dmesg showing the kernel killed only the hog while inventory-api survived and kept serving reads/writes uninterrupted, with data intact. The mandatory node-restart protocol was also fully demonstrated: pre-restart healthy baseline and boot_id, an observed outage, a changed boot_id, and post-restart recovery of the service, OOM protection, and persisted data, cross-checked against the fixed lifecycle boot-identity snapshots. The only notable issue is a minor hygiene discrepancy: several temporary artifact files (base64 blobs, install log, hog script) remained on node1 despite the executor's claim that temp files were cleaned up.",
+  "limitations": [
+    "Temporary artifact files (/tmp/apk_install.log, /tmp/app.b64, /tmp/hog.b64, /tmp/hog.py, /tmp/initd.b64) were left on node1 after task completion, contradicting the executor's stated cleanup action.",
+    "No independent verification tool was available beyond the provided evidence; all conclusions rely on the captured command outputs and lifecycle snapshots being faithful and complete."
+  ],
+  "command_stats": {
+    "total": 30,
+    "successful": 18,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands map cleanly to task requirements: package install, service files, dedicated user, and one legitimate corrective fix for a log-file permission error that blocked the first start attempt (cmd-0bc477530b934d13 failed, corrected by cmd-a3d35dd5cadf4637). The memory-hog experiment was bounded and self-terminated by the kernel OOM killer, which is itself the required test. However, the executor's claim of 'cleaned up local temp files' is contradicted by the after_executor lifecycle snapshot: /tmp/apk_install.log, /tmp/app.b64, /tmp/hog.b64, /tmp/hog.py, and /tmp/initd.b64 remained on node1 after task completion (only /tmp/hog.pid and /tmp/hog.log were removed, via cmd-8fcda61f19be4dde). These are inert artifacts (encoded payloads, install logs, the hog script) rather than running or security-relevant residue, but they represent unnecessary, unreverted leftover state paired with an inaccurate completion claim.",
+    "evidence_ids": [
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:temporary-files",
+      "cmd-8fcda61f19be4dde",
+      "cmd-0bc477530b934d13",
+      "cmd-a3d35dd5cadf4637"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

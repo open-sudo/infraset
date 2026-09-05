@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Serve a package repository from local storage on node1",
+      "status": "satisfied",
+      "summary": "createrepo_c and httpd were installed, the tree RPM was placed in /srv/localrepo, repo metadata was generated, an Apache alias with correct SELinux context (httpd_sys_content_t) was configured, and curl confirmed HTTP 200 for repomd.xml from the local repo both before and after the restart.",
+      "evidence_ids": [
+        "cmd-874f99366012484c",
+        "cmd-f6fcbfc346314f6b",
+        "cmd-65564dcce9f644ff",
+        "cmd-2a614724c8664da3",
+        "cmd-2ab57fe9372c4b63",
+        "cmd-e87467b0078e4012",
+        "cmd-eda4e1db9fd24040"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Usual remote repositories confirmed unreachable at the time of installation",
+      "status": "satisfied",
+      "summary": "An iptables OUTPUT REJECT rule blocked outbound 80/443 except to the node itself/loopback; curl to the real AlmaLinux mirror returned exit 7 (connection refused) immediately before and immediately after the successful local install (cmd-95a9bf3615dc4a0e, cmd-bde6b83209434d3b, cmd-cf37973c56ec42d2), directly co-located with the working local-repo install.",
+      "evidence_ids": [
+        "cmd-b52d5e837a5c4392",
+        "cmd-95a9bf3615dc4a0e",
+        "cmd-bde6b83209434d3b",
+        "cmd-cf37973c56ec42d2"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "A package installed from the local repository while remote repositories were unreachable",
+      "status": "satisfied",
+      "summary": "Stock AlmaLinux repo files were disabled leaving only the 'local' repo enabled; dnf -y install tree succeeded, pulling the package solely from the local repo (Repository column = 'local'), and rpm -q / tree --version confirmed a working binary, all while the same-window remote check failed.",
+      "evidence_ids": [
+        "cmd-1133cf2e09ab4a02",
+        "cmd-e52e5c1252ed415e",
+        "cmd-cf37973c56ec42d2"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Mandatory provider-wide node-restart evidence protocol on node1",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline (boot_id d6298ced..., httpd active, tree installed, repo 200) was captured, systemctl reboot was acknowledged, post-reboot polling showed connection resets then a new boot_id (1f680db7...) and new boot time, and post-restart checks confirmed httpd active, tree still installed, and the local repo still serving 200. This is corroborated by the fixed global before_prepare/after_executor boot-identity snapshots, which show the same two boot_id values.",
+      "evidence_ids": [
+        "cmd-e87467b0078e4012",
+        "cmd-52ddfe40a84b41d7",
+        "cmd-6363913d563045cb",
+        "cmd-6b0f844222ff43dc",
+        "cmd-7eac51f9c17e49fc",
+        "cmd-eda4e1db9fd24040",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task are satisfied with direct, coherent evidence: a local repo is served from /srv/localrepo via httpd with correct SELinux labeling, the remote AlmaLinux mirrors were verifiably unreachable via an iptables REJECT rule at the moment of installation, and 'tree' was installed successfully from the local repo alone (stock repos disabled) while the remote check failed in the same window. The mandatory node-restart evidence protocol is also fully satisfied: a healthy pre-restart baseline, an acknowledged reboot, a directly observed change in boot_id/boot time, and confirmed recovery of httpd, the installed package, and repo serving afterward, cross-checked against the fixed lifecycle boot-identity snapshots. Operational hygiene is reduced by an avoidable mid-task 'dnf clean all' that destroyed the downloaded RPM and forced a firewall-reopening recovery detour, though this was fully and correctly remediated with no lasting residue.",
+  "limitations": [
+    "The dnf clean all mishap (cmd-9869a14312bc48e4) and its recovery chain briefly reopened the firewall isolation the task's core claim depends on; while bounded and restored, it means the 'remote unreachable' condition was not continuously maintained throughout the entire session, only at the moments explicitly checked.",
+    "iptables rules are not shown to be persisted (e.g. via iptables-save/firewalld), so the REJECT rule did not survive the reboot; this does not affect the task outcome since remote repos remain disabled via repo config, but the isolation demonstrated is session-scoped rather than durable.",
+    "No commit or persistent verification of the local-only dnf configuration was captured post-restart beyond re-checking httpd/tree/repo status; a repolist or dnf install dry-run after restart would have more directly confirmed the local-only repo configuration survived reboot, though repo file mutations don't require the firewall rule to hold."
+  ],
+  "command_stats": {
+    "total": 33,
+    "successful": 27,
+    "failed": 6,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "One unnecessary/risky mutation chain occurred: cmd-9869a14312bc48e4 ran 'dnf clean all' as a diagnostic install attempt while stock repos were still enabled; this had the unintended side effect of deleting the only downloaded tree RPM from /srv/localrepo (confirmed empty in cmd-0747fb76abb14d57 and cmd-c08b01b890ae4655), a destructive result with no clear necessary role in the task. Recovering from this required temporarily removing the firewall REJECT rule (cmd-49dd5622507148ad), a brief but real weakening of the very isolation the task depends on, followed by a failed re-download that fetched an HTML 404 page (cmd-7fc2fdad689e470a), a corrected successful re-download (cmd-677a7a7c7aef4b6d), re-applying the REJECT rule (cmd-bde6b83209434d3b), and rebuilding repo metadata (cmd-e52e5c1252ed415e). This entire detour was fully corrected and left no residue -- final state matches what a clean run would have produced (repo intact, firewall rule restored, package installed) -- so it is treated as bounded and low-severity rather than as retained damage. No other unexplained mutations, abandoned files, or failed services were observed; /root/repo-backup and disabled stock repo files are a reasonable, reversible way to satisfy the 'only local repo' requirement, and post-restart state is clean (no failed units, only expected httpd:80 listener added).",
+    "evidence_ids": [
+      "cmd-9869a14312bc48e4",
+      "cmd-0747fb76abb14d57",
+      "cmd-c08b01b890ae4655",
+      "cmd-49dd5622507148ad",
+      "cmd-7fc2fdad689e470a",
+      "cmd-677a7a7c7aef4b6d",
+      "cmd-bde6b83209434d3b",
+      "cmd-e52e5c1252ed415e",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

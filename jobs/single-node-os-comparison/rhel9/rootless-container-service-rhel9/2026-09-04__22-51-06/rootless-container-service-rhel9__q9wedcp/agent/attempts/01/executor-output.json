@@ -1,0 +1,68 @@
+{
+  "status": "completed",
+  "summary": "Deployed a rootless podman container (httpd:alpine) as the unprivileged appsvc user on node1, serving on port 8080, managed via a podman quadlet (.container) systemd --user unit with lingering enabled so it starts at boot without any active login session. Verified via a full node reboot that the container, service, and port-8080 availability all recover automatically while appsvc remains session-less.",
+  "actions_performed": [
+    "Inspected node1 (RHEL 9.8): no podman/docker and no appsvc user present initially",
+    "Installed podman via dnf",
+    "Created unprivileged user appsvc (uid 1000) with auto-assigned subuid/subgid ranges",
+    "Enabled loginctl lingering for appsvc so its systemd --user manager runs and persists across boot without any active login session",
+    "Wrote a podman quadlet unit (~/.config/containers/systemd/webapp.container) running httpd:alpine with PublishPort=8080:80 and WantedBy=default.target",
+    "Started webapp.service under appsvc's systemd --user instance; confirmed active with the container listening on 0.0.0.0:8080",
+    "Verified HTTP 200 from NODE_IP:8080, zero loginctl sessions, and appsvc processes lacking a controlling TTY (pure lingering-driven operation)",
+    "Captured pre-reboot boot_id baseline, then triggered systemctl reboot on node1 (acknowledgement returned before disconnect)",
+    "Polled node1 until exec was available again; confirmed boot_id changed (6bb7e004-1e2e-46ac-bfd7-fafa248a4e76 -> 26b9b59d-952a-4070-b6f2-51058d693d9c)",
+    "Verified post-reboot recovery: webapp.service active, new container instance auto-started at boot via lingering, HTTP 200 on port 8080, no login sessions, no TTY on appsvc processes"
+  ],
+  "evidence": [
+    {
+      "requirement": "Container runs as unprivileged appsvc user, exposed on port 8080",
+      "command_ids": [
+        "cmd-ca2a8070985c4ddb",
+        "cmd-2d81210eb40647f8",
+        "cmd-7ba325b958944d75",
+        "cmd-d40d49f6400f4c7c",
+        "cmd-84b78a90e9104250"
+      ],
+      "summary": "appsvc user created as non-root (uid 1000); quadlet unit defines PublishPort=8080:80; podman ps and process list confirm container 'webapp' owned by appsvc listening on 0.0.0.0:8080; curl to NODE_IP:8080 returns HTTP 200 with Apache page."
+    },
+    {
+      "requirement": "Service starts at boot while appsvc has no active login session",
+      "command_ids": [
+        "cmd-be0ee30e18e1442d",
+        "cmd-a7c1f5e861b14c19",
+        "cmd-84b78a90e9104250"
+      ],
+      "summary": "loginctl enable-linger appsvc sets Linger=yes; systemd --user instance for appsvc runs and webapp.service is active while 'loginctl list-sessions' reports 'No sessions' and appsvc's processes show TTY '?' (no controlling terminal), proving operation without an interactive login."
+    },
+    {
+      "requirement": "Mandatory node-restart evidence: healthy baseline before restart",
+      "command_ids": [
+        "cmd-5c5d4693fcea4e6b"
+      ],
+      "summary": "Captured boot_id=6bb7e004-1e2e-46ac-bfd7-fafa248a4e76, HTTP 200 on port 8080, no login sessions, and Linger=yes immediately before triggering reboot."
+    },
+    {
+      "requirement": "Mandatory node-restart evidence: restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-6eeeb84d3d3f485e"
+      ],
+      "summary": "systemctl reboot was launched via nohup/background so the exec call returned 'reboot triggered' successfully before the node went offline."
+    },
+    {
+      "requirement": "Mandatory node-restart evidence: changed boot identity",
+      "command_ids": [
+        "cmd-9df9acc3f0974021",
+        "cmd-e06bec0bc8514b3b",
+        "cmd-58a243d4c1e945c1"
+      ],
+      "summary": "Node was unreachable (connection timed out) during reboot on two poll attempts, then exec succeeded again with boot_id=26b9b59d-952a-4070-b6f2-51058d693d9c and uptime -s showing a new boot time, differing from the pre-reboot boot_id, proving an actual OS restart occurred (not just a service restart)."
+    },
+    {
+      "requirement": "Mandatory node-restart evidence: post-restart recovery of required service, data (container), and session-less operation",
+      "command_ids": [
+        "cmd-782543dc98fb43aa"
+      ],
+      "summary": "After reboot: webapp.service is active, podman ps shows a fresh container instance (new ID, 4s uptime) auto-started via lingering, curl to NODE_IP:8080 returns HTTP 200, loginctl list-sessions reports 'No sessions', and appsvc processes again show TTY '?', confirming full recovery without any login session."
+    }
+  ]
+}

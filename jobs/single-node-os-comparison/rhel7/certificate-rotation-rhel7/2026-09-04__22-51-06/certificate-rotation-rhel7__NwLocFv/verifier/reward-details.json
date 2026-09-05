@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Serve HTTPS on port 8443 with a valid certificate on node1",
+      "status": "satisfied",
+      "summary": "nginx configured with an https8443.conf vhost listening on 8443 with TLS. ss -tlnp confirms nginx listening on 8443, curl -sk returns http_code=200, and openssl s_client shows a valid served certificate with subject=/CN=node1. Confirmed again post-reboot with the same 200/serial checks.",
+      "evidence_ids": [
+        "cmd-d3db617d264a4308",
+        "cmd-806e99cee5584137",
+        "cmd-b08561a7d7c64c49",
+        "cmd-516fe343b68644f8"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A renew-cert.sh script that reissues a 1-day cert signed by a local CA and reloads nginx is installed, and a root crontab entry runs it every 6 hours (well inside the 1-day cert lifetime). Manual invocations of the exact script the cron job calls succeeded repeatedly (serial incremented each time), including after reboot, demonstrating the renewal mechanism works end to end. The scheduled cron firing itself was not observed live within the session window, which is an inherent limitation of the short observation period rather than a design flaw.",
+      "evidence_ids": [
+        "cmd-5b606689754b4f9a",
+        "cmd-78d2b007e0d046e4",
+        "cmd-26529523edf849d1",
+        "cmd-50b2f00fd04b4a7a"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Service picks up each new certificate while continuing to answer requests (zero-downtime reload)",
+      "status": "satisfied",
+      "summary": "100 concurrent HTTPS probes were fired at 20ms intervals while a live renewal ran concurrently; all 100 returned HTTP 200. The served certificate serial visibly changed immediately after (DC65C56BD7E099CB -> ...CC), confirming nginx reloaded the new cert without dropping connections.",
+      "evidence_ids": [
+        "cmd-9ec102754e9741b8",
+        "cmd-d60b810e1274478a"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Mandatory node-restart evidence protocol on node1 (pre-restart baseline, restart ack, changed boot identity, post-restart recovery)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id, service states, listening socket, crontab, and live cert. A backgrounded delayed reboot was acknowledged immediately before the connection dropped (confirmed by two subsequent SSH timeouts). Boot_id changed from 16724682-... to bdeb7db5-..., matching the independent before_prepare/after_executor lifecycle snapshots exactly. Post-restart checks show nginx and crond active/enabled, port 8443 still listening, HTTPS answering 200, the persisted cert, and a fresh renewal cycle succeeding after reboot.",
+      "evidence_ids": [
+        "cmd-27d05348b92448b1",
+        "cmd-db55cfb93ac94913",
+        "cmd-b4e00c8989a048ec",
+        "cmd-fe025046f90842a4",
+        "cmd-4289ccd0dad141ea",
+        "cmd-b08561a7d7c64c49",
+        "cmd-50b2f00fd04b4a7a",
+        "cmd-0fbb857915eb4f9e",
+        "cmd-516fe343b68644f8",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task instruction are satisfied with direct evidence: HTTPS is served on port 8443 with a valid, CA-signed certificate; a cron-scheduled renew-cert.sh reissues the short-lived (1-day) certificate well before expiry and the reload mechanism was proven to work manually and post-reboot; and a 100-request concurrent probe during a live renewal confirmed nginx picked up the new certificate with zero dropped requests. The independently-required node-restart evidence protocol is also fully satisfied - pre-restart baseline, an ack returned before disconnect, a changed boot_id cross-checked against the fixed lifecycle snapshots, and full post-restart recovery of nginx, crond, the listening socket, HTTPS responses, and renewal capability were all directly observed. Hygiene is good but not perfect: several small residual files were left in /tmp (a downloaded rpm, probe/reboot logs, and one file of unclear origin), and one bounded/reverted troubleshooting step (running nginx manually outside systemd) occurred during SELinux/pid-file diagnosis.",
+  "limitations": [
+    "The crontab-scheduled renewal was never observed firing unattended; only manual invocations of the identical script were captured, so end-to-end unattended automation over a full 6-hour cycle is inferred rather than directly observed.",
+    "/tmp/nginx-test.log appears in the after_executor snapshot with no corresponding executor command shown creating it; its origin and content could not be verified.",
+    "Package-health checks were unavailable (timed out) in both before_prepare and after_executor snapshots, so package consistency after the dependency-resolution troubleshooting (pcre2 rpm install, yum lock waits) could not be independently confirmed."
+  ],
+  "command_stats": {
+    "total": 42,
+    "successful": 36,
+    "failed": 6,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Most state-changing commands trace clearly to a necessary prerequisite (missing libpcre2 dependency, SELinux AVC denial on nginx.pid, PID-file permission issue) or to the final solution (nginx.repo, cert issuance, cron scheduling). One troubleshooting mutation was bounded and reverted: cmd-d8cf35f2126f40b8 started nginx directly via /usr/sbin/nginx bypassing systemd to diagnose the pid-file failure, and was stopped again in cmd-0f0c99dc361548bc before the systemd path was fixed and restarted via cmd-6fb2e7107c5d4f85 - low risk and fully undone. A test file /run/testwrite was created and removed in cmd-4f2eaaa4179140b4, no residue. Low-risk unnecessary residue was left in /tmp: pcre2.rpm (from cmd-fdf3f8c4e23244ad), probe.log (cmd-9ec102754e9741b8), and reboot.log (cmd-db55cfb93ac94913) all appear in the after_executor temporary-files snapshot uncleaned; these are small, non-sensitive, and in /tmp so blast radius is minimal. /tmp/nginx-test.log also appears in the after_executor snapshot with no corresponding executor command visibly creating it, an unexplained artifact. No failed services remain (after_executor failed-services list is empty), no security controls were weakened, and package state ended consistent (nginx and cronie installed cleanly).",
+    "evidence_ids": [
+      "cmd-d8cf35f2126f40b8",
+      "cmd-0f0c99dc361548bc",
+      "cmd-6fb2e7107c5d4f85",
+      "cmd-4f2eaaa4179140b4",
+      "cmd-fdf3f8c4e23244ad",
+      "cmd-9ec102754e9741b8",
+      "cmd-db55cfb93ac94913",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

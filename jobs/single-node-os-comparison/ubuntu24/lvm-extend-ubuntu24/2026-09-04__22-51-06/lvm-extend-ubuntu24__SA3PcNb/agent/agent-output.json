@@ -1,0 +1,82 @@
+{
+  "status": "completed",
+  "summary": "Created an LVM logical volume (vgdata/lvdata) on node1, backed by two loopback-file physical volumes since no spare block device existed, formatted ext4 and mounted it at /srv/data. Wrote test data, then grew the LV online (while mounted) from ~1000MiB to ~2.15GiB via vgextend + lvextend + resize2fs, verifying data integrity throughout. Set up persistence across reboot via a systemd oneshot unit (lvm-loopback.service) that reattaches the loop devices and activates the VG before local-fs-pre.target, referenced from /etc/fstab via x-systemd.requires. Performed the mandatory single-node restart: captured baseline boot_id and healthy mount/data state, issued systemctl reboot, polled until exec was available again, confirmed boot_id changed, and verified /srv/data remounted automatically at 2.1G with both test files passing sha256sum verification.",
+  "actions_performed": [
+    "Inspected node1 disk layout: single 20G vda fully allocated to root/boot, no spare block device or partition available for a native PV",
+    "Created two 1200M backing files under /var/lib/lvmfiles and attached them as /dev/loop20 and /dev/loop21",
+    "pvcreate on loop20, vgcreate vgdata, lvcreate lvdata (1000M), mkfs.ext4, mounted at /srv/data",
+    "Wrote testfile.txt and bigfile.txt to /srv/data and recorded sha256 checksums",
+    "pvcreate on loop21, vgextend vgdata with loop21, lvextend +1200M, resize2fs run online while filesystem stayed mounted; final size <2.15GiB / 2.1G reported by df",
+    "Verified checksums matched post-extend and confirmed LV remained mounted read-write",
+    "Created /etc/systemd/system/lvm-loopback.service (oneshot; reattaches both loop devices, runs udevadm settle, vgchange -ay vgdata before local-fs-pre.target) and enabled it",
+    "Added /etc/fstab entry for /dev/mapper/vgdata-lvdata -> /srv/data with x-systemd.requires=lvm-loopback.service,nofail",
+    "Simulated boot-time reassembly by unmounting, deactivating the VG, and detaching the loop devices, then starting the service + mount -a; fixed an incorrect /sbin/udevadm path in the unit during this test; confirmed clean automatic reassembly with intact data",
+    "Captured pre-reboot boot_id (92ec88af...) and confirmed healthy mount, size, and checksums",
+    "Issued sudo systemctl reboot on node1; connection dropped confirming the command was accepted before disconnect",
+    "Polled node1 until exec succeeded again; confirmed new boot_id (2d40a3de...), proving an actual restart occurred",
+    "Verified post-reboot: /srv/data auto-mounted via the new systemd unit + fstab, size 2.1G (>=2GB), lvm-loopback.service active, and both test files passed sha256sum verification"
+  ],
+  "evidence": [
+    {
+      "requirement": "LV mounted at /srv/data",
+      "command_ids": [
+        "cmd-0a31dd120e81439e"
+      ],
+      "summary": "df -h shows /dev/mapper/vgdata-lvdata mounted at /srv/data after lvcreate/mkfs/mount"
+    },
+    {
+      "requirement": "LV grown to >=2GB while staying mounted",
+      "command_ids": [
+        "cmd-fad00e5e25e04d20"
+      ],
+      "summary": "vgextend + lvextend + online resize2fs performed while /srv/data was mounted; lvextend reports growth to <2.15 GiB and df shows 2.1G on /srv/data still mounted"
+    },
+    {
+      "requirement": "Contents stay intact through the extend",
+      "command_ids": [
+        "cmd-0a31dd120e81439e",
+        "cmd-ce9533c26ebe479f"
+      ],
+      "summary": "sha256 checksums of testfile.txt and bigfile.txt recorded before extend and verified OK immediately after the online resize"
+    },
+    {
+      "requirement": "Persistence mechanism configured for reboot",
+      "command_ids": [
+        "cmd-96f8c8e34768425c",
+        "cmd-d90c3127e805474d",
+        "cmd-c00e1dedd79b424c"
+      ],
+      "summary": "systemd lvm-loopback.service enabled, fstab entry added referencing it, and a simulated teardown/reassembly (detach loops, deactivate VG, restart service, mount -a) proved the automatic reassembly logic works with data intact"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline on node1",
+      "command_ids": [
+        "cmd-a2babb3152494952"
+      ],
+      "summary": "Captured boot_id 92ec88af..., confirmed /srv/data mounted at 2.1G, and sha256sum -c passed for both test files before reboot"
+    },
+    {
+      "requirement": "Restart acknowledgement / command accepted before disconnect",
+      "command_ids": [
+        "cmd-5fb6b62d684b4890"
+      ],
+      "summary": "systemctl reboot issued; exec stream closed as the node went down, confirming the reboot command was accepted"
+    },
+    {
+      "requirement": "Changed boot identity proving an actual restart",
+      "command_ids": [
+        "cmd-ae6a1e947f0a4c4f",
+        "cmd-a0ad3b2463064e38"
+      ],
+      "summary": "First poll failed with connection reset (node down); subsequent poll succeeded returning new boot_id 2d40a3de..., different from the pre-reboot 92ec88af..."
+    },
+    {
+      "requirement": "Post-restart recovery of required service/data (LV auto-mount, data integrity, cluster membership n/a single node)",
+      "command_ids": [
+        "cmd-0304711b0d34457c",
+        "cmd-5484467bccd14eab"
+      ],
+      "summary": "After reboot, /srv/data auto-mounted via lvm-loopback.service (active) at 2.1G, lvs shows lvdata at <2.15g, and sha256sum -c confirmed both test files intact"
+    }
+  ]
+}

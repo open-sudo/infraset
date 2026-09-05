@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "mac-enforcing",
+      "requirement": "System's mandatory access control (AppArmor, the only MAC LSM available on Alpine) is active and in enforcing mode on node1",
+      "status": "satisfied",
+      "summary": "Baseline showed AppArmor compiled in but disabled (enabled=N, absent from /sys/kernel/security/lsm). Executor installed apparmor packages, added kernel boot parameters (apparmor=1 security=apparmor lsm=...,apparmor), enabled the apparmor OpenRC service, and rebooted. Post-reboot, /sys/kernel/security/lsm includes apparmor, /sys/module/apparmor/parameters/enabled=Y, and aa-status reports the module loaded with profiles in enforce mode.",
+      "evidence_ids": [
+        "cmd-0cd02edf2e2044e2",
+        "cmd-be4de80aa4294e41",
+        "cmd-786b2558e1314866",
+        "cmd-cbff0308c59845d4",
+        "cmd-0f529c21d61247ee"
+      ]
+    },
+    {
+      "id": "inventory-app-served",
+      "requirement": "Inventory application is served over TCP port 8181 on node1",
+      "status": "satisfied",
+      "summary": "An HTTP inventory app was created and registered as an OpenRC service. After reboot, rc-service inventory-app status shows started, curl to http://$NODE_IP:8181/inventory returns HTTP 200 with the correct JSON inventory payload, and the fixed lifecycle after-executor snapshot independently confirms tcp 0.0.0.0:8181 LISTEN by pid 2466/python3, cross-checking the executor's own evidence.",
+      "evidence_ids": [
+        "cmd-6e752a145f574054",
+        "cmd-e40f2ac0e99a42a6",
+        "cmd-f0cb62caa2c34f12",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "concurrent-enforcement-plus-service",
+      "requirement": "The application is served while the MAC system remains in enforcing mode (both conditions hold simultaneously, with real enforcement, not just a status label)",
+      "status": "satisfied",
+      "summary": "aa-status shows the running python3 process (pid 2466) confined by profile 'inventory-app' in enforce mode at the same time /proc/2466/attr/current reports 'inventory-app (enforce)' and dmesg shows real AppArmor DENIED audit entries for that same pid (attempted access to /etc/zoneinfo and a directory listing), while curl to port 8181 concurrently returns correct data. This demonstrates live, functioning confinement rather than a merely-labeled profile.",
+      "evidence_ids": [
+        "cmd-0f529c21d61247ee",
+        "cmd-4b2747265e3f492f",
+        "cmd-f0cb62caa2c34f12"
+      ]
+    },
+    {
+      "id": "node1-restart-evidence",
+      "requirement": "Provider-wide node-restart evidence protocol on node1 (pre-restart boot identity/healthy state, restart acknowledgement, changed boot identity, recovered state)",
+      "status": "satisfied",
+      "summary": "Pre-reboot boot_id be3fc337-de55-497a-bace-c179fd6c0550 was captured together with a healthy uptime check; 'reboot' was issued and the connection dropped as expected; polling eventually returned a new boot_id 5101b163-1739-409d-95bc-2f8e38fa91e2, matching the fixed lifecycle after-executor snapshot's boot-identity observation. Post-restart checks confirm AppArmor enforcing and the inventory service healthy/serving correct data, and the fixed listening-sockets diff cross-confirms the recovered state (port 8181 now listening, matching intended new state).",
+      "evidence_ids": [
+        "cmd-f1422eb9e5ce472f",
+        "cmd-b5d5e50c714e4a31",
+        "cmd-8273b5960e33471d",
+        "cmd-0f529c21d61247ee",
+        "cmd-f0cb62caa2c34f12",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied the task contract: AppArmor was enabled and confirmed enforcing on node1, the inventory application was deployed and confirmed serving correct JSON over TCP 8181, and both conditions were demonstrated to hold simultaneously with genuine enforcement evidenced by a live AppArmor DENIED audit entry against the running confined process. The mandatory reboot required to activate AppArmor doubled as valid restart-evidence (differing boot IDs, acknowledged restart, recovered service state), independently corroborated by the fixed lifecycle snapshots. No unnecessary or unrestored mutations were found.",
+  "limitations": [
+    "Executor's own selected evidence set overlaps with the raw timeline reviewed here, so independent cross-validation relies mainly on the fixed lifecycle snapshots (boot-identity and listening-sockets), which do corroborate the key claims but do not independently re-verify AppArmor enforcement state or curl content.",
+    "The pre-reboot 'healthy baseline' for the application specifically was a failed start (expected, since AppArmor was not yet active); node-level health (uptime, connectivity) was the baseline captured instead, which is reasonable given the task's inherent requirement for a reboot before the app could run confined."
+  ],
+  "command_stats": {
+    "total": 35,
+    "successful": 23,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "All state-changing commands map clearly to the task: package install, kernel boot-parameter edit for AppArmor, OpenRC service enablement, application file creation, AppArmor profile creation/validation, and the mandatory reboot. One pre-reboot start attempt of inventory-app (cmd-7ab4a46cb3e346f4) failed as expected because the AppArmor kernel interface was not yet active (the very reason a reboot was required); the executor promptly stopped the crashed service (cmd-f1422eb9e5ce472f) before rebooting, so this was a bounded, low-risk, fully-corrected discovery step directly tied to the task rather than an abandoned experiment. The fixed lifecycle diff shows no unexpected residue: /tmp contents and package-health output are unchanged between before-prepare and after-executor, and the only listed diffs (boot-identity, listening-sockets showing new sshd/dhcpcd PIDs post-reboot plus the new 8181 listener) are expected consequences of the reboot and the task itself.",
+    "evidence_ids": [
+      "cmd-7ab4a46cb3e346f4",
+      "cmd-f1422eb9e5ce472f",
+      "global:before_prepare:node1:temporary-files",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:package-health",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

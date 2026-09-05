@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "inventory-worker runs as a managed (systemd) service performing long-running background work on node1",
+      "status": "satisfied",
+      "summary": "systemd unit /etc/systemd/system/inventory-worker.service was created, enabled, and started (cmd-b356cad9c110493c), then updated and restarted (cmd-281814b05b304f96), showing loaded/enabled/active(running) status running a persistent python3 process. state.json/worker.log tick counters incremented across polls before (cmd-1ef6694634a546a4) and after the reboot (cmd-c7892a25a6174ca8), confirming it is an ongoing background worker rather than a one-shot task.",
+      "evidence_ids": [
+        "cmd-b356cad9c110493c",
+        "cmd-281814b05b304f96",
+        "cmd-1ef6694634a546a4",
+        "cmd-2b476c0d60e94a17",
+        "cmd-c7892a25a6174ca8"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Service confined so it can write only inside /var/lib/inventory",
+      "status": "satisfied",
+      "summary": "The first unit version used ProtectSystem=strict, which systemd 229 could not parse (journal: 'Failed to parse protect system value, ignoring: strict', cmd-f53790673d0142c5), meaning that version was not actually confined as intended. The executor detected this and replaced it with ReadOnlyDirectories=/ plus ReadWriteDirectories=/var/lib/inventory (cmd-281814b05b304f96). The corrected configuration was directly verified: mountinfo for the running service PID shows / mounted ro, /home and /root bind-mounted to an inaccessible tmpfs, and /var/lib/inventory the only rw mount (cmd-2a98a54e34f349ce); an nsenter into the service's own mount namespace showed a write to /var/lib/inventory succeeding while writes to /var/lib and /root failed with 'Read-only file system' (cmd-75397a9d50dc4319). This is direct, final-state confirmation of the confinement.",
+      "evidence_ids": [
+        "cmd-f53790673d0142c5",
+        "cmd-281814b05b304f96",
+        "cmd-2a98a54e34f349ce",
+        "cmd-75397a9d50dc4319"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Service gains no new privileges (NoNewPrivileges)",
+      "status": "satisfied",
+      "summary": "systemctl show for the final unit confirms NoNewPrivileges=yes is applied (cmd-f53790673d0142c5). Earlier attempts to read NoNewPrivs directly from /proc/<pid>/status via grep returned nothing (cmd-4ac99c54b85e419f, cmd-27e8ae9f004c44b9, cmd-44c658ddc2324d82), which is unexplained but does not contradict the authoritative systemd unit-property confirmation.",
+      "evidence_ids": [
+        "cmd-f53790673d0142c5"
+      ]
+    }
+  ],
+  "overall_summary": "The inventory-worker systemd service was successfully deployed on node1 as a long-running background worker. The first sandboxing attempt (ProtectSystem=strict) silently failed to apply due to systemd 229 incompatibility, but the executor detected this via journal output and replaced it with the legacy ReadOnlyDirectories=/ + ReadWriteDirectories=/var/lib/inventory directives, which were then directly verified through mountinfo and an in-namespace nsenter write test to enforce write confinement to /var/lib/inventory only. NoNewPrivileges=yes was confirmed via systemctl show. The mandatory node-restart protocol was also executed cleanly: a pre-restart baseline boot_id/uptime/service state was captured, systemctl reboot was issued and acknowledged, SSH loss and recovery were observed, and the post-restart boot_id/uptime differed while the service came back enabled+active with tick data continuity \u2014 consistent with the fixed lifecycle boot-identity snapshots (dbb46974... before, 2d5f1eab... after).",
+  "limitations": [
+    "Small residue files (/var/lib/inventory/testfile, /tmp/testfile_outside) created during diagnostic probing were not confirmed removed in any later command, and the final attempt to list /var/lib/inventory failed with permission denied, so their final state is indeterminate.",
+    "Direct /proc/<pid>/status NoNewPrivs field reads returned empty across three attempts, an unexplained anomaly not resolved in the trace, though the authoritative systemctl show output confirms the property is set on the unit.",
+    "The provider-wide node-restart evidence protocol (boot identity before/after, service and data recovery) is well-documented and consistent with the fixed after-prepare/after-executor snapshots, but this is supplemental to the public task contract, which does not require reboot persistence."
+  ],
+  "command_stats": {
+    "total": 23,
+    "successful": 18,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands map clearly to building, fixing, or verifying the service (user/dir creation, script and unit writes, daemon-reload/enable/restart, and a bounded nsenter write test to /var/lib/inventory/nstest that was explicitly removed in cmd-1d8f9827194c4047). Two residue items are unaccounted for: cmd-eb97955094e54883 created /var/lib/inventory/testfile and, unexpectedly (a touch as inventory-worker succeeded outside the sandbox at that point), /tmp/testfile_outside, confirmed still present in cmd-41dba3562bb84f68; neither file's removal is shown in any later command, and the final ls of /var/lib/inventory after reboot (cmd-c7892a25a6174ca8) failed with permission denied so cleanup could not be confirmed either way. These are low-risk, bounded diagnostic artifacts (not broad, destructive, or security-weakening), but they are unnecessary mutations without confirmed reversal.",
+    "evidence_ids": [
+      "cmd-eb97955094e54883",
+      "cmd-41dba3562bb84f68",
+      "cmd-1d8f9827194c4047",
+      "cmd-c7892a25a6174ca8"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

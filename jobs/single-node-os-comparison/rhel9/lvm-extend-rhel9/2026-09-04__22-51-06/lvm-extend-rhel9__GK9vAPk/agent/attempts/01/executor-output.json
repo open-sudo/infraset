@@ -1,0 +1,68 @@
+{
+  "status": "completed",
+  "summary": "Created an LVM logical volume (vg_data/lv_data) backed by two loopback-file physical volumes on node1 (disk was fully partitioned with no free space), mounted it at /srv/data, wrote test data, then grew it live from 1.1G to 2.14G by adding a second PV and extending the LV/xfs filesystem while mounted \u2014 data verified intact throughout. Persisted the setup via a systemd oneshot service (lvm-loop-setup.service) ordered before local-fs-pre.target plus an fstab entry with x-systemd.requires, then restarted node1 with systemctl reboot, confirmed a changed boot_id, and verified the LV auto-reactivated, remounted, sized correctly, and both test files passed sha256 verification post-restart.",
+  "actions_performed": [
+    "Inspected node1 disk layout (single 20GB disk, fully partitioned, no free space for a new PV) and confirmed lvm2 was absent",
+    "Installed lvm2 via dnf",
+    "Created two backing files under /var/lib/lvmfiles and attached them as fixed loop devices /dev/loop20 and /dev/loop21",
+    "pvcreate/vgcreate/lvcreate on loop20 to build vg_data/lv_data at 1.1G, formatted xfs, mounted at /srv/data",
+    "Wrote test files (testfile.txt, blob.bin) and recorded sha256 checksums",
+    "Extended: pvcreate loop21, vgextend vg_data, lvextend +900M then +100%FREE, xfs_growfs \u2014 grew LV live from 1.1G to 2.14G while mounted",
+    "Verified checksums still match after the grow",
+    "Wrote /usr/local/sbin/lvm-loop-setup.sh to reattach loop devices and vgchange -ay at boot",
+    "Created and enabled systemd unit lvm-loop-setup.service (Before=local-fs-pre.target) so it runs before the fstab-generated mount unit",
+    "Added /srv/data entry to /etc/fstab with x-systemd.requires=lvm-loop-setup.service,nofail; confirmed generated mount unit correctly depends on the service",
+    "Captured pre-restart boot_id and health baseline (mount, checksums, lvs, losetup)",
+    "Issued systemctl reboot on node1 (ack returned before disconnect), polled until exec access returned",
+    "Confirmed changed boot_id post-restart, verified lvm-loop-setup.service ran successfully, LV auto-activated, /srv/data remounted at 2.1G, and both test files passed sha256 verification"
+  ],
+  "evidence": [
+    {
+      "requirement": "LV created and mounted at /srv/data",
+      "command_ids": [
+        "cmd-0178593c4a454920"
+      ],
+      "summary": "pvcreate/vgcreate/lvcreate/mkfs.xfs/mount sequence succeeded; df shows /dev/mapper/vg_data-lv_data mounted at /srv/data"
+    },
+    {
+      "requirement": "Grown to at least 2GB while mounted, contents intact",
+      "command_ids": [
+        "cmd-d48891667dde4502",
+        "cmd-c40d1b3c206b4332",
+        "cmd-39fcdb07817f4e99"
+      ],
+      "summary": "vgextend+lvextend+xfs_growfs performed twice while mounted, final size 2.14G (2.1G in df); sha256sum -c confirms both test files unchanged after growth, and findmnt shows continuous mount"
+    },
+    {
+      "requirement": "Persistence config in place before restart",
+      "command_ids": [
+        "cmd-f080ac6e0be54213",
+        "cmd-7311e67d31bc4949",
+        "cmd-6d34529569844ccc"
+      ],
+      "summary": "systemd service enabled, fstab entry added, generated mount unit shows Requires/After=lvm-loop-setup.service confirming correct boot ordering"
+    },
+    {
+      "requirement": "Healthy baseline before node1 restart",
+      "command_ids": [
+        "cmd-4547bcc39192436e"
+      ],
+      "summary": "Captured boot_id 6bb7e004..., mount state, checksum pass, lvs/losetup state prior to reboot"
+    },
+    {
+      "requirement": "Node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-50c98212afce4fc9",
+        "cmd-3653d7c8c7914bdc"
+      ],
+      "summary": "systemctl reboot issued (connection dropped confirming disconnect), later poll returned new boot_id d6356ee2... differing from baseline 6bb7e004..., proving an actual restart occurred"
+    },
+    {
+      "requirement": "Post-restart recovery of LV, mount, and data",
+      "command_ids": [
+        "cmd-4058e57292954f1a"
+      ],
+      "summary": "lvm-loop-setup.service ran successfully at boot and reactivated vg_data, /srv/data remounted automatically at 2.1G, and sha256sum -c confirms both test files intact post-restart"
+    }
+  ]
+}

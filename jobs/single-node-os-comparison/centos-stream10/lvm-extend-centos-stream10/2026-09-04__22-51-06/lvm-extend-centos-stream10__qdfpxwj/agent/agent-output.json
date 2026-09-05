@@ -1,0 +1,86 @@
+{
+  "status": "blocked",
+  "summary": "The LVM volume was fully built, mounted at /srv/data, and grown to 2.1GB with verified data integrity intact across the grow. However the mandatory reboot step left node1 unresponsive to exec for ~48 minutes afterward, most likely because the /etc/fstab entry for /srv/data lacked \"nofail\" and depends on a custom systemd unit \u2014 a failure there very likely pushed the boot into an emergency shell requiring console/root-password input, which the exec-only tool cannot provide. I cannot verify post-restart recovery for node1.",
+  "actions_performed": [
+    "Inspected node1: entire 20GB vda disk was already partitioned for bios_grub/boot/root with no free space and no spare block device for a real LVM PV.",
+    "Created two 1200MiB backing files under /var/lib/lvm-loop and attached them as loop devices (/dev/loop0, /dev/loop1) to serve as PVs.",
+    "pvcreate on loop0, vgcreate datavg, lvcreate -L 1000M datalv, mkfs.xfs, mounted the LV at /srv/data.",
+    "Wrote a text file and a 50MB random blob to /srv/data and recorded sha256 checksums as a baseline.",
+    "pvcreate on loop1, vgextend datavg with loop1, lvextend datalv to <2.15GiB, and xfs_growfs /srv/data while it stayed mounted (online grow) \u2014 df confirmed 2.1G filesystem size, satisfying the >=2GB requirement.",
+    "Verified both files' sha256 checksums matched the originals after the grow, proving data integrity was preserved.",
+    "Created /usr/local/sbin/attach-lvm-loops.sh plus a systemd oneshot unit loop-lvm-setup.service (DefaultDependencies=no, Before=local-fs-pre.target, WantedBy=local-fs-pre.target) to reattach the loop devices at boot (matched by backing-file path via LVM's loop_file device-ID, so it's robust to loop-number reassignment) and run vgchange -ay datavg; enabled the service.",
+    "Added an /etc/fstab entry for /dev/datavg/datalv at /srv/data with x-systemd.requires=loop-lvm-setup.service, but without nofail.",
+    "Validated the fstab/systemd wiring live before rebooting: unmounted /srv/data, deactivated datavg, detached both loop devices, then started the generated srv-data.mount unit directly \u2014 it correctly ran the loop-attach service first, reattached the loops, reactivated the VG, and remounted /srv/data at 2.1G with both files' checksums verified intact.",
+    "Captured a pre-reboot baseline: boot_id, systemctl is-enabled loop-lvm-setup.service (enabled), df -h /srv/data, lvs sizing, and file checksums.",
+    "Issued a native reboot (backgrounded 'sleep 2 && systemctl reboot' so the exec acknowledgement returned before disconnection) \u2014 connection reset confirmed the node went down.",
+    "Polled node1 with a stable boot-id check repeatedly over roughly 48 minutes; every attempt returned a connection-level error (reset/timeout), never a boot_id value, indicating the node has not returned to a state where exec is served."
+  ],
+  "evidence": [
+    {
+      "requirement": "LV mounted at /srv/data",
+      "command_ids": [
+        "cmd-465c11713ead47d7"
+      ],
+      "summary": "mkfs.xfs + mount succeeded; df -h showed /dev/mapper/datavg-datalv mounted at /srv/data."
+    },
+    {
+      "requirement": "LV grown to >=2GB while mounted",
+      "command_ids": [
+        "cmd-63468be3b56c49c2"
+      ],
+      "summary": "vgextend + lvextend -L 2200M + xfs_growfs run against the still-mounted /srv/data; df -h confirmed 2.1G filesystem size and lvextend log shows resize from 1000MiB to <2.15GiB without unmounting."
+    },
+    {
+      "requirement": "Contents stay intact through the grow",
+      "command_ids": [
+        "cmd-18d1962c74a94b6c",
+        "cmd-be2a76fb4295431f"
+      ],
+      "summary": "sha256 checksums of a text file and a 50MB random blob recorded before the grow and re-verified (OK) immediately after xfs_growfs completed."
+    },
+    {
+      "requirement": "No spare disk existed; justification for loop-device-backed PVs",
+      "command_ids": [
+        "cmd-346aebfbbcd44848",
+        "cmd-034819ab045b4fbc"
+      ],
+      "summary": "lsblk and parted free-space check showed the single 20GB disk fully partitioned with zero free space, ruling out adding a real second partition/disk as a PV."
+    },
+    {
+      "requirement": "Boot-time persistence design and pre-reboot validation",
+      "command_ids": [
+        "cmd-1e16605c231341b3",
+        "cmd-828b0ccc1e0e4dc7",
+        "cmd-90ba4caacd1048d9"
+      ],
+      "summary": "systemd unit enabled, fstab entry added, and the generated srv-data.mount unit started directly (after manually detaching loops/VG) to prove the dependency chain reattaches loops, activates the VG, and remounts /srv/data with data intact \u2014 without requiring a real reboot."
+    },
+    {
+      "requirement": "Pre-restart healthy baseline (mandatory protocol)",
+      "command_ids": [
+        "cmd-1676285ff0d54a29"
+      ],
+      "summary": "Captured boot_id, service enablement, df -h, lvs sizing, and file checksums immediately before issuing the reboot."
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnection (mandatory protocol)",
+      "command_ids": [
+        "cmd-18798cc7e73d481c",
+        "cmd-49c8a36fe2584b22"
+      ],
+      "summary": "Backgrounded reboot command returned 'reboot scheduled' immediately; the very next exec call failed with connection reset, confirming the node went down shortly after acknowledgement."
+    },
+    {
+      "requirement": "Changed boot identity and post-restart recovery proof (mandatory protocol) \u2014 NOT MET for node1",
+      "command_ids": [
+        "cmd-de5771ca73b649ab",
+        "cmd-74bcb4a571914e30",
+        "cmd-b1722f8532ad4551",
+        "cmd-c1655ef8f085447d",
+        "cmd-6d054b78293e4a9c",
+        "cmd-d611597432df430c"
+      ],
+      "summary": "Repeated boot_id polls across ~48 minutes post-reboot all failed at the connection level (reset/timeout), never returning a boot_id. This is evidence of the limitation, not of recovery: node1's restart persistence and post-restart health cannot be confirmed, most likely because the /srv/data fstab entry (added without nofail) triggered an emergency-mode boot that requires console access unavailable through the exec tool."
+    }
+  ]
+}

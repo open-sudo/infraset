@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-api as a systemd-managed service on node1 with OOMScoreAdjust=-1000, proved it survives a real system-wide OOM event (a memory-hog process was the one killed by the kernel while inventory-api kept serving), then performed the mandatory single-node reboot with pre/post boot-identity and service-health verification.",
+  "actions_performed": [
+    "Inspected node1 (CentOS Stream 10, 1.7GiB RAM, no swap, cgroup2, root access)",
+    "Wrote /opt/inventory-api/app.py: a threaded HTTP JSON inventory API (/health, /inventory, POST /inventory/<item>) listening on 0.0.0.0:8080",
+    "Created /etc/systemd/system/inventory-api.service with Restart=always and OOMScoreAdjust=-1000, enabled and started it",
+    "Captured healthy baseline: service active, oom_score_adj=-1000 on the running PID, /health and /inventory reachable via $NODE_IP",
+    "Wrote and ran /tmp/hog.py, an unprotected (oom_score_adj=0) memory-hog process, allocating memory until the kernel OOM-killer triggered",
+    "Verified via dmesg that the kernel OOM-killed the hog process (pid 2505, oom_score_adj:0) and left inventory-api (pid 2445, oom_score_adj:-1000) untouched",
+    "Re-verified inventory-api was still active and serving the same PID/data after the OOM event",
+    "Cleaned up hog script/log artifacts",
+    "Captured pre-restart boot_id, then ran `systemctl reboot` on node1 with output backgrounded so the ack returned before disconnection",
+    "Polled node1 until exec succeeded again, confirming reconnection",
+    "Verified boot_id changed and uptime reset, confirming an actual reboot occurred",
+    "Verified inventory-api came back active/enabled post-reboot with OOMScoreAdjust=-1000 intact and re-confirmed /health and /inventory responded correctly over the network"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-api deployed as a managed (systemd) service",
+      "command_ids": [
+        "cmd-521f12ca554b4216"
+      ],
+      "summary": "systemd unit created, enabled, and started; service reports active with MainPID and OOMScoreAdjust=-1000"
+    },
+    {
+      "requirement": "Healthy baseline before disruption",
+      "command_ids": [
+        "cmd-e8ae5ee84b3348ac",
+        "cmd-43d0be9e71f64e93"
+      ],
+      "summary": "inventory-api's oom_score_adj confirmed as -1000 in /proc, /health and /inventory endpoints return valid JSON over $NODE_IP, and dmesg shows no prior OOM kills"
+    },
+    {
+      "requirement": "Memory-hungry process drives system out of memory",
+      "command_ids": [
+        "cmd-38f773baeeea4bef",
+        "cmd-51d5aea529884518"
+      ],
+      "summary": "hog.py launched and grew to ~1.5GB RSS on a 1.7GiB-RAM node, exhausting available memory"
+    },
+    {
+      "requirement": "Kernel OOM killer stops the memory hog, not inventory-api",
+      "command_ids": [
+        "cmd-51d5aea529884518"
+      ],
+      "summary": "dmesg shows 'Out of memory: Killed process 2505 (python3) ... oom_score_adj:0' -- the unprotected hog process, pid 2505 -- while inventory-api (pid 2445, oom_score_adj:-1000) is absent from the kill and still listed as running in the same dmesg process table dump"
+    },
+    {
+      "requirement": "inventory-api keeps serving through and after the OOM event",
+      "command_ids": [
+        "cmd-99e4aa37e0284e53"
+      ],
+      "summary": "Post-OOM check: systemctl is-active=active, same PID 2445 (never restarted), /health and /inventory both return correct JSON via $NODE_IP"
+    },
+    {
+      "requirement": "Mandatory restart: healthy baseline boot identity capture",
+      "command_ids": [
+        "cmd-e068d40a049c44cf"
+      ],
+      "summary": "Captured pre-restart boot_id be303eb3-eeb6-4466-86f1-fd6406dd7dad and machine-id via /proc/sys/kernel/random/boot_id"
+    },
+    {
+      "requirement": "Mandatory restart: acknowledgement returns before disconnect, node restarted one at a time",
+      "command_ids": [
+        "cmd-2acfa534ef524b6b"
+      ],
+      "summary": "systemctl reboot issued in background with disown; exec stream closed as node went down, confirming the reboot command executed"
+    },
+    {
+      "requirement": "Mandatory restart: poll until exec available again and boot identity changed",
+      "command_ids": [
+        "cmd-9db446c4e4ae453b",
+        "cmd-6f1cc1c44a034f2b",
+        "cmd-7083c588549145ab",
+        "cmd-ce012deb52fa4806"
+      ],
+      "summary": "Polling shows connection timeout, then reset, then success; post-restart boot_id is 58cc4b95-4da2-45ed-bbe6-2f91c6d8ce7b (changed from baseline) and uptime shows 0 minutes, proving an actual reboot occurred"
+    },
+    {
+      "requirement": "Mandatory restart: post-restart recovery of required service and data",
+      "command_ids": [
+        "cmd-ce012deb52fa4806",
+        "cmd-807ea4af3bde41b5"
+      ],
+      "summary": "inventory-api is active/enabled post-reboot with OOMScoreAdjust=-1000 preserved via the unit file, and /health plus /inventory (with original data intact) respond correctly over $NODE_IP"
+    }
+  ]
+}

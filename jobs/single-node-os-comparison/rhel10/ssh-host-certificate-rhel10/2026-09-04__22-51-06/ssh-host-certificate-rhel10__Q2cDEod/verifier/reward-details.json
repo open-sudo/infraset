@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Create an SSH certificate authority on node1",
+      "status": "satisfied",
+      "summary": "An ed25519 CA keypair was generated at /etc/ssh/ca/ssh_host_ca with restrictive permissions (600 private, 644 public), and its fingerprint (SHA256:yv/zIDPT...) is consistently referenced in all subsequent signing and verification steps.",
+      "evidence_ids": [
+        "cmd-d52dc2b23f8d48ea"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Host presents a certificate signed by that CA",
+      "status": "satisfied",
+      "summary": "node1's existing ed25519 host public key was signed by the CA producing ssh_host_ed25519_key-cert.pub with principals node1/10.100.74.10, a 10-year validity, and a public-key fingerprint matching the host's actual ed25519 key.",
+      "evidence_ids": [
+        "cmd-72f0f494e3104ce7",
+        "cmd-3f29cc424b5346d3"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "sshd configured to present the certificate to clients",
+      "status": "satisfied",
+      "summary": "A HostCertificate directive was added and validated (sshd -t, sshd -T confirms it's active). An SELinux mislabeling (tmp_t) initially blocked sshd from loading the cert file; this was diagnosed via journalctl and fixed with a persistent semanage fcontext rule plus restorecon, after which sshd reloaded cleanly with no load errors.",
+      "evidence_ids": [
+        "cmd-cfe623b227d24392",
+        "cmd-93c4bdec7d7a4c1d",
+        "cmd-136823a11b9f4a8d",
+        "cmd-fb300c9f40f34c8f",
+        "cmd-af3835a5059d4e00",
+        "cmd-9a7abcce47d54241",
+        "cmd-dee2d4bea0d4431e"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "A client trusting only the CA (no pinned host key) connects successfully via the certificate, while an untrusting client cannot",
+      "status": "satisfied",
+      "summary": "With only a '@cert-authority' entry for the CA public key in known_hosts, a strict-checking client received the host certificate and logged 'Host ... is known and matches the ED25519-CERT host certificate' (the subsequent auth failure was unrelated missing user keys). By contrast, clients with empty known_hosts failed strict host-key checking both before and after the change, isolating that trust flows from the CA rather than relaxed settings. The same CA-based success was re-confirmed after a full node reboot.",
+      "evidence_ids": [
+        "cmd-1570c746e5a7488d",
+        "cmd-1be53177cd0841cc",
+        "cmd-eabfb17081984bd6",
+        "cmd-b835935096a7497e",
+        "cmd-cf2307e0cb8f4896"
+      ]
+    }
+  ],
+  "overall_summary": "The executor created an SSH host CA on node1, signed the existing ed25519 host key into a certificate, configured and validated sshd to present it, diagnosed and permanently fixed an SELinux labeling issue that initially blocked certificate loading, and directly demonstrated (with clear before/after contrast) that a client trusting only the CA connects via certificate-based host verification without any pinned host key, while an untrusting client still fails. The mandatory node-restart protocol was executed correctly: pre-restart boot ID and health captured, reboot acknowledged before disconnect, boot ID confirmed changed post-restart (consistent with the fixed lifecycle snapshots), and sshd/cert/SELinux state and the CA-trust client test were all re-verified working after reboot. Minor hygiene issue: two low-risk test-support temp files were left on disk.",
+  "limitations": [
+    "The successful CA-based host-verification test (cmd-1570c746e5a7488d) still exited 255 due to missing user authentication keys, which is expected and unrelated to host-key trust, but no full successful end-to-end SSH session (host verification + user auth) was captured.",
+    "Signed certificate principals list contains a duplicate 'node1' entry, likely from an unresolved NODE_NAME variable; harmless but not explained in the evidence."
+  ],
+  "command_stats": {
+    "total": 30,
+    "successful": 25,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Overall clean execution with one minor lapse: two test-support files (/tmp/known_hosts_ca and /tmp/ssh_host_ca.pub) created during verification (cmd-761ca012bda94b89, cmd-d19528a7094446e6) were left behind and appear in the after_executor temporary-files snapshot, while other scratch files (host_key_to_sign.pub, known_hosts_test/empty, ssh_ca_test logs) were properly cleaned up (cmd-d19528a7094446e6, cmd-33be44ad953045e9). These leftovers are low-risk (a public CA key and a known_hosts fragment, not secrets) and don't affect node1's config or service state. The initial restorecon (cmd-77d0fc2562364e0f) mislabeled the cert to etc_t before the correct sshd_key_t label was applied via semanage \u2014 a corrective troubleshooting step on the path to the final fix, not a wasted or risky mutation. No failed services, no weakened security controls, and SELinux enforcing mode was preserved throughout.",
+    "evidence_ids": [
+      "cmd-761ca012bda94b89",
+      "cmd-d19528a7094446e6",
+      "cmd-33be44ad953045e9",
+      "cmd-77d0fc2562364e0f",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

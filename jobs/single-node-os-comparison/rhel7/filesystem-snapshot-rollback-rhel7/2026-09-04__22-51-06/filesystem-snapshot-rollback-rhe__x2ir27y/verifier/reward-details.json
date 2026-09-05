@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "snapshot-mechanism",
+      "requirement": "Keep /srv/data recoverable through filesystem snapshots (snapshot capability established)",
+      "status": "satisfied",
+      "summary": "With no LVM package or repo access available, the executor built a functionally equivalent block-level snapshot mechanism using device-mapper: a snapshot-origin target over a loopback-backed image formatted xfs and mounted at /srv/data, then a persistent dm 'snapshot' target (data-snap) capturing baseline state. dmsetup status confirmed an active snapshot.",
+      "evidence_ids": [
+        "cmd-e7bec70e3bf54eff",
+        "cmd-3b027ce3545a43a1",
+        "cmd-cd75d2e9ae4f4226"
+      ]
+    },
+    {
+      "id": "directory-modified",
+      "requirement": "Directory is modified after the snapshot is taken",
+      "status": "satisfied",
+      "summary": "records.csv deleted, settings.conf overwritten with corrupted content, and a stray oops.txt added; checksums directly show divergence from the pre-modification baseline.",
+      "evidence_ids": [
+        "cmd-a74c4c25e5034f03"
+      ]
+    },
+    {
+      "id": "exact-restore",
+      "requirement": "Restore /srv/data to the exact content captured by the earlier snapshot",
+      "status": "satisfied",
+      "summary": "An initial rsync-based restore attempt silently failed (rsync not installed) and left the modified state in place, but the executor detected this and performed a corrective restore (removing files absent from the snapshot, cp -a of snapshot content) and verified via sha256 manifest diff that restored content was byte-identical ('IDENTICAL') to the original baseline.",
+      "evidence_ids": [
+        "cmd-d66dc3752a054968",
+        "cmd-5990cea1dadc4798"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart baseline, restart, changed boot identity, and recovered service/data state",
+      "status": "satisfied",
+      "summary": "Pre-restart state (boot_id d7a80301..., mount, checksums) was captured, shutdown -r now was issued and acknowledged (connection closed), the node was polled until reachable, and post-restart state showed a different boot_id (3cc9d27e...) matching the fixed after_executor lifecycle snapshot, with srv-data.service active, /srv/data auto-remounted, and checksums matching the original baseline exactly. A fresh dm-snapshot was also re-created post-restart to keep ongoing recoverability.",
+      "evidence_ids": [
+        "cmd-10eda553855f4013",
+        "cmd-065d511b7f694795",
+        "cmd-05b751b883fa46fa",
+        "cmd-f284fb5d0a624d07",
+        "cmd-6db0f2ca03814e88",
+        "cmd-8bf2e3a2b78f4d19",
+        "cmd-cc4656c7663741dc",
+        "cmd-4ed6a7d5e48f45cd",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct evidence: a real snapshot mechanism (dm-snapshot, since LVM was unavailable) was built for /srv/data, the directory was modified post-snapshot, and it was restored to be byte-identical to the earlier snapshot (confirmed via sha256 manifest diff). The independent node-restart evidence protocol is also fully satisfied \u2014 pre-restart baseline, acknowledged restart, a changed boot identity cross-checked against the fixed lifecycle snapshots, and confirmed post-restart recovery of the service, mount, and data. Operational hygiene is good: the only friction was a failed rsync-based restore step that was immediately corrected, plus minor evidence-file residue in /tmp.",
+  "limitations": [
+    "The initial restore attempt via rsync failed silently due to a missing binary; the trace shows the subsequent corrective command fully achieved exact restoration, but relies on chronological ordering of two adjacent commands rather than a single atomic step.",
+    "Package-health checks were unavailable (timed out) in both before_prepare and after_executor snapshots, so package/RPM database integrity could not be independently cross-verified.",
+    "The snapshot solution depends on manually managed loopback devices and a custom systemd unit rather than native LVM; this is a reasonable substitute given no repo access, but represents a different persistence surface than a standard LVM-based snapshot rollback."
+  ],
+  "command_stats": {
+    "total": 27,
+    "successful": 23,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.88,
+    "summary": "Commands were largely discovery, construction, or verification with clear causal roles. Two yum-install attempts (cmd-d46d1706c9b0417d, cmd-791183ff137047c7) failed due to lack of root/repos and made no state change \u2014 legitimate discovery of constraints, not unwanted mutations. The rsync-based restore attempt inside cmd-d66dc3752a054968 failed silently (binary missing) and left the corrupted state briefly in place, but this was immediately corrected by cmd-5990cea1dadc4798 with no lasting residue. The snapshot mount at /mnt/data-snap was cleanly unmounted afterward (cmd-f8ad2cc7964f486b). Minor low-risk residue remains in /tmp (baseline_manifest.sha256, restored_manifest.sha256, reboot.log) per the after_executor temporary-files diff \u2014 these are small evidence artifacts, not destructive or security-weakening, and reasonably tied to verification. No failed services, no unnecessary package/security changes, and the persistent systemd unit and dm devices are all purposeful and retained as intended by the task.",
+    "evidence_ids": [
+      "cmd-d46d1706c9b0417d",
+      "cmd-791183ff137047c7",
+      "cmd-d66dc3752a054968",
+      "cmd-5990cea1dadc4798",
+      "cmd-f8ad2cc7964f486b",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

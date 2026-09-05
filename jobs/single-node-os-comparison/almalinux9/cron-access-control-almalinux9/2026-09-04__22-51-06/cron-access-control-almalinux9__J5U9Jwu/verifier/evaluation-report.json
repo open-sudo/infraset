@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cron-allow-config",
+      "requirement": "Only root and opsadmin can schedule cron jobs via /etc/cron.allow (with /etc/cron.deny removed/not interfering)",
+      "status": "satisfied",
+      "summary": "cmd-c5fa23c92025440a wrote /etc/cron.allow containing exactly 'root' and 'opsadmin' and removed the pre-existing empty /etc/cron.deny. Baseline (cmd-45a4342119124eb1) confirmed no cron.allow and an empty cron.deny existed beforehand, so the change is directly attributable to the executor. Post-restart snapshot (cmd-6d6cb443953c441c) confirms the file persisted unchanged.",
+      "evidence_ids": [
+        "cmd-45a4342119124eb1",
+        "cmd-c5fa23c92025440a",
+        "cmd-6d6cb443953c441c"
+      ]
+    },
+    {
+      "id": "opsadmin-user-exists",
+      "requirement": "opsadmin account exists on node1 to be grantable cron access",
+      "status": "satisfied",
+      "summary": "opsadmin did not exist at baseline (cmd-45a4342119124eb1) and was created via useradd -m (cmd-2ec8cc5415c44e86), confirmed present pre- and post-restart.",
+      "evidence_ids": [
+        "cmd-45a4342119124eb1",
+        "cmd-2ec8cc5415c44e86",
+        "cmd-cae9e96c61a24677",
+        "cmd-6d6cb443953c441c"
+      ]
+    },
+    {
+      "id": "enforcement-verified",
+      "requirement": "Only root and opsadmin can actually schedule cron jobs; other users are blocked",
+      "status": "satisfied",
+      "summary": "cmd-c4672f2edbe24d2b used runuser to invoke crontab as each user directly (the correct test methodology, since crontab's allow/deny check applies to the invoking user, not a -u target). root and opsadmin succeeded (RC=0); a throwaway 'denyuser' was explicitly rejected with 'not allowed to use this program (crontab)' (RC=1). An earlier flawed test (cmd-07b7d02e2329470f, which ran crontab -u <user> as root and thus bypassed the per-user check, wrongly showing DENYUSER_RC=0) was superseded and its residual crontab entries were removed at the start of cmd-c4672f2edbe24d2b before the correct test.",
+      "evidence_ids": [
+        "cmd-c4672f2edbe24d2b",
+        "cmd-07b7d02e2329470f"
+      ]
+    },
+    {
+      "id": "test-cleanup",
+      "requirement": "No residual test accounts/crontabs left behind from verification",
+      "status": "satisfied",
+      "summary": "cmd-9f85c9cf64f1409a removed root/opsadmin test crontab entries and deleted the temporary denyuser account (userdel -r), confirming cron.allow remained root/opsadmin only.",
+      "evidence_ids": [
+        "cmd-9f85c9cf64f1409a"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart healthy baseline, restart acknowledgement, changed boot identity, recovered service/config/data state",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline (cmd-cae9e96c61a24677) captured boot_id 49dafad6... with crond active and cron.allow=root,opsadmin. A backgrounded reboot was triggered with immediate acknowledgement (cmd-34435dc7accb4a75). A poll timed out mid-reboot (cmd-f7d3ced205394f71) and a subsequent poll (cmd-aead5190054548bd) showed a new boot_id (5ca71d65...) and uptime '0 min', confirming an actual restart. Post-restart (cmd-6d6cb443953c441c) shows crond active, cron.allow intact, opsadmin present and functionally able to create/list a crontab entry. This is corroborated by the fixed global boot-identity snapshots, which show the same boot_id change.",
+      "evidence_ids": [
+        "cmd-cae9e96c61a24677",
+        "cmd-34435dc7accb4a75",
+        "cmd-f7d3ced205394f71",
+        "cmd-aead5190054548bd",
+        "cmd-6d6cb443953c441c",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly restricted cron scheduling on node1 to root and opsadmin by creating /etc/cron.allow with those two users and removing the stale /etc/cron.deny, created the required opsadmin account, and directly demonstrated enforcement (root/opsadmin allowed, a test user blocked) using a proper per-user invocation after an initial flawed test was self-corrected. Test artifacts (denyuser, test crontabs) were cleaned up. The mandatory node-restart protocol was fully evidenced: pre-restart healthy baseline, a triggered and acknowledged reboot, a directly observed boot-identity change confirming a real restart, and post-restart recovery of crond, cron.allow contents, and opsadmin's functional cron access. The only hygiene blemish is a small leftover /tmp/reboot.log file and one superseded diagnostic command whose residue was cleaned before the final state.",
+  "limitations": [
+    "The lifecycle collector's after_prepare phase is an alias of before_prepare (prepare was disabled), so preparer-vs-executor state separation relies entirely on the executor's own before/after command outputs rather than an independent prepare snapshot.",
+    "No independent evidence beyond the executor's own captured commands was available to cross-check cron.allow semantics (e.g., documentation-level confirmation of cronie's allow/deny precedence) - enforcement is trusted based on the observed runuser test outcomes only.",
+    "/tmp/reboot.log was not observed to be cleaned up in the captured timeline; its presence is confirmed only via the fixed after_executor snapshot, not a dedicated executor check."
+  ],
+  "command_stats": {
+    "total": 12,
+    "successful": 10,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "State-changing commands trace cleanly to task purposes: useradd opsadmin (required), writing cron.allow/removing cron.deny (the core fix), creating/removing a temporary denyuser plus test crontabs for enforcement verification (bounded, fully reverted in cmd-9f85c9cf64f1409a), and the mandatory reboot (bounded, recovered). One flawed test invocation (cmd-07b7d02e2329470f) ran crontab -u <user> as root, which bypasses the per-user allow/deny check and produced a misleading result; it was recognized and corrected by re-testing properly with runuser in cmd-c4672f2edbe24d2b, and the stray crontab entries it created were cleared at the start of that same command. This counts as an unnecessary/flawed diagnostic step but left no lasting residue. One minor unremoved artifact: /tmp/reboot.log, created by the backgrounded reboot command (cmd-34435dc7accb4a75) via nohup redirect, is visible in the after-executor temporary-files snapshot and was never cleaned up - low-risk, non-sensitive, but technically an unaddressed leftover. No failed services, no weakened security posture, and package/socket state differences in the lifecycle diff are attributable solely to the expected reboot (new PIDs, same listening ports).",
+    "evidence_ids": [
+      "cmd-07b7d02e2329470f",
+      "cmd-c4672f2edbe24d2b",
+      "cmd-9f85c9cf64f1409a",
+      "cmd-34435dc7accb4a75",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

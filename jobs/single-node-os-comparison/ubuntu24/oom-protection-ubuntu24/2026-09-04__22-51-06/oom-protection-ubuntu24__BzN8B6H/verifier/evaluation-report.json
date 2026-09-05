@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "inventory-api runs as a managed (systemd) service on node1",
+      "status": "satisfied",
+      "summary": "systemd unit /etc/systemd/system/inventory-api.service created with Type=simple, Restart=always, enabled and started via systemctl enable --now; systemctl is-active returned 'active' and curl to /health and /inventory returned valid JSON immediately after start.",
+      "evidence_ids": [
+        "cmd-5eee84c80ca74705"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "A memory-hungry process is exercised to drive the system into a genuine out-of-memory condition",
+      "status": "satisfied",
+      "summary": "mem-hog.service (default oom_score_adj=0) was started and progressively consumed memory; free -h showed usage climbing from ~380Mi to full exhaustion (1.9Gi/1.9Gi used, 76Mi free) with the allocation log confirming continuous growth to ~1800MB allocated on a 2GB system with no swap.",
+      "evidence_ids": [
+        "cmd-3809e93434f94307",
+        "cmd-d44e7bff95b040dc",
+        "cmd-d51d1aba6c5e41c8"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "The kernel OOM killer stops the memory hog and not inventory-api",
+      "status": "satisfied",
+      "summary": "dmesg captured the kernel's actual OOM report: 'Out of memory: Killed process 1393 (python3) ... oom_score_adj:0' with task_memcg=/system.slice/mem-hog.service, while inventory-api's pid 1295 (oom_score_adj:-1000) appears in the same report's process table but was not selected/killed. systemctl status subsequently confirmed mem-hog.service 'Failed with result: oom-kill' while inventory-api remained active.",
+      "evidence_ids": [
+        "cmd-34a43deb985f43ed",
+        "cmd-b6610dec455c4e20"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "inventory-api keeps serving throughout and after the OOM event",
+      "status": "satisfied",
+      "summary": "curl to /health at multiple points during the memory-exhaustion window and after the kill event returned status ok with a monotonically increasing uptime value (14.5s -> 28.5s -> 41.2s -> 50.3s -> 57.6s), directly demonstrating the process was never killed or restarted across the disruption.",
+      "evidence_ids": [
+        "cmd-3b087ef14ad7494e",
+        "cmd-d44e7bff95b040dc",
+        "cmd-d51d1aba6c5e41c8",
+        "cmd-34a43deb985f43ed",
+        "cmd-b6610dec455c4e20"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes are directly and coherently satisfied: inventory-api was deployed as a systemd service with OOMScoreAdjust=-1000, a memory hog was run to genuine full-memory exhaustion, the kernel's OOM killer (captured directly via dmesg) selected and killed the hog while leaving inventory-api untouched, and inventory-api's /health endpoint showed continuous increasing uptime before, during, and after the event, proving it never went down. The additional node-restart evidence protocol was also completed with a full pre-restart baseline, acknowledgement, boot-id change, and post-restart recovery of the service, its OOM protection, and its data, corroborated by the fixed before/after-executor boot-identity snapshots. No unnecessary or unresolved mutations were found in the trace.",
+  "limitations": [
+    "The restart/reboot verification is not part of the public task contract but is assessed only as the mandated independent protocol; its clean success (differing boot_id, recovered service and OOM setting) raises confidence in overall system stability without altering the OOM-protection scoring.",
+    "Command outputs for dmesg and free -h are individually bounded snapshots (polled at intervals) rather than continuous monitoring, so the exact moment of OOM-kill relative to health checks is inferred from ordering rather than a single atomic trace, though the evidence is internally consistent."
+  ],
+  "command_stats": {
+    "total": 16,
+    "successful": 15,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "Every state-changing command has a clear causal role: app/service creation for the deployment requirement, mem-hog service creation/start to exercise the required OOM scenario, cleanup of mem-hog files/service after the demonstration (cmd-b6610dec455c4e20, fully removed and confirmed absent post-reboot), and the independent restart-evidence protocol (reboot, boot-id capture). The lifecycle diff shows only the expected additions (inventory-api's port 8080 listener) and boot-churned ephemeral systemd-private tmp dirs from the restart, with no failed services, no orphaned mem-hog artifacts, and clean package health before and after. The one non-zero exit (cmd-3722e64c9a224ec5, connection reset while polling during the reboot window) is an expected transient condition during a live reboot, not a failure requiring remediation.",
+    "evidence_ids": [
+      "cmd-b6610dec455c4e20",
+      "cmd-062c9f2b3e6c48e9",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

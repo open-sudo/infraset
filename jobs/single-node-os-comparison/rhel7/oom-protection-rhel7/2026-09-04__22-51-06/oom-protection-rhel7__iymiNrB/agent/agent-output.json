@@ -1,0 +1,59 @@
+{
+  "status": "blocked",
+  "summary": "Set up inventory-api as a systemd-managed, OOM-protected service on node1 (OOMScoreAdjust=-1000) and launched an unprotected memory-hog process with swap disabled to trigger a real kernel OOM under RAM pressure. Baseline health and the protection configuration are proven, but node1's Harbor exec/SSH management path has been unreachable since the hog began consuming memory (over 10 minutes of polling and background waits so far, with 'kex_exchange_identification: read: Connection reset by peer' or bare exit 255 on every attempt). I cannot currently prove which process the kernel OOM-killer stopped, that inventory-api kept serving through the event, or perform the mandatory restart-evidence protocol, so I'm reporting blocked rather than claiming success. I will keep retrying as the node may still recover.",
+  "actions_performed": [
+    "Inspected node1 OS/resources: RHEL 7.9, 2GB RAM, 2GB swap, systemd 219, python2 available (no python3).",
+    "Wrote /opt/inventory-api/app.py, a python2 BaseHTTPServer JSON inventory service on port 8080.",
+    "Created /etc/systemd/system/inventory-api.service with Restart=always and OOMScoreAdjust=-1000 to protect it from the kernel OOM killer.",
+    "Enabled and started inventory-api.service; verified it responds on $NODE_IP:8080 for / and /health, and confirmed its running PID has oom_score_adj=-1000 (oom_score=0).",
+    "Captured a healthy baseline: free -h, dmesg tail, systemctl is-active, and a successful curl response, all before disruption.",
+    "Wrote /opt/memhog/hog.py, an unprotected python2 process that allocates 50MB bytearray chunks in a loop until the kernel intervenes.",
+    "Disabled swap (swapoff -a, reversible) to make the memory-exhaustion event trigger within a reasonable window on the 2GB VM, then launched hog.py as an unprotected background process (default oom_score_adj=0, confirmed oom_score=293 while growing).",
+    "Observed hog.py grow to ~1GB resident in a few seconds via free -h and its own allocation log; then node1's SSH/exec management path started failing and has not recovered across roughly 20 consecutive polling attempts and multiple 60-120s background waits (over 10 minutes elapsed).",
+    "Have NOT yet: confirmed the OOM killer fired and targeted the hog (not inventory-api), confirmed inventory-api kept serving through the event, re-enabled swap, cleaned up the hog process/service, or performed the mandatory node-restart evidence protocol (boot-id capture, reboot, reconnect, post-restart verification). Continuing to retry."
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-api runs as a managed (systemd) service on node1",
+      "command_ids": [
+        "cmd-6f1a27805b3e4576"
+      ],
+      "summary": "systemctl status shows inventory-api.service loaded, enabled, and active (running) under systemd with a defined unit file."
+    },
+    {
+      "requirement": "inventory-api is protected from the kernel OOM killer",
+      "command_ids": [
+        "cmd-d1898f7d59e648f5"
+      ],
+      "summary": "The running inventory-api PID (1971) has /proc/PID/oom_score_adj = -1000, the systemd OOMScoreAdjust setting applied, making it effectively immune to OOM-killer selection."
+    },
+    {
+      "requirement": "healthy baseline captured before disruption",
+      "command_ids": [
+        "cmd-7ff7f8faf4d74402"
+      ],
+      "summary": "Pre-disruption free -h, dmesg tail, systemctl is-active=active, and a successful curl to http://$NODE_IP:8080/ returning the inventory JSON."
+    },
+    {
+      "requirement": "memory hog is unprotected (default OOM priority) and actively consuming memory",
+      "command_ids": [
+        "cmd-617d2f92c49045fd"
+      ],
+      "summary": "hog.py PID 2129 has oom_score_adj=0 and oom_score=293 (rising) while free -h shows used memory jumping from ~300MB to 1.3GB within seconds of starting the hog, with swap disabled."
+    },
+    {
+      "requirement": "kernel OOM killer stopped the hog while inventory-api kept serving",
+      "command_ids": [
+        "cmd-5d9f133911b54248"
+      ],
+      "summary": "NOT PROVEN: this and roughly 20 preceding polling attempts spanning 10+ minutes all failed (connection reset or bare exit 255), meaning node1 is currently unreachable over the exec/SSH management path since the hog began consuming memory. No post-event dmesg, process listing, or curl evidence could be collected before this report was required."
+    },
+    {
+      "requirement": "mandatory node-restart evidence protocol (boot-id before/after, service+data recovery)",
+      "command_ids": [
+        "cmd-5d9f133911b54248"
+      ],
+      "summary": "NOT PERFORMED: blocked because node1 is currently unreachable via the only available management path (Harbor exec, evidenced by the same repeated connection failures), so no boot-id capture, reboot acknowledgement, reconnection polling, or post-restart verification could be executed."
+    }
+  ]
+}

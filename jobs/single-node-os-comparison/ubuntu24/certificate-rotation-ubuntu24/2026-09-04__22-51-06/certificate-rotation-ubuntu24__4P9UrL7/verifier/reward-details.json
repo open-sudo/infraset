@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on port 8443 on node1 with a valid certificate",
+      "status": "satisfied",
+      "summary": "nginx was installed and configured with a TLS server block on port 8443 (cmd-8c9efbbfbcb04e5f), nginx -t passed and reload succeeded. curl over TLS returned the expected response and openssl s_client showed valid cert dates/subject (cmd-d8afe2ad486e4b54). The after-executor lifecycle snapshot independently confirms nginx listening on 0.0.0.0:8443 and [::]:8443.",
+      "evidence_ids": [
+        "cmd-8c9efbbfbcb04e5f",
+        "cmd-d8afe2ad486e4b54",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "auto-renewal",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A systemd cert-renew.timer/service pair was installed and enabled (cmd-dd69f1ad0d894fa7) to periodically invoke a renewal script that checks certificate age/threshold and reissues when due. The timer fired unattended at 04:01:13 (an automatic OnBootSec trigger, not a manual invocation), which surfaced a script bug (cmd-5797c9afa5e6419c); the script was corrected and the corrected renewal logic was verified to actually reissue and reload when its expiry threshold is met, using an explicit THRESHOLD_SECONDS override to responsibly simulate an approaching-expiry condition without waiting months in real time (cmd-6cdadbdacb7c4b20, cmd-ffc885c7df7a4d60, cmd-3e9b99dc2f5344d6). The timer remained enabled/active with a scheduled next run after all fixes (cmd-2cc554a454f44de0, cmd-1c076dd3367549cb), including after a reboot.",
+      "evidence_ids": [
+        "cmd-dd69f1ad0d894fa7",
+        "cmd-5797c9afa5e6419c",
+        "cmd-6cdadbdacb7c4b20",
+        "cmd-ffc885c7df7a4d60",
+        "cmd-3e9b99dc2f5344d6",
+        "cmd-2cc554a454f44de0",
+        "cmd-1c076dd3367549cb"
+      ]
+    },
+    {
+      "id": "hitless-cert-pickup",
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no downtime during rotation)",
+      "status": "satisfied",
+      "summary": "A background probe issued 100 HTTPS requests at 0.2s intervals while a forced certificate renewal was triggered mid-stream. The renewal produced a new certificate serial and reloaded nginx (cmd-3e9b99dc2f5344d6), and analysis of the probe log showed all 100 requests returned HTTP 200 with zero failures, while the observed certificate serial transitioned from the old value (31 responses) to the new value (69 responses) within the same run (cmd-3680c02c13084a9e, cmd-2039713289e14e0a). This directly demonstrates a hitless certificate swap during live traffic.",
+      "evidence_ids": [
+        "cmd-3680c02c13084a9e",
+        "cmd-3e9b99dc2f5344d6",
+        "cmd-2039713289e14e0a"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task - HTTPS on 8443, automatic pre-expiry certificate renewal, and hitless pickup of new certificates under live traffic - are directly and coherently evidenced. The renewal mechanism's real-time automatic trigger initially failed due to a script bug that was promptly diagnosed and fixed, after which both the timer-driven path and a simulated near-expiry renewal were shown to work, including a rigorous zero-downtime rotation test (100/100 successful requests spanning a live cert-serial transition). The node-restart evidence protocol was also executed cleanly: pre-reboot boot id/healthy state, a reboot acknowledgement, connection disruption, a differing post-reboot boot id, and full recovery of nginx, the timer, and the persisted certificate were all captured.",
+  "limitations": [
+    "The automatic renewal path was validated primarily through a deliberately-forced near-expiry condition (THRESHOLD_SECONDS override) rather than by waiting for the real ~90-day certificate lifetime to elapse under the unattended timer; this is a reasonable time-bounded proxy but is not a full end-to-end unattended observation over the certificate's real validity window.",
+    "The initial automatic timer trigger failed due to a script bug, so the very first unattended cycle did not succeed; only the corrected version was verified as working.",
+    "Executor evidence item 1 referenced unknown command IDs: x"
+  ],
+  "command_stats": {
+    "total": 28,
+    "successful": 25,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Reviewed all 28 executor commands chronologically. Package installs, directory creation, the renewal script, systemd unit files, and the nginx site config are all necessary prerequisites for the task and were retained deliberately (confirmed present and correct in after-executor evidence). The renewal script was rewritten twice (cmd-85871aeb1cac4d0e, cmd-6cdadbdacb7c4b20) after an initial version caused a failed systemd unit (cmd-5797c9afa5e6419c) - this is legitimate corrective iteration, not abandoned residue, since the final script version was verified working and left the timer active/enabled. The forced-threshold renewal (cmd-3e9b99dc2f5344d6) and background probe loop (cmd-3680c02c13084a9e) were bounded, low-risk mutations used solely to produce the required rotation evidence, and their temporary artifacts (/tmp/probe.log, /tmp/probe.pid.log) were explicitly removed afterward (cmd-2cc554a454f44de0). The reboot (cmd-b9bb10b35852437c) is expected under the fixed node-restart evidence protocol rather than an unnecessary mutation. No leftover failed units, no unexplained package-health degradation, and no unrelated open ports were introduced beyond the task's own nginx service (default nginx port 80 remains open as a side effect of installing the nginx package, a minor but not harmful side effect).",
+    "evidence_ids": [
+      "cmd-28af03e821894571",
+      "cmd-85871aeb1cac4d0e",
+      "cmd-6cdadbdacb7c4b20",
+      "cmd-5797c9afa5e6419c",
+      "cmd-ffc885c7df7a4d60",
+      "cmd-3680c02c13084a9e",
+      "cmd-2cc554a454f44de0",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

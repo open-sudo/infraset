@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Containerized web application runs as the unprivileged account appsvc",
+      "status": "satisfied",
+      "summary": "podman (rootless) was pulled and run as user appsvc (uid 1001, not root/antrieb) throughout: image pull and container run were executed via `sudo -u appsvc ... podman pull/run` (cmd-e156ecb1f6fe475e, cmd-17b4eaed92dc422f). Post-reboot `podman ps -a` confirms the container is still owned by appsvc's rootless podman instance and running (cmd-f49c9b36e4ed41f2). Process listing also shows nginx/podman processes owned by appsvc rather than root.",
+      "evidence_ids": [
+        "cmd-e156ecb1f6fe475e",
+        "cmd-17b4eaed92dc422f",
+        "cmd-f49c9b36e4ed41f2"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Web application serves on port 8080",
+      "status": "satisfied",
+      "summary": "Container was run with -p 8080:80 and curl to $NODE_IP:8080 returned HTTP 200 both immediately after deployment (cmd-2941014786c94e9a) and after the final successful reboot (cmd-f49c9b36e4ed41f2, which also shows the nginx welcome page body). The after-executor lifecycle snapshot independently confirms a listener on *:8080 owned by slirp4netns (the rootless podman network helper), corroborating port 8080 exposure outside the executor's own commands.",
+      "evidence_ids": [
+        "cmd-2941014786c94e9a",
+        "cmd-f49c9b36e4ed41f2",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Application starts at boot while appsvc has no active login session",
+      "status": "satisfied",
+      "summary": "A healthy pre-restart baseline was captured (boot id f0f8b8e0, container-webapp.service enabled/active, appsvc Sessions=empty/Linger=yes, HTTP 200 \u2014 cmd-932c91143e554a31). A `systemctl reboot` was issued (cmd-46c08797cd4b4163) and the node became unreachable then reachable again with a new boot id (24f27b41 \u2014 cmd-c0850bc265c44b65), directly demonstrating the disruption. The first post-reboot check revealed a genuine gap: user@1001.service had not started and the container was only in 'Created' state with HTTP 000 (cmd-592f617a84f9447e) \u2014 a real, observed failure of pure linger-based boot autostart on this systemd 219 build. The executor then additionally enabled user@1001.service as a system unit (cmd-514f09b5ad984dba) and re-verified via a full second reboot: new boot id ddf54967 (cmd-b40058f7a3be442b), zero login sessions for appsvc, user@1001.service and container-webapp.service both active, and HTTP 200 restored (cmd-f49c9b36e4ed41f2). This constitutes a directly observed healthy-baseline \u2192 disruption \u2192 (initial failure) \u2192 fix \u2192 recovered-state transition across two real reboots.",
+      "evidence_ids": [
+        "cmd-932c91143e554a31",
+        "cmd-46c08797cd4b4163",
+        "cmd-c0850bc265c44b65",
+        "cmd-592f617a84f9447e",
+        "cmd-514f09b5ad984dba",
+        "cmd-f6519878576342f1",
+        "cmd-3d733f2d38874825",
+        "cmd-b40058f7a3be442b",
+        "cmd-f49c9b36e4ed41f2",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task \u2014 a containerized app running as unprivileged appsvc, serving on port 8080, and starting at boot without an active login session \u2014 are satisfied with direct, coherent evidence spanning a pre-restart baseline, an actual reboot-induced disruption, an observed initial failure (linger alone did not reliably autostart the user manager on this systemd 219 build), a corrective fix, and a second reboot confirming full recovery. This is a stronger-than-typical restart evidence trail because it captured a genuine failure and its remediation rather than a single clean pass. Hygiene is good but not perfect: some diagnostic log files were left in /tmp, and the final container relies on seccomp=unconfined as a workaround for a kernel/podman version mismatch rather than a scoped fix.",
+  "limitations": [
+    "The provider-wide restart evidence protocol was effectively folded into the task's own restart requirement (single managed node, node1); no separate/independent restart evidence exists beyond what's cited for req-3.",
+    "Diagnostic strace log files and a yum repo file were left in /tmp after the executor's work; low risk but unremoved.",
+    "The container's seccomp=unconfined setting is a retained security-control weakening (workaround for RHEL7 kernel 3.10 vs. podman default seccomp profile mismatch) rather than a scoped fix; its risk is somewhat mitigated by rootless-podman's other isolation layers, but this should be flagged as a known residual weakening."
+  ],
+  "command_stats": {
+    "total": 101,
+    "successful": 76,
+    "failed": 25,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "The executor's mutations were almost all either necessary prerequisites (repo enablement, podman/fuse/fuse3 install, subuid/subgid setup, lingering, restoring the missing user@.service template, sysctl for user namespaces, storage.conf iteration, newuidmap/newgidmap fix, seccomp workaround) or bounded, fully-reverted diagnostic actions (temporary `setenforce 0` for troubleshooting was reverted with `setenforce 1` in cmd-2941014786c94e9a; repeated setcap/chmod toggling on newuidmap/newgidmap converged to a single final state). Two items lower the score: (1) several strace diagnostic log files (/tmp/podstrace.log through podstrace4.log) and /tmp/centos-vault.repo were left behind in /tmp with no cleanup, visible as residue in the after-executor temporary-files snapshot versus after-prepare \u2014 low-risk since confined to /tmp but unremoved abandoned troubleshooting artifacts (cmd-02c19ffe38574d2b, cmd-f3aeee89ed0d41be, cmd-2d6ea17ab1c44c68, cmd-a7e2f3e79a974594); (2) the final container runs with `--security-opt seccomp=unconfined` (cmd-a391aceed777475f), a security-control weakening applied as a workaround for a kernel/podman seccomp-profile mismatch rather than a scoped custom profile \u2014 this is retained in the final state, not reverted. No conflicting/failed services were left behind (container-webapp.service and user@1001.service were both healthy and active in the final verification) and SELinux was restored to enforcing.",
+    "evidence_ids": [
+      "cmd-2941014786c94e9a",
+      "cmd-a391aceed777475f",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:temporary-files",
+      "cmd-1fd25cc9ec6840bd"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}
