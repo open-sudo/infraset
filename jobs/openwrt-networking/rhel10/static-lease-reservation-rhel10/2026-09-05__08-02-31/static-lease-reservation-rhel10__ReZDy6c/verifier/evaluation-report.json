@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 hands out DHCP addresses on the private network shared by node2 and node3",
+      "status": "satisfied",
+      "summary": "node1's lan interface was converted to static (10.100.247.10) and dnsmasq was configured with dhcp-range 10.100.247.100-249 plus the 'force' option needed to bind on br-lan. Logread and tcpdump captures show dnsmasq issuing DHCPOFFER/DHCPACK to both node2 and node3, and /tmp/dhcp.leases lists both clients as leased by node1. This was also confirmed intact after a full reboot of node1.",
+      "evidence_ids": [
+        "cmd-708ba05966c643d7",
+        "cmd-004d48756a834a8d",
+        "cmd-e79f9f71564e4b86",
+        "cmd-6a218b2c508a404c",
+        "cmd-daf1934ad0134689",
+        "cmd-3cd046772f8d401a",
+        "cmd-dd42473e193c4fe5"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node2 always receives the same address across repeated leases (static reservation)",
+      "status": "satisfied",
+      "summary": "A dhcp-host reservation (MAC 02:96:e6:7a:0a:40 -> 10.100.247.200) was created for node2. Early tests showed node2 occasionally still receiving a competing address (10.100.247.11) from a pre-existing platform DHCP server on the shared network before the platform server was blocked; once a persistent nftables netdev ingress rule (via a systemd dhcpguard.service) was installed on node2 to drop DHCP replies from 10.100.247.1, repeated lease renewals (including a loop of two consecutive renewals and a post-reboot renewal) consistently returned 10.100.247.200.",
+      "evidence_ids": [
+        "cmd-34fdf59bbb0a49fd",
+        "cmd-a296a5b1ce664c25",
+        "cmd-1976b433348f4608",
+        "cmd-fe81ee111a604197",
+        "cmd-dfb7d15c21a74a2f",
+        "cmd-daa3ec1b01704a5c",
+        "cmd-2a709dc8b8b94dc2",
+        "cmd-6fca9ab8762c4467"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node3 is addressed from the general DHCP pool (not a fixed reservation)",
+      "status": "satisfied",
+      "summary": "No dhcp-host entry was created for node3; it draws from the dhcp-range pool. After the same platform-DHCP-blocking nftables rule was applied to node3, it consistently obtained 10.100.247.242 from node1's pool across repeated renewals and after reboot, distinct from node2's reserved address.",
+      "evidence_ids": [
+        "cmd-9e6b3084a1b54a81",
+        "cmd-936671937a4d48d9",
+        "cmd-702899512add4199",
+        "cmd-75618b0d28eb4857"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Availability/restart: DHCP server and reservation behavior recovers correctly across node reboots",
+      "status": "satisfied",
+      "summary": "node1, node2, and node3 were each rebooted; boot_id changed on all three (node1 52025505->14e4adbb, node2 6ab6a71b->ca607814, node3 03408ac4->bc613ff2), confirming real reboots. Post-reboot, node1's dnsmasq was running again with the same dhcp-range/dhcp-host config, and node2/node3 re-acquired their expected addresses (.200 and .242 respectively) with the dhcpguard nftables rule and service still active, and /tmp/dhcp.leases showed both leases restored.",
+      "evidence_ids": [
+        "cmd-d1b1e018198041b8",
+        "cmd-e31377e5aff84b88",
+        "cmd-dd42473e193c4fe5",
+        "cmd-39e2012f709245f2",
+        "cmd-6fca9ab8762c4467",
+        "cmd-01b9fb640048404f",
+        "cmd-702899512add4199",
+        "cmd-3cd046772f8d401a"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly configured node1 as DHCP server for the shared lan (static IP, dhcp-range 100-249), created a static dhcp-host reservation for node2 (10.100.247.200), and left node3 unreserved so it draws from the general pool (observed at .242). Because a pre-existing platform DHCP server on 10.100.247.1 was competing on the same network and initially caused node2 to intermittently receive the wrong address, the executor diagnosed this via dnsmasq logs and tcpdump, then blocked the platform server's DHCP replies on node2/node3 with a persistent nftables netdev rule plus systemd service. After this fix, repeated lease renewals and a full reboot of all three nodes both confirmed correct, stable behavior: node2 always gets .200, node3 draws from the pool, and node1's DHCP server survives restart. Hygiene is generally good \u2014 one reverted firewalld experiment, minor diagnostic-tool residue, and a plausible reboot-time NetworkManager-wait-online failure on the two RHEL clients that was not investigated.",
+  "limitations": [
+    "The fixed after_executor lifecycle snapshot failed to capture node1's boot-identity (return_code 255), so that specific cross-check relies on the executor's own timeline capture (cmd-e31377e5aff84b88) rather than the independent snapshot.",
+    "The cause of the newly-failed NetworkManager-wait-online.service on node2/node3 after reboot was not directly diagnosed in the trace; it is inferred to be related to the dhcpguard nftables rule but this is not confirmed.",
+    "Node3's address (.242) was stable across the observed tests, but this reflects the absence of pool churn during the test window rather than a guaranteed sticky assignment, consistent with 'general pool' behavior rather than a requirement violation."
+  ],
+  "command_stats": {
+    "total": 110,
+    "successful": 96,
+    "failed": 14,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most state-changing actions were tied to diagnosing and fixing DHCP contention with a pre-existing platform DHCP server on 10.100.247.1: the persistent nftables netdev block plus dhcpguard.service on node2/node3 (retained, necessary to make node1 the sole DHCP authority) and the dhcp.lan.force/noping tweaks and lan static-IP conversion on node1 (retained, necessary). An earlier firewalld direct-rule attempt on node2/node3 to block the platform DHCP server (cmd-f186626d8ab84dd7, cmd-922c55e19a674545) was a superseded troubleshooting experiment but was fully reverted (cmd-110d6b688ca1497f, cmd-de8b072e02dd46d3) before the nftables approach was adopted, so it left no residue. tcpdump was installed on node1 and node3 (cmd-5887ae8c872841c6, cmd-0d95f1c374a1467e) purely for bounded diagnostic packet captures and was left installed afterward \u2014 low-risk, minor residue. Numerous nmcli connection down/up and lease-file deletions on node2/node3 were bounded, reversible, and directly used to generate the repeated-lease evidence required by the task. One notable side effect: after reboot, NetworkManager-wait-online.service is newly in a failed state on both node2 and node3 (absent from the before/after-prepare baseline), plausibly caused by the dhcpguard nftables rule interfering with boot-time DHCP negotiation timing; this was not investigated or remediated by the executor.",
+    "evidence_ids": [
+      "cmd-f186626d8ab84dd7",
+      "cmd-922c55e19a674545",
+      "cmd-110d6b688ca1497f",
+      "cmd-de8b072e02dd46d3",
+      "cmd-5887ae8c872841c6",
+      "cmd-0d95f1c374a1467e",
+      "cmd-dfb7d15c21a74a2f",
+      "cmd-cce00ece8956430f"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

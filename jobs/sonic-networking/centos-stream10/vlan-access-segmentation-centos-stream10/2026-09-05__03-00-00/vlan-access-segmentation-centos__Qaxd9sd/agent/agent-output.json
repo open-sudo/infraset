@@ -1,0 +1,118 @@
+{
+  "status": "completed",
+  "summary": "Configured VLAN access-port segmentation on node1 (SONiC) separating node2's segment (eth1, VLAN 101) from node3's segment (eth2, VLAN 102) using the kernel-level vlan-aware \"Bridge\" device already present on SONiC-VS, since the Ethernet* SAI port abstraction is unbound from the real virtio NICs. eth1 and eth2 are untagged/PVID access ports in VLAN 101 and 102 respectively; node1 holds an SVI (Bridge.101 = 192.168.101.1/24, Bridge.102 = 192.168.102.1/24) giving it a working L3 link into each VLAN, while node2 (192.168.101.2/24 on enp8s0) and node3 (192.168.102.2/24 on enp8s0) cannot reach each other (different subnets, no cross-VLAN forwarding, ip_forward disabled on node1). Physical topology was first identified experimentally (eth1<->node2, eth2<->node3) via temporary IP/ping tests. Node2/node3 IP configs were made persistent via NetworkManager connection profiles (autoconnect) after discovering NM was clobbering ad hoc `ip addr` assignments on enp8s0. Node1's VLAN/bridge state was made persistent via a new enabled systemd oneshot unit (vlan-access-segmentation.service) that reapplies the configuration at boot, since raw `ip`/`bridge` state on SONiC-VS does not survive reboot and the Ethernet* configdb path isn't usable for these NICs. Ran the mandatory one-at-a-time restart protocol on all three nodes: captured pre-restart boot_id and healthy-state evidence, restarted each node individually (node1 via `reboot`, node2/node3 via `systemctl reboot`), confirmed changed boot_id and full recovery (VLAN config, IP config, and connectivity/isolation all confirmed intact) before moving to the next node. A benign duplicate-ICMP-reply artifact (0% packet loss, cosmetic DUP! in ping output) was observed and investigated; it is caused by the underlying nested-virtualization dataplane, not the VLAN configuration, and does not affect isolation or link correctness.",
+  "actions_performed": [
+    "Inspected topology on node1 (SONiC), node2, node3 via ip -br link/addr/route",
+    "Identified physical mapping eth1<->node2 and eth2<->node3 via temporary IP + ping tests",
+    "Cleaned up docker0 class-E leak on node1 per SONiC reference",
+    "Added eth1/eth2 as members of node1's existing vlan-aware kernel 'Bridge' device",
+    "Set eth1 PVID untagged VLAN 101, eth2 PVID untagged VLAN 102 via `bridge vlan add`",
+    "Created Bridge.101 and Bridge.102 SVIs with IPs 192.168.101.1/24 and 192.168.102.1/24 for node1's presence in each VLAN",
+    "Disabled net.ipv4.ip_forward on node1 to prevent inter-VLAN routing",
+    "Diagnosed and fixed NetworkManager clobbering manual enp8s0 IPs on node2/node3 by creating persistent 'Wired connection 2' profiles with static IPs 192.168.101.2/24 and 192.168.102.2/24",
+    "Verified node1<->node2 and node1<->node3 connectivity, and node2<->node3 isolation",
+    "Wrote /usr/local/bin/vlan-access-segmentation.sh and a new systemd unit vlan-access-segmentation.service on node1, enabled at boot for persistence",
+    "Captured pre-restart boot_id and health baseline on all three nodes",
+    "Restarted node1, node2, node3 one at a time using native reboot mechanisms, polling each until command execution resumed",
+    "Verified changed boot_id and full post-restart recovery of VLAN config, IP config, connectivity, and isolation on all three nodes"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline topology mapping (eth1<->node2, eth2<->node3)",
+      "command_ids": [
+        "cmd-f3ef99a8bc014532",
+        "cmd-21fbf3f7b2024df7",
+        "cmd-9a785ce086084c6e"
+      ],
+      "summary": "Temporary IP assignment + ping confirmed eth1 reaches node2 and eth2 reaches node3"
+    },
+    {
+      "requirement": "eth1/eth2 configured as untagged access ports in separate VLANs",
+      "command_ids": [
+        "cmd-777fdc4fba3e4ab1",
+        "cmd-1108ec232bf74950"
+      ],
+      "summary": "bridge vlan show confirms eth1=VLAN101 PVID untagged, eth2=VLAN102 PVID untagged"
+    },
+    {
+      "requirement": "node1 keeps a working link to each host inside its own VLAN",
+      "command_ids": [
+        "cmd-8b14513d869a4202",
+        "cmd-69d5186ca9b34024",
+        "cmd-aef844fbcbba4a2b"
+      ],
+      "summary": "Bidirectional pings between node1's Bridge.101/Bridge.102 SVIs and node2/node3 succeed with 0% loss, pre- and post-restart"
+    },
+    {
+      "requirement": "node2 and node3 remain isolated from each other",
+      "command_ids": [
+        "cmd-7cf397ac0ecb4486",
+        "cmd-e5e2dde0443e45cc",
+        "cmd-dbe573e0eceb4fe8",
+        "cmd-66f536ea3e884567"
+      ],
+      "summary": "Cross-subnet pings between node2 and node3 fail (Destination Net Unreachable) both before and after node restarts"
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-6f83defd1a324a99",
+        "cmd-c27013416003494c"
+      ],
+      "summary": "Captured node1 boot_id ce04f497... plus working VLAN/bridge state and ip_forward=0 prior to reboot"
+    },
+    {
+      "requirement": "node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-63a6a4ac5f9149d3",
+        "cmd-6d143629d064436d",
+        "cmd-2a0560a618474a25"
+      ],
+      "summary": "Reboot command acknowledged, connection reset confirmed disruption, and new boot_id c26dac0f... proves the restart occurred"
+    },
+    {
+      "requirement": "node1 post-restart recovery of VLAN config and connectivity",
+      "command_ids": [
+        "cmd-e9eb7f07985c4b05",
+        "cmd-c27013416003494c",
+        "cmd-bc632ec049034b03",
+        "cmd-c15571f12b9b41f5"
+      ],
+      "summary": "vlan-access-segmentation.service reapplied Bridge/VLAN/SVI config automatically at boot; ip_forward remained 0; node2 and node3 could ping node1 again"
+    },
+    {
+      "requirement": "node2 healthy baseline, restart acknowledgement, and changed boot identity",
+      "command_ids": [
+        "cmd-1a7a413860e44b73",
+        "cmd-dd74eeaf60314ee6",
+        "cmd-a5e218fcf80148c0"
+      ],
+      "summary": "Captured boot_id d4784d1b... baseline, issued systemctl reboot, and confirmed new boot_id ed91ff51... after recovery"
+    },
+    {
+      "requirement": "node2 post-restart recovery",
+      "command_ids": [
+        "cmd-33738545f2cd46cf",
+        "cmd-dbe573e0eceb4fe8"
+      ],
+      "summary": "enp8s0 static IP persisted via NetworkManager autoconnect profile; ping to node1 succeeded; isolation from node3 held"
+    },
+    {
+      "requirement": "node3 healthy baseline, restart acknowledgement, and changed boot identity",
+      "command_ids": [
+        "cmd-8a82a3124888439e",
+        "cmd-a9c90de9966040a2",
+        "cmd-70794a207fee47b7"
+      ],
+      "summary": "Captured boot_id 4cee4ea8... baseline, issued systemctl reboot, and confirmed new boot_id fb75dc1a... after recovery"
+    },
+    {
+      "requirement": "node3 post-restart recovery",
+      "command_ids": [
+        "cmd-00e0311554094189",
+        "cmd-66f536ea3e884567"
+      ],
+      "summary": "enp8s0 static IP persisted via NetworkManager autoconnect profile; ping to node1 succeeded; isolation from node2 held"
+    }
+  ]
+}

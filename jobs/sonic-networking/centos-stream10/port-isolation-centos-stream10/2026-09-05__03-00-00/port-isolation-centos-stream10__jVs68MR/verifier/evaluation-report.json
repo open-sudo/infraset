@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Identify the shared L2 segment connecting node1, node2, and node3 (interfaces on the same subnet)",
+      "status": "satisfied",
+      "summary": "Executor enumerated interfaces on all three nodes and confirmed node1:eth1, node2:enp8s0, node3:enp8s0 form a flat shared segment, further confirmed by a direct link-local IPv6 ping from node2 to node3 that bypasses node1, proving a genuine direct L2 path exists between the two hosts.",
+      "evidence_ids": [
+        "cmd-899aea1d5ffe4960",
+        "cmd-6cbeb21449c9495f",
+        "cmd-880ba91e4116449f",
+        "cmd-9029c07f28314e26",
+        "cmd-12c9258a0ef14e34",
+        "cmd-43a8d95954ad437e",
+        "cmd-06f8653b9e9c4544"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Establish addressing on the shared subnet so all three nodes are reachable at the IP layer (supporting prerequisite)",
+      "status": "satisfied",
+      "summary": "Static IPv4 addresses were configured persistently: node1 eth1=192.168.50.1/24 via /etc/network/interfaces.d/eth1, node2 enp8s0=192.168.50.11/24 and node3 enp8s0=192.168.50.12/24 via NetworkManager static profiles; baseline full-mesh ping confirmed all three could reach each other before isolation was applied.",
+      "evidence_ids": [
+        "cmd-64eeb633afa94cf2",
+        "cmd-bb810e07b9284fcd",
+        "cmd-6c7cbde90b7b49b7",
+        "cmd-d254c0c3ce1d4fab",
+        "cmd-1cf5d36008684164"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node2 and node3 cannot exchange traffic with each other directly",
+      "status": "satisfied",
+      "summary": "Symmetric firewalld permanent rich rules (drop by source IP) were applied on node2 (drops source 192.168.50.12) and node3 (drops source 192.168.50.11), bound to the shared-segment interface's zone. Post-change pings from node2->node3 and node3->node2 show 100% packet loss in both directions, directly demonstrating the isolation. This blocks IP-layer traffic exchange; it does not address non-IP L2 traffic such as ARP, which is a residual scope limitation of a host-firewall approach versus true switch port isolation on node1.",
+      "evidence_ids": [
+        "cmd-ee88ff0698a540be",
+        "cmd-05fcc058ee5048f0",
+        "cmd-b362bc6b82a04aea",
+        "cmd-8d5cf3822d894466"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Both node2 and node3 continue to reach node1 on the shared subnet",
+      "status": "satisfied",
+      "summary": "After the isolation rules were applied, node2->node1 and node3->node1 pings succeeded with 0% loss, and node1->node2 / node1->node3 pings also succeeded, confirming node1 remains fully reachable from and to both hosts.",
+      "evidence_ids": [
+        "cmd-b362bc6b82a04aea",
+        "cmd-8d5cf3822d894466",
+        "cmd-7546346f2fe945a3"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Isolation and addressing persist across a reboot (durability of the 'keep isolated' outcome)",
+      "status": "satisfied",
+      "summary": "All three nodes were rebooted one at a time with pre-reboot boot IDs captured, connection loss observed during the reboot window, and distinct post-reboot boot IDs confirmed. After each reboot, static IPs and firewalld rich rules were shown to persist, and post-reboot pings reproduced the same pattern: node2<->node3 blocked, node1 reachable from/to both.",
+      "evidence_ids": [
+        "cmd-7546346f2fe945a3",
+        "cmd-7cb4e48772b34691",
+        "cmd-4eada1059c9549e2",
+        "cmd-01eff14daf654c7f",
+        "cmd-ae29f091878248b7",
+        "cmd-abdb733351404b9b",
+        "cmd-19c4bed349c543a7",
+        "cmd-4aab726c19a54c3e",
+        "cmd-ff7ed77b58464f6c",
+        "cmd-c710cb7bcf904ac2",
+        "cmd-9c7cce2363584765",
+        "cmd-39323bcae3c64c3c"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly identified the shared L2 segment, assigned persistent addressing, and applied symmetric firewalld drop rules on node2 and node3 that demonstrably block direct traffic between them while leaving node1 fully reachable from and to both \u2014 verified both before and after a full reboot of all three nodes, with clean boot-identity transitions and recovered state. The isolation is enforced at the IP layer via host firewalls on node2/node3 rather than via switch-level port isolation on node1 (the segment's natural enforcement point), which is a reasonable and effective alternative implementation but leaves non-IP L2 traffic (e.g., ARP) technically unblocked between the two hosts \u2014 a minor scope caveat rather than a functional failure given the task's IP-traffic framing.",
+  "limitations": [
+    "Isolation is enforced via host-based firewalld rules on node2/node3 rather than switch port isolation on node1, so pure L2 frames (e.g., ARP) between node2 and node3 are not shown to be blocked, only IP-layer traffic (verified via ICMP).",
+    "Only ICMP was used to verify blocked/allowed connectivity; no other protocols or ports were tested, though this is consistent with the general nature of the isolation requirement."
+  ],
+  "command_stats": {
+    "total": 50,
+    "successful": 38,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Reviewing the chronological executor command trace, every state-changing action maps to a clear purpose: interface config file creation and nmcli static-IP changes on node1/node2/node3 (required addressing prerequisite), firewalld rich-rule additions and reload on node2/node3 (the core isolation mechanism), and the three scheduled reboots plus post-reboot verification (mandatory restart-evidence protocol). No abandoned troubleshooting mutations, no unrelated services touched, and no destructive or overly broad actions were observed. The lifecycle diff between after-prepare and after-executor shows only expected residue: new boot IDs, new ephemeral /tmp systemd-private directories and one /tmp/reboot.log per rebooted node (typical reboot artifacts, not executor-created clutter), and listening-socket differences that are simply due to new PIDs after reboot, not new services. Pre-existing node1 failed units (system-health.service, watchdog-control.service) are unchanged baseline conditions, not executor-caused. Minor deduction because the isolation mechanism (host-based firewalld source-IP drop) is an equivalent-but-not-canonical implementation choice relative to switch-level port isolation on node1 (the actual segment owner), leaving non-IP L2 traffic unaddressed; this is a design choice rather than a hygiene defect.",
+    "evidence_ids": [
+      "cmd-64eeb633afa94cf2",
+      "cmd-bb810e07b9284fcd",
+      "cmd-6c7cbde90b7b49b7",
+      "cmd-ee88ff0698a540be",
+      "cmd-05fcc058ee5048f0",
+      "cmd-7cb4e48772b34691",
+      "cmd-abdb733351404b9b",
+      "cmd-c710cb7bcf904ac2",
+      "global:after_executor:node1:failed-services",
+      "global:before_prepare:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

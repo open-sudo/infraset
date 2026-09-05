@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node2 and node3 are prevented from exchanging traffic directly with each other on the shared 10.100.54.0/24 segment",
+      "status": "satisfied",
+      "summary": "Baseline showed unrestricted ICMP between node2 (10.100.54.11) and node3 (10.100.54.12) (cmd-b46c8cc574694cc9). Permanent firewalld rich rules dropping the peer's source/destination address were added on both hosts (cmd-e867cdd52d8249d9, cmd-03c4b67fd8f7424b) and reloaded. Post-change ICMP tests show 100% loss in both directions (cmd-b43ff131f78a476d, cmd-24a8d26f101b4e23) and a TCP connection attempt also failed/timed out (cmd-e51ea3cfb1b1414e). After each node was independently rebooted, the isolation was re-verified and still held: node2->node3 100% loss post-reboot (cmd-e87b6203d3eb4960), node3->node2 100% loss post-reboot (cmd-4cd53240c3dd477e), confirming the rules are permanent/persistent, not just in-memory.",
+      "evidence_ids": [
+        "cmd-b46c8cc574694cc9",
+        "cmd-e867cdd52d8249d9",
+        "cmd-03c4b67fd8f7424b",
+        "cmd-b43ff131f78a476d",
+        "cmd-24a8d26f101b4e23",
+        "cmd-e51ea3cfb1b1414e",
+        "cmd-e87b6203d3eb4960",
+        "cmd-4cd53240c3dd477e"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "node2 and node3 both continue to reach node1 on the shared subnet",
+      "status": "satisfied",
+      "summary": "node1's eth0 initially held a stale build-time DHCP lease unrelated to the cluster subnet, causing node2/node3 to be unable to reach node1 (cmd-3e0a18c91ca247fb, cmd-03557ad0cd9f4356, cmd-8df0d57da2694e12). After clearing the stale lease and forcing a fresh DHCPDISCOVER on eth0 (cmd-621969603f0744d6, cmd-6dcf59fa33794977), node1 obtained 10.100.54.10 correctly and node2/node3 could ping it (cmd-ad5bd12918d04ea9, cmd-81fbc45d5b634cc6), while the isolation rules between node2/node3 remained in effect (same evidence, second ping target). Reachability to node1 was re-verified after each node's independent reboot (cmd-1af7643439454889, cmd-298f9b59646c4481, cmd-e87b6203d3eb4960, cmd-4cd53240c3dd477e) and a final full-mesh check from node1 confirmed both peers reachable (cmd-2cb6f79d79b74bcc).",
+      "evidence_ids": [
+        "cmd-3e0a18c91ca247fb",
+        "cmd-621969603f0744d6",
+        "cmd-6dcf59fa33794977",
+        "cmd-ad5bd12918d04ea9",
+        "cmd-81fbc45d5b634cc6",
+        "cmd-1af7643439454889",
+        "cmd-298f9b59646c4481",
+        "cmd-2cb6f79d79b74bcc"
+      ]
+    }
+  ],
+  "overall_summary": "Both material outcomes of the task were achieved and directly demonstrated: node2 and node3 are blocked from exchanging traffic with each other via symmetric permanent firewalld rich rules, while both retain reachability to node1, whose own initial connectivity problem (a stale DHCP lease unrelated to the task) was correctly diagnosed and fixed. The isolation and node1-reachability were independently re-verified after each of the three nodes was rebooted, with boot_id changes matching the fixed lifecycle before/after snapshots (node1: 1f515f97->ef78f82c, node2: 67f3a44b->d3b9e13b, node3: a4139d3b->2978ceb5), giving strong before/disruption/after evidence for the restart protocol as well. Some troubleshooting mutations (a temporary eth1 address, a temporary stop of node1's interfaces-config service with a static IP substitution, and removal of an unrelated docker0 address) occurred during the lengthy node1 diagnosis; the riskier ones were bounded and effectively self-healed by the required reboot, and minor diagnostic log residue was left on node2.",
+  "limitations": [
+    "The executor's own evidence list referenced an unknown command ID (cmd-5524b3d82b104de5) that does not appear in the timeline; the closest match, cmd-5524b5d82b104de5, was used instead where relevant.",
+    "node1's interfaces-config.service was left stopped after manual troubleshooting (cmd-557ef6dfbf36439b) and was not explicitly restarted before the node1 reboot; correctness of the interim (pre-reboot) network configuration relied on this being implicitly resolved by the subsequent reboot rather than a deliberate restoration step.",
+    "A new failed unit, NetworkManager-wait-online.service, appeared on node2 in the after-executor snapshot that was not present in the before-prepare baseline; this could be an artifact of the forced reboot rather than the firewalld changes, but its root cause was not investigated by the executor.",
+    "Restart/reboot behavior is not itself a stated requirement of the public task instruction, so the restart evidence quality affects confidence and hygiene here but does not by itself gate the material task outcomes above.",
+    "Executor evidence item 3 referenced unknown command IDs: cmd-5524b3d82b104de5"
+  ],
+  "command_stats": {
+    "total": 110,
+    "successful": 59,
+    "failed": 51,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.6,
+    "summary": "Most state-changing commands map clearly to satisfying the two material outcomes or the independent restart protocol. However several unnecessary or risky intermediate mutations occurred during node1 diagnosis: (1) cmd-0c32248924d04f94 added a temporary 10.100.54.10/24 address to eth1 as a diagnostic experiment; it was reverted a few commands later in cmd-557ef6dfbf36439b ('ip addr del 10.100.54.10/24 dev eth1'), so it left no residue but is still an unnecessary experimental mutation per the grading rules. (2) cmd-557ef6dfbf36439b stopped interfaces-config.service and assigned a static (non-DHCP) address to eth0, bypassing the managed network configuration; this was a broader, somewhat risky mutation (disabling the platform's network-management service) that was only implicitly corrected later -- the service was never explicitly restarted, and the fix instead relied on the subsequent node1 reboot (part of the independently-required restart protocol) to restore the managed dhclient/interfaces-config state, confirmed by cmd-c903f176e40b4bf2. (3) cmd-2985d05776774c29 permanently removed docker0's default 240.127.1.1/24 address; docker0 was already down/no-carrier and unrelated to the task's segment, so this was an unrequested, low-risk, retained mutation. (4) Diagnostic artifacts (ap.log, ap2.log, ping.log, pingloop.log, pingloop.pid, td2.log, td2.pid, td3.log) were left behind in /tmp on node2 and were not cleaned up, visible in the after-executor snapshot diff. Background tcpdump and ping-loop processes launched during diagnosis were properly killed before conclusion (cmd-9aab3a1832284d75, cmd-ebd6b74b963440de). No firewalld rules, packages, or SSH access were broken; package health remained consistent (dnf/dpkg managers unchanged) across before/after snapshots.",
+    "evidence_ids": [
+      "cmd-0c32248924d04f94",
+      "cmd-557ef6dfbf36439b",
+      "cmd-2985d05776774c29",
+      "cmd-1cd688064f024665",
+      "cmd-621969603f0744d6",
+      "cmd-6dcf59fa33794977",
+      "cmd-c903f176e40b4bf2",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

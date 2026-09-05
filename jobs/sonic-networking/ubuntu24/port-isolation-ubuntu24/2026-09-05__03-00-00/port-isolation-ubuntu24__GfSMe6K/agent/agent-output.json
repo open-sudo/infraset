@@ -1,0 +1,88 @@
+{
+  "status": "completed",
+  "summary": "Implemented direct port isolation between node2 and node3 (both on the shared 10.100.118.0/24 segment with node1) using persistent nftables rules on each host that drop IP traffic to/from the peer host's address, while leaving traffic to/from node1 unaffected. Verified the isolation holds and node1 reachability is preserved. Then performed the mandatory one-at-a-time restart protocol on all three nodes (node1 SONiC, node2 Ubuntu, node3 Ubuntu), confirming changed boot identities and full post-restart recovery of services/connectivity/isolation on each.",
+  "actions_performed": [
+    "Inspected topology: node1 (SONiC-VS, Debian 13) eth0=10.100.118.10, node2 (Ubuntu 24.04) enp1s0=10.100.118.11, node3 (Ubuntu 24.04) enp1s0=10.100.118.12, all on shared /24 segment.",
+    "Captured baseline: node2<->node3 direct ping succeeded (unwanted), both reached node1.",
+    "Wrote persistent /etc/nftables.conf on node2 dropping input from / output to 10.100.118.12 (node3), enabled+started nftables.service.",
+    "Wrote persistent /etc/nftables.conf on node3 dropping input from / output to 10.100.118.11 (node2), enabled+started nftables.service.",
+    "Verified node2<->node3 traffic now blocked in both directions, node1<->node2 and node1<->node3 traffic unaffected (bidirectional).",
+    "Captured pre-restart boot_id baseline on all three nodes.",
+    "Restarted node1 via native reboot; polled until exec available again (SONiC cold boot took several minutes); confirmed new boot_id, all docker containers (database, swss, bgp, syncd, teamd, radv, gbsyncd, sysmgr, eventd) healthy, and node1<->node2/node3 reachability plus node2<->node3 isolation still intact.",
+    "Restarted node2 via native reboot; polled until available; confirmed new boot_id, nftables.service active with rule reloaded from /etc/nftables.conf, node2->node1 reachable, node2->node3 still blocked.",
+    "Restarted node3 via native reboot; polled until available; confirmed new boot_id, nftables.service active with rule reloaded, node3->node1 reachable, node3->node2 still blocked.",
+    "Final cross-check from node1: pings to both node2 and node3 succeeded; node1's SONiC containers all up post full-cluster restart sequence."
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline: node2 and node3 can directly exchange traffic before fix (establishes the problem being solved)",
+      "command_ids": [
+        "cmd-e95b7ea857484075",
+        "cmd-c2439843057d4da8"
+      ],
+      "summary": "node2->node3 ping succeeded (0.4ms) and node3->node1 ping succeeded prior to any isolation rule, confirming shared L2/L3 segment."
+    },
+    {
+      "requirement": "node2 and node3 blocked from exchanging traffic directly (post-fix)",
+      "command_ids": [
+        "cmd-e94bfb2cc93e4a67",
+        "cmd-4feb30d777c74264",
+        "cmd-2c52c86e9da84b7b",
+        "cmd-cb385648866547b2"
+      ],
+      "summary": "Persistent nftables rules installed on node2 (drop to/from 10.100.118.12) and node3 (drop to/from 10.100.118.11); subsequent pings node2->node3 and node3->node2 both showed 100% packet loss."
+    },
+    {
+      "requirement": "Both node2 and node3 continue to reach node1 after isolation applied",
+      "command_ids": [
+        "cmd-2c52c86e9da84b7b",
+        "cmd-cb385648866547b2",
+        "cmd-2b4a370ecf714679"
+      ],
+      "summary": "node2->node1 and node3->node1 pings succeeded with 0% loss; node1->node2 and node1->node3 pings also succeeded, confirming bidirectional node1 reachability was preserved."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, boot identity change, and post-restart recovery",
+      "command_ids": [
+        "cmd-f42fa59afbf64e3b",
+        "cmd-8b7387f0e4204d7a",
+        "cmd-82750016d1da4e39",
+        "cmd-914438c492744fc4",
+        "cmd-bc9af10f9ce34986"
+      ],
+      "summary": "Baseline boot_id 2b666fc9-... captured; native `reboot` issued; after SONiC cold boot completed, boot_id changed to c0f7db9e-... (later 0ea6.. confirmed again after node3 restart cross-check); all SONiC docker containers (database, swss, bgp, syncd, teamd, radv, gbsyncd, sysmgr, eventd) reported Up and node1 could ping both node2 and node3."
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, boot identity change, and post-restart recovery of isolation + node1 reachability",
+      "command_ids": [
+        "cmd-fdc456181a11468e",
+        "cmd-6019624653774c1f",
+        "cmd-7c4f2580caf7416a",
+        "cmd-28489c7fc1e043f6"
+      ],
+      "summary": "Baseline boot_id 92ec88af-... captured; native `reboot` issued; new boot_id 491a1af2-... confirmed on recovery; nftables.service active with isolation rule intact from /etc/nftables.conf; node2->node3 blocked, node2->node1 reachable."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, boot identity change, and post-restart recovery of isolation + node1 reachability",
+      "command_ids": [
+        "cmd-660bb35ec1ee4f22",
+        "cmd-4d67567ab0e84466",
+        "cmd-c2292983509c42fa",
+        "cmd-9184883c2ace4ff7"
+      ],
+      "summary": "Baseline boot_id 242af11e-... captured; native `reboot` issued; new boot_id 0ea643d5-... confirmed on recovery; nftables.service active with isolation rule intact; node3->node2 blocked, node3->node1 reachable."
+    },
+    {
+      "requirement": "Restarts performed one node at a time with quorum/independent recovery path preserved throughout",
+      "command_ids": [
+        "cmd-8b7387f0e4204d7a",
+        "cmd-914438c492744fc4",
+        "cmd-6019624653774c1f",
+        "cmd-28489c7fc1e043f6",
+        "cmd-4d67567ab0e84466",
+        "cmd-9184883c2ace4ff7"
+      ],
+      "summary": "node1 was restarted and fully verified before node2 was restarted; node2 was restarted and fully verified before node3 was restarted; no two nodes were down concurrently."
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "status": "completed",
+  "summary": "Configured a DHCP relay on node1 (the SONiC switch sitting between node2's and node3's segments) so node3 obtains its address from node2's isc-dhcp-server. Static /24 links were addressed: node1 eth1<->node2 enp8s0 on 192.168.50.0/24, node1 eth2<->node3 enp8s0 on 192.168.60.0/24. isc-dhcp-server was installed on node2 with a subnet declaration for 192.168.60.0/24 (pool 192.168.60.100-200) served via relay, plus a route back to that subnet through node1. dhcrelay was extracted from SONiC's dormant dhcp_relay docker feature and run persistently as a host systemd service on node1 (-id eth2 -iu eth1 192.168.50.2), with IP forwarding enabled. Verified end-to-end via tcpdump and dhcpd logs that DISCOVER/REQUEST/OFFER/ACK correctly relay across the segments, and node3 obtained lease 192.168.60.100 from node2's server. All three nodes (node2, node1, node3, in that order) were then restarted one at a time via native reboot; boot IDs changed on each, and post-restart verification confirmed all config (static addressing, routes, dhcrelay service, DHCP server, and the live DHCP-obtained address on node3) persisted and the relay path continued functioning after each restart.",
+  "actions_performed": [
+    "Surveyed topology on node1/node2/node3: node1 is a SONiC-VS switch with eth1 facing node2 and eth2 facing node3 as separate L2 segments; node2/node3 are Ubuntu 24.04 with enp8s0 as the second, unconfigured NIC",
+    "Assigned static IPs 192.168.50.1/24 (node1 eth1) and 192.168.60.1/24 (node1 eth2), persisted via /etc/network/interfaces.d/",
+    "Enabled net.ipv4.ip_forward and per-interface forwarding on node1, persisted via /etc/sysctl.d/",
+    "Configured node2 enp8s0 static IP 192.168.50.2/24 via systemd-networkd drop-in, overriding the default DHCP=yes en* match",
+    "Installed and configured isc-dhcp-server on node2 with subnet 192.168.60.0/24 (relayed subnet for node3) and an empty local subnet 192.168.50.0/24 stanza; bound to enp8s0",
+    "Added a persistent route on node2 (192.168.60.0/24 via 192.168.50.1) so DHCP replies destined to the relay's giaddr are correctly routed out enp8s0",
+    "Enabled SONiC's dhcp_relay feature locally to obtain the dhcrelay binary, copied it to the node1 host OS, and created a persistent systemd unit dhcrelay.service running dhcrelay -id eth2 -iu eth1 192.168.50.2",
+    "Verified with tcpdump on eth1/eth2/enp8s0 and dhcpd/dhcrelay logs that DISCOVER/OFFER/REQUEST/ACK relay correctly end-to-end",
+    "Confirmed node3 obtained address 192.168.60.100/24 from node2's DHCP service and the lease is recorded in node2's dhcpd.leases",
+    "Captured boot-id baselines and healthy-state evidence for all three nodes",
+    "Restarted node2, then node1, then node3 one at a time via systemctl reboot, polling each until reachable again",
+    "Verified changed boot IDs on all three nodes post-restart",
+    "Verified post-restart recovery: node2 DHCP server active with routes/config intact and prior lease preserved; node1 dhcrelay active/enabled with addressing and forwarding intact; node3 automatically re-acquired 192.168.60.100 via the relay on boot"
+  ],
+  "evidence": [
+    {
+      "requirement": "node3 obtains its address from node2's DHCP service across segments (core task)",
+      "command_ids": [
+        "cmd-6765aa9d521f47bd",
+        "cmd-b82421cc7cee4796",
+        "cmd-f742b2953b3f4c9a",
+        "cmd-a3979cb240df4f4d",
+        "cmd-c99d69f6f77440f1",
+        "cmd-d5c5ffb084c14d3f"
+      ],
+      "summary": "tcpdump captures on node1's eth1/eth2 and node2's enp8s0 show DHCPDISCOVER relayed from node3's segment to node2 and DHCPOFFER/ACK relayed back; node3 acquires 192.168.60.100/24 and node2's dhcpd.leases records the active lease for node3's MAC/hostname"
+    },
+    {
+      "requirement": "Relay and forwarding configuration in place on node1 (static addressing, ip_forward, dhcrelay service)",
+      "command_ids": [
+        "cmd-c57b3e4c5ba340c7",
+        "cmd-8cc274023ea94a4a",
+        "cmd-710c0735a3a1431f",
+        "cmd-b976dcdd27b443e6"
+      ],
+      "summary": "eth1/eth2 configured with 192.168.50.1/24 and 192.168.60.1/24, ip_forward and per-interface forwarding enabled, dhcrelay.service created/enabled/active with correct -id/-iu flags"
+    },
+    {
+      "requirement": "DHCP server configuration on node2 for node3's subnet",
+      "command_ids": [
+        "cmd-7e265e5a9bff4730",
+        "cmd-11b28239bfe24644",
+        "cmd-710d82dabec04885"
+      ],
+      "summary": "isc-dhcp-server installed and running on node2 bound to enp8s0, with subnet 192.168.60.0/24 pool for node3 and a persistent route back to that subnet via node1"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-dc3d82f9c0404dba",
+        "cmd-a005bdd5747c4080",
+        "cmd-2582654643364a6e",
+        "cmd-8db4fa3307d6498e",
+        "cmd-121d8fa1f8d341ea"
+      ],
+      "summary": "Baseline boot_id bfd05127...; reboot acknowledged and returned before disconnect; node unreachable immediately after; boot_id changed to 47a5d7e0... on reconnect; DHCP server active, static IP/route persisted, prior lease preserved post-restart"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-dc3d82f9c0404dba",
+        "cmd-641632047b91425e",
+        "cmd-8f4b5d2fa0b441cd",
+        "cmd-2ce69a353801430e",
+        "cmd-6afb683131d743b8",
+        "cmd-cc5eec2015124176"
+      ],
+      "summary": "Baseline boot_id 561a6567...; reboot acknowledged before disconnect; node unreachable through multiple poll attempts during extended SONiC-VS boot; boot_id changed to 72d0d538... on reconnect; dhcrelay service active/enabled with addressing/forwarding intact, and a live DHCP renewal from node3 through node1 succeeded post-restart"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-d1a42b76f124431c",
+        "cmd-54c7200d66b54312",
+        "cmd-386447fc7f934cef",
+        "cmd-8a9e5dc292884535",
+        "cmd-f637ba314d934822",
+        "cmd-c85192aec1484427"
+      ],
+      "summary": "Baseline boot_id 8d1d94e2...; reboot acknowledged before disconnect; node unreachable immediately after; boot_id changed to d0e4d51a... on reconnect; node3 automatically re-acquired 192.168.60.100/24 via the relay at boot, confirmed by node2's active lease entry"
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OpenWrt) dnsmasq with a UCI dhcp.domain record resolving app.internal -> 10.100.198.11 (node2), served over br-lan (10.100.198.10:53) which is already reachable from node2/node3 via the default lan-zone firewall (input ACCEPT). Set up node2's port-8080 HTTP service (it was not actually running) as a systemd unit + firewalld port opening. Pointed node3's NetworkManager DNS at 10.100.198.10 (ipv4.ignore-auto-dns) so it resolves app.internal via real DNS, with no /etc/hosts entry. Verified end-to-end: getent/python socket resolution and curl to http://app.internal:8080 succeed from node3. Then ran the mandatory one-at-a-time restart protocol on all three nodes, capturing boot_id before/after each restart to prove an actual reboot (not just a service bounce), and re-verified DNS + HTTP recovery after each. Found and fixed a real bug during this process: node2's systemd unit depended on network-online.target, which is never activated on this RHEL9 image, so the service silently failed to start on boot; switched it to network.target and confirmed via a second reboot that it now starts automatically.",
+  "actions_performed": [
+    "Inspected OS/network state on node1 (OpenWrt 25.12.2, dnsmasq present), node2 (RHEL 9.8), node3 (RHEL 9.8)",
+    "Created /srv/app-internal/index.html and a systemd unit app-internal.service on node2 running python3 http.server on 0.0.0.0:8080, enabled and started it",
+    "Opened firewalld port 8080/tcp on node2 and verified 200 response from node3's IP range",
+    "Added a UCI dhcp domain record on node1 (app.internal -> 10.100.198.11), committed dhcp config, restarted dnsmasq, verified it listens on 10.100.198.10:53",
+    "Configured node3 (NetworkManager, connection 'Wired connection 1') to use 10.100.198.10 as DNS server with ipv4.ignore-auto-dns=yes, avoiding any /etc/hosts entry",
+    "Verified end-to-end resolution (getent hosts, python socket.gethostbyname) and HTTP access (curl) to app.internal:8080 from node3",
+    "Captured pre-restart boot_id/uptime/service-state baseline on all three nodes",
+    "Restarted node1 via `reboot` (backgrounded without nohup, since nohup is absent on OpenWrt ash), polled until reachable, confirmed boot_id changed and dnsmasq/app.internal config recovered",
+    "Restarted node2 via `systemctl reboot` (backgrounded via setsid), polled until reachable, confirmed boot_id changed; found app-internal.service was inactive post-boot because it depended on network-online.target which is never active on this host",
+    "Fixed node2's systemd unit to depend on network.target instead, reloaded, restarted service, then rebooted node2 a second time to prove the fix persists \u2014 service came up active automatically post-reboot",
+    "Restarted node3 via `systemctl reboot`, polled until reachable, confirmed boot_id changed, and re-verified DNS resolution + HTTP access to app.internal:8080 with no /etc/hosts entry after reboot"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 answers DNS for app.internal -> node2's IP on the shared network",
+      "command_ids": [
+        "cmd-6a4368d73ef045c4",
+        "cmd-b8f94754e07e497a",
+        "cmd-756b73c21f124512"
+      ],
+      "summary": "UCI dhcp.domain record app.internal=10.100.198.11 committed and dnsmasq restarted; nslookup from node1 itself resolves app.internal to 10.100.198.11; dnsmasq confirmed listening on 10.100.198.10:53 (br-lan), the interface shared with node2/node3"
+    },
+    {
+      "requirement": "node3 resolves and reaches app.internal:8080 without any local hosts-file entry",
+      "command_ids": [
+        "cmd-e8a3915a1ee844ee",
+        "cmd-5761ef4bdf7e4252"
+      ],
+      "summary": "node3's NetworkManager DNS pointed at node1 (10.100.198.10); grep of /etc/hosts for app.internal returns nothing, while getent hosts and python socket.gethostbyname resolve it via DNS to 10.100.198.11, and curl to http://app.internal:8080/ returns 200 with node2's page"
+    },
+    {
+      "requirement": "node2's HTTP service on 8080 is real and reachable",
+      "command_ids": [
+        "cmd-3ae55738eb3b4a08",
+        "cmd-24c661b4333a42fc",
+        "cmd-8a8451bc66d044e9",
+        "cmd-144bacf8598b4aa6"
+      ],
+      "summary": "Service was not actually running at task start; created systemd unit + firewalld port 8080, confirmed active and returning 200 locally and from node3's address space"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-cd6d53610cb14f41",
+        "cmd-e840ae075e6448e0",
+        "cmd-16568f219cea4c1b",
+        "cmd-ed8b58877d6e43bb",
+        "cmd-44d608144fdf4b97",
+        "cmd-7401a1651cbf4ea5"
+      ],
+      "summary": "Baseline boot_id f90f49b2...; reboot acknowledged before disconnect; post-reboot boot_id c5d4abec... (changed); dnsmasq running again with app.internal record intact and resolving; node3 end-to-end check still passes after node1's restart"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state (including a real fix for a boot-persistence bug)",
+      "command_ids": [
+        "cmd-65d04cdd907749cd",
+        "cmd-d36061a1d3bd4f21",
+        "cmd-df2fb6c2a94947d1",
+        "cmd-02e908ebfeb844f9",
+        "cmd-44a65d2c3ea540f8",
+        "cmd-30d9af0519ae4242",
+        "cmd-c37f4d0302044b3f",
+        "cmd-96b87c749e154938",
+        "cmd-edd6af6288494938",
+        "cmd-08edee79b0f640a6",
+        "cmd-e331068e55f84be3",
+        "cmd-2f6b219928b64edc"
+      ],
+      "summary": "Baseline boot_id 910dc564...; first reboot ack + boot_id changed to a550fc49...; service found inactive post-boot due to network-online.target dependency never being satisfied on this host; fixed unit to use network.target; second reboot ack + boot_id changed to dfc3681f...; service confirmed active automatically and serving 200 without manual intervention"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-184758d779304c6b",
+        "cmd-4868ea626dcb4315",
+        "cmd-2b70dd7e09a248cd",
+        "cmd-e61ee2233e33404c",
+        "cmd-45118c1d3fdc4103"
+      ],
+      "summary": "Baseline boot_id 67c52137...; reboot ack issued; post-reboot boot_id aee30e7b... (changed); resolv.conf still points at 10.100.198.10 (NetworkManager persisted the DNS override), /etc/hosts has no app.internal entry, and DNS resolution plus HTTP curl to app.internal:8080 both succeed"
+    }
+  ]
+}

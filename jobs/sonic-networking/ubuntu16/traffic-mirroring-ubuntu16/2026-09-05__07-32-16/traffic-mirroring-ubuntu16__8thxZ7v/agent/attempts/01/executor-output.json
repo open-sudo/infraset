@@ -1,0 +1,114 @@
+{
+  "status": "completed",
+  "summary": "Configured traffic mirroring so node3 receives a copy of all traffic node1 exchanges with node2 on their shared L2 segment, while that traffic itself keeps flowing unaffected. Implementation: node1's eth1, node2's ens7, and node3's ens7 form one shared broadcast segment (confirmed empirically - it behaves as a switch, not a hub: unicast node1<->node2 traffic was invisible to node3 before mirroring). Assigned static IPs on the segment (node1 192.168.50.1, node2 192.168.50.2, node3 192.168.50.3), built a GRETAP tunnel from node1 to node3, and installed Linux tc (clsact/flower/mirred) rules on node1's eth1 that mirror (not redirect) packets to/from node2's IP into the tunnel. Node3 decapsulates the tunnel on its local gretap1 interface, where a capture sees the original node1<->node2 packets (still addressed to each other) even though addressed elsewhere. Verified with tcpdump: 10/10 ICMP packets from a 5-ping exchange were mirrored to node3, while the original ping itself showed 0% loss throughout. Made the configuration persistent (systemd oneshot units on node1 and node3, ifupdown drop-in configs for the static IPs on node2/node3) since none of this state survives a reboot by default. Completed the mandatory restart-evidence protocol: captured a healthy baseline (boot IDs + working mirror) on all three nodes, then restarted node1, node2, and node3 one at a time (preserving the segment - no concurrent restarts), confirmed each node's boot ID changed post-restart, and re-verified after each restart that the mirroring service/config auto-recovered and the ping+tcpdump mirror test still passed end-to-end. All three nodes are now healthy with mirroring active and persistent.",
+  "actions_performed": [
+    "Inspected topology: node1 (SONiC/Debian13) eth1, node2/node3 (Ubuntu 16.04) ens7 form one shared L2 segment with no prior L3 addressing",
+    "Assigned static IPs 192.168.50.1/2/3 on node1/node2/node3 segment interfaces to enable identification and tunneling",
+    "Empirically proved the segment forwards like a switch (node3 did not see node1<->node2 unicast traffic before any mirroring config)",
+    "Created a GRETAP tunnel node1<->node3 (gretap1) over the shared segment",
+    "Installed tc qdisc clsact + tc flower filters with mirred egress-mirror action on node1's eth1, matching src/dst 192.168.50.2 (node2), sending copies into gretap1",
+    "Verified mirroring end-to-end via tcpdump on node3's gretap1 while pinging node1->node2, confirming original traffic had 0% loss",
+    "Made the config persistent: systemd oneshot unit node1-mirror.service (recreates IP/gretap/tc rules) on node1; ifupdown drop-in configs for static IPs on node2 and node3; systemd oneshot unit node3-gretap.service on node3 to recreate its gretap1 receiver",
+    "Captured healthy baseline (boot IDs, IP/tc/gretap state) on all three nodes",
+    "Restarted node1 via native reboot, polled until reachable, confirmed new boot ID, verified all SONiC docker containers came back healthy, and confirmed mirroring config auto-recovered via systemd + full end-to-end ping/tcpdump retest",
+    "Restarted node2 via sudo reboot, confirmed new boot ID, confirmed persistent IP recovered, retested mirroring end-to-end",
+    "Restarted node3 via sudo reboot, confirmed new boot ID, confirmed persistent IP and node3-gretap.service recovered gretap1, retested mirroring end-to-end (final confirmation)"
+  ],
+  "evidence": [
+    {
+      "requirement": "Shared segment topology confirmed (node1 eth1 / node2 ens7 / node3 ens7 on one L2 domain)",
+      "command_ids": [
+        "cmd-9a267855e28c4f8f",
+        "cmd-463246c5269e4078",
+        "cmd-743e2cbe642345db",
+        "cmd-875946c77be84011",
+        "cmd-d6cc5729e1324993",
+        "cmd-1cf3090fbfee4b84"
+      ],
+      "summary": "ip -br addr/link and neighbor tables show node1 eth1, node2 ens7, node3 ens7 as the real dataplane NICs on a common unaddressed segment"
+    },
+    {
+      "requirement": "Baseline proof: without mirroring, node3 does not see node1<->node2 unicast traffic (switch behavior, motivates the mirroring solution)",
+      "command_ids": [
+        "cmd-db7f6d6fc59a4eed",
+        "cmd-9a7e74e543a4419c",
+        "cmd-a3ffab4ac9d048dc",
+        "cmd-2170af6c743f4914",
+        "cmd-2397d85382ce496c",
+        "cmd-10c60e32501d43ab",
+        "cmd-dee3ffa70b7d4204",
+        "cmd-5d304ed568004651"
+      ],
+      "summary": "IPs assigned on segment, then node1 pinged node2 successfully while node3's tcpdump on ens7 captured zero packets, proving traffic was not naturally visible to node3"
+    },
+    {
+      "requirement": "Mirroring implemented and delivers a copy of node1<->node2 traffic to node3",
+      "command_ids": [
+        "cmd-2acc68344a324fc4",
+        "cmd-b0646d7fe54346da",
+        "cmd-b257976c44fb4194"
+      ],
+      "summary": "GRETAP tunnel created node1<->node3; tc clsact/flower/mirred egress-mirror rules installed on node1 eth1 matching node2's IP"
+    },
+    {
+      "requirement": "Original node1<->node2 traffic keeps flowing unaffected while mirrored copy reaches node3",
+      "command_ids": [
+        "cmd-d48da2e54ab74766",
+        "cmd-90a970c0a4954f2f"
+      ],
+      "summary": "Ping node1->node2 showed 0% packet loss (5/5) while node3's gretap1 capture simultaneously showed all 10 mirrored ICMP packets"
+    },
+    {
+      "requirement": "Mirroring configuration made persistent across reboot",
+      "command_ids": [
+        "cmd-ec97c9b771b44c15",
+        "cmd-abc1e323aa304436",
+        "cmd-097fd80978d54767"
+      ],
+      "summary": "Installed ifupdown static-IP configs on node2/node3 and systemd oneshot units (node1-mirror.service, node3-gretap.service) enabled for boot on node1 and node3"
+    },
+    {
+      "requirement": "Healthy baseline captured on all 3 nodes before any restart",
+      "command_ids": [
+        "cmd-7ebf368197624bcf",
+        "cmd-79eeb782ae8641d8",
+        "cmd-601d2938a6524c8c"
+      ],
+      "summary": "Captured boot_id, uptime, and mirror-relevant interface/tc/gretap state on node1, node2, node3 prior to restarts"
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and recovered state",
+      "command_ids": [
+        "cmd-d3dda45dd2c348fa",
+        "cmd-34492f977c6641d3",
+        "cmd-eaeef7d2a6454c64",
+        "cmd-f79b01122c2842d9",
+        "cmd-d68b113557534b54",
+        "cmd-56ad31b82c6042a9"
+      ],
+      "summary": "Reboot acknowledged, boot_id changed from 8e8823ec... to cd94bb29..., node1-mirror.service active and recreated all mirror state, all 9 SONiC docker containers healthy, end-to-end ping+tcpdump mirror retest passed (10/10 packets, 0% ping loss)"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and recovered state",
+      "command_ids": [
+        "cmd-ae2598ef3cce4a8d",
+        "cmd-6e308d3b917b4497",
+        "cmd-166cd6da25874637",
+        "cmd-02a10e5b8ebc4979",
+        "cmd-1b9dd70ff4b3473a"
+      ],
+      "summary": "Reboot acknowledged, boot_id changed from 9094f607... to bd6ba592..., persistent static IP 192.168.50.2 recovered via ifupdown, end-to-end mirror retest passed (10/10 packets, 0% ping loss)"
+    },
+    {
+      "requirement": "node3 restart acknowledgement, changed boot identity, and recovered state (final node, cluster fully healthy after)",
+      "command_ids": [
+        "cmd-32160669dd8e4bc6",
+        "cmd-1f11fc2594dc4520",
+        "cmd-2a66a65554af4ed8",
+        "cmd-e16e861a9bbf4e06",
+        "cmd-00bf2ab589344e2c"
+      ],
+      "summary": "Reboot acknowledged, boot_id changed from a1dc8e25... to d0cfa7fc..., persistent IP and node3-gretap.service/gretap1 recovered, final end-to-end mirror retest passed (10/10 packets, 0% ping loss), confirming full cluster and mirroring health after all three sequential restarts"
+    }
+  ]
+}

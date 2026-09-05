@@ -1,0 +1,14 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-05T11:53:13.221925+00:00",
+      "outcome": "completed",
+      "finished_at": "2026-09-05T12:07:00.411055+00:00",
+      "summary": "Implemented traffic mirroring so node3 receives a copy of all traffic exchanged between node1 and node2 on their shared L2 segment, while node1<->node2 traffic itself is unaffected. Shared segment: node1 eth1 / node2 enp8s0 / node3 enp8s0 (192.168.50.0/24, freshly addressed \u2014 none had IPv4 before). Confirmed baseline: this segment is switch-like (learning), so node3 saw zero node1<->node2 packets before any change. Implementation: a GRETAP tunnel (node1 192.168.50.1 <-> node3 192.168.50.3) plus Linux tc (clsact qdisc, flower filters matching node2's IP in both directions, mirred egress-mirror action) on node1's eth1, mirroring ingress and egress node1<->node2 traffic into the tunnel non-disruptively (mirred 'mirror', not 'redirect'). Verified node3's gretap1 interface shows the exact original (unencapsulated after decap) ICMP request/reply packets addressed to 192.168.50.1/192.168.50.2, while concurrent pings between node1 and node2 show 0% packet loss throughout. Found and fixed a real obstacle along the way: NetworkManager on node2/node3 silently dropped the manually assigned IPs (unmanaged-interface reconciliation), fixed with persistent nmcli connection profiles; and node3's firewalld default 'public' zone rejected the GRE tunnel packets with 'admin-prohibited', fixed by binding enp8s0 to a dedicated 'mirror-segment' firewalld zone with protocol=gre allowed. Persisted all configuration: a systemd oneshot service on node1 (SONiC/Debian) recreates eth1 addressing, docker0/interfaces-config.service cleanup, the gretap1 tunnel, and tc mirror filters at boot (hardened with a carrier-wait retry loop after observing eth1 came up admin-UP but link-DOWN immediately post-reboot); NetworkManager profiles + firewalld zone persist node2/node3 config natively. Completed the mandatory one-at-a-time restart protocol for all three nodes (node2, then node3, then node1 last): captured pre-restart boot_id via /proc/sys/kernel/random/boot_id, issued systemctl reboot (backgrounded so the ack returned before disconnection), polled until exec was reachable again, confirmed boot_id changed on every node, and re-verified full functional recovery (addressing, gretap tunnel, tc filters/counters, and a live end-to-end ping+tcpdump mirror test) after each restart \u2014 including a full working mirror test after node1's own restart, the last and most disruptive one."
+    }
+  ]
+}

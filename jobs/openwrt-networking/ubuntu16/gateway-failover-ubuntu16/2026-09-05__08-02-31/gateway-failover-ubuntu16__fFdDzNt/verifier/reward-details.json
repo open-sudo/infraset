@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "shared-vip-config",
+      "requirement": "node1 and node2 share a single virtual IP (10.100.40.200) on the private network, only one answering at a time",
+      "status": "satisfied",
+      "summary": "keepalived VRRP configured identically on both OpenWrt nodes (same virtual_router_id 51, VIP 10.100.40.200/24 on br-lan), with node1 priority 150 (MASTER) and node2 priority 100 (BACKUP). After starting keepalived, node1 held the VIP (cmd-c217e053bda44f9e) while node2 did not (cmd-80bd66ca628f4063), confirming exclusive single ownership.",
+      "evidence_ids": [
+        "cmd-2eeb500d276145c7",
+        "cmd-95b7385e4d15442c",
+        "cmd-ac366bb26cc64032",
+        "cmd-6adf540cabb1443e",
+        "cmd-c217e053bda44f9e",
+        "cmd-80bd66ca628f4063"
+      ]
+    },
+    {
+      "id": "automatic-failover",
+      "requirement": "When one node stops serving the VIP, the other takes it over automatically",
+      "status": "satisfied",
+      "summary": "After stopping keepalived on node1 (cmd-2e3e0f0549a849ab), node2 acquired the VIP within the observation window without manual intervention (cmd-223671c51ea44780), demonstrating automatic VRRP failover.",
+      "evidence_ids": [
+        "cmd-2e3e0f0549a849ab",
+        "cmd-223671c51ea44780"
+      ]
+    },
+    {
+      "id": "node3-continuity-across-transition",
+      "requirement": "node3 keeps reaching the shared VIP across one such failover transition",
+      "status": "satisfied",
+      "summary": "A healthy baseline was directly observed (node3 pinged the VIP with 0% loss while node1 was MASTER, cmd-0252e152b9394ff6). A continuous 0.3s-interval ping from node3 was started (cmd-90bb7b34a639480b) and running when node1's keepalived was stopped; log analysis (cmd-092b4e574047488f, cmd-7dcb8c73a1fc4e96) shows only 2 packets (seq 15-16, matching an approx 1.4s RTT spike to 537ms/237ms) lost during the transition, with sequence numbers continuing unbroken and no gaps, then resuming to node2 as the new VIP holder. This is a direct, bounded, before/during/after observation of the required transition.",
+      "evidence_ids": [
+        "cmd-0252e152b9394ff6",
+        "cmd-90bb7b34a639480b",
+        "cmd-2e3e0f0549a849ab",
+        "cmd-223671c51ea44780",
+        "cmd-092b4e574047488f",
+        "cmd-7dcb8c73a1fc4e96"
+      ]
+    },
+    {
+      "id": "failback-restoration",
+      "requirement": "Redundancy pair returns to a healthy state after the disruption (not explicitly required by the instruction, but reasonable follow-through)",
+      "status": "satisfied",
+      "summary": "keepalived was restarted on node1 and it preempted the VIP back due to higher priority (cmd-d01612961a674171); node2 released it and returned to BACKUP without the VIP (cmd-8b844a1deb1142b0), confirming the pair returned to its designed roles.",
+      "evidence_ids": [
+        "cmd-d01612961a674171",
+        "cmd-8b844a1deb1142b0"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task instruction \u2014 a single shared VIP on the node1/node2 pair, automatic failover, and node3's continued reachability across a real, bounded transition \u2014 are directly and coherently evidenced. The failover window was captured with a continuous ping log showing only ~2 lost packets during the actual handover, which is strong direct proof rather than inferred configuration. Failback was also demonstrated, restoring the pair to its designed MASTER/BACKUP state. The mandatory provider-wide node-restart protocol was executed on all three nodes with pre/post boot-id capture and recovered state; node2 and node3 boot-identity changes are independently corroborated by the fixed after-executor snapshot, but the after-executor snapshot's boot-identity probe for node1 failed (return_code 255, empty output) even though other node1 checks in the same snapshot succeeded moments later, so node1's post-reboot boot-id could not be independently cross-checked (only the executor's own capture, cmd-e8bb5326439a4d84, evidences it). This does not contradict the executor's claim, and restart/persistence was not itself part of the public task contract, so it does not reduce the outcome scores, but it is noted as a limitation lowering confidence slightly. No unnecessary or unexplained mutations were found; the one failed troubleshooting command left no residue and was promptly corrected.",
+  "limitations": [
+    "The fixed after-executor snapshot's boot-identity probe for node1 returned an empty result with return_code 255, so the required independent cross-check of node1's final post-reboot boot identity could not be completed from the fixed lifecycle data alone \u2014 only the executor's own captured boot_id (575791ba...) is available for that specific claim.",
+    "The before_prepare and after_prepare snapshots are identical (prepare stage was disabled), so no prepare-vs-executor delta analysis was possible beyond the raw before/after-executor diff already reviewed."
+  ],
+  "command_stats": {
+    "total": 54,
+    "successful": 49,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "State-changing executor commands were tightly scoped to the task: package installs (apk add keepalived on node1/node2), UCI config commits, keepalived start/stop for the failover demonstration (bounded and fully restored by cmd-d01612961a674171/cmd-8b844a1deb1142b0), and the three sequential reboots required by the provider-wide restart protocol. One troubleshooting attempt (cmd-aac0d5003cdd4066, a 'nohup sh -c sleep 1; reboot' background job) failed harmlessly because nohup is not present in the OpenWrt busybox environment ('/bin/sh: nohup: not found' in /tmp/reboot.log, confirmed by cmd-bb08287e34444e2b) \u2014 it produced no actual reboot or other state mutation, and the executor corrected course with a working 'sh -c' variant (cmd-cd9bc4a856c84eb3). No abandoned files, conflicting services, unsafe exposure, or broken package state were introduced; the after-executor snapshot only shows expected keepalived-related additions (config files, lock/pid files, uci-defaults entries) on node1/node2 with no unexplained residue. The listening-sockets diff on node1 is fully explained by the DNS service binding to the new VIP interface, not by unrelated exposure.",
+    "evidence_ids": [
+      "cmd-aac0d5003cdd4066",
+      "cmd-bb08287e34444e2b",
+      "cmd-cd9bc4a856c84eb3",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,115 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 as the L3 router between node2 and node3 over two new transit subnets (172.20.1.0/24 via eth1 to node2, 172.20.2.0/24 via eth2 to node3), enabled forwarding, and added an nftables FORWARD rule on node1 that rejects TCP port 23 in both directions between the two links while leaving all other forwarded traffic (including TCP 8080 and ICMP) untouched. Verified functionality in both directions, persisted the config, then restarted all three nodes one at a time (node2, node3, node1) and re-verified boot-id change, config recovery, and the port-8080-allowed/port-23-refused behavior after every node was rebooted.",
+  "actions_performed": [
+    "Discovered topology: node1 has eth1/eth2 unconfigured transit NICs to node2/node3 (each with a dormant eth1), while eth0 on all three is a shared management network",
+    "Assigned 172.20.1.1/24 (eth1) and 172.20.2.1/24 (eth2) on node1; 172.20.1.2/24 (eth1) on node2; 172.20.2.2/24 (eth1) on node3",
+    "Enabled net.ipv4.ip_forward and per-interface forwarding on node1's eth1/eth2",
+    "Added static routes on node2 and node3 pointing at node1 for the other's subnet",
+    "Verified pre-ACL: ping and TCP 8080 work end-to-end through node1",
+    "Added nft rules on node1 (ip filter FORWARD) rejecting tcp dport 23 with tcp-reset in both iifname/oifname directions between eth1 and eth2",
+    "Verified post-ACL both directions: TCP 8080 succeeds, TCP 23 refused (exit 1 / RST), ping untouched",
+    "Persisted node1 config via /usr/local/sbin/transit-acl-setup.sh run by an enabled systemd oneshot service plus a 60s self-healing timer to survive caclmgrd's dynamic nftables table (re)creation",
+    "Persisted node2/node3 eth1 static addressing and routes via /etc/network/interfaces (Alpine ifupdown), validated by ifdown/ifup cycling",
+    "Captured pre-restart boot_id/uptime/service-state baselines on all three nodes",
+    "Restarted node2 via 'reboot', polled until exec available again, confirmed boot_id changed and eth1/route/ping recovered",
+    "Restarted node3 via 'reboot', polled until exec available again, confirmed boot_id changed and eth1/route/ping recovered",
+    "Restarted node1 via 'reboot' (ack returned before disconnect), polled until exec available again, confirmed boot_id changed",
+    "Found and fixed a boot-time race where nft 'ip filter' table didn't exist yet when the oneshot service ran; added a wait loop and fixed the service, then re-verified the FORWARD rule reappeared and forwarding sysctls were set",
+    "Final end-to-end re-verification after all three restarts: ping succeeds, TCP 8080 succeeds, TCP 23 refused, on node1's fully recovered SONiC containers/services",
+    "Cleaned up all temporary nc listeners on node2/node3"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 and node3 can reach each other on TCP port 8080 through node1",
+      "command_ids": [
+        "cmd-bf2d6ab22e4041ce",
+        "cmd-84175fe469f74b88",
+        "cmd-8fac9e36e13c4756",
+        "cmd-094b8f5a164c4a7d"
+      ],
+      "summary": "nc TCP connections on port 8080 succeed (exit 0) in both directions (node2->node3 and node3->node2), including after full restart cycle"
+    },
+    {
+      "requirement": "node1 refuses TCP port 23 between node2 and node3",
+      "command_ids": [
+        "cmd-87291cfdf948408e",
+        "cmd-84175fe469f74b88",
+        "cmd-8fac9e36e13c4756",
+        "cmd-094b8f5a164c4a7d"
+      ],
+      "summary": "nft FORWARD rule added rejecting tcp dport 23 with tcp-reset; nc connections to port 23 fail (exit 1) in both directions before and after restart"
+    },
+    {
+      "requirement": "rest of forwarded traffic (e.g. ICMP) is left untouched",
+      "command_ids": [
+        "cmd-c5e57257db4e4eb2",
+        "cmd-84175fe469f74b88",
+        "cmd-094b8f5a164c4a7d"
+      ],
+      "summary": "ping between node2 (172.20.1.2) and node3 (172.20.2.2) succeeds with 0% loss both before ACL and after full restart cycle"
+    },
+    {
+      "requirement": "node2 healthy baseline before restart",
+      "command_ids": [
+        "cmd-99baed53a4f04ded"
+      ],
+      "summary": "Captured node2 boot_id 444152cb-88d1-44ea-b651-53bed0b626bd and healthy eth1/172.20.1.2 addressing prior to restart"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-6a386d753c9e478f",
+        "cmd-58c4852f4fa847a9",
+        "cmd-c5522e3685664d7c"
+      ],
+      "summary": "Reboot command ack returned before disconnect; polled node2 back online with new boot_id fe778efc-7cc1-4498-9830-688a7b6d3ae6 (uptime 24s) and confirmed eth1/route/ping recovered"
+    },
+    {
+      "requirement": "node3 healthy baseline before restart",
+      "command_ids": [
+        "cmd-6c85f8254a6a4336"
+      ],
+      "summary": "Captured node3 boot_id e1adb48f-7226-4132-99ff-6ed703238a51 and healthy eth1/172.20.2.2 addressing prior to restart"
+    },
+    {
+      "requirement": "node3 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-30961fbc921d4ece",
+        "cmd-06d70815726f47e7",
+        "cmd-4d706b7e02df460d"
+      ],
+      "summary": "Reboot command triggered disconnect as expected; polled node3 back online with new boot_id 938f4e34-772c-4533-89b6-fd82272f852d (uptime 30s) and confirmed eth1/route/ping recovered"
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-f62a6602f0474a7b"
+      ],
+      "summary": "Captured node1 boot_id 1eda2df4-080a-4d70-91d0-826bfdf48167, active transit-acl-setup.service, and the two FORWARD reject rules present prior to restart"
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-2a91c6ea204448c4",
+        "cmd-85a5bb309ed449df",
+        "cmd-f0ef4691bd18444e",
+        "cmd-dfe5e141f6f144ad",
+        "cmd-cfd7893203af4250"
+      ],
+      "summary": "Reboot ack returned before disconnect; polled node1 back online with new boot_id 4694f1c4-6e3e-4327-9f42-20275c96f728; found the oneshot ACL service had failed due to a boot-time nft table race, fixed the script, re-ran it, and confirmed the FORWARD reject rules, addressing, and forwarding sysctls were restored, with all SONiC containers healthy"
+    },
+    {
+      "requirement": "configuration persists across reboot (not just in-memory)",
+      "command_ids": [
+        "cmd-c3a947b8ecc04c87",
+        "cmd-36f7ccd772ac4752",
+        "cmd-736fd3599fd24b1d",
+        "cmd-a13f1271c3aa45f9",
+        "cmd-2037d789ae5f4ca5",
+        "cmd-6d80d9e17f614bb5"
+      ],
+      "summary": "Persistence mechanisms installed and validated pre-restart: systemd oneshot+timer on node1, /etc/network/interfaces stanzas on node2/node3 validated via ifdown/ifup cycling"
+    }
+  ]
+}

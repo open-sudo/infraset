@@ -1,0 +1,117 @@
+{
+  "status": "completed",
+  "summary": "Configured GRE-tap based traffic mirroring: node1 duplicates all IPv4/ARP traffic exchanged with node2 (both directions) onto a gretap tunnel terminating on node3, using tc clsact/flower/mirred on node1's eth0. Node3 sees full copies of node1<->node2 traffic on its local gretap1 interface while the original node1<->node2 traffic keeps flowing unmodified over the shared segment. Configuration was made persistent (systemd unit on node1, OpenRC local.d script on node3) and verified to survive a one-at-a-time restart of all three nodes.",
+  "actions_performed": [
+    "Inspected node1 (SONiC-VS/Debian 13), node2 and node3 (Alpine 3.23) and confirmed all three share one flat L2 segment 10.100.121.0/24 via eth0 (node1 assigned 10.100.121.10/24 matching CLUSTER_HOSTS, node2 .11, node3 .12)",
+    "Captured a healthy baseline: node3's eth0 sees zero packets of node1<->node2 ping traffic (real learning-switch behavior, no mirroring by default)",
+    "Installed tcpdump/iproute2 (tc) on both Alpine nodes via apk",
+    "Created a gretap tunnel node1(10.100.121.10)<->node3(10.100.121.12) named gretap1 on both ends",
+    "On node1: added tc clsact qdisc on eth0 with ingress/egress flower filters matching IPv4 and ARP traffic to/from node2 (10.100.121.11), action mirred egress mirror dev gretap1, duplicating (not redirecting) matched frames to the tunnel",
+    "Verified mirroring works: node3's gretap1 captured full ICMP request/reply and ARP exchange between node1 and node2 with original addresses intact, while node1<->node2 ping showed 0% packet loss throughout",
+    "Persisted configuration: systemd oneshot service traffic-mirror.service (enabled) on node1 recreates the address/tunnel/tc rules at boot; OpenRC /etc/local.d/traffic-mirror.start (local service enabled at default runlevel) recreates gretap1 on node3",
+    "Captured boot_id and health baseline on all three nodes, then restarted node2, node3, and node1 one at a time via native reboot, polled until each came back, and proved changed boot_id on each",
+    "Post-restart on node1: confirmed traffic-mirror.service active, eth0 address, gretap1, and all four tc filters recreated automatically",
+    "Post-restart end-to-end re-verification: node3's gretap1 again captured node1<->node2 ARP/ICMP traffic while the direct ping between node1 and node2 remained at 0% packet loss"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline: node3 does not see node1<->node2 traffic before mirroring is configured",
+      "command_ids": [
+        "cmd-4f683e8a1e3d4bce",
+        "cmd-a1fc0f5edafd4ab0",
+        "cmd-ea926f841bb24460"
+      ],
+      "summary": "tcpdump on node3 eth0 filtered for node1/node2 IPs captured 0 packets while node1 pinged node2 successfully"
+    },
+    {
+      "requirement": "Topology confirmation: node1, node2, node3 share one L2 segment",
+      "command_ids": [
+        "cmd-ac56a78c35c74bf9",
+        "cmd-f4444a6dea6b4ddd",
+        "cmd-382a55b3fdf64ffe",
+        "cmd-e175942ba8ab45f0",
+        "cmd-af14b30d3db44b1e",
+        "cmd-c8878796e81042e6"
+      ],
+      "summary": "Interface/address inspection plus successful ping from node1's newly assigned 10.100.121.10 to node2 (.11) and node3 (.12) confirms a single shared /24 segment"
+    },
+    {
+      "requirement": "Mirroring mechanism configured (gretap tunnel + tc mirred filters on node1)",
+      "command_ids": [
+        "cmd-550f40ddf4f34f7e",
+        "cmd-6edd612a1bf047ac",
+        "cmd-5c9308b4a62241d3"
+      ],
+      "summary": "gretap1 created on node1 and node3; tc clsact qdisc and ingress/egress flower+mirred filters installed on node1's eth0 matching node2's IP and ARP"
+    },
+    {
+      "requirement": "Node3 receives a copy of node1<->node2 traffic (pre-restart)",
+      "command_ids": [
+        "cmd-d9a205d259a747f0",
+        "cmd-26a79eea16f44610",
+        "cmd-4acf3b236cc848ba"
+      ],
+      "summary": "tcpdump on node3's gretap1 captured the ICMP request/reply exchanged between 10.100.121.10 and 10.100.121.11 while node1's ping to node2 succeeded"
+    },
+    {
+      "requirement": "Original node1<->node2 traffic keeps flowing as before (unaffected by mirroring)",
+      "command_ids": [
+        "cmd-26a79eea16f44610",
+        "cmd-c77be3ba5dd84965"
+      ],
+      "summary": "Direct ping from node1 to node2 shows 0% packet loss both right after enabling mirroring and after all restarts"
+    },
+    {
+      "requirement": "Mirroring configuration persisted across reboot",
+      "command_ids": [
+        "cmd-1aa51aac690c4d95",
+        "cmd-ef2921e9fece4370",
+        "cmd-df81b284b5624718",
+        "cmd-eb1f91cd673a4b39"
+      ],
+      "summary": "systemd traffic-mirror.service enabled and validated active on node1; OpenRC local service enabled and start script installed on node3"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-c36c074b5e554f65",
+        "cmd-3528970fa32b4235",
+        "cmd-1868e0e3b3e34f78",
+        "cmd-e18d8b7b87894518",
+        "cmd-d443be71173b4ca4"
+      ],
+      "summary": "Baseline boot_id captured, reboot acknowledged and connection reset observed, new boot_id confirmed (ed56cc7b -> 81b9a827) with uptime 0 min, eth0 address and connectivity to node1/node3 restored"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state including gretap1 mirror interface",
+      "command_ids": [
+        "cmd-e209426eb6384fce",
+        "cmd-fa44fbd09b9843ce",
+        "cmd-bf846bbde911496e",
+        "cmd-3c7a032c3cb74f67",
+        "cmd-bfa0a27a285f46f3"
+      ],
+      "summary": "Baseline boot_id captured, reboot acknowledged, new boot_id confirmed (0278f086 -> e02cf8c4) with uptime 0 min, local service started and gretap1 automatically recreated by /etc/local.d/traffic-mirror.start"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state including mirror service, tunnel and tc filters",
+      "command_ids": [
+        "cmd-cf015794a9b6471c",
+        "cmd-76f2ecf518ef4ab0",
+        "cmd-e081c49eeb7e4751",
+        "cmd-c071edf2db0d4b1c",
+        "cmd-3a7c39ba85cd481f"
+      ],
+      "summary": "Baseline boot_id captured, reboot acknowledged, new boot_id confirmed (8e8823ec -> 577fd210) with uptime 0 min, traffic-mirror.service active, eth0 address, gretap1 and all 4 tc ingress/egress filters recreated automatically"
+    },
+    {
+      "requirement": "Post-restart end-to-end verification: mirroring and original traffic both fully recovered",
+      "command_ids": [
+        "cmd-af1fe06090e44988",
+        "cmd-c77be3ba5dd84965",
+        "cmd-2b961344508a45c0"
+      ],
+      "summary": "After all three restarts, node3's gretap1 again captured the ARP/ICMP exchange between node1 and node2, and the direct ping between node1 and node2 showed 0% packet loss"
+    }
+  ]
+}

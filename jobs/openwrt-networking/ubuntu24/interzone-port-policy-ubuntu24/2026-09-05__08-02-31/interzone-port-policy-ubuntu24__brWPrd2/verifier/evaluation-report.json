@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-allow",
+      "requirement": "node2 (lan-a) can reach node3 (lan-b) on TCP port 5432",
+      "status": "satisfied",
+      "summary": "Functional TCP connection from node2 to node3:5432 succeeds both before (cmd-4d21ad67dd6845f7, exit=0) and after all three nodes were rebooted (cmd-8276ea6d9bd14b4d, allowed_exit=0). Firewall config (UCI rule + nft dump) confirms only tcp/5432 is accepted lana->lanb.",
+      "evidence_ids": [
+        "cmd-4d21ad67dd6845f7",
+        "cmd-8276ea6d9bd14b4d",
+        "cmd-8509d95f06a143b3",
+        "cmd-17cc9f2bd37847ed",
+        "cmd-71e0124cc3e940fc"
+      ]
+    },
+    {
+      "id": "req-2-refuse-forward-other",
+      "requirement": "All other node2->node3 traffic (other ports, ICMP) is refused",
+      "status": "satisfied",
+      "summary": "ICMP ping and TCP to ports 9999/6000 from node2 to node3 fail both pre-restart (cmd-c5412974f8374d80, cmd-ec44195dbfb8415c) and post-restart (cmd-8276ea6d9bd14b4d, other_port_exit=1, ping_exit=1). nft ruleset shows forward_lana only accepts tcp/5432 and rejects everything else.",
+      "evidence_ids": [
+        "cmd-c5412974f8374d80",
+        "cmd-ec44195dbfb8415c",
+        "cmd-8276ea6d9bd14b4d",
+        "cmd-17cc9f2bd37847ed"
+      ]
+    },
+    {
+      "id": "req-3-refuse-reverse",
+      "requirement": "All node3->node2 traffic, including TCP 5432, is refused (reverse direction)",
+      "status": "satisfied",
+      "summary": "TCP connection attempt from node3 to node2:5432 fails both pre- (cmd-bdacfeb38f974f71) and post-restart (cmd-d42c6972ccec47fc). nft dump shows forward_lanb chain unconditionally rejects (jump reject_to_lanb with no exceptions), directly implementing full-reverse-direction refusal; only TCP 5432 in reverse was explicitly probed, not other ports/ICMP in that direction, but the config is unconditional so risk of a gap is low.",
+      "evidence_ids": [
+        "cmd-bdacfeb38f974f71",
+        "cmd-d42c6972ccec47fc",
+        "cmd-17cc9f2bd37847ed",
+        "cmd-71e0124cc3e940fc"
+      ]
+    },
+    {
+      "id": "req-4-node1-restart",
+      "requirement": "node1 (router) restart: healthy baseline, restart, changed boot identity, recovered routing/firewall state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id 850db1df captured (cmd-7fe338d3249a462f), restart issued (cmd-e966836151be44ad/cmd-5148c722194847d8), post-restart boot_id d7eb3b20 confirmed changed (cmd-360910ce30614ad8), and interfaces/ip_forward/uci/nft ruleset all verified recovered afterward (cmd-71e0124cc3e940fc), matching lifecycle snapshot boot-identity diff.",
+      "evidence_ids": [
+        "cmd-7fe338d3249a462f",
+        "cmd-e966836151be44ad",
+        "cmd-5148c722194847d8",
+        "cmd-360910ce30614ad8",
+        "cmd-71e0124cc3e940fc",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "req-5-node2-restart",
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovered static addressing",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id 242af11e captured (cmd-ed533bcaa842468d), restart issued (cmd-5774f4b222394340), post-restart boot_id d2f2ee70 confirmed changed (cmd-442d8f10a3f242c0), static IP/route on enp8s0 confirmed recovered (cmd-c4fa1323fa424ab5), and full connectivity policy re-validated afterward (cmd-8276ea6d9bd14b4d).",
+      "evidence_ids": [
+        "cmd-ed533bcaa842468d",
+        "cmd-5774f4b222394340",
+        "cmd-442d8f10a3f242c0",
+        "cmd-c4fa1323fa424ab5",
+        "cmd-8276ea6d9bd14b4d"
+      ]
+    },
+    {
+      "id": "req-6-node3-restart",
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovered static addressing",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id 92ec88af captured (cmd-c28979bb04b14691), restart issued (cmd-40240362d882407e), post-restart boot_id cf42308a confirmed changed (cmd-609fba4bff3a43dd), static IP/route on enp8s0 confirmed recovered (cmd-aec6a2c2a6c74202), and full connectivity policy re-validated afterward (cmd-39d261193e0a43bb, cmd-d42c6972ccec47fc).",
+      "evidence_ids": [
+        "cmd-c28979bb04b14691",
+        "cmd-40240362d882407e",
+        "cmd-609fba4bff3a43dd",
+        "cmd-aec6a2c2a6c74202",
+        "cmd-39d261193e0a43bb",
+        "cmd-d42c6972ccec47fc"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established static routed connectivity between lan-a and lan-b through node1, then implemented a UCI/nftables firewall policy that permits only TCP/5432 from node2 (lana) to node3 (lanb) while rejecting all other lana->lanb traffic and rejecting all lanb->lana traffic unconditionally. Functional tests directly demonstrate the allowed port succeeding, other ports/ICMP failing in the forward direction, and 5432 failing in the reverse direction \u2014 all confirmed both before and after a full one-at-a-time reboot of all three nodes, with boot-identity changes and recovered network/firewall state captured at each step. This satisfies both the public task contract and the independent node-restart evidence protocol.",
+  "limitations": [
+    "Reverse direction (node3->node2) was only explicitly functionally tested for TCP port 5432; other ports and ICMP in that direction were not directly probed, though the nft ruleset shows an unconditional reject for that path (forward_lanb), making a functional gap unlikely.",
+    "A minor temporary test artifact (/tmp/nc5432.log) remained on node3 in the final snapshot; this is inconsequential residue from bounded testing, not a persistent misconfiguration."
+  ],
+  "command_stats": {
+    "total": 68,
+    "successful": 54,
+    "failed": 14,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Executor actions were generally well-scoped: discovery, targeted config changes via uci/systemd-networkd, and bounded verification/cleanup. One minor transient misstep occurred at cmd-096f9a00d5904124, where the executor mistakenly assigned the same 10.10.9.1/24 address to both eth1 and eth2 on node1; this was immediately detected and corrected within the next command (cmd-de4cf227dd6a45e3, which removed the duplicate and applied the correct 10.10.8.1/24 to eth2) \u2014 a bounded, fully-reverted troubleshooting error with no lasting effect. Temporary nc listeners used for testing were started and explicitly torn down (cmd-0c99d3d3d84d4d30, cmd-edea68c30769422e, cmd-46eac3c39268481a), though one small residual test artifact, /tmp/nc5432.log on node3, remained in the after-executor snapshot \u2014 low-risk, non-persistent test residue. No destructive actions, no weakened security controls, and no abandoned or conflicting services were observed.",
+    "evidence_ids": [
+      "cmd-096f9a00d5904124",
+      "cmd-de4cf227dd6a45e3",
+      "cmd-0c99d3d3d84d4d30",
+      "cmd-edea68c30769422e",
+      "cmd-46eac3c39268481a",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

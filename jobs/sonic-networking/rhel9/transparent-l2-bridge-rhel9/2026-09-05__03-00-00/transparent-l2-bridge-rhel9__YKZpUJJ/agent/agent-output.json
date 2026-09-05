@@ -1,0 +1,106 @@
+{
+  "status": "completed",
+  "summary": "Joined node2's and node3's separate segments off node1 into a single L2 domain: created a Linux bridge (br0) on node1 spanning eth1 (toward node2) and eth2 (toward node3), assigned node2/node3 static IPs 192.168.50.11/.12 on their enp8s0 NICs (via nmcli, since NetworkManager was reconciling away manual `ip addr` assignments), and verified node1 forwards frames transparently at L2 rather than routing. Persisted the bridge config in /etc/network/interfaces.d/br0 on node1. Completed the mandatory restart protocol on all three nodes: each was restarted individually, boot identity change was proven via /proc/sys/kernel/random/boot_id, and post-restart recovery (bridge auto-recreation on node1; static IP persistence and L2 connectivity on node2/node3) was directly verified.",
+  "actions_performed": [
+    "Surveyed node1 (SONiC) interfaces: eth0=management(10.100.106.10), eth1/eth2=unconfigured ports toward node2/node3",
+    "Surveyed node2/node3 (RHEL9): enp1s0=management network, enp8s0=unconfigured segment ports toward node1",
+    "Captured baseline: assigned test IPs 192.168.50.11/.12 on node2/node3 enp8s0 and confirmed ping failed (Destination Host Unreachable) - proving segments were isolated",
+    "Built Linux bridge br0 on node1 with eth1+eth2 as bridge ports, stp disabled",
+    "Discovered NetworkManager reconciler was stripping manually-assigned IPs on enp8s0 (DHCP negotiation in progress); reconfigured via nmcli con mod ... ipv4.method manual on both node2 and node3's 'Wired connection 2' profiles for persistence",
+    "Verified L2 connectivity: node2<->node3 ping succeeded with TTL=64 (not decremented) and ARP resolved to the actual peer MAC (not node1's), and bridge fdb showed each peer's MAC learned on the correct port - proving transparent bridging, not IP routing",
+    "Persisted node1's bridge config in /etc/network/interfaces.d/br0 (auto eth1/eth2/br0 with bridge_ports) so it survives reboot, since SONiC's ifupdown only manages eth0 by default",
+    "Captured baseline boot_id and health state on all 3 nodes",
+    "Restarted node1 via `reboot` (SONiC cold reboot, ~4 min), polled until command execution resumed, confirmed new boot_id, verified br0/eth1/eth2 auto-recreated in forwarding state, and reconfirmed node2<->node3 connectivity",
+    "Restarted node2 via `systemctl reboot`, confirmed new boot_id, verified static IP persisted via NetworkManager profile and connectivity to node3 restored",
+    "Restarted node3 via `systemctl reboot`, confirmed new boot_id, verified static IP persisted and connectivity to node2 restored",
+    "Final full-topology check: br0 has no L3 address, fdb shows node2's and node3's MACs learned on the correct respective bridge ports"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline: node2 and node3 are on separate segments (isolated) prior to bridging",
+      "command_ids": [
+        "cmd-ff4b3329d29c436e",
+        "cmd-01754e17039f4f2d",
+        "cmd-1e69f24ab4144daf"
+      ],
+      "summary": "Assigned matching-subnet IPs on node2/node3 enp8s0 and confirmed ping failed with Destination Host Unreachable, proving no L2/L3 path existed between the two segments before bridging"
+    },
+    {
+      "requirement": "node1 topology discovery: eth1/eth2 are the two segment-facing ports, distinct from management eth0",
+      "command_ids": [
+        "cmd-fe18ced192914244",
+        "cmd-f032203ce91a4b6c",
+        "cmd-9db1c43f17fc4fe9"
+      ],
+      "summary": "ip -br addr/link and /etc/network/interfaces showed eth0 is DHCP-managed management (10.100.106.10) while eth1/eth2 have no IP and aren't managed by ifupdown, confirming they were free to bridge"
+    },
+    {
+      "requirement": "Segments joined into a single L2 domain with node1 forwarding frames (bridging, not routing)",
+      "command_ids": [
+        "cmd-8051416569934907",
+        "cmd-cf5fd8bc56134e5d",
+        "cmd-90fa38f7fa6f4a9f",
+        "cmd-ec626db000b6429f",
+        "cmd-13acf5d82ab3402a",
+        "cmd-9f0518eb021842f8"
+      ],
+      "summary": "Created br0 bridging eth1+eth2 on node1; configured static IPs via nmcli on node2/node3 enp8s0; verified ping succeeded with TTL=64 unmodified, arping/ip-neigh resolved node3's real MAC on node2 (not node1's), and bridge fdb showed each peer's MAC on its correct port - proof of L2 forwarding, not IP routing"
+    },
+    {
+      "requirement": "Bridge configuration persisted for reboot survivability",
+      "command_ids": [
+        "cmd-7bf39a5cbd22440a",
+        "cmd-8e08942439304cac"
+      ],
+      "summary": "Confirmed bridge-utils/ifupdown bridge hook support present, wrote /etc/network/interfaces.d/br0 defining auto eth1/eth2/br0 with bridge_ports so the bridge is recreated at boot"
+    },
+    {
+      "requirement": "Node1 restart: healthy baseline captured",
+      "command_ids": [
+        "cmd-321ca680aeb24f4a"
+      ],
+      "summary": "Captured boot_id e85bf011-6582-41df-ba6f-38493fe05bea, uptime, bridge forwarding state, and healthy docker container list before restart"
+    },
+    {
+      "requirement": "Node1 restart: acknowledgement returned before disconnect, changed boot identity, recovered bridge and L2 connectivity",
+      "command_ids": [
+        "cmd-069003fa078c4738",
+        "cmd-31fd63b7a5204aa0",
+        "cmd-5dfdd6d7dc594b61",
+        "cmd-6e7a20d88b1e48bb",
+        "cmd-668658b6b9b641e6",
+        "cmd-c7db5a82c97d49de"
+      ],
+      "summary": "Reboot command acknowledged and returned; polling showed connection reset/timeout during the cold reboot window; new boot_id 5341b9e2-7418-45c8-bbd4-6aa3cf931dbe confirmed on recovery; bridge link show showed eth1/eth2 auto-rejoined br0 in forwarding state; node2->node3 ping succeeded again, proving full recovery"
+    },
+    {
+      "requirement": "Node2 restart: healthy baseline, changed boot identity, recovered static IP and connectivity",
+      "command_ids": [
+        "cmd-e963508fb3764c65",
+        "cmd-4820cf274e1d4a03",
+        "cmd-11cfe347a0324aad",
+        "cmd-6099cd0e1da04cea",
+        "cmd-56e2aeeb91f64bdb"
+      ],
+      "summary": "Baseline boot_id 4999270d-9a49-492a-8d7f-5b6fb938b7e9 and working ping captured; reboot acknowledged; new boot_id 2dea1d30-f8e8-4f44-838f-70d38bb36705 confirmed on recovery; enp8s0 retained 192.168.50.11/24 via persisted NetworkManager profile and ping to node3 succeeded"
+    },
+    {
+      "requirement": "Node3 restart: healthy baseline, changed boot identity, recovered static IP and connectivity",
+      "command_ids": [
+        "cmd-9437d88c1ecf4a26",
+        "cmd-9ad833901422490e",
+        "cmd-59d5e2d2da624d84",
+        "cmd-c53897868fc14a64",
+        "cmd-5e4fa509af8f4230"
+      ],
+      "summary": "Baseline boot_id 9feeb0bb-6fe6-40fb-9831-d869ed07631c and working ping captured; reboot acknowledged; new boot_id ad355451-a2ba-4ac9-b33d-65da95fef94f confirmed on recovery; enp8s0 retained 192.168.50.12/24 and ping to node2 succeeded"
+    },
+    {
+      "requirement": "Final post-all-restarts verification of the L2 domain",
+      "command_ids": [
+        "cmd-ad2e63447bf2422d"
+      ],
+      "summary": "After all three restarts, br0 has no L3 address and bridge fdb shows node2's MAC on eth1 and node3's MAC on eth2, confirming the joined L2 domain with node1 as a pure forwarding bridge remains correct post-recovery"
+    }
+  ]
+}

@@ -1,0 +1,145 @@
+{
+  "status": "completed",
+  "summary": "Built an active-active redundant uplink between node1 and node2 by bonding their two independent point-to-point links (eth1+eth2, mode balance-rr) into bond0, and routed the two private networks (node1-eth3 to node3 at 192.168.10.0/24, node2-eth3 to node4 at 192.168.20.0/24) over that bond via static routes. Persisted the config (systemd service on node1/node2, NetworkManager profile on node3/node4). Verified both links carry live traffic simultaneously, verified node3-node4 connectivity survives either link going down (0% loss on the surviving link), and completed the mandatory one-at-a-time restart protocol on all 4 nodes with boot-identity proof and post-restart recovery verification.",
+  "actions_performed": [
+    "Mapped physical topology via connectivity probing: node1 eth1<->node2 eth1 (Link A), node1 eth2<->node2 eth2 (Link B), node1 eth3<->node3 eth1 (private network A), node2 eth3<->node4 eth1 (private network B)",
+    "Created /usr/local/sbin/redundant-uplink-setup.sh on node1 and node2: strips docker0's class-E leak address, builds bond0 (mode balance-rr, miimon 100) from eth1+eth2, assigns a transit /30 (172.20.0.1 / 172.20.0.2) to bond0, assigns the private-network address to eth3, enables global and per-interface IPv4 forwarding, and installs a static route to the far private subnet via bond0",
+    "Enabled a systemd oneshot service (redundant-uplink.service, enabled + RemainAfterExit) on node1 and node2 so this configuration reapplies automatically on every boot",
+    "Configured node3 and node4 eth1 via nmcli (persistent NetworkManager connection profile) with a static private IP and a static route to the peer's private subnet via the node1/node2 gateway",
+    "Verified active-active load balancing by diffing TX packet counters on node1 eth1/eth2 during ping bursts from node3 to node4 (near-equal packet split across both links each time)",
+    "Disrupted Link A (admin-down on both ends) and separately Link B (admin-down on both ends), confirming bond0 excludes the failed slave in each case and node3<->node4 traffic continues at 0% loss on the surviving link; restored both links and reconfirmed dual-link active-active operation afterward",
+    "Executed the mandatory node-restart evidence protocol: captured boot_id and health baseline on all 4 nodes, restarted node3, node4, node1, then node2 one at a time (never concurrently) using a backgrounded reboot so the ack returned first, polled each node until it responded again, confirmed each boot_id changed, and verified post-restart recovery (bond/service/route state on node1+node2, static route + working ping on node3+node4, and end-to-end node3<->node4 reachability) before moving to the next node"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline topology discovery / physical link mapping",
+      "command_ids": [
+        "cmd-0e31f759bd994cab",
+        "cmd-e1514357236c474e",
+        "cmd-b56a55e566ba4e3c",
+        "cmd-245ae30677574cc6",
+        "cmd-e70f4782818c4009",
+        "cmd-64ff3cee8dbf44d4",
+        "cmd-fc81e0570d844e22",
+        "cmd-b080b42d990c444d",
+        "cmd-12d475f198ed4983",
+        "cmd-c99885fdd7f64053",
+        "cmd-d96a51bfc8064e91",
+        "cmd-6c79394bdb0e4f2d",
+        "cmd-dd0a128f64ed4ca4",
+        "cmd-76b2eb9e1cb94a9f",
+        "cmd-c176313f3ad44e83"
+      ],
+      "summary": "Confirmed via scratch-IP ping tests that node1 eth1<->node2 eth1 and node1 eth2<->node2 eth2 are the two independent inter-node links, and node1 eth3/node2 eth3 connect to node3/node4 respectively."
+    },
+    {
+      "requirement": "Redundant bond built and both links actively carrying traffic between the private networks",
+      "command_ids": [
+        "cmd-235948c95cf74664",
+        "cmd-2364d286f19f4998",
+        "cmd-325e144a96a84bab",
+        "cmd-e482a48e5fe54379",
+        "cmd-0a01fe0ca57b428d",
+        "cmd-e52b9d19b42740d2",
+        "cmd-40be999eaee14d9a",
+        "cmd-1308f884aa63479b",
+        "cmd-4eac29a935f543df",
+        "cmd-c1e94a8df6b44eb2",
+        "cmd-5c79c937014d420c"
+      ],
+      "summary": "bond0 (balance-rr) built from eth1+eth2 on both node1 and node2, private subnets routed over it, and node3<->node4 ping traffic shown split near-equally across eth1/eth2 TX counters (104/104 packets), proving both links are actively used."
+    },
+    {
+      "requirement": "node3/node4 stay reachable when either link is taken out of service",
+      "command_ids": [
+        "cmd-56d02665bdbf45b8",
+        "cmd-37f2d3c9394c420b",
+        "cmd-43bf24e3fb2c44d8",
+        "cmd-552d815a04bd4a87",
+        "cmd-e9d29c9bd3f6449e",
+        "cmd-68783ab9591d4e3d",
+        "cmd-8bc86a6f60d84587",
+        "cmd-b44ba8a076ff4c34",
+        "cmd-7a31eb24c54f4bae",
+        "cmd-7117bacb1cf544d0",
+        "cmd-4dd6cc3b75b64330",
+        "cmd-054faecf21334cfd",
+        "cmd-c5b2a61464ed4447",
+        "cmd-fef6fa626db147d5",
+        "cmd-762af5553bc8474f",
+        "cmd-5261b70cb4bd402b"
+      ],
+      "summary": "With Link A fully down (both ends) node3->node4 ping showed 0% loss (10/10) over Link B alone; with Link B fully down node3->node4 ping showed 0% loss (8/8) over Link A alone; both links then restored and reconfirmed active on both bonds with balanced TX traffic (50/50 packets)."
+    },
+    {
+      "requirement": "Configuration persistence set up before restart protocol",
+      "command_ids": [
+        "cmd-df93de23b3c241ba",
+        "cmd-813e4faa2a2e4493",
+        "cmd-ea9453ca62d14f93",
+        "cmd-851071429c8b4adb",
+        "cmd-af66da7926cb4aa6",
+        "cmd-c422979be9f1493f",
+        "cmd-25650348267142a6",
+        "cmd-232a739d24794aca",
+        "cmd-5ef6a483ef8d4699",
+        "cmd-b3cfc95875b2434f"
+      ],
+      "summary": "systemd redundant-uplink.service enabled on node1/node2 (confirmed idempotent via manual systemctl start), and NetworkManager static profiles confirmed persistent on node3/node4."
+    },
+    {
+      "requirement": "Mandatory restart protocol - node3 baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-8aaf43f5cfa24ba2",
+        "cmd-5b749934f8084690",
+        "cmd-a8d7fb914ba64cec",
+        "cmd-f8aceef352ed4ad2",
+        "cmd-f513774eec174b1c",
+        "cmd-bce4417aba194399"
+      ],
+      "summary": "Baseline boot_id 54bd1c3e captured with healthy ping; reboot acknowledged; connection timeout observed during reboot; boot_id changed to dfd47fdf on reconnect; eth1 address/route and 0%-loss ping to node4 confirmed recovered."
+    },
+    {
+      "requirement": "Mandatory restart protocol - node4 baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-401719f8ec2c4f41",
+        "cmd-be07b408578b45e7",
+        "cmd-f35e96670fde4446",
+        "cmd-c1265b8f3e8d471d",
+        "cmd-6b4224991be946b6",
+        "cmd-514a5fef3e004609"
+      ],
+      "summary": "Baseline boot_id e31962a9 captured with healthy ping; reboot acknowledged; connection timeout during reboot; boot_id changed to 046fd313 on reconnect; eth1 address/route and 0%-loss ping to node3 confirmed recovered."
+    },
+    {
+      "requirement": "Mandatory restart protocol - node1 baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-1e65e9c6263140cd",
+        "cmd-37fb77e386ee402f",
+        "cmd-1d8398ceda3643d0",
+        "cmd-b1bace8e5d77458e",
+        "cmd-0e477c060b7241f7",
+        "cmd-11fb083c39654d45",
+        "cmd-a197d20a66f042e9"
+      ],
+      "summary": "Baseline boot_id ce04f497 captured with healthy bond/route state; reboot acknowledged and observed executing (COLD shutdown in progress); connection reset then timeout during reboot; boot_id changed to 323d3a28 on reconnect; redundant-uplink.service active, bond0 both slaves up, route present, and 0%-loss ping node3->node4 confirmed recovered."
+    },
+    {
+      "requirement": "Mandatory restart protocol - node2 baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-985d4dfa99bd4dc5",
+        "cmd-8d9f9e66d6ac44f5",
+        "cmd-ac5b03f87d894a63",
+        "cmd-7f7ed5fbb2bf4129",
+        "cmd-d07c89ba672c4489",
+        "cmd-fdd4f653d53a4746",
+        "cmd-3d767b1bc45b46b9",
+        "cmd-16fa59e6e2ae4fe6",
+        "cmd-94197dc62bf54622",
+        "cmd-0586273753f54b02",
+        "cmd-e2961355322a483d"
+      ],
+      "summary": "Baseline boot_id 5f292bc7 captured with healthy bond/route state; reboot acknowledged; connection reset/timeout cycling during reboot; boot_id changed to ff603b2a on reconnect; redundant-uplink.service active, bond0 both slaves up, route present, and clean 0%-loss ping node3->node4 (8/8) confirmed full recovery."
+    }
+  ]
+}

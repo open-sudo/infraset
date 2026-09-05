@@ -1,0 +1,94 @@
+{
+  "status": "completed",
+  "summary": "Joined node2's and node3's segments (attached to node1's eth1 and eth2 respectively) into a single L2 domain via a Linux bridge (br0) on node1, with STP off. node2 (ens7) and node3 (ens7) were assigned 192.168.50.11/24 and 192.168.50.12/24 in the same subnet, persisted via /etc/network/interfaces.d/60-ens7.cfg. node1's br0 has no IP address and performs pure frame forwarding rather than routing, confirmed by matching ICMP TTL=64 (unchanged) and ARP tables on node2/node3 showing each other's real MAC addresses directly (not node1's). Bridge setup was made persistent across reboot via a new systemd unit (l2-bridge.service) enabled at boot on node1, since SONiC's interfaces-config.service only manages eth0 and does not conflict. Segment mapping (eth1->node2, eth2->node3) was empirically confirmed via targeted tcpdump capture during broadcast pings before wiring the bridge. All three nodes were then restarted one at a time (node2, then node3, then node1 last since it disrupts both segments), each showing a changed /proc/sys/kernel/random/boot_id post-restart, and full bridge/connectivity recovery was verified afterward (bridge forwarding state, br0 addressless, and successful bidirectional ping node2<->node3 with ARP entries showing direct peer MACs).",
+  "actions_performed": [
+    "Inspected node1/node2/node3 network state (ip addr, ip route, docker ps) to establish baseline topology",
+    "Identified eth1/eth2 on node1 as bridge uplinks to node2/node3's ens7 via targeted tcpdump capture during broadcast ping tests",
+    "Cleaned up docker0's stray class-E IP and flushed eth1/eth2 addresses on node1",
+    "Created br0 bridge on node1 with eth1 and eth2 as members, STP disabled",
+    "Assigned 192.168.50.11/24 and 192.168.50.12/24 to node2 and node3's ens7 interfaces",
+    "Verified transparent L2 forwarding via unchanged ICMP TTL and direct-peer ARP entries (not node1's MAC)",
+    "Persisted bridge config via new systemd unit /etc/systemd/system/l2-bridge.service enabled at boot on node1",
+    "Persisted node2/node3 ens7 IPs via /etc/network/interfaces.d/60-ens7.cfg (ifupdown, Ubuntu 16.04)",
+    "Captured healthy baseline (boot_id, bridge state, ping) on all three nodes",
+    "Restarted node2, node3, then node1 sequentially via 'sudo reboot', polling each until exec access returned",
+    "Verified changed boot_id and full recovery (bridge forwarding state, addressless br0, node2<->node3 ping and ARP) after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline healthy state before any restart (bridge built, connectivity working)",
+      "command_ids": [
+        "cmd-92f1d627c2814541",
+        "cmd-d9c719cc816c4cff",
+        "cmd-6f3744c98f5d4e0a",
+        "cmd-1d857728b8eb48c5",
+        "cmd-2808414af5f2467a",
+        "cmd-4e2f36c9cdc542a6",
+        "cmd-e5e098a42ee34848",
+        "cmd-e37ee5b69cc84faa",
+        "cmd-88feed6c2319460f"
+      ],
+      "summary": "br0 bridge created with eth1/eth2 forwarding, ping node2<->node3 succeeds, ARP tables show direct peer MACs (transparent L2, not routed), boot_ids captured pre-restart"
+    },
+    {
+      "requirement": "Segment mapping (which node1 NIC maps to which peer) determined empirically, not assumed",
+      "command_ids": [
+        "cmd-540b6faa3ca648c9",
+        "cmd-49bb33ced8f94407",
+        "cmd-8218d034e7e946ef"
+      ],
+      "summary": "tcpdump on eth1/eth2 during node2's broadcast ping showed the 192.168.50.x traffic arriving only on eth1, confirming eth1->node2, eth2->node3"
+    },
+    {
+      "requirement": "Persistence of bridge config across reboot (node1)",
+      "command_ids": [
+        "cmd-1d3373d6e46e4d0a"
+      ],
+      "summary": "Created and enabled /etc/systemd/system/l2-bridge.service (WantedBy multi-user.target and sonic.target) running /usr/local/sbin/l2-bridge-setup.sh"
+    },
+    {
+      "requirement": "Persistence of IP config across reboot (node2, node3)",
+      "command_ids": [
+        "cmd-2fe3083ca7374f32",
+        "cmd-634c4db8b3d74198"
+      ],
+      "summary": "Wrote /etc/network/interfaces.d/60-ens7.cfg on both nodes with static 192.168.50.11/12 addresses"
+    },
+    {
+      "requirement": "node2 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-00c8c4805b4f4f74",
+        "cmd-263ecc72aad443b9",
+        "cmd-eec7d1248b2e4601"
+      ],
+      "summary": "Reboot acknowledged (connection closed), boot_id changed from 35c87ec9 to 75267425, post-restart ens7 IP persisted and ping to node3 succeeded"
+    },
+    {
+      "requirement": "node3 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-4f3cbf046c6042cd",
+        "cmd-d258497b73114c8e",
+        "cmd-69d8b34c43e8427f"
+      ],
+      "summary": "Reboot acknowledged (connection closed), boot_id changed from a9593011 to 92c2d8c9, post-restart ens7 IP persisted and ping to node2 succeeded"
+    },
+    {
+      "requirement": "node1 restart: acknowledgement, changed boot identity, recovered state (bridge, cluster function)",
+      "command_ids": [
+        "cmd-f4577f27a0ef4a46",
+        "cmd-9918d823013b41dc",
+        "cmd-275d6b79b0484e56",
+        "cmd-8a7252d4e6244ae9"
+      ],
+      "summary": "Reboot acknowledged before disconnect, boot_id changed from 6cef3db6 to 2dc313d8, l2-bridge.service ran successfully at boot recreating br0 with eth1/eth2 forwarding and no IP on br0"
+    },
+    {
+      "requirement": "Final end-to-end verification that the L2 domain and transparent forwarding survived all restarts",
+      "command_ids": [
+        "cmd-f8d10c8b4ff74084",
+        "cmd-1a6db57c27c942ff"
+      ],
+      "summary": "node2->node3 ping succeeds post all-node restart; node3's ARP table shows node2's real MAC directly, confirming node1 still forwards frames transparently rather than routing"
+    }
+  ]
+}

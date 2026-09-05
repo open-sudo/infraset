@@ -1,0 +1,14 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-05T07:14:08.960366+00:00",
+      "outcome": "completed",
+      "finished_at": "2026-09-05T07:28:21.170302+00:00",
+      "summary": "Built a redundant-uplink data plane between node1 and node2 carrying traffic between their two private networks (node3 and node4), then restarted all four managed nodes one at a time and proved full recovery, including that the redundant-link configuration survives reboot.\n\nTopology discovered via inspection: node1.eth1<->node2.eth1 and node1.eth2<->node2.eth2 are the two independent links; node1.eth3<->node3.eth1 and node2.eth3<->node4.eth1 are the private networks. (node1-4 eth0 is the shared cluster management/exec network, not part of the task topology.)\n\nImplementation: on node1 and node2, bonded eth1+eth2 into bond0 (mode balance-rr, miimon 100ms) after discovering virtio NICs don't support ethtool speed/duplex queries (which breaks 802.3ad negotiation) \u2014 balance-rr requires no such negotiation and actively load-splits traffic across both links. Assigned bond0 transit addresses (10.255.0.1/2 /30), eth3 private-network addresses (172.31.13.1/24 and 172.31.24.1/24), enabled IPv4 forwarding, and added static routes so 172.31.13.0/24 (node3) and 172.31.24.0/24 (node4) reach each other via the bond. Configured node3/node4's second NIC (eth1) with static IPs and a route to the peer's private subnet.\n\nVerified: traffic is actively split over both links (per-slave TX counters incremented roughly evenly during test pings); taking either link down individually (symmetrically on both ends, matching real cable-failure semantics) produced zero packet loss for a sustained ping run, and restoring the link resumed dual-link traffic distribution.\n\nPersisted the entire configuration: /etc/network/interfaces.d/99-redundant-uplinks (ifupdown2 bond/eth3 stanzas) and /etc/sysctl.d/99-redundant-uplinks.conf (ip_forward) on node1/node2; appended eth1 static stanzas to /etc/network/interfaces on node3/node4 (Alpine ifupdown).\n\nMandatory restart protocol: captured pre-restart boot IDs (/proc/sys/kernel/random/boot_id) and healthy-state evidence on all 4 nodes, then restarted node1, node2, node3, node4 one at a time via `reboot` (backgrounded to return the exec ack first). For each node, polled until exec access returned, confirmed a changed boot_id (proving an actual restart, not just a service bounce), and verified the bond/private-network config, ip_forward, routes, and end-to-end node3<->node4 connectivity recovered automatically from the persisted config \u2014 including a final check that both bond slaves were up and traffic was again distributed over both links after all four reboots."
+    }
+  ]
+}

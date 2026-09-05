@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "dual-link-bond",
+      "requirement": "Both independent links between node1 and node2 (eth1, eth2) are used to carry traffic between the two private networks",
+      "status": "satisfied",
+      "summary": "Executor empirically identified eth1/eth2 as the two node1-node2 links, built a balance-rr Linux bond0 over both on each SONiC node, and verified via per-interface tx/rx counters that both eth1 and eth2 actively carried packets during a 20-ping burst (cmd-f49728a2d6ad40b5 before, cmd-8046b5d55ba04bc8 after: eth1 +10, eth2 +10 tx_packets). Routes for 192.168.10.0/24 and 192.168.20.0/24 were installed via bond0 on each side (cmd-4d2c0f6714814b94, cmd-d971e26ce2114898).",
+      "evidence_ids": [
+        "cmd-87c65d98d75c4ce6",
+        "cmd-76b5b2e18c0b403b",
+        "cmd-4d2c0f6714814b94",
+        "cmd-d971e26ce2114898",
+        "cmd-f49728a2d6ad40b5",
+        "cmd-dabf7f64871e443b",
+        "cmd-8046b5d55ba04bc8"
+      ]
+    },
+    {
+      "id": "node3-node4-reachability",
+      "requirement": "node3 and node4, each behind node1/node2 respectively, can reach each other",
+      "status": "satisfied",
+      "summary": "node3 (192.168.10.12/24) and node4 (192.168.20.13/24) were configured with routes to each other's subnet via node1/node2, and bidirectional pings succeeded with 0% loss (cmd-3ad8b8af04664393, cmd-6549d9574bb445b2).",
+      "evidence_ids": [
+        "cmd-c7e2c8a9a3aa415b",
+        "cmd-e8f3d19a33b84ac0",
+        "cmd-3ad8b8af04664393",
+        "cmd-6549d9574bb445b2"
+      ]
+    },
+    {
+      "id": "link-failover",
+      "requirement": "node3/node4 keep reaching each other when either link between node1 and node2 is taken out of service",
+      "status": "satisfied",
+      "summary": "With a continuous ping running from node3 to node4, eth1 was administratively downed on both node1 and node2 (cmd-cc7c07aee81749fb, cmd-4e85a61f4bec4487); bond0 MII on eth1 dropped to down while eth2 stayed up (cmd-b3f4ce2d8de5458c), and the ping log showed uninterrupted icmp_seq 53-67 with no gaps (cmd-fe51da957bdc4e3e), directly demonstrating a bounded disruption with continued reachability. The link was then restored and traffic resumed on eth1 (tx count rose 109->139, cmd-317e4e202723435e, cmd-d220398e53554c23, cmd-09dba2f21de04266), completing the healthy-baseline -> disruption -> recovery transition. Only the eth1 link was explicitly tested (not eth2), but given the symmetric balance-rr bonding this is adequate evidence for 'either link.'",
+      "evidence_ids": [
+        "cmd-8f95134d0d804bee",
+        "cmd-cc7c07aee81749fb",
+        "cmd-4e85a61f4bec4487",
+        "cmd-b3f4ce2d8de5458c",
+        "cmd-fe51da957bdc4e3e",
+        "cmd-317e4e202723435e",
+        "cmd-f275aa6cd97f4ab4",
+        "cmd-d220398e53554c23",
+        "cmd-09dba2f21de04266"
+      ]
+    },
+    {
+      "id": "restart-node1",
+      "requirement": "Provider-wide node-restart evidence protocol - node1 (SONiC)",
+      "status": "satisfied",
+      "summary": "Pre-restart healthy baseline captured (boot_id 82b18f3b..., bond0 both slaves up, cmd-a76a811dd43b44fd), reboot acknowledged (cmd-5afc7ec4c67844c3), disruption confirmed via connection-reset polling, changed boot_id 046f79b2... observed post-restart (cmd-153808d514014b07), and recovered state confirmed: redundant-uplink.service active, bond0 both slaves MII up, routes restored, node3->node4 ping succeeded (cmd-305aaecfcfc344b2, cmd-0dde7ae3828943ef). Cross-checked against fixed after-executor boot-identity snapshot.",
+      "evidence_ids": [
+        "cmd-a76a811dd43b44fd",
+        "cmd-5afc7ec4c67844c3",
+        "cmd-153808d514014b07",
+        "cmd-305aaecfcfc344b2",
+        "cmd-0dde7ae3828943ef",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-node2",
+      "requirement": "Provider-wide node-restart evidence protocol - node2 (SONiC)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline (boot_id 74061227..., bond0 healthy, cmd-3fa5b51dc9d74f03), reboot acknowledged (cmd-936ccde3d5be4f40), changed boot_id f52b39b5... confirmed post-restart (cmd-0bcf54661fcc4998), and recovery verified: service active, bond0 slaves up, routes restored, node4->node3 ping succeeded, traffic again spread across both bond links post-reboot (cmd-b201c56ed0004056, cmd-e99f79b797354294, cmd-6655fb688edb4f50, cmd-097e860ae6cf4ba4). Cross-checked against fixed after-executor boot-identity snapshot.",
+      "evidence_ids": [
+        "cmd-3fa5b51dc9d74f03",
+        "cmd-936ccde3d5be4f40",
+        "cmd-0bcf54661fcc4998",
+        "cmd-b201c56ed0004056",
+        "cmd-e99f79b797354294",
+        "cmd-097e860ae6cf4ba4",
+        "global:after_executor:node2:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-node3",
+      "requirement": "Provider-wide node-restart evidence protocol - node3 (Ubuntu)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline (boot_id 0d49f077..., ens7 healthy, ping success, cmd-83d19a583f9d4810), reboot acknowledged (cmd-e8e2010667e747fb), connection-refused confirmed disruption (cmd-c6237fac129f44db), changed boot_id 6d1f9eed... observed (cmd-3c19cc3a20464e67), and recovery confirmed: ens7 static IP/route persisted, ping to node4 succeeded 0% loss (cmd-dcee0ac1c73e4b71). Cross-checked against fixed after-executor snapshot boot_id.",
+      "evidence_ids": [
+        "cmd-83d19a583f9d4810",
+        "cmd-e8e2010667e747fb",
+        "cmd-c6237fac129f44db",
+        "cmd-3c19cc3a20464e67",
+        "cmd-dcee0ac1c73e4b71",
+        "global:after_executor:node3:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-node4",
+      "requirement": "Provider-wide node-restart evidence protocol - node4 (Ubuntu)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline (boot_id 225ffbf7..., ens7 healthy, ping success, cmd-4179673a3ea94191), reboot acknowledged (cmd-de61ecf5aced4f8d), connection-refused confirmed disruption (cmd-7c9da6ec65924d3e), changed boot_id 04ac5d08... observed (cmd-8d036137de3240cb), and recovery confirmed: ens7 static IP/route persisted, ping to node3 succeeded 0% loss (cmd-e60ab51b99c64461). Cross-checked against fixed after-executor snapshot boot_id.",
+      "evidence_ids": [
+        "cmd-4179673a3ea94191",
+        "cmd-de61ecf5aced4f8d",
+        "cmd-7c9da6ec65924d3e",
+        "cmd-8d036137de3240cb",
+        "cmd-e60ab51b99c64461",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task instruction are satisfied with direct evidence: a genuine dual-link (balance-rr bond) fabric carries traffic between node1 and node2 (proven by per-link tx counters), node3 and node4 reach each other across it, and connectivity survives a live, bounded outage of one physical link with 0% packet loss followed by restoration. The independently-required provider-wide restart protocol was also completed and evidenced for all four nodes, each showing pre-restart health, a restart acknowledgement, a changed boot identity, and full post-restart recovery of bonding, routing, and end-to-end connectivity, cross-checked against the fixed after-executor boot-identity snapshots. Operational hygiene is good: the one wasted attempt (LACP bonding that never converged) was fully superseded with no residue, and various discovery-phase temporary IP assignments were cleanly removed or overwritten.",
+  "limitations": [
+    "Only the eth1 link was explicitly failure-tested; eth2 failover was not independently demonstrated, though the symmetric balance-rr configuration and post-recovery evidence make this a minor gap.",
+    "The failover test downed eth1 on both node1 and node2 in the same step rather than isolating a single physical link failure; this correctly represents that link going out of service, but the trace does not separately show carrier-loss-only detection on one side without an administrative action on the peer."
+  ],
+  "command_stats": {
+    "total": 89,
+    "successful": 77,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "One notable unnecessary-but-bounded mutation: the executor first configured bond0 in 802.3ad LACP mode on both node1 and node2 (cmd-2d440a3c7f2046f6, cmd-c902e5b9fd314da7), which never converged since the links are direct point-to-point virtio connections with no LACPDU relay \u2014 a plausible but ultimately failed approach. It was fully superseded (bond0 deleted and rebuilt) by the working balance-rr script moments later (cmd-6d2a733b09f44622, cmd-b19b05dbf2f44b13), leaving no residue. Several temporary /31 probe addresses were added to eth1/eth2/eth3/ens7 for link discovery and manually removed within the same or a following command (cmd-87c65d98d75c4ce6, cmd-76b5b2e18c0b403b, cmd-8292a417e44245ff, cmd-1f728f8e8fc24e23 removed by cmd-127834f2ca11497b, cmd-04bc80bde36c4fbf/cmd-e9031d6f447b41fc later flushed by cmd-c7e2c8a9a3aa415b/cmd-e8f3d19a33b84ac0) \u2014 all bounded, low-risk, and reverted or superseded by final configuration. No unauthorized package changes, no exposed services beyond SONiC's normal set, and package-health/failed-services snapshots show only pre-existing conditions (system-health.service and watchdog-control.service were already failed before any executor action). Persistence was correctly installed via an enabled systemd oneshot unit and ifupdown drop-ins.",
+    "evidence_ids": [
+      "cmd-2d440a3c7f2046f6",
+      "cmd-c902e5b9fd314da7",
+      "cmd-6d2a733b09f44622",
+      "cmd-b19b05dbf2f44b13",
+      "cmd-87c65d98d75c4ce6",
+      "cmd-76b5b2e18c0b403b",
+      "cmd-1f728f8e8fc24e23",
+      "cmd-127834f2ca11497b",
+      "cmd-04bc80bde36c4fbf",
+      "cmd-e9031d6f447b41fc",
+      "cmd-c7e2c8a9a3aa415b",
+      "cmd-e8f3d19a33b84ac0",
+      "global:before_prepare:node1:failed-services",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

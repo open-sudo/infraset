@@ -1,0 +1,86 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (SONiC) as an inter-VLAN router between node2 and node3, which each sit in their own subnet behind it. node1's eth1 (192.168.10.1/24) faces node2's enp8s0 (192.168.10.2/24, VLAN A) and eth2 (192.168.20.1/24) faces node3's enp8s0 (192.168.20.2/24, VLAN B). IPv4 forwarding was enabled globally and per-interface on node1, and static cross-VLAN routes were added on node2/node3 via NetworkManager (persistent). node2 and node3 now ping each other across the VLAN boundary via node1 (confirmed by ttl=63, one router hop). All config was made persistent: node1 via a custom systemd oneshot service ([REDACTED].service) that reapplies interface IPs/forwarding after the native SONiC interfaces-config/networking services run, and node2/node3 via NetworkManager connection profiles. All three nodes were then restarted one at a time (native `reboot`), each polled back to availability with a changed boot_id proving an actual restart (not just a service bounce), and post-restart checks confirmed the routed interfaces, forwarding sysctls, static routes, and end-to-end cross-VLAN ping all recovered automatically without any manual reconfiguration.",
+  "actions_performed": [
+    "Inspected node1/node2/node3 network interfaces and identified unused NICs (node1 eth1/eth2, node2/node3 enp8s0) as the VLAN-facing links",
+    "Performed SONiC pre-config cleanup on node1 (stripped docker0 240.127.1.1/24, flushed eth1/eth2)",
+    "Assigned 192.168.10.1/24 to node1 eth1 and 192.168.20.1/24 to node1 eth2; verified direct L3 reachability to node2/node3",
+    "Enabled net.ipv4.ip_forward, per-interface forwarding, and disabled rp_filter on node1",
+    "Configured node2 enp8s0 (192.168.10.2/24) and node3 enp8s0 (192.168.20.2/24) via nmcli static profiles after discovering NetworkManager reverted plain `ip addr add`",
+    "Added static cross-VLAN routes on node2 (192.168.20.0/24 via 192.168.10.1) and node3 (192.168.10.0/24 via 192.168.20.1) via nmcli",
+    "Verified end-to-end cross-VLAN ping node2<->node3 through node1 (ttl=63)",
+    "Persisted node1 config via /etc/sysctl.d/99-antrieb.conf and a new [REDACTED].service systemd oneshot ordered after networking.service/interfaces-config.service; verified networking.service was not left masked (would have broken eth0 management access)",
+    "Captured pre-restart boot_id and health baseline on all three nodes",
+    "Restarted node1, node2, node3 sequentially via native `reboot`, polling each until exec access returned and confirming boot_id changed each time",
+    "Re-verified routed interfaces, forwarding sysctls, static routes, and end-to-end cross-VLAN ping after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 has a routed interface in each VLAN with correct IPs",
+      "command_ids": [
+        "cmd-702c29d007214a1d",
+        "cmd-4d7e48d0d3304313"
+      ],
+      "summary": "eth1 assigned 192.168.10.1/24 and eth2 assigned 192.168.20.1/24 on node1; both ping their directly-connected peers"
+    },
+    {
+      "requirement": "IPv4 forwarding enabled on node1",
+      "command_ids": [
+        "cmd-efcbc6426e454c09"
+      ],
+      "summary": "net.ipv4.ip_forward=1 and per-interface forwarding enabled on eth1/eth2"
+    },
+    {
+      "requirement": "node2 and node3 reach each other across the VLAN boundary",
+      "command_ids": [
+        "cmd-c7c8fcb8572f4f28",
+        "cmd-103f42ee940641b1"
+      ],
+      "summary": "node2 pings node3 (192.168.20.2) and node3 pings node2 (192.168.10.2) with ttl=63, confirming routing through node1"
+    },
+    {
+      "requirement": "healthy baseline captured before restarts",
+      "command_ids": [
+        "cmd-c441f26475194464",
+        "cmd-f99191aa23e74419",
+        "cmd-5f62fa7560464450"
+      ],
+      "summary": "boot_id, interface config, forwarding sysctls, and cross-VLAN ping captured on all three nodes pre-restart"
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-c572823b31974543",
+        "cmd-8e30835bf0f44a1e",
+        "cmd-c4ffa6659a114115"
+      ],
+      "summary": "reboot acknowledged before disconnect; boot_id changed from 2b666fc9... to 4554139c...; post-restart eth1/eth2 IPs, forwarding sysctls, and cross-VLAN pings all recovered via [REDACTED].service"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-9dba38a0d71544a7",
+        "cmd-d758caa2b77540c3",
+        "cmd-c03823532fd342e2"
+      ],
+      "summary": "reboot acknowledged; boot_id changed from 96974ac3... to 124d50f5...; post-restart enp8s0 IP, route, and cross-VLAN ping to node3 recovered via NetworkManager profile"
+    },
+    {
+      "requirement": "node3 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-0c43f5377f8d49ef",
+        "cmd-5ffde8d941b442e3",
+        "cmd-2f66bdad27704849"
+      ],
+      "summary": "reboot acknowledged; boot_id changed from be303eb3... to 6adba45f...; post-restart enp8s0 IP, route, and cross-VLAN ping to node2 recovered via NetworkManager profile"
+    },
+    {
+      "requirement": "management path (eth0 on node1) preserved across restart",
+      "command_ids": [
+        "cmd-87f26163c1a94272",
+        "cmd-f808ec91c8094782"
+      ],
+      "summary": "identified networking.service (ifupdown2) as responsible for bringing up eth0; explicitly unmasked it after an earlier over-broad mask, keeping node1 reachable post-reboot"
+    }
+  ]
+}

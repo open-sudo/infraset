@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node1's link to node2 (eth1) is placed in its own VLAN as an untagged/access port",
+      "status": "satisfied",
+      "summary": "SONiC's `config vlan` CLI rejected eth1/eth2 because they are not registered Ethernet* front-panel ports in this virtualized topology (cmd-6bdec664c52e42a8, cmd-7e97179d54ba42e1). The executor instead built a vlan_filtering Linux bridge (br0) on node1 and set eth1 as PVID/untagged member of VLAN 10 (cmd-076416d989a843a3), directly confirmed by `bridge vlan show` output showing 'eth1 10 PVID Egress Untagged' (cmd-27e5e2b777ca419b, cmd-bcb254329cb94e31). This is a reasonable, directly-observed equivalent implementation given the platform's CLI limitation.",
+      "evidence_ids": [
+        "cmd-6bdec664c52e42a8",
+        "cmd-7e97179d54ba42e1",
+        "cmd-076416d989a843a3",
+        "cmd-27e5e2b777ca419b",
+        "cmd-bcb254329cb94e31"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "node1's link to node3 (eth2) is placed in its own, different VLAN as an untagged/access port",
+      "status": "satisfied",
+      "summary": "Same bridge build assigned eth2 as PVID/untagged member of a separate VLAN 20, confirmed by the same `bridge vlan show` output ('eth2 20 PVID Egress Untagged').",
+      "evidence_ids": [
+        "cmd-076416d989a843a3",
+        "cmd-27e5e2b777ca419b",
+        "cmd-bcb254329cb94e31"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Each host (node2, node3) keeps a working link to node1 inside its own VLAN",
+      "status": "satisfied",
+      "summary": "node2 (192.168.10.2) successfully pings node1's VLAN10 interface (192.168.10.1) with 0% loss (cmd-04690e2c8f184c77); node3 (192.168.20.2) successfully pings node1's VLAN20 interface (192.168.20.1) with 0% loss (cmd-6900a79ef1874036). Directly observed, not just claimed.",
+      "evidence_ids": [
+        "cmd-452b27ec667c4f68",
+        "cmd-44ccbb8c623042a5",
+        "cmd-04690e2c8f184c77",
+        "cmd-6900a79ef1874036"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "node2 and node3 stay separated from one another (cross-VLAN isolation)",
+      "status": "satisfied",
+      "summary": "node2 could not reach either 192.168.20.1 (node1's VLAN20 side) or 192.168.20.2 (node3), 100% packet loss both ways; node3 symmetrically could not reach VLAN10 addresses, 100% packet loss (cmd-04690e2c8f184c77, cmd-6900a79ef1874036). Bridge VLAN/FDB tables directly confirm eth1 and eth2 are in disjoint VLANs 10/20 with no shared membership (cmd-bcb254329cb94e31).",
+      "evidence_ids": [
+        "cmd-04690e2c8f184c77",
+        "cmd-6900a79ef1874036",
+        "cmd-bcb254329cb94e31"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task \u2014 per-host VLAN segmentation on node1 as untagged access ports, working per-VLAN links to node1, and cross-VLAN isolation between node2 and node3 \u2014 are directly demonstrated via ping and bridge-table evidence, both before and after the mandatory restart-evidence protocol. Because SONiC-VS's `config vlan` CLI does not recognize the virtio data-plane NICs (eth1/eth2), the executor substituted a vlan_filtering Linux bridge as an equivalent access-port mechanism; this is a reasonable implementation choice given the platform constraint and is directly verified, not merely claimed. The provider-wide restart protocol was executed for all three nodes with directly observed pre/post boot-ID changes and disruption, but node1's bridge/VLAN configuration does not persist across reboot and had to be manually rebuilt by the executor post-restart \u2014 recovery was demonstrated but not automatic, which is a limitation on the durability of the solution rather than a failure of the stated task (which does not require reboot persistence).",
+  "limitations": [
+    "node1's bridge-based VLAN configuration (br0, br0.10, br0.20, docker0 changes) does not persist across reboot on this SONiC-VS image; post-restart 'recovery' required the executor to manually re-run the same configuration commands rather than the system self-healing, so no automatic persistence mechanism (e.g. a boot-time script or systemd unit) was put in place.",
+    "The task's implied SONiC-native VLAN CLI mechanism (`config vlan member add ... -u`) could not be used because eth1/eth2 are not registered Ethernet* ports in this virtualized topology; the executor's Linux-bridge substitute achieves the same functional outcome but is a different implementation layer than a native SONiC VLAN would use.",
+    "Command timeline is available and largely unambiguous, but some intermediate `config vlan add 10/20` command outputs were not fully captured, so exact confirmation that no residual empty VLAN entries were left in the config DB relies on the subsequent redis-cli check rather than direct output of the delete commands."
+  ],
+  "command_stats": {
+    "total": 53,
+    "successful": 30,
+    "failed": 23,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.82,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "One bounded troubleshooting mutation occurred and was fully reverted: the executor ran `config vlan add 10`/`config vlan add 20` (cmd-7e97179d54ba42e1) which likely created empty VLAN entries in the SONiC config DB when the CLI accepted the VLAN IDs but rejected the eth1/eth2 port members; the executor then attempted cleanup with `config vlan del 10/20` (cmd-94672957e7c844b2) and verified via `redis-cli -n 4 keys VLAN*` that the VLAN config DB was empty afterward (cmd-8ca53d4ba596496f), confirming no residue. The docker0 class-E IP removal (cmd-6bdec664c52e42a8) is a persistent mutation but was described as a documented step from the SONiC reference runbook and did not conflict with any task-relevant service. No abandoned files, conflicting services, or unsafe exposure were introduced by the executor; the two pre-existing failed systemd units (system-health.service, watchdog-control.service) on node1 are present in both before_prepare and after_executor snapshots and are not executor-caused.",
+    "evidence_ids": [
+      "cmd-7e97179d54ba42e1",
+      "cmd-94672957e7c844b2",
+      "cmd-8ca53d4ba596496f",
+      "cmd-6bdec664c52e42a8",
+      "global:before_prepare:node1:failed-services",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

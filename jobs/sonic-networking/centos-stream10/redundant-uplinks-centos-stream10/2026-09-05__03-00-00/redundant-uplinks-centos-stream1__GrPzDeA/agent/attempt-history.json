@@ -1,0 +1,14 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-05T07:24:15.294966+00:00",
+      "outcome": "completed",
+      "finished_at": "2026-09-05T07:38:48.012199+00:00",
+      "summary": "Configured redundant L3 connectivity between node1's private network (node3) and node2's private network (node4) carried over both independent node1-node2 links, with automatic failover and full node-restart persistence verified on all four nodes.\n\nTopology discovery: node1 eth1/eth2 and node2 eth1/eth2 are the two independent uplinks between node1-node2; node1 eth3 connects to node3's enp8s0, node2 eth3 connects to node4's enp8s0 (confirmed via targeted ping tests, since interfaces carried no IPs initially).\n\nImplementation:\n- node1: bond0 (Linux bonding, mode balance-rr, miimon 100) over eth1+eth2, IP 172.20.0.1/30 to node2; eth3 = 192.168.1.1/24 (node3's subnet). IP forwarding enabled globally and per-interface. Static route to 192.168.2.0/24 via bond0.\n- node2: mirrored \u2014 bond0 172.20.0.2/30, eth3 = 192.168.2.1/24 (node4's subnet), route to 192.168.1.0/24 via bond0.\n- node3/node4: enp8s0 statically addressed (192.168.1.2/24, 192.168.2.2/24) via existing NetworkManager profiles with a static route to the other private subnet via its local node1/node2 gateway \u2014 persists natively through NetworkManager.\n- Persistence on node1/node2: a systemd oneshot unit (antrieb-links.service, enabled, WantedBy=multi-user.target) reapplies the bonding/IP/forwarding/route configuration at boot, since SONiC's interfaces-config.service only manages eth0/lo and does not touch eth1-3.\n- Discovered and worked around a virtio/bonding limitation: 802.3ad (LACP) mode failed because virtio-net can't report link speed/duplex (dmesg: \"failed to get link speed/duplex\"), so switched to balance-rr, which works cleanly and actively load-balances across both links (confirmed via matched tx_packet counters growing symmetrically on eth1/eth2 for a test ping burst).\n- Also discovered that the platform's virtual point-to-point links do not propagate one-sided admin-down to the peer's carrier state (verified: bringing node1's eth1 down did not clear LOWER_UP on node2's eth1), so failover was correctly demonstrated as a full link outage (both endpoints down), which is the realistic failure model \u2014 0% packet loss for node3\u2194node4 traffic in that state, and clean automatic recovery once both ends were restored.\n- Ran the mandatory node-restart protocol on all four nodes sequentially (one at a time, quorum/service preserved): captured pre-restart boot_id, restarted via `reboot`/`systemctl reboot`, polled until exec was available again, confirmed a new boot_id, and verified bonding/routes/forwarding/NetworkManager config and node3\u2194node4 connectivity recovered on each."
+    }
+  ]
+}

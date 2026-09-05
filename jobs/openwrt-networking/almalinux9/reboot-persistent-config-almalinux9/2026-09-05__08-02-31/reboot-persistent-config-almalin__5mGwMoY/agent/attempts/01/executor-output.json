@@ -1,0 +1,90 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OpenWrt) as router for the private network (eth1, shared with node2/node3): assigned it a fixed static address 10.99.99.1/24, stood up a dnsmasq DHCP server on that interface for node2/node3, added firewall zone/forwarding/masquerade to route the private network to the internet-facing lan zone, and added two firewall rules rejecting TCP port 23 (input to the router and forwarded through it) sourced from the private network. Verified all settings persisted and remained actively enforced/serving after restarting all three managed nodes one at a time (node1, then node2, then node3), each confirmed via a changed OS boot_id.",
+  "actions_performed": [
+    "Surveyed network topology on all 3 nodes: node1 (OpenWrt) has br-lan (eth0, default egress network) and an unconfigured eth1; node2/node3 (AlmaLinux 9) each have eth0 (default network) and eth1 (private network, DHCP client via NetworkManager, no server yet)",
+    "On node1: created uci network.private interface on eth1 with static IP 10.99.99.1/24, committed, reloaded network",
+    "On node1: created firewall zone 'private' (input/output/forward ACCEPT), forwarding private->lan, enabled masquerade on lan zone, added two REJECT rules for TCP/23 from private zone (input and forward-to-lan)",
+    "On node1: configured dhcp.private (dnsmasq) DHCP server on the private interface, restarted dnsmasq",
+    "Verified node2 and node3 obtained DHCP leases (10.99.99.130 and 10.99.99.143) automatically from node1",
+    "Verified connectivity: ping between private-network peers works, HTTP forwarding through node1 to the internet works (masquerade functioning)",
+    "Verified TCP/23 is blocked both to node1 itself (input, connection refused) and when forwarded through node1 toward the lan/internet path (forward chain reject, confirmed via nft counters incrementing from 0->1)",
+    "Captured pre-restart baseline (boot_id, uci config, firewall rules, dnsmasq status/leases) on node1",
+    "Restarted node1 via BusyBox 'reboot' (backgrounded so ack returned before disconnect), polled until exec access returned, confirmed new boot_id (9551f9a5... -> ac1a6917...) and uptime reset to 0",
+    "Re-verified after node1 restart: static IP, uci network/dhcp/firewall config all persisted; dnsmasq running; nft telnet-block rules present with counters resetting to 0 then incrementing again on a fresh test connection from node2",
+    "Restarted node2 via 'systemctl reboot', confirmed new boot_id (d6298ced... -> 2c8828d8...), verified private-network DHCP lease, ping, and telnet-block still functioning post-reboot",
+    "Restarted node3 via 'systemctl reboot', confirmed new boot_id (5fb1b173... -> 4560f1fb...), verified private-network DHCP lease, ping, and telnet-block still functioning post-reboot",
+    "Final check on node1 showed both node2 and node3 leases present in dhcp.leases and nft counters incremented, proving the DHCP service and firewall rule remained active and enforced traffic from both peers after all three restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 has a fixed (static) address on the private network shared with node2/node3",
+      "command_ids": [
+        "cmd-cef2373339884f80",
+        "cmd-305a954aad4f4df2"
+      ],
+      "summary": "eth1 configured via uci as static 10.99.99.1/24; confirmed present in uci network.private and live ip addr both before and after node1 restart"
+    },
+    {
+      "requirement": "node1 provides a DHCP service for node2 and node3 on that network",
+      "command_ids": [
+        "cmd-2ccced8c0eb6446f",
+        "cmd-eb46c1cccdea49a9",
+        "cmd-2198809bc0d1456c",
+        "cmd-305a954aad4f4df2",
+        "cmd-6f6a658b7dcc4c1e"
+      ],
+      "summary": "dhcp.private (dnsmasq) configured and running; node2/node3 obtained leases 10.99.99.130/.143 automatically; dnsmasq process and uci config confirmed present after node1 restart; lease file shows both peers still leased after all restarts"
+    },
+    {
+      "requirement": "firewall rule refusing TCP port 23 from the private network",
+      "command_ids": [
+        "cmd-c0fdeb9c1dbc403d",
+        "cmd-52935568a15e4b34",
+        "cmd-4187179c87e44325",
+        "cmd-c54bfad5aeee46ac",
+        "cmd-1c978ff56d2140a7"
+      ],
+      "summary": "Added input and forward REJECT rules for tcp/23 from the private zone; demonstrated both counters incrementing (0->1) when node2 attempted telnet to node1 itself and to an internet host routed via node1, while port 80 forwarding succeeded"
+    },
+    {
+      "requirement": "settings still in place and serving traffic after node1 restart",
+      "command_ids": [
+        "cmd-07cdf27117cd4527",
+        "cmd-e6994eb42f2a456a",
+        "cmd-de6cb28d11bd42fb",
+        "cmd-2f0dbe57cb684487",
+        "cmd-cef79f34ca9e4062",
+        "cmd-acc5eb787d4d4c6a",
+        "cmd-305a954aad4f4df2",
+        "cmd-b5c7827afe06490a",
+        "cmd-0ac6289ab5274fc5",
+        "cmd-5e1fde951b9246e5"
+      ],
+      "summary": "Captured pre-restart baseline (boot_id 9551f9a5...); rebooted node1 (ack cmd-2f0dbe57cb684487), lost connectivity confirming shutdown (cmd-cef79f34ca9e4062), regained access with new boot_id ac1a6917... and uptime 0 (cmd-acc5eb787d4d4c6a); post-restart confirmed static IP/DHCP/firewall config intact (cmd-305a954aad4f4df2), node2/node3 connectivity and DHCP restored (cmd-b5c7827afe06490a, cmd-0ac6289ab5274fc5), and telnet-block counter incrementing again (cmd-5e1fde951b9246e5)"
+    },
+    {
+      "requirement": "node2 restart persistence (mandatory provider protocol)",
+      "command_ids": [
+        "cmd-660a6a13ab6c4c9e",
+        "cmd-66f2ce47a5404f29",
+        "cmd-67dcabaa14ab49b6",
+        "cmd-167e862b4f354d59",
+        "cmd-f015abbef9e9481f"
+      ],
+      "summary": "Baseline boot_id d6298ced... captured; reboot acknowledged; connection timeout confirmed shutdown; new boot_id 2c8828d8... with uptime 0 confirmed restart; post-restart DHCP lease, ping, and telnet-refusal to node1 all verified working"
+    },
+    {
+      "requirement": "node3 restart persistence (mandatory provider protocol)",
+      "command_ids": [
+        "cmd-afe63d0ca8fb4c91",
+        "cmd-d84afd46d4484ce1",
+        "cmd-ba12803023a14404",
+        "cmd-8c7a976b43004380",
+        "cmd-c1571a1620b04ac2",
+        "cmd-6f6a658b7dcc4c1e"
+      ],
+      "summary": "Baseline boot_id 5fb1b173... captured; reboot acknowledged; connection timeout confirmed shutdown; new boot_id 4560f1fb... with uptime 0 confirmed restart; post-restart DHCP lease, ping, telnet-refusal verified, and node1's lease file/nft counters confirmed the DHCP+firewall service on node1 recognized and served the restarted peer"
+    }
+  ]
+}
