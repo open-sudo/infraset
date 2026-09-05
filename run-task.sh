@@ -84,13 +84,24 @@ agent_timeout_sec="${INFRASET_AGENT_TIMEOUT_SEC:-2100}"
 
 usage() {
   printf '%s\n' \
-    "Usage: $0 [OPTIONS] TASK_OR_FOLDER" \
+    "Usage: $0 [OPTIONS] TASK_OR_FOLDER [TASK_OR_FOLDER ...]" \
     "" \
     "Run one InfraSet task, or every task found recursively below a folder." \
+    "Several tasks and folders may be given at once, so a shell glob that" \
+    "expands to many task directories works directly:" \
+    "" \
+    "  $0 ./tasks/sonic-networking/*/traffic-mirroring-*" \
+    "" \
+    "A path named more than once, whether directly or by way of a folder that" \
+    "contains it, runs once." \
     "" \
     "Options:" \
     "  -j, --parallel N       Tasks to run concurrently (default: $parallel_limit)" \
     "  -k, --n-attempts N     Sequential trials for each task (default: $n_attempts)" \
+    "  -m, --match GLOB       Keep only tasks whose directory name matches GLOB." \
+    "                         Repeatable; a task matching any GLOB is kept." \
+    "                         Quote it so the shell leaves it alone:" \
+    "                           $0 -m 'traffic-mirroring*' ./tasks/sonic-networking" \
     "  -h, --help             Show this help" \
     "" \
     "Trials for the same task never overlap. Up to --parallel different tasks" \
@@ -115,7 +126,8 @@ if [[ -z "${HARBOR_DIR:-}" \
   INFRASET_PROVIDER_DIR="$workspace_dir/harbor-antrieb"
 fi
 
-input_arg=""
+declare -a input_args=()
+declare -a match_globs=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h)
@@ -148,14 +160,25 @@ while [[ $# -gt 0 ]]; do
       n_attempts="${1#*=}"
       shift
       ;;
-    --)
-      shift
-      if [[ $# -ne 1 || -n "$input_arg" ]]; then
+    --match|-m)
+      if [[ $# -lt 2 ]]; then
+        printf 'Option %s requires a value.\n' "$1" >&2
         usage
         exit 2
       fi
-      input_arg="$1"
+      match_globs+=("$2")
+      shift 2
+      ;;
+    --match=*)
+      match_globs+=("${1#*=}")
       shift
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        input_args+=("$1")
+        shift
+      done
       ;;
     -*)
       printf 'Unknown option: %s\n' "$1" >&2
@@ -163,17 +186,13 @@ while [[ $# -gt 0 ]]; do
       exit 2
       ;;
     *)
-      if [[ -n "$input_arg" ]]; then
-        usage
-        exit 2
-      fi
-      input_arg="$1"
+      input_args+=("$1")
       shift
       ;;
   esac
 done
 
-if [[ -z "$input_arg" ]]; then
+if [[ ${#input_args[@]} -eq 0 ]]; then
   usage
   exit 2
 fi
@@ -186,24 +205,61 @@ for value_name in parallel_limit n_attempts agent_timeout_sec; do
   fi
 done
 
-if [[ ! -e "$input_arg" ]]; then
-  printf 'Task or folder does not exist: %s\n' "$input_arg" >&2
-  exit 2
-fi
-
-input_path="$(realpath "$input_arg")"
 declare -a task_paths=()
-if [[ -f "$input_path/task.toml" ]]; then
-  task_paths+=("$input_path")
-elif [[ -d "$input_path" ]]; then
-  while IFS= read -r -d '' task_file; do
-    task_paths+=("$(dirname "$task_file")")
-  done < <(find "$input_path" -type f -name task.toml -print0 | sort -z)
-fi
+declare -A task_paths_seen=()
+
+# A task reached through several arguments, or through both a folder and its
+# own path, is collected once and keeps the position of its first mention.
+collect_task_path() {
+  local candidate="$1"
+  if [[ -n "${task_paths_seen[$candidate]+present}" ]]; then
+    return 0
+  fi
+  task_paths_seen["$candidate"]=1
+  task_paths+=("$candidate")
+}
+
+for input_arg in "${input_args[@]}"; do
+  if [[ ! -e "$input_arg" ]]; then
+    printf 'Task or folder does not exist: %s\n' "$input_arg" >&2
+    exit 2
+  fi
+  input_path="$(realpath "$input_arg")"
+  if [[ -f "$input_path/task.toml" ]]; then
+    collect_task_path "$input_path"
+  elif [[ -d "$input_path" ]]; then
+    while IFS= read -r -d '' task_file; do
+      collect_task_path "$(dirname "$task_file")"
+    done < <(find "$input_path" -type f -name task.toml -print0 | sort -z)
+  else
+    printf 'Not an InfraSet task or folder: %s\n' "$input_arg" >&2
+    exit 2
+  fi
+done
 
 if [[ ${#task_paths[@]} -eq 0 ]]; then
-  printf 'No InfraSet tasks containing task.toml were found under: %s\n' "$input_path" >&2
+  printf 'No InfraSet tasks containing task.toml were found under: %s\n' \
+    "${input_args[*]}" >&2
   exit 2
+fi
+
+if [[ ${#match_globs[@]} -gt 0 ]]; then
+  declare -a filtered_paths=()
+  for task_path in "${task_paths[@]}"; do
+    task_name="$(basename "$task_path")"
+    for glob in "${match_globs[@]}"; do
+      # shellcheck disable=SC2053  # the right side is a pattern on purpose
+      if [[ "$task_name" == $glob ]]; then
+        filtered_paths+=("$task_path")
+        break
+      fi
+    done
+  done
+  if [[ ${#filtered_paths[@]} -eq 0 ]]; then
+    printf 'No task directory name matched: %s\n' "${match_globs[*]}" >&2
+    exit 2
+  fi
+  task_paths=("${filtered_paths[@]}")
 fi
 
 declare -A task_names_seen=()
