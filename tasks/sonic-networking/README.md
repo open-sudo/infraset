@@ -42,17 +42,6 @@ two hosts talking across one link being taken out of service, and
 `traffic-mirroring` has to show captured packets that were addressed elsewhere.
 Each is demonstrated by a single bounded, reversible state change.
 
-`traffic-mirroring` replaces a family that did not survive its first campaign.
-`jumbo-frame-path` asked for an 8000-byte payload to cross the switch
-unfragmented, and it failed on all eight operating systems: across those runs
-no do-not-fragment ping above 2000 bytes ever drew a reply, even where the
-executor had already set an MTU of 9000 on every interface in the path. The
-virtual fabric caps the path MTU regardless of what a guest configures, so the
-task was unachievable as written and measured only that ceiling. The
-replacement stays inside what the fabric already does: mirroring copies
-ordinary frames to a second port and asks nothing of the path that normal
-forwarding does not.
-
 `dynamic-route-exchange` carries a constraint worth knowing about: SONiC boots
 with FRR already running as AS 65100 with a full Clos template of placeholder
 neighbors, and FRR refuses a second autonomous system on the same instance. The
