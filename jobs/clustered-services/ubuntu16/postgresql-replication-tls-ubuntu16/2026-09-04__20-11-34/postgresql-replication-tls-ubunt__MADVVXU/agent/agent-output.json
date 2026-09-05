@@ -1,0 +1,97 @@
+{
+  "status": "completed",
+  "summary": "Configured PostgreSQL 9.5 streaming replication across node1 (primary), node2, and node3 (standbys) on Ubuntu 16.04, with all replication traffic carried over TLS and client-certificate authentication enforced against a cluster-dedicated CA. Verified end-to-end data replication, verified rejection of non-CA and non-SSL replication attempts, and completed the mandatory one-at-a-time restart/recovery protocol on all three nodes with proof of changed boot identity and post-restart health.",
+  "actions_performed": [
+    "Installed PostgreSQL 9.5 + contrib on node1, node2, node3 (worked around a PMTU black-hole on node2's uplink by lowering interface MTU and switching apt mirror to mirrors.edge.kernel.org)",
+    "Generated a dedicated cluster CA on node1 (openssl, 4096-bit key, 10y validity)",
+    "Issued server certs (CN=nodeN, SAN=hostname+IP) for all three nodes and per-standby client certs (CN=replicator) signed by the cluster CA",
+    "Distributed certs via cluster SSH key to node2/node3 and installed with postgres:postgres ownership, 600 perms on private keys",
+    "Configured node1 postgresql.conf: listen_addresses='*', ssl=on with cluster CA cert/key/ca file, wal_level=hot_standby, max_wal_senders=10, max_replication_slots=10, wal_keep_segments=64, hot_standby=on",
+    "Configured node1 pg_hba.conf to require hostssl + cert auth for the replicator role from node2/node3 IPs only, explicitly rejecting non-SSL replication connections",
+    "Created REPLICATION LOGIN role 'replicator' on node1",
+    "Took pg_basebackup (via TLS + client cert, sslmode=verify-ca) from node1 to seed node2 and node3, with -R generating primary_conninfo using the client certs",
+    "Set hot_standby=on and SSL cert paths in node2/node3 postgresql.conf (base backup doesn't copy /etc config in Debian/Ubuntu packaging) and restarted both",
+    "Verified pg_stat_replication/pg_stat_ssl show both standbys streaming with SSL and clientdn=/CN=replicator",
+    "Verified write propagation node1 -> node2/node3 via a test table",
+    "Proved CA enforcement: a non-SSL connection was rejected by pg_hba, and a self-signed rogue certificate was rejected with 'SSL error: tlsv1 alert unknown ca'",
+    "Secured the CA private key by moving it to a root:root 700 directory and removing the /tmp working copy",
+    "Executed mandatory per-node restart protocol (node3, then node2, then node1/primary) one at a time: captured boot_id baseline, issued systemctl reboot, polled until reachable, confirmed boot_id changed, confirmed PostgreSQL service active and data/replication health restored before proceeding to the next node",
+    "After node1 (primary) restart, confirmed it resumed as writable primary, both standbys reconnected via TLS automatically, and a new row written post-restart replicated to both standbys"
+  ],
+  "evidence": [
+    {
+      "requirement": "Streaming replication configured with node1 as writable primary, node2/node3 as standbys",
+      "command_ids": [
+        "cmd-2824b518fac34b0d",
+        "cmd-9b031869b9b34539",
+        "cmd-3001d9d3f56e45bd",
+        "cmd-d5fb71933f5447b7",
+        "cmd-d1d00e9b6c1340ce",
+        "cmd-a22aca34d9c04aa8",
+        "cmd-e8f535e5686a4397",
+        "cmd-b22069df31544379"
+      ],
+      "summary": "pg_basebackup seeded both standbys from node1; pg_stat_replication showed both streaming; a row inserted on node1 appeared on node2 and node3"
+    },
+    {
+      "requirement": "Replication traffic carried over TLS using a cluster-created CA",
+      "command_ids": [
+        "cmd-119ef67e0a7e4409",
+        "cmd-7c5f75705c834bdf",
+        "cmd-cca007b0c96845c4",
+        "cmd-bf682ac8c72b42a9",
+        "cmd-2824b518fac34b0d",
+        "cmd-9b031869b9b34539",
+        "cmd-d1d00e9b6c1340ce",
+        "cmd-6d6c5fdbedb64df5"
+      ],
+      "summary": "CA generated on node1; server/client certs issued and signed by it; pg_stat_ssl confirms ssl=t, cipher negotiated, and clientdn=/CN=replicator for both walreceiver connections, both initially and after all restarts"
+    },
+    {
+      "requirement": "Only peers presenting a CA-issued certificate are accepted for replication",
+      "command_ids": [
+        "cmd-17f4c033f48f4343",
+        "cmd-59865aba2c3440a5",
+        "cmd-6138896b89d8449f"
+      ],
+      "summary": "pg_hba.conf restricts hostssl replication to replicator with cert auth from node2/node3 IPs and rejects all else; a non-SSL attempt was refused ('SSL off'), and a self-signed rogue cert was refused ('unknown ca')"
+    },
+    {
+      "requirement": "node1 restart evidence: baseline, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-1cdec1a71a0142c6",
+        "cmd-9a2d12e1db1d4ce4",
+        "cmd-ef3ed7050f704542",
+        "cmd-c4362fa04c904427",
+        "cmd-13e3deb74550437e",
+        "cmd-6d6c5fdbedb64df5",
+        "cmd-0903ed86a2894e86",
+        "cmd-75c8688cfd7a4a9f"
+      ],
+      "summary": "Baseline boot_id a9593011-...; reboot acknowledged; connection refused mid-reboot; new boot_id c3b81296-... proves restart; primary came back writable, both standbys reconnected over TLS, and a post-restart write replicated to both"
+    },
+    {
+      "requirement": "node2 restart evidence: baseline, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-3811bf68f93c40b4",
+        "cmd-9b32f56bc7a94951",
+        "cmd-bb9d76d558c74843",
+        "cmd-c9c67b22d73f4a91",
+        "cmd-bf6b99b0a7b9485e"
+      ],
+      "summary": "Baseline boot_id 35c87ec9-...; reboot acknowledged; connection refused mid-reboot; new boot_id 5d06dd57-... proves restart; postgresql active, standby recovery confirmed, replicated row intact"
+    },
+    {
+      "requirement": "node3 restart evidence: baseline, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-e80f46cf03424d91",
+        "cmd-c247d5b6379546d4",
+        "cmd-263d53b192004c54",
+        "cmd-603a7794e6da4d24",
+        "cmd-76a2c3bc9cd84a3a",
+        "cmd-2331d6bdbc0546e1"
+      ],
+      "summary": "Baseline boot_id 2f708738-...; reboot acknowledged; connection refused mid-reboot; new boot_id 50a5d57f-... proves restart; postgresql active, standby recovery confirmed, and node1 shows it rejoined streaming replication over TLS"
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "replication-setup",
+      "requirement": "Configure PostgreSQL streaming replication with node1 as writable primary and node2/node3 as standbys",
+      "status": "satisfied",
+      "summary": "PostgreSQL 16 installed on all three nodes; node1 initialized with wal_level=replica, replication role, and pg_hba entries; node2 and node3 built via pg_basebackup -R with standby.signal and primary_conninfo pointing at node1. pg_stat_replication on node1 confirms both standbys streaming with near-zero lag, and inserted rows on node1 replicate to both standbys.",
+      "evidence_ids": [
+        "cmd-2a60f35fbaa14ed1",
+        "cmd-1e2e88ea47f640d3",
+        "cmd-4b22733dac644af4",
+        "cmd-533a378acba54ca0",
+        "cmd-6915c653dee14bac",
+        "cmd-9c02a2231e284985",
+        "cmd-1fa2429557ec49dc",
+        "cmd-eb2845971c7f4fcf",
+        "cmd-06ab1365076547bb",
+        "cmd-4bc7750b9f984464",
+        "cmd-b6e0fe2289e14eff"
+      ]
+    },
+    {
+      "id": "failover-promotion",
+      "requirement": "When primary is lost, a standby takes over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "A row was committed on node1 and confirmed replayed on node2 (matching WAL LSN) before node1 was stopped. node2 was then promoted via pg_ctl promote, confirmed pg_is_in_recovery()=f, and a new write succeeded while all prior rows (including the last pre-failover row) remained intact \u2014 a directly observed bounded transition from healthy baseline through disruption to recovered writable state.",
+      "evidence_ids": [
+        "cmd-a1add77623d6451c",
+        "cmd-8869a82d6b794a4d",
+        "cmd-3d2f5e87467b4bba",
+        "cmd-82a59774613b4322",
+        "cmd-b1bad789c8254e89"
+      ]
+    },
+    {
+      "id": "remaining-standby-repoint",
+      "requirement": "Remaining standby (node3) repointed to new primary after failover",
+      "status": "satisfied",
+      "summary": "node3's primary_conninfo was updated to node2, postgresql restarted, and pg_stat_replication on node2 confirmed node3 streaming; node3 holds the post-failover row, showing consistent data under the new topology.",
+      "evidence_ids": [
+        "cmd-796fbd1ed6234131",
+        "cmd-082804476bd04315",
+        "cmd-c364a508c33b40f3"
+      ]
+    },
+    {
+      "id": "former-primary-rejoin",
+      "requirement": "Recovered former primary (node1) comes back as a standby of whichever system is primary",
+      "status": "satisfied",
+      "summary": "node1's data directory was rebuilt via pg_basebackup -R from node2 (the new primary), started with pg_is_in_recovery()=t and full data including post-failover rows, and node2's pg_stat_replication shows both node1 and node3 streaming \u2014 directly demonstrating the required recovery topology change.",
+      "evidence_ids": [
+        "cmd-070c650445e843ff",
+        "cmd-254a3259c2ff42ec",
+        "cmd-14a490843ec6409d",
+        "cmd-eafe822fa01a479d"
+      ]
+    },
+    {
+      "id": "restart-protocol-node1",
+      "requirement": "Provider-wide node-restart evidence protocol on node1: baseline, restart ack, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 4d340bf4... and healthy standby state captured; systemctl reboot acknowledged; connection loss/reset observed during reboot; post-reboot boot_id 9c54dcf4... (changed, matches fixed after-executor snapshot); postgresql active, standby recovery mode confirmed, all data rows intact, node2 shows node1 streaming again.",
+      "evidence_ids": [
+        "cmd-3819516629aa431c",
+        "cmd-0353bb34eaaa4d07",
+        "cmd-4634f23fdab14895",
+        "cmd-1758006f6fdf4e86",
+        "cmd-16b554886f7f4380",
+        "cmd-d6d8cf175a694ba7",
+        "cmd-8dd1450f91654130"
+      ]
+    },
+    {
+      "id": "restart-protocol-node3",
+      "requirement": "Provider-wide node-restart evidence protocol on node3: baseline, restart ack, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 4d842549... captured; reboot acknowledged with connection timeout during transition; post-reboot boot_id 26c0dbdc... (changed, matches fixed snapshot); postgresql active, standby recovery confirmed, all data present, node2 shows node3 streaming again.",
+      "evidence_ids": [
+        "cmd-8fd7a9c7b3934ed5",
+        "cmd-58c311fab14a433e",
+        "cmd-b0b84e1118cd43ee",
+        "cmd-b113a37dc82f4233",
+        "cmd-88f75b7dce1c4e7d",
+        "cmd-8148d71c0e484fba"
+      ]
+    },
+    {
+      "id": "restart-protocol-node2",
+      "requirement": "Provider-wide node-restart evidence protocol on node2 (current primary): baseline, restart ack, changed boot identity, recovered state as primary",
+      "status": "satisfied",
+      "summary": "Baseline boot_id cce73776... with node2 confirmed primary (pg_is_in_recovery=f, 4 rows); reboot acknowledged with connection timeout/reset; post-reboot boot_id abf60f22... (changed, matches fixed snapshot); postgresql resumed active as writable primary, accepted a new write, and both node1/node3 replicated it, proving full cluster recovery.",
+      "evidence_ids": [
+        "cmd-6eae4d49d19d4586",
+        "cmd-4ff5db7464674024",
+        "cmd-a7ddbae97102402c",
+        "cmd-a9c7284f1e04407d",
+        "cmd-5e86233cedb84425",
+        "cmd-eb78169cfb694bfd",
+        "cmd-f34a20749a784646",
+        "cmd-a103fffe443c47ef"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established three-node PostgreSQL 16 streaming replication (node1 primary, node2/node3 standbys), directly demonstrated a bounded failover in which node2 was promoted to writable primary with zero committed-data loss, repointed node3 to the new primary, and rebuilt node1 as a standby of node2 \u2014 fully satisfying the task's core failover/recovery contract with concrete before/during/after evidence rather than configuration alone. The mandatory provider-wide restart protocol was also completed and cross-checked cleanly against the fixed before-prepare/after-executor boot-identity snapshots for all three nodes, including the primary (node2), each showing changed boot ids and full service/data/cluster recovery.",
+  "limitations": [
+    "The pg_basebackup setup phase required several failed/retried attempts (proxy timeouts, background-process orphaning, empty-directory errors) before succeeding; while these were self-corrected with no lasting effect, they add noise to the timeline and slightly reduce certainty about the exact mechanism of the final successful basebackup invocation.",
+    "Command outputs are captured evidence snippets and may not represent every intermediate state; reliance is placed on the specific psql/pg_stat_replication queries selected by the executor."
+  ],
+  "command_stats": {
+    "total": 82,
+    "successful": 68,
+    "failed": 12,
+    "indeterminate": 2,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Building the standbys via pg_basebackup required multiple retries: two attempts timed out at the 120s proxy limit (cmd-de2e6ff211174be4, cmd-c5428130046c4e56), leading to repeated cycles of killing stray pg_basebackup/sudo processes (cmd-a9c275293d3d4aec, cmd-2a187dc4c4fd4b7b) and wiping /var/lib/pgsql/data on node2/node3 several times (cmd-72f8d5159a5344bd, cmd-3f7716a714344230, cmd-ebd2809838764461, cmd-539143eebdaf4b10, cmd-8f005afc43124045, cmd-61ce269e351e4722) before a working nohup/setsid invocation succeeded. Each of these mutations targeted only the not-yet-initialized standby data directory being built for this task (a necessary prerequisite for replication) and was fully superseded by the final successful basebackup, leaving no residue or damaged state \u2014 bounded, low-risk, and self-corrected rather than retained. Minor leftover artifacts (/tmp/pginstall.log, /tmp/basebackup.log, /root/repl_pw.txt) remain on the nodes but are benign, permission-restricted, and plausibly needed for ongoing cluster administration. No failed services, no unnecessary firewall exposure beyond the required postgresql service, and package health checks are clean on all nodes post-executor.",
+    "evidence_ids": [
+      "cmd-de2e6ff211174be4",
+      "cmd-c5428130046c4e56",
+      "cmd-a9c275293d3d4aec",
+      "cmd-2a187dc4c4fd4b7b",
+      "cmd-72f8d5159a5344bd",
+      "cmd-3f7716a714344230",
+      "cmd-ebd2809838764461",
+      "cmd-539143eebdaf4b10",
+      "cmd-8f005afc43124045",
+      "cmd-61ce269e351e4722",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

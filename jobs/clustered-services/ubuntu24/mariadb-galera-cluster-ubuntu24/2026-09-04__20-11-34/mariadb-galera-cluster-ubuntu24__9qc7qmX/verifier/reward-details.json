@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Configure node1, node2, node3 as a three-member MariaDB Galera cluster (Primary component, size 3)",
+      "status": "satisfied",
+      "summary": "node1 bootstrapped a fresh cluster (size 1), node2 joined via SST/IST reaching size 2 Synced, node3 joined reaching size 3 Synced. Final status check confirms wsrep_cluster_size=3, status Primary, and wsrep_incoming_addresses lists all three node IPs.",
+      "evidence_ids": [
+        "cmd-2a0256ae867b41d0",
+        "cmd-808e8e3c1624420f",
+        "cmd-2588302b9bb34d16",
+        "cmd-f8ab0388f0c54537"
+      ]
+    },
+    {
+      "id": "writes-visible-from-other-members",
+      "requirement": "Writes through any member should be available from the other members",
+      "status": "satisfied",
+      "summary": "A write on node1 (id=1) was observed on node2 and node3; a subsequent write on node2 (id=2) was observed on node3; a write on node3 (id=3) was observed back on node1 \u2014 demonstrating full-mesh replication across all three members.",
+      "evidence_ids": [
+        "cmd-654e9ed681d54679",
+        "cmd-773b4660e0d24127",
+        "cmd-32c7ff8dee4848c2",
+        "cmd-7d7274a8254f4221"
+      ]
+    },
+    {
+      "id": "availability-during-outage",
+      "requirement": "Keep the database available when one member is unavailable",
+      "status": "satisfied",
+      "summary": "Healthy baseline (size 3, Synced) was established beforehand. node3's mariadb was stopped; node1 and node2 immediately showed cluster_status=Primary at reduced size 2, and both accepted new writes (ids 4 and 5) while node3 was down \u2014 a directly observed bounded disruption with continued availability.",
+      "evidence_ids": [
+        "cmd-b7eeaf75d1f148ec",
+        "cmd-a5417a1ee3c74b77",
+        "cmd-1ae3160255594557"
+      ]
+    },
+    {
+      "id": "auto-resync-on-return",
+      "requirement": "Resynchronize a returning member automatically",
+      "status": "satisfied",
+      "summary": "node3's mariadb was restarted; without manual intervention it rejoined the cluster (size 3), reached wsrep_local_state_comment=Synced, and its data table contained all rows including the two written while it was offline (ids 4 and 5), confirming automatic IST resync.",
+      "evidence_ids": [
+        "cmd-8223dda9d9714d1d"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on all managed nodes (independent of the public task contract)",
+      "status": "satisfied",
+      "summary": "Each of node1, node2, node3 has a complete restart evidence chain: pre-restart boot_id + healthy cluster/data baseline (size 3, Synced, 5 rows), a reboot acknowledgement followed by a connection-timeout confirming the disruption, a changed post-reboot boot_id, and a recovered state (mariadb active, cluster size 3, Synced, all 5 rows intact). The reported boot_id changes match the fixed after-executor lifecycle snapshot (node1 bdd5de93\u21921788d797, node2 28ae5f98\u2192b3069b40, node3 dfeb3b70\u2192d52d1ebc), corroborating the executor's restart claims via an independent cross-check.",
+      "evidence_ids": [
+        "cmd-ea9c1427f5af43ac",
+        "cmd-b0ba145cd97c415a",
+        "cmd-1eaaab8f2bcc4a0b",
+        "cmd-432e2873eca146bb",
+        "cmd-2d2820f7c0c64c2a",
+        "cmd-62b6f574b6a4409c",
+        "cmd-ce94d15b49934edd",
+        "cmd-5a18a9bf02b94be0",
+        "cmd-69d9a402220c49cd",
+        "cmd-342ee76b8f1847cc",
+        "cmd-32c754fd78834494",
+        "cmd-757c81631f364681",
+        "cmd-54e519a24c6642e1",
+        "cmd-a71a1a185521466d",
+        "cmd-eb72586fad6b4673",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a genuine 3-node MariaDB Galera cluster and directly demonstrated all four material outcomes from the task contract: cluster formation, full-mesh write replication, continued availability during a real bounded node outage, and automatic IST resynchronization on return \u2014 each backed by before/during/after command evidence rather than configuration alone. The independent, provider-wide sequential-reboot protocol was also completed for all three nodes with matching boot-identity, disruption, and recovery evidence, cross-checked against the fixed lifecycle snapshots. No unnecessary or unreverted mutations were found in the command trace.",
+  "limitations": [
+    "The three initial apt-get install commands returned proxy-timeout errors; evidence for their eventual success relies on later polling commands showing packages installed rather than a clean single install transcript.",
+    "The reboot-triggering command used a self-scheduled 'reboot' inside a backgrounded shell rather than a control-plane restart primitive; this is accepted as a valid restart mechanism given it produced a genuine boot-id change and service disruption, but it is a slightly different mechanism than an external hard reboot."
+  ],
+  "command_stats": {
+    "total": 56,
+    "successful": 45,
+    "failed": 8,
+    "indeterminate": 3,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "Every state-changing command traces to a legitimate purpose: package installation, Galera config authoring, cluster bootstrap/join, enabling the service, the mandated write/failover/resync verification (bounded, fully restored \u2014 node3 stop was immediately followed by restart and rejoin), and the mandatory sequential reboot protocol. The three early apt-get install commands timed out at the proxy layer (cmd-983e393230634eb8, cmd-6907f40c69e94b8b, cmd-bb819f0622764b08) but the installs continued running in the background and were confirmed complete by later polling \u2014 these are not unnecessary mutations, just an async completion pattern, and no corrective/duplicate install was issued. The after-executor snapshot shows no failed services and no abandoned files; new listening sockets (3306, 4567) and bind-address=0.0.0.0 are the expected, required exposure for Galera cluster communication, not unwanted exposure. No unnecessary or unreverted mutations were identified.",
+    "evidence_ids": [
+      "cmd-983e393230634eb8",
+      "cmd-6907f40c69e94b8b",
+      "cmd-bb819f0622764b08",
+      "cmd-a15a9afe11624771",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,117 @@
+{
+  "status": "completed",
+  "summary": "Configured PostgreSQL 16 streaming replication across the cluster: node1 (10.100.99.10) as the writable primary, node2 and node3 as async read-only standbys built via pg_basebackup with a dedicated replicator role. Verified writes on node1 replicate to both standbys and standbys reject writes. Completed the mandatory sequential restart protocol (node2, node3, node1) with boot-id proof of each reboot and post-restart verification of PostgreSQL activity, recovery/streaming state, and data integrity (including a post-restart write/read round trip).",
+  "actions_performed": [
+    "Inspected all three nodes (RHEL 10, no PostgreSQL pre-installed)",
+    "Installed postgresql-server/postgresql-contrib 16.14 on node1, node2, node3 (retried node2 after transient GPG fetch error)",
+    "Initialized DB on node1 and configured postgresql.conf (listen_addresses, wal_level=replica, max_wal_senders, max_replication_slots, hot_standby) and pg_hba.conf for replication/app connections from the cluster subnet",
+    "Started postgresql on node1 and created a 'replicator' role with a randomly generated password (kept out of command text via secret_env)",
+    "Opened firewalld postgresql service on node1 (was blocking pg_basebackup with 'No route to host')",
+    "Ran pg_basebackup -R from node1 on node2 and node3 to clone the primary and auto-generate standby.signal/primary_conninfo",
+    "Started postgresql on node2 and node3, confirmed streaming state on primary and pg_is_in_recovery=true on standbys",
+    "Created repl_test table on primary, inserted a row, confirmed it appeared on both standbys, and confirmed standbys reject INSERTs (read-only)",
+    "Captured pre-restart boot_id and health baseline on all three nodes",
+    "Sequentially rebooted node2, then node3, then node1 (primary last) via systemctl reboot backgrounded so the ack returned before disconnection",
+    "Polled each node until reachable again and proved boot_id changed after each reboot",
+    "Verified postgresql active and recovery/streaming state restored, and repl_test data intact after each node's restart",
+    "Performed a final post-restart write on primary and confirmed it replicated to both standbys"
+  ],
+  "evidence": [
+    {
+      "requirement": "PostgreSQL installed on all nodes",
+      "command_ids": [
+        "cmd-cefb1d9970c2440f",
+        "cmd-331875cafa014f1f",
+        "cmd-008a922afd724aa6",
+        "cmd-7c68e65de50340e2"
+      ],
+      "summary": "postgresql-server 16.14 installed successfully on node1, node2 (after retry), and node3"
+    },
+    {
+      "requirement": "Primary configured for replication (node1)",
+      "command_ids": [
+        "cmd-fff3eacaf3ea4c5c",
+        "cmd-0bd68c227f264224",
+        "cmd-306db598846b4aff",
+        "cmd-3d339d2de5874694",
+        "cmd-be5a331e8615433c"
+      ],
+      "summary": "initdb run, postgresql.conf/pg_hba.conf updated for streaming replication, service started, replicator role created"
+    },
+    {
+      "requirement": "Standbys built from primary and configured read-only",
+      "command_ids": [
+        "cmd-0c54400211e24dc0",
+        "cmd-703f3775480c4558",
+        "cmd-f20515df367b41cf",
+        "cmd-c274065dd92e4218",
+        "cmd-6c1a2ab304404712",
+        "cmd-b69ca85b21d3446c",
+        "cmd-f501ef4d26694dea"
+      ],
+      "summary": "firewall opened, pg_basebackup -R succeeded on node2 and node3 producing standby.signal + primary_conninfo, postgresql started on both"
+    },
+    {
+      "requirement": "Streaming replication established and standbys read-only",
+      "command_ids": [
+        "cmd-37c9bb03a43948b7",
+        "cmd-407d5559572d460d",
+        "cmd-367a53cb486e4e68"
+      ],
+      "summary": "pg_stat_replication on node1 shows both standbys in 'streaming' state; pg_is_in_recovery() true on node2/node3"
+    },
+    {
+      "requirement": "Changes on primary visible on both standbys",
+      "command_ids": [
+        "cmd-5c8be628369a454a",
+        "cmd-839872f76a794134",
+        "cmd-559c641b544d43a5"
+      ],
+      "summary": "Row inserted on node1 appears on node2 and node3; both standbys reject INSERT as read-only transactions"
+    },
+    {
+      "requirement": "node2 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-a496ac222f4746df",
+        "cmd-3f643941b51e4c22",
+        "cmd-e39622832bd44018",
+        "cmd-e2e7b5e650be4368",
+        "cmd-f0f412fc0c28486a",
+        "cmd-6da18b7f86094e43"
+      ],
+      "summary": "Baseline boot_id 6d37896c..., reboot acked, unreachable then boot_id changed to a36b4a70..., postgresql active + in recovery + repl_test data present, primary shows node2 streaming again"
+    },
+    {
+      "requirement": "node3 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-6db04db8196b426c",
+        "cmd-5c3c2cab7d8c4484",
+        "cmd-134f78a186674eec",
+        "cmd-a9d72a0d167d44ae",
+        "cmd-cf9f2d2d74084072",
+        "cmd-3b8a4ef1e58f419b"
+      ],
+      "summary": "Baseline boot_id e625b9a5..., reboot acked, unreachable then boot_id changed to 3a26b4cd..., postgresql active + in recovery + repl_test data present, primary shows both standbys streaming"
+    },
+    {
+      "requirement": "node1 (primary) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-cf59f96c7d41416f",
+        "cmd-a81832ed05cc4c49",
+        "cmd-f82c43f85f1a4ba6",
+        "cmd-bcdb168d0ee24980",
+        "cmd-0d2b061e34474da9"
+      ],
+      "summary": "Baseline boot_id 180a78a0..., reboot acked, unreachable then boot_id changed to fd2965a8..., postgresql active with repl_test data intact and both standbys reconnected/streaming"
+    },
+    {
+      "requirement": "Post-restart end-to-end replication proof",
+      "command_ids": [
+        "cmd-88084dd00158462a",
+        "cmd-8aad6bb1802e4e4b",
+        "cmd-56a689b168534fe6"
+      ],
+      "summary": "New row inserted on primary after all restarts appears on both standbys, confirming replication fully functional post-restart"
+    }
+  ]
+}

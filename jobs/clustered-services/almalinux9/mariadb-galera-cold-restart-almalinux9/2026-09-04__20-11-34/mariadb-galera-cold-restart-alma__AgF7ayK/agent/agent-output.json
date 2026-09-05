@@ -1,0 +1,112 @@
+{
+  "status": "completed",
+  "summary": "Deployed a 3-member MariaDB 10.5 Galera cluster on node1/node2/node3 (AlmaLinux 9, starting from bare nodes with no MariaDB installed), took the whole cluster down for a maintenance window, and brought it back with all committed writes intact and all three members serving again. Also completed the mandatory one-at-a-time OS reboot protocol for every node, proving changed boot identity and full cluster health recovery after each.",
+  "actions_performed": [
+    "Installed mariadb-server, mariadb-server-galera, and galera packages via dnf on node1, node2, node3 (no prior installation existed)",
+    "Opened firewalld ports 3306/tcp, 4567/tcp+udp, 4568/tcp, 4444/tcp on all three nodes",
+    "Set SELinux to permissive on all three nodes (no mariadb-selinux policy package available) to allow wsrep/rsync SST to function",
+    "Wrote /etc/my.cnf.d/galera.cnf on each node with correct wsrep_provider path (/usr/lib64/galera/libgalera_smm.so), cluster address gcomm://10.100.124.10,.11,.12, and per-node wsrep_node_address/name",
+    "Bootstrapped the cluster on node1 via galera_new_cluster, then started mariadb on node2 and node3 to join (cluster size grew 1->2->3, all Synced)",
+    "Enabled mariadb.service on all three nodes for boot persistence",
+    "Created appdb.orders table and inserted application rows, verified replication to all three nodes",
+    "Captured healthy baseline (boot_id, wsrep cluster size/state, row counts) on all three nodes",
+    "Performed full maintenance-window shutdown: stopped mariadb on node3, then node2, then node1 (cluster fully down)",
+    "Inspected grastate.dat on all nodes to identify node1 as having the highest seqno (9) and safe_to_bootstrap=1",
+    "Re-bootstrapped cluster on node1 via galera_new_cluster, verified all committed rows present including a pre-maintenance checkpoint write",
+    "Started mariadb on node2 then node3 to rejoin; verified cluster size 3, Synced, and all data present on both",
+    "Performed a post-maintenance write on node3 and confirmed it replicated to node1 and node2",
+    "Ran the mandatory node-restart protocol: rebooted node1, node2, node3 one at a time via systemctl reboot, waited for reconnect, confirmed boot_id changed on each, and confirmed mariadb auto-started, rejoined the cluster (size 3, Synced), and retained all data after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "Cluster stood up with 3 members holding application data",
+      "command_ids": [
+        "cmd-1f55e12efd16478c",
+        "cmd-44110fd85b32496f",
+        "cmd-a342cecb087643cf",
+        "cmd-bc42de79f8e84d38",
+        "cmd-2076a9c639a04790",
+        "cmd-7b6426d8dac649b6",
+        "cmd-c59cce8c6d9343b5",
+        "cmd-ad97d922d75a4176",
+        "cmd-ae9293a2ffaa459c"
+      ],
+      "summary": "Cluster bootstrapped on node1, node2 and node3 joined sequentially reaching wsrep_cluster_size=3/Synced; appdb.orders table created on node1 and confirmed replicated to node2 and node3."
+    },
+    {
+      "requirement": "Healthy baseline captured before maintenance shutdown",
+      "command_ids": [
+        "cmd-e6ef4cc9e9bf49d9",
+        "cmd-041714dea52d4e94",
+        "cmd-f6c3b4c8ffc24cfc",
+        "cmd-a80260abe5564fa0"
+      ],
+      "summary": "Pre-maintenance checkpoint write inserted on node2 and baseline boot_id + wsrep cluster size/state + row count (4 rows) captured on all three nodes."
+    },
+    {
+      "requirement": "Cluster brought down completely for maintenance window",
+      "command_ids": [
+        "cmd-cd40a5e4ad154e95",
+        "cmd-a9d3b35ea4d84b4c",
+        "cmd-27cbedcf2ede413f",
+        "cmd-a5c576659c734a5f",
+        "cmd-01a1812d477b4909",
+        "cmd-41769cc0eddb4566"
+      ],
+      "summary": "mariadb stopped on node3, node2, then node1; grastate.dat on all three nodes confirms inactive service and recorded seqnos (node1 highest at 9, safe_to_bootstrap=1)."
+    },
+    {
+      "requirement": "Cluster brought back with every committed write still present and all three members serving",
+      "command_ids": [
+        "cmd-446f890f45414f16",
+        "cmd-48e8a61a510e4bc8",
+        "cmd-77b2ac172d0940f4",
+        "cmd-3f6894b069f146c6",
+        "cmd-22c41167a3814d50",
+        "cmd-77be1a21afb64db3",
+        "cmd-5841b3d32007433d",
+        "cmd-ecdb06f3a48a4090",
+        "cmd-26e59fca9aa147ef"
+      ],
+      "summary": "node1 re-bootstrapped via galera_new_cluster with all 4 prior rows intact; node2 and node3 rejoined (cluster size 2 then 3, both Synced) with identical data; a post-maintenance write from node3 replicated to node1 and node2, proving all three members are serving writes again."
+    },
+    {
+      "requirement": "Mandatory restart evidence: node1 boot identity change and recovery",
+      "command_ids": [
+        "cmd-6949686b004d442a",
+        "cmd-7f051679d7bc415d",
+        "cmd-4af247f41d634c95",
+        "cmd-18e231a9a6974641",
+        "cmd-3f048127301f49be",
+        "cmd-76d8bfa4cbcf4c55"
+      ],
+      "summary": "node1 baseline boot_id 8c28f3cd...; systemctl reboot acknowledged; node became unreachable then reachable again with new boot_id 70c46d29...; mariadb active with wsrep_cluster_size=3/Synced and all 5 rows present post-reboot."
+    },
+    {
+      "requirement": "Mandatory restart evidence: node2 boot identity change and recovery",
+      "command_ids": [
+        "cmd-b5dedab5c0aa4f48",
+        "cmd-f5a0c8db083944a4",
+        "cmd-e728c886d53b4e21",
+        "cmd-dd1342ebf8ab45f9",
+        "cmd-67f73ec960a641d0",
+        "cmd-36d914467aba4381"
+      ],
+      "summary": "node2 baseline boot_id e65e6bcf...; reboot acknowledged; node unreachable then back with new boot_id 74f929f6...; after brief SST activation, mariadb reached active/Synced with wsrep_cluster_size=3 and all 5 rows present."
+    },
+    {
+      "requirement": "Mandatory restart evidence: node3 boot identity change and recovery, full cluster health after final node",
+      "command_ids": [
+        "cmd-ecd10556946142ea",
+        "cmd-d1302daf3afb4d4b",
+        "cmd-10c74efbe10248fd",
+        "cmd-2e0b2f895a5b4156",
+        "cmd-457a3a6beb9b4d60",
+        "cmd-37f22cac69fd4dcc",
+        "cmd-14b089d8b58c4f0a",
+        "cmd-37d3e5b8e1084127"
+      ],
+      "summary": "node3 baseline boot_id 54089086...; reboot acknowledged; node unreachable then back with new boot_id ce08fd3d...; mariadb active/Synced with wsrep_cluster_size=3 and all 5 rows present; final cross-check on node1 and node2 confirms cluster_size=3, Synced, and matching row count (5) on all three nodes after all restarts."
+    }
+  ]
+}

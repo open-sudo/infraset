@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Build a three-member etcd cluster across node1, node2, and node3",
+      "status": "satisfied",
+      "summary": "etcdctl member list and endpoint health from node1 show all three members (node1/node2/node3) started with correct peer/client URLs bound to their real IPs, and endpoint health --cluster against all three real IP endpoints reports healthy after cluster formation and again after all three node restarts.",
+      "evidence_ids": [
+        "cmd-4ef5fab81f9944e8",
+        "cmd-f6152f15d04e47b1",
+        "cmd-f10cd5d800f74b3d",
+        "global:after_executor:node1:listening-sockets",
+        "global:after_executor:node2:listening-sockets",
+        "global:after_executor:node3:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "A key written through any member must be readable from the others",
+      "status": "satisfied",
+      "summary": "Key 'foo' was written via node1's local etcd endpoint and successfully read back with the same value from node2's and node3's local endpoints, directly demonstrating cross-member replication.",
+      "evidence_ids": [
+        "cmd-ba38f0ea364f4740",
+        "cmd-3f3cdeb7bb6a406a",
+        "cmd-b974d907db2643ab"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Cluster keeps serving reads and writes while one member is unavailable",
+      "status": "satisfied",
+      "summary": "node3's etcd was stopped (confirmed inactive), then a write via node1 succeeded and was immediately read back via node2, with both endpoints reporting healthy while node3 remained down \u2014 a direct, bounded disruption-and-continued-service observation, later repeated for node2 and node3 during the mandated reboot sequence with additional writes during each outage.",
+      "evidence_ids": [
+        "cmd-c8888eeb7c274c0d",
+        "cmd-e1e13b0a115b400d",
+        "cmd-a71455ed5ca34ddf",
+        "cmd-2040e3719d35405a",
+        "cmd-efa96ab3fbb34f63"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Unavailable member is brought back up to date when it returns",
+      "status": "satisfied",
+      "summary": "After restarting node3's etcd, endpoint health reported healthy and the node returned both the key written while it was offline ('during-outage') and the earlier key ('foo'), directly confirming resynchronization. This pattern was repeated and reconfirmed for all three nodes during the subsequent full reboot sequence, each recovering keys written during their respective downtime.",
+      "evidence_ids": [
+        "cmd-91851aadb4cc4407",
+        "cmd-f7a1cb057a7a47d8",
+        "cmd-60ad4fbb48e34400",
+        "cmd-8dbdb938f4e6430b"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (independent of task contract)",
+      "status": "satisfied",
+      "summary": "For each of node1, node2, and node3: a pre-restart boot_id and healthy etcd baseline was captured, shutdown -r now was issued and acknowledged, the node went unreachable then reachable with a distinct boot_id, and post-restart etcd was active, endpoint-healthy, held prior and in-flight data, and cluster membership was unchanged. The executor-reported boot_ids (608428dc.../edba4cef.../3636f517...) match the fixed after_executor lifecycle snapshot exactly, cross-confirming the transition against the fixed before_prepare boot_ids (b634b53f.../f1afbc7f.../98aa35f5...).",
+      "evidence_ids": [
+        "cmd-5b10048932624ffd",
+        "cmd-90c416214cbe49af",
+        "cmd-aafd4407ad43444f",
+        "cmd-752c3410ab004159",
+        "cmd-f7a1cb057a7a47d8",
+        "cmd-9b1d5f1b26e749ad",
+        "cmd-f5428f3bf2ec420f",
+        "cmd-6f3f2470e12b45b7",
+        "cmd-60ad4fbb48e34400",
+        "cmd-3e955153748c46e1",
+        "cmd-617fdcb9c8c34518",
+        "cmd-767fac233b1b4b0a",
+        "cmd-8dbdb938f4e6430b",
+        "global:before_prepare:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the public task contract are directly and coherently satisfied: a healthy 3-member etcd cluster was formed across node1/node2/node3, a key written on one member was read back on the others, the cluster continued serving reads/writes when a member (initially node3, later each node in turn) was taken down, and each member resynchronized fully on return. The independent provider-wide restart protocol was also completed for all three nodes with pre/post boot-identity, acknowledgement, and full service/data/cluster-membership recovery, and the reported boot IDs match the fixed lifecycle snapshots exactly. The only blemish is leftover build-artifact residue in /tmp on all three nodes; firewalld and systemd unit changes were necessary, scoped, and retained appropriately.",
+  "limitations": [
+    "The executor's initial etcd bootstrap attempt failed for roughly 7 minutes due to firewalld blocking peer ports before being diagnosed and corrected; this is documented discovery/correction rather than a final-state defect, but it means the very first cluster-formation attempt was not itself healthy.",
+    "Cross-member reads during normal operation were only demonstrated via each node's own localhost endpoint rather than via one node's client endpoint querying data written through another node's endpoint over the network, though this is a normal and sufficient way to demonstrate replication in etcd's peer-to-peer model."
+  ],
+  "command_stats": {
+    "total": 79,
+    "successful": 59,
+    "failed": 20,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewing the chronological state-changing commands: installing etcd/etcdctl binaries, creating the etcd user and data dir, writing systemd units, adding TimeoutStartSec=180 (a corrective fix for a genuine startup-timeout failure caused by firewalld blocking peer traffic), clearing stale data dirs before a clean cold start, and opening firewalld ports 2379/2380 (a necessary, narrowly-scoped, permanently-recorded change directly required for peer communication and left in place with no broader exposure than the two etcd ports) are all clearly tied to achieving the cluster or to correcting an earlier failed bootstrap attempt \u2014 no unnecessary or unrelated mutations were found. The one minor residue is build artifacts left in /tmp on all three nodes (etcd.tar.gz, the extracted etcd-v3.5.17-linux-amd64 directory, reboot.log, start.log \u2014 visible in the after_executor temporary-files diff), which were never cleaned up; this is low-risk, non-destructive, and does not affect service state, package health, or security posture (failed-services empty and package-health clean on all nodes post-run), but it is unrestored residue.",
+    "evidence_ids": [
+      "cmd-ebd85c96ab4b4a80",
+      "cmd-f4ce1aaa97504d0d",
+      "cmd-9c180865568b4b2e",
+      "cmd-9249c5c5f9754ed8",
+      "cmd-e7a156c7c919447d",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

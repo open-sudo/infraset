@@ -1,0 +1,70 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-05T01:23:23.517098+00:00",
+      "outcome": "executor_timed_out",
+      "finished_at": "2026-09-05T01:58:23.979821+00:00",
+      "error": "claude-code timed out after 2100 seconds",
+      "diagnosis": {
+        "summary": "The executor timed out after 35 minutes while still in the package-installation phase on all four nodes; no evidence in the sampled log shows Galera configuration (my.cnf/wsrep settings), cluster bootstrap, or node4 join ever being attempted. The two clearly observed problems are (1) severe apt/network flakiness against Ubuntu mirrors that forced repeated multi-minute retries and consumed most of the time budget, and (2) after mariadb-server-10.0 finally installed on node1, systemd reported the mariadb.service unit as 'not-found', meaning the expected service name did not exist post-install.",
+        "evidence": [
+          {
+            "source": "node1/2/3/4 first exec (mysql -e ... / which mysql)",
+            "finding": "Before any install, mysql/mariadb binaries did not exist and mariadb.service was inactive on all four nodes (fresh Ubuntu 16.04 Xenial i386 images, no DB packaged pre-installed)."
+          },
+          {
+            "source": "apt-get update calls on node1-4",
+            "finding": "All four 'apt-get update' invocations hit the 120s proxy read timeout and were recorded as failed, indicating slow/unreliable outbound network or mirror responsiveness from the start."
+          },
+          {
+            "source": "install.log tails across multiple polling execs (node1-4, ~01:43-01:57)",
+            "finding": "apt-get install for mariadb-server-10.0/galera-3/rsync repeatedly hit 'Connection failed' errors against archive.ubuntu.com and security.ubuntu.com mirrors (e.g. IP 91.189.92.24, 91.189.91.82), requiring multiple sleep/retry poll cycles per node; total install time stretched past 15+ minutes per node."
+          },
+          {
+            "source": "os-release check on node4",
+            "finding": "All nodes are Ubuntu 16.04.7 LTS (Xenial) on i386 (32-bit) architecture, an unusual choice that narrows available mirror package versions and may correlate with the connection failures/slowness (i386 xenial packages are lower-traffic/lower-priority mirror paths)."
+          },
+          {
+            "source": "node1 dpkg/systemctl check post-install (~01:54:50)",
+            "finding": "'dpkg -l' confirms mariadb-server-10.0 10.0.38-0ubuntu0.16.04.1 installed, but 'systemctl status mariadb' reports 'Loaded: not-found (Reason: No such file or directory)' and 'Active: inactive (dead)' \u2014 the mariadb.service unit does not exist under that name on this package/OS combination."
+          },
+          {
+            "source": "overall audit counts",
+            "finding": "111 total command records with only 55 terminal (33 of those omitted from the sample) and 56 requested-only (never completed) \u2014 the sampled window ends during node1's post-install service check, with no later records showing my.cnf edits, wsrep_cluster_address configuration, galera bootstrap, or any node4-specific join steps. Evidence is insufficient to say whether those steps were attempted later in the run before the timeout."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "Primary/root cause: the run exhausted its 2100s budget almost entirely on apt-get update/install across 4 nodes due to unreliable/slow connectivity to Ubuntu package mirrors, leaving little or no time for actual Galera configuration and node4 join.",
+            "confidence": "high"
+          },
+          {
+            "cause": "Secondary issue: on this Ubuntu 16.04 mariadb-server-10.0 package, the running service is registered under a different unit name (commonly 'mysql.service', not 'mariadb.service' on Xenial) \u2014 the executor's readiness checks used 'systemctl is-active mariadb', which would report inactive/not-found even if the DB were actually starting correctly, likely causing unnecessary further debugging/retry loops.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "The i386 (32-bit) node architecture may have contributed to mirror/package-availability slowness or failures, since i386 xenial-security/xenial-updates paths are lower-traffic and more prone to transient 'Connection failed' errors than amd64.",
+            "confidence": "low"
+          },
+          {
+            "cause": "No evidence in the sample that /etc/hosts population via CLUSTER_HOSTS or SSH keypair setup ever completed cleanly, since those commands were bundled with the failing apt-get update call and its failure state for that combined command is ambiguous (the 'tee' part may have succeeded even though the whole line was marked failed due to apt-get timeout).",
+            "confidence": "low"
+          }
+        ],
+        "next_attempt_guidance": [
+          "On the fresh cluster, first verify basic network reachability and mirror latency with lightweight commands (e.g. a single small apt-get update with a short explicit timeout, or curl -sI to the mirror) before committing to the full package install command, so mirror flakiness is caught early and cheaply rather than through repeated 120s-timeout retries.",
+          "Split 'echo CLUSTER_HOSTS >> /etc/hosts' and 'apt-get update' into separate exec calls (per platform guidance: one logical step per exec) so a mirror timeout on update doesn't leave ambiguous state about whether /etc/hosts was written.",
+          "Do not use 'systemctl is-active mariadb' as the sole readiness check on Ubuntu 16.04/mariadb-server-10.0; also check 'systemctl is-active mysql' and 'service mysql status', since the unit may be registered under the legacy 'mysql' name on this OS/package combination \u2014 confirm the actual unit name via 'systemctl list-units | grep -i -E \"mysql|mariadb\"' before concluding the service is missing.",
+          "Budget time explicitly: given ~15+ minutes per node for install alone in the prior attempt, either run installs on all 4 nodes in parallel (background + poll per the platform's streaming pattern) rather than sequentially, or request a longer time allowance, so there is time left for wsrep_cluster_address configuration, bootstrap of the first node, sequential join of node2/node3, and finally adding node4 with its own galera config and SST.",
+          "If apt package installation continues to be unreliable due to mirror connectivity, consider checking whether a regional/local mirror or apt proxy is expected in this environment, since 'Connection failed' errors against archive.ubuntu.com/security.ubuntu.com were the dominant failure mode and are an environment/network characteristic, not a Galera configuration issue.",
+          "Confirm the node's architecture (i386 vs amd64) up front; if i386 was unintended, flag it, since it constrains which mirror paths and package versions are available and may be the source of the observed connection instability.",
+          "When finally configuring Galera, apply the my.cnf wsrep_cluster_address and wsrep_node_address settings consistently across all 4 nodes from the start (including node4) rather than treating node4 as an afterthought, and plan for an SST (e.g. rsync-based, since 'rsync' was already installed) to populate node4 from an existing member's data."
+        ]
+      }
+    }
+  ]
+}

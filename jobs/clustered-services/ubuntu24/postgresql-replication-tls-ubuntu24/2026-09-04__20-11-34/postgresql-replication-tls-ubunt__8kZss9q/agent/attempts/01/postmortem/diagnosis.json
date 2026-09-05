@@ -1,0 +1,55 @@
+{
+  "summary": "The executor timed out after 2100s (executor_timed_out) before completing the PostgreSQL TLS replication setup. Package installation, CA distribution, and TLS certificate/config staging succeeded on all three nodes, but the last observed pg_hba.conf on node1 still only had the default scram-sha-256 rules with no TLS/client-certificate enforcement for replication, and no evidence of pg_hba edits, service restarts, or standby bootstrapping (pg_basebackup, standby.signal, primary_conninfo) appears in the selected record set before the timeout.",
+  "evidence": [
+    {
+      "source": "executor command audit, node1/node2/node3 apt-get install commands",
+      "finding": "Each apt-get install call exceeded the platform's 120s proxy read timeout and was reported as 'failed', even though the install had actually completed on the host (node1's dpkg -l shows postgresql-16 fully installed with post-bootstrap init messages)."
+    },
+    {
+      "source": "executor command audit, node2/node3 polling commands",
+      "finding": "After the apt 'failure', the executor had to run explicit 100s polling loops on node2 and node3 to wait for the background apt-get process to finish, adding further wall-clock time before it could confirm postgresql-16 was installed."
+    },
+    {
+      "source": "executor command audit, CA/cert distribution steps",
+      "finding": "A CA tarball (pgca.tgz) was built and served via a temporary HTTP server, downloaded successfully by node2 and node3, and TLS material (ca.crt, server.crt/key, replicator.crt/key) was copied into /etc/postgresql/16/main/tls on all three nodes with correct ownership/permissions."
+    },
+    {
+      "source": "executor command audit, postgresql.conf/conf.d edits",
+      "finding": "An identical conf.d/tls_repl.conf enabling ssl, ssl_cert_file/ssl_key_file/ssl_ca_file, wal_level=replica, max_wal_senders, and hot_standby was written on all three nodes."
+    },
+    {
+      "source": "executor command audit, last pg_hba.conf check on node1",
+      "finding": "pg_hba.conf on node1 at the time of this check still contained only the default local/peer and scram-sha-256 rules (including for the 'replication' database) \u2014 no hostssl rule requiring a client certificate from the new CA had been added yet."
+    },
+    {
+      "source": "audit selection metadata",
+      "finding": "44 of 62 terminal command records were omitted from the redacted set (only up to 20 failures + 12 successes retained), so it cannot be confirmed with certainty that no further progress happened after the last shown pg_hba.conf check; absence of later evidence is not proof of no later action."
+    }
+  ],
+  "likely_causes": [
+    {
+      "cause": "Cumulative time lost to the apt-get install step (three sequential ~125s proxy-timeout 'failures' plus two 100s polling waits, roughly 8-9 minutes total) consumed a disproportionate share of the 35-minute execution budget before any TLS/replication configuration began.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "Per-node sequential execution (running the same install/config command three times, once per node, rather than in parallel) multiplied the time cost of every slow step across the whole session.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "The task was not finished when the timeout hit: pg_hba.conf had not yet been updated to require TLS + client certificates from the new CA for replication connections, and no evidence of PostgreSQL restart, standby pg_basebackup, or primary_conninfo/standby.signal configuration was present in the visible records, suggesting the executor ran out of time before reaching the replication-bootstrap phase.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "The apt-get 'failed' outcome was a proxy/tool artifact (120s Proxy Read Timeout) rather than an actual package-manager failure, but the executor may have spent additional turns investigating/retrying under the mistaken belief that the install itself had failed.",
+      "confidence": "low"
+    }
+  ],
+  "next_attempt_guidance": [
+    "Run apt-get install in the background with output redirected to a log file and a PID file, then poll with short exec calls, instead of a single foreground call \u2014 this avoids hitting the platform's 120s proxy read timeout on all three nodes and prevents wasted retries/investigation.",
+    "Where nodes have no dependency on each other (e.g. installing postgresql, copying the CA bundle, writing conf.d/tls_repl.conf), issue the exec calls for node1/node2/node3 back-to-back without waiting on each one sequentially, to reduce total wall-clock time within the fixed session budget.",
+    "After TLS material and conf.d changes are in place, immediately add explicit hostssl pg_hba.conf rules for the replication database requiring clientcert=verify-full tied to the new CA (e.g. `hostssl replication replicator 0.0.0.0/0 cert clientcert=verify-full`) before moving on \u2014 do this early rather than leaving it for a later pass, since it is central to the task requirement of accepting replication only from CA-issued certs.",
+    "Verify actual package/service state with idempotent checks (e.g. `dpkg -l | grep postgresql-16`, `systemctl is-active postgresql`) rather than trusting a tool-reported timeout as a functional failure, to avoid unnecessary re-work.",
+    "Reserve time explicitly for the replica bootstrap phase (pg_basebackup from node1, standby.signal or primary_conninfo with sslmode=verify-full and sslcert/sslkey pointing at the replicator certificate, postgresql restart) since this phase had not started by the time of the last observed evidence \u2014 consider doing a time-budget check partway through the session and prioritizing this phase if time is short.",
+    "Do not assume the old cluster's partial state is reusable; start fresh and re-run the full sequence (CA creation, cert distribution, postgresql.conf/pg_hba.conf edits, restart, replica bootstrap, verification with `SELECT * FROM pg_stat_replication` on node1) end-to-end on the new cluster."
+  ]
+}

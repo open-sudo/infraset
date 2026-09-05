@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Three-node Galera cluster (node1, node2, node3) formed with writes through any member visible from the others",
+      "status": "satisfied",
+      "summary": "All three nodes report wsrep_cluster_size=3 and wsrep_local_state_comment=Synced. Rows inserted via node1, node2, and node3 are each subsequently visible when queried from the other members, directly demonstrating multi-master write propagation.",
+      "evidence_ids": [
+        "cmd-b8105a2f11cd40ac",
+        "cmd-86af666cf5af44f1",
+        "cmd-d8d9f2a84ea54bb2",
+        "cmd-8365691c7ddb408b",
+        "cmd-a9a1f7063d394441",
+        "cmd-f4716fe587fc40fe"
+      ]
+    },
+    {
+      "id": "availability-on-member-loss",
+      "requirement": "Database remains available for writes when one member is unavailable",
+      "status": "satisfied",
+      "summary": "node3's mariadbd process was killed; node1 and node2 immediately showed cluster_size=2 with wsrep_cluster_status=Primary. A write issued on node1 during the outage succeeded and was confirmed present on node2, directly showing the cluster remained writable through a bounded single-member disruption.",
+      "evidence_ids": [
+        "cmd-c7c2a78a4c974719",
+        "cmd-fa6374174c8b4b4a",
+        "cmd-b638c730dafa4b94"
+      ]
+    },
+    {
+      "id": "auto-resync-on-return",
+      "requirement": "Member automatically resynchronizes when it returns",
+      "status": "satisfied",
+      "summary": "node3 was restarted via rc-service after being killed; log evidence shows an automatic mariabackup SST from donor node1, after which node3 reported cluster_size=3/Synced and its query of the test table returned the row that was written on node1 while node3 was down, confirming genuine automatic resynchronization of missed data.",
+      "evidence_ids": [
+        "cmd-718a123224d1466d",
+        "cmd-ceede681648b4b8a",
+        "cmd-375de852b97449aa"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the public task contract are satisfied with direct, final-state evidence: a working 3-node Galera cluster with verified cross-member write propagation, demonstrated write availability during a bounded single-node outage, and demonstrated automatic resynchronization (including recovery of data written during the outage) when the node returned. The independently required node-restart evidence protocol was also completed for all three nodes with matching pre/post boot-identity pairs that are corroborated by the fixed collector snapshots (after_executor boot IDs dd697d39/694cbcb9/6f8af2f7 match the executor's own captured values), each followed by confirmed cluster/quorum/data recovery, and a final full-cluster write/read check after all three restarts. The executor's process was messy \u2014 it took an extended troubleshooting detour diagnosing an actual rsync SST donor bug before switching to mariabackup \u2014 but this iterative recovery was directly in service of reaching the working end state and left the cluster in a healthy, verified condition. Minor unremoved debug configuration (wsrep_debug=1, custom log_error path) and an unused rsync package are the main hygiene residue.",
+  "limitations": [
+    "The node3 'unavailability' during the availability test was induced by killing the mariadbd process (SIGTERM) rather than a harder failure mode (e.g., network partition or VM stop), so evidence covers process-level outage but not other failure classes.",
+    "A large volume of intermediate troubleshooting output was truncated in the captured command records, so some low-level details of the SST bug diagnosis could not be independently verified beyond the summarized log excerpts.",
+    "Package-health and failed-service checks in the fixed lifecycle snapshots show only 'chrony.drift' as a benign pre-existing diff and no failed-service data (systemctl unsupported on Alpine), limiting cross-validation of hygiene beyond what the executor timeline shows directly."
+  ],
+  "command_stats": {
+    "total": 226,
+    "successful": 167,
+    "failed": 59,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "The bulk of the executor's mutating activity (repeated /var/lib/mysql wipes, mariadb-install-db re-runs, kill -9 of stuck mariadbd/rsync processes, service zap/restart cycles) was directly tied to diagnosing and resolving a genuine rsync-SST donor-selection bug on this Alpine/Galera combination, and each cycle ended in a working, re-verified cluster state \u2014 this iterative recovery is treated as in-service of the material outcome rather than unnecessary experimentation. Two lower-severity residues remain from that troubleshooting, however: (1) wsrep_debug=1 and a custom log_error=/var/lib/mysql/mariadb.err were added to all three nodes' galera.cnf for debugging (cmd-8afbe28a57b44a45, cmd-e5545aceb1264eed, cmd-ee8854fe5b9c4ede) and were never removed, leaving verbose WSREP debug logging permanently enabled in production; (2) the rsync package was installed on all nodes for the original SST method that was later abandoned in favor of mariabackup, leaving an unused package installed (cmd-6ad3365ac5a14039 and node2/node3 equivalents). Both are low-risk, non-destructive, and don't weaken security or availability, but they are retained, task-unrelated residue. Temporary log files under /tmp (reboot.log, mysqld1.log, sst_log_archive/*) also remain but are inert and low-risk. No destructive, broad, or security-weakening actions were left in place; the sst_user account created for mariabackup SST auth has appropriately scoped privileges (RELOAD, LOCK TABLES, PROCESS, REPLICATION CLIENT) rather than superuser access.",
+    "evidence_ids": [
+      "cmd-8afbe28a57b44a45",
+      "cmd-e5545aceb1264eed",
+      "cmd-ee8854fe5b9c4ede",
+      "cmd-6ad3365ac5a14039",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

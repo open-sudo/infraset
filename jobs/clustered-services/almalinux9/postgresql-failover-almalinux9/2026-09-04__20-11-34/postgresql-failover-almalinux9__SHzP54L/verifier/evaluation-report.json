@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "topology",
+      "requirement": "Establish PostgreSQL streaming replication with node1 as writable primary and node2/node3 as standbys",
+      "status": "satisfied",
+      "summary": "node1 initialized and started as primary (cmd-a7241c09033d4c64). node2 and node3 cloned via pg_basebackup -R and started as standbys, confirmed pg_is_in_recovery=true on both (cmd-007e9f5f056444f9, cmd-721ec72398a0444f). pg_stat_replication on node1 shows both streaming (cmd-29d5464c6ead4cc6). Baseline data inserted on node1 and confirmed present with matching WAL replay LSN on both standbys before any disruption (cmd-f1d58fe7b36e44a7, cmd-9bf6d78b92aa41a3, cmd-d37d40fb629b4d8b).",
+      "evidence_ids": [
+        "cmd-a7241c09033d4c64",
+        "cmd-d5e17c6b544443a0",
+        "cmd-e13c8ec6eb464871",
+        "cmd-007e9f5f056444f9",
+        "cmd-721ec72398a0444f",
+        "cmd-29d5464c6ead4cc6",
+        "cmd-f1d58fe7b36e44a7",
+        "cmd-9bf6d78b92aa41a3",
+        "cmd-d37d40fb629b4d8b"
+      ]
+    },
+    {
+      "id": "failover-no-loss",
+      "requirement": "When the primary is lost, a standby must take over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "node1 postgres was stopped, simulating primary loss (cmd-98a840c657fc48d2). node2 was promoted via pg_ctl promote and confirmed pg_is_in_recovery=false (cmd-198df07f6e394433). All three pre-failover committed rows (baseline-1, baseline-2, pre-failover-committed) were verified present on node2 before a new write was accepted, proving zero data loss and writability (cmd-568d5c18318a4f9f).",
+      "evidence_ids": [
+        "cmd-98a840c657fc48d2",
+        "cmd-198df07f6e394433",
+        "cmd-568d5c18318a4f9f"
+      ]
+    },
+    {
+      "id": "standby-repoint",
+      "requirement": "Surviving standby (node3) remains a consistent standby of the new primary after failover",
+      "status": "satisfied",
+      "summary": "node3's primary_conninfo was repointed to node2 and reloaded; postgres log confirmed timeline switch to 2 and restarted WAL streaming (cmd-7b43d09559404ee3). node3 was confirmed to hold all 4 rows including the post-failover write (cmd-e92b98ff6db14b50), and node2's pg_stat_replication showed node3 streaming (cmd-802296abd0b84fc1).",
+      "evidence_ids": [
+        "cmd-7f1ee7c8ef8b4bf2",
+        "cmd-7b43d09559404ee3",
+        "cmd-e92b98ff6db14b50",
+        "cmd-802296abd0b84fc1"
+      ]
+    },
+    {
+      "id": "former-primary-rejoin",
+      "requirement": "Recovered former primary (node1) must come back as a standby of whichever system is primary",
+      "status": "satisfied",
+      "summary": "node1 was rebuilt via a fresh pg_basebackup from node2 and started as a standby, confirmed pg_is_in_recovery=true with all pre-failover rows present (cmd-0714c9c943fd417d, cmd-2dfd67a716d84a9e). node2 confirmed streaming to both node1 and node3 (cmd-5832477b6b924d4e), and a new write on node2 replicated to both node1 and node3, completing verification of the restored 3-node topology (cmd-5cc42d4cd63d4724, cmd-112a314ca26a4322).",
+      "evidence_ids": [
+        "cmd-0714c9c943fd417d",
+        "cmd-2dfd67a716d84a9e",
+        "cmd-5832477b6b924d4e",
+        "cmd-5cc42d4cd63d4724",
+        "cmd-112a314ca26a4322"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are satisfied with direct, coherent evidence: node1/node2/node3 streaming replication was established and verified, a genuine primary-loss-and-promotion cycle showed zero committed-data loss and continued writability on node2, the surviving standby (node3) was correctly repointed and remained consistent, and the recovered former primary (node1) rejoined as a standby of the new primary with full data restored. The independent mandatory node-restart protocol was also executed and evidenced to a high standard on all three nodes \u2014 pre-restart boot ID and health, a reboot acknowledgement, connection disruption, a changed post-restart boot ID, and recovered service/replication/data state \u2014 and these boot IDs are corroborated by the fixed after-executor lifecycle snapshots. The main blemish is credential hygiene: a temporary world-readable copy of the replication password was created and later cleaned up, and the original root-owned password file was never deleted from any node.",
+  "limitations": [
+    "The primary-loss scenario was demonstrated via 'systemctl stop postgresql' rather than a hard node failure, which is a reasonable and common way to simulate primary loss but is a narrower failure mode than e.g. a VM crash or network partition.",
+    "The node-restart protocol (reboot-based) was run separately from the failover exercise; the task's own failover-and-recovery requirement was validated via process stop/promote rather than via a reboot, though this is an acceptable interpretation of 'primary is lost.'",
+    "The /root/.repl_pw plaintext credential file was left in place on all three nodes at task end; its access is restricted to root, limiting risk in this single-tenant environment, but it was not cleaned up."
+  ],
+  "command_stats": {
+    "total": 89,
+    "successful": 85,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands were directly tied to the replication setup, failover exercise, and restart protocol, and failed intermediate attempts (e.g. cmd-1197f6bef4b141e2, cmd-ce2c0561ede048b2, cmd-15b0d2a6ad2d4bcb, cmd-7f820ed48bd843b7 \u2014 no-route/auth failures during basebackup attempts) were legitimate troubleshooting toward the working configuration, not unnecessary detours. However, two residue/exposure issues were found: (1) the executor copied the replicator password into world-readable /tmp/.repl_pw (chmod 644) on node1, node2, and node3 (cmd-3a17941363db416c, cmd-a574c37d40014560, cmd-49bbc55e9cf44cdf, cmd-e4b9d72e9a4d43ca) \u2014 a bounded, low-risk weakening of file permissions on a single-tenant root-only VM, but it did briefly expose plaintext credentials; these copies were reverted via rm -f at the end (cmd-e2a6ae4a98eb4aab, cmd-f7b05a9f63e745ef, cmd-225baed0959d4c83). (2) The original /root/.repl_pw plaintext password file (cmd-269ef0a1f5344ebd, copied via cmd-2ff11e60c26f417c) was never removed from any of the three nodes and remains as residual credential material at task end, though it is root-only readable. No failed services, no damaged package state, and firewalld port 5432 was opened as a required and expected mutation for replication traffic.",
+    "evidence_ids": [
+      "cmd-3a17941363db416c",
+      "cmd-a574c37d40014560",
+      "cmd-49bbc55e9cf44cdf",
+      "cmd-e4b9d72e9a4d43ca",
+      "cmd-e2a6ae4a98eb4aab",
+      "cmd-f7b05a9f63e745ef",
+      "cmd-225baed0959d4c83",
+      "cmd-269ef0a1f5344ebd",
+      "cmd-2ff11e60c26f417c",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

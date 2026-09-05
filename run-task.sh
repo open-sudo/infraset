@@ -75,6 +75,12 @@ agent_name="${INFRASET_AGENT_NAME:-claude-code}"
 jobs_root="${INFRASET_JOBS_DIR:-$script_dir/jobs}"
 n_attempts="${INFRASET_N_ATTEMPTS:-1}"
 parallel_limit="${INFRASET_PARALLEL:-1}"
+# The provider agent keeps its own executor timeout and defaults it to 1200s,
+# which silently overrides the [agent] timeout_sec a task declares. Pass it
+# explicitly so tasks are not cut off earlier than they asked for. Keep this
+# below the Antrieb cluster lease so an overrun ends as a scored timeout with
+# the executor's own report rather than as a cluster that disappeared.
+agent_timeout_sec="${INFRASET_AGENT_TIMEOUT_SEC:-2100}"
 
 usage() {
   printf '%s\n' \
@@ -91,6 +97,8 @@ usage() {
     "may run at the same time." \
     "" \
     "Environment equivalents: INFRASET_PARALLEL and INFRASET_N_ATTEMPTS." \
+    "Set INFRASET_AGENT_TIMEOUT_SEC to change the executor timeout (default:" \
+    "$agent_timeout_sec); keep it below the Antrieb cluster lease." \
     "Set CREDENTIALS_FILE to override the default credentials file at" \
     "\$HOME/credentials.env." >&2
 }
@@ -170,7 +178,7 @@ if [[ -z "$input_arg" ]]; then
   exit 2
 fi
 
-for value_name in parallel_limit n_attempts; do
+for value_name in parallel_limit n_attempts agent_timeout_sec; do
   value="${!value_name}"
   if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
     printf '%s must be a positive integer: %s\n' "$value_name" "$value" >&2
@@ -306,6 +314,7 @@ run_one_task() {
   local -a agent_kwargs=(
     --agent-kwarg agent_name="$agent_name"
     --agent-kwarg reasoning_effort="$reasoning_effort"
+    --agent-kwarg timeout_sec="$agent_timeout_sec"
     --agent-kwarg diagnostic_agent="$agent_name"
     --agent-kwarg diagnostic_model="$model"
     --agent-kwarg diagnostic_reasoning_effort="$reasoning_effort"

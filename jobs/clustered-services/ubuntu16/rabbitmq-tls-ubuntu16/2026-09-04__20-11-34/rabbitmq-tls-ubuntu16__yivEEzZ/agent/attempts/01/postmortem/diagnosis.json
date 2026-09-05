@@ -1,0 +1,56 @@
+{
+  "summary": "The attempt never got past OS package installation. All three nodes (Ubuntu 16.04/xenial) spent the entire ~35-minute run repeatedly failing to download rabbitmq-server/erlang packages from archive.ubuntu.com and security.ubuntu.com, and the executor's global timeout (2100s) hit while apt was still retrying. No RabbitMQ config, TLS/CA setup, or management-interface restriction was ever attempted.",
+  "evidence": [
+    {
+      "source": "first command record (node1, 'apt-get update')",
+      "finding": "A foreground `apt-get update` blocked for 125s and was killed by the platform's 120-second proxy read timeout, before any install work began."
+    },
+    {
+      "source": "cleanup command after the timeout",
+      "finding": "Executor had to pkill apt-get and clear dpkg/apt lock files (return_code 137/Killed) before retrying, indicating the first attempt left the package manager in a locked state."
+    },
+    {
+      "source": "repeated poll records across node1/node2/node3 from ~01:55 to 02:07 UTC",
+      "finding": "Background `apt-get install` on all three nodes ran for 14+ minutes and repeatedly logged 'Unable to connect to archive.ubuntu.com:http', 'Connection failed', and 'connection timed out' against multiple mirror IPs (91.189.91.82, 91.189.92.23/24, 185.125.190.81/82/83), i.e., intermittent reachability to Ubuntu package mirrors from inside the cluster."
+    },
+    {
+      "source": "install log tail on node1, last selected record",
+      "finding": "apt-get ultimately reported 'E: Failed to fetch ... rabbitmq-server_3.5.7-1ubuntu0.16.04.4_all.deb Unable to connect' and 'Unable to fetch some archives' \u2014 the install did not complete on node1 by the end of the selected evidence."
+    },
+    {
+      "source": "package list in the install log",
+      "finding": "apt is resolving and attempting to fetch i386 (32-bit) packages (e.g., 'openssl i386', 'erlang-base i386') alongside the normal packages, which roughly doubles the number of archive fetches needed and thus doubles exposure to the flaky mirror connectivity."
+    },
+    {
+      "source": "executor termination fields",
+      "finding": "Attempt ended via `executor_timed_out` / 'claude-code timed out after 2100 seconds' with no structured report returned, confirming the run was consumed entirely by the stuck package installation loop."
+    }
+  ],
+  "likely_causes": [
+    {
+      "cause": "Intermittent/flaky outbound network connectivity from the cluster nodes to the Ubuntu archive/security mirrors (repeated connection failures and timeouts to several different mirror IPs across all three nodes), independent of anything the executor did wrong in its commands.",
+      "confidence": "high"
+    },
+    {
+      "cause": "An unnecessary i386 multiarch entry left enabled on the base image caused apt to also resolve/fetch i386 duplicates of every package, roughly doubling the number of downloads needed and thus doubling the chance of hitting the flaky mirror during the available time.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "The executor's overall time budget (35 minutes) was consumed by polling a slow/failing apt process without switching strategy (e.g., retry with --fix-missing, alternate mirror, or apt.conf retry/timeout tuning), so even if the mirror stabilized shortly after, the task ran out of time before install, let alone TLS/CA/config work, could start.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "EOL distro (Ubuntu 16.04 xenial) reaching end-of-life mirrors that may be more congested/less reliable than current-release mirrors, plausibly contributing to but not solely explaining the connection failures.",
+      "confidence": "low"
+    }
+  ],
+  "next_attempt_guidance": [
+    "Before running any install, do a quick reachability check on all three nodes (e.g., `curl -sS -m 10 -o /dev/null -w '%{http_code}\\n' http://archive.ubuntu.com`) and only proceed once mirrors are confirmed reachable; if not, retry with backoff rather than launching a long apt-get immediately.",
+    "Never run `apt-get update`/`install` as a blocking foreground exec \u2014 use the background+redirect+poll pattern from the start (this run only adopted it after the first call hit the 120s proxy timeout).",
+    "Check for and drop unnecessary foreign architectures before installing: `dpkg --print-foreign-architectures` and, if i386 is listed and not needed, `dpkg --remove-architecture i386` (only if no i386 packages are already installed) to roughly halve the packages apt must fetch.",
+    "If mirror connectivity is flaky, add resilience to the apt invocation: `Acquire::Retries=5`, `Acquire::http::Timeout=30`, and run `apt-get install --fix-missing` in a small retry loop across nodes rather than a single multi-minute attempt.",
+    "Run the three-node installs in parallel (as this attempt did) but checkpoint progress more frequently and set an internal budget (e.g., abandon/retry after 5\u20138 minutes of no forward progress) instead of polling the same stalled process for 14+ minutes.",
+    "Only after rabbitmq-server + erlang are confirmed installed (`dpkg -l | grep rabbitmq-server` succeeds, `rabbitmqctl status` responds) proceed to: generate a private CA with openssl, issue per-node server certs and client certs signed by that CA, configure `listeners.ssl.default`, `ssl_options.cacertfile/certfile/keyfile`, `ssl_options.verify = verify_peer`, `ssl_options.fail_if_no_peer_cert = true` in rabbitmq.conf, form the cluster via Erlang cookie sync and `rabbitmqctl join_cluster`, and bind/firewall the management plugin (port 15672) to the cluster's internal network only.",
+    "There is no evidence in the audit about DNS resolution details, whether a proxy/NAT was involved, or whether the mirror failures were transient \u2014 if the same flakiness recurs on a fresh cluster, escalate as a possible platform/network issue rather than continuing to retry apt indefinitely."
+  ]
+}

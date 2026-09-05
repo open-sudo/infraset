@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Establish a healthy 3-member Galera cluster across node1/node2/node3 holding application data",
+      "status": "satisfied",
+      "summary": "mariadb/galera installed on all three nodes, cluster bootstrapped on node1 and joined by node2/node3 via SST; wsrep_cluster_size=3 and Synced/Primary confirmed on all nodes; appdb.orders created with 3 committed rows on node1 and confirmed present on node2 and node3.",
+      "evidence_ids": [
+        "cmd-a746392e8438488f",
+        "cmd-03ddd375a1cd48cf",
+        "cmd-a70f66eb469341f0",
+        "cmd-2671e88ba0064262"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Bring the entire cluster down completely for a maintenance window",
+      "status": "satisfied",
+      "summary": "node3, node2, then node1 stopped in sequence; grastate.dat on each node shows clean shutdown state (node1 seqno=10, safe_to_bootstrap=1); mysqladmin ping failed on all nodes confirming a full outage before restart began.",
+      "evidence_ids": [
+        "cmd-e1fefb8356904a9a",
+        "cmd-931171aefabb44ea",
+        "cmd-dab5abb559f2484a",
+        "cmd-9fcb014b61674145",
+        "cmd-4aadc79e34a447c2",
+        "cmd-3b52399b484e46df"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Bring the cluster back up with every committed write present and all three members serving",
+      "status": "satisfied",
+      "summary": "node1 bootstrapped from its safe_to_bootstrap state and showed all 3 pre-shutdown rows; node2 and node3 rejoined via SST reporting Synced/cluster_size=3 with identical data; a post-recovery write on node2 replicated to node3, and a final cross-node check from node1 confirmed cluster_size=3 and a consistent row count (4) across all members.",
+      "evidence_ids": [
+        "cmd-af62673609d14d09",
+        "cmd-a242fd70b01040ae",
+        "cmd-d5b866c159994c69",
+        "cmd-20b44b779dee41b4",
+        "cmd-39d40b77f1444835",
+        "cmd-e75bad6c04fa4bb2"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a genuine 3-member MariaDB Galera cluster on Alpine, loaded committed application data, performed a full clean shutdown of all three members (verified via grastate.dat and failed ping checks), and restored the cluster with all committed rows intact and all three members reporting Synced/cluster_size=3, cross-checked with a post-recovery write/replication test. The independent per-node restart evidence protocol was also completed for all three nodes: pre-restart boot_id baselines, restart acknowledgements, changed post-restart boot_ids (matching the fixed before-prepare/after-executor snapshots), and recovered Galera/data state after each restart, performed one at a time to preserve quorum. Minor hygiene issues remain: some diagnostic residue (test rsync config/pid files, boot/apk logs) was left on the nodes, and a plaintext root password file was left on node1, though none of these affected correctness of the final cluster or data state.",
+  "limitations": [
+    "The executor's claim of 'root password not exposed in this report' is contradicted by the raw command trace, which shows the password in plaintext (cmd-bfc6e89a3e0f4350); this discrepancy between narrative and evidence was not disclosed by the executor.",
+    "Command-level evidence for data consistency after recovery is only sampled (COUNT(*)=4 and explicit row listings) rather than an exhaustive checksum comparison across all three nodes, though the sampled data is fully consistent.",
+    "The lifecycle collector's after_prepare phase is an alias of before_prepare (prepare was disabled), so preparer-vs-executor separation relies entirely on the executor command trace and the after_executor snapshot rather than a distinct after_prepare snapshot."
+  ],
+  "command_stats": {
+    "total": 104,
+    "successful": 78,
+    "failed": 26,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most state-changing commands had a clear purpose (installing required packages, configuring Galera, standing up/tearing down/restoring the cluster, and diagnosing a genuine Alpine busybox ps/lsof defect that was blocking SST joins). The diagnostic rsync test daemons on node2 (cmd-06a4aaaff52e4629 on port 5555, cmd-887ffaa04c9e433b on port 6666) were bounded, low-risk, and directly contributed to correctly root-causing the SST failure, but left residual files (/tmp/t2.conf, /tmp/t2.pid, /tmp/testrsync.conf) that were never cleaned up (visible in the after-executor temp-files snapshot for node2). Boot logs and apk update logs (/tmp/mysqld_boot.log, /tmp/mysqld_boot2.log, /tmp/apkupdate.log, /tmp/reboot.log, /tmp/wsrep_opts.txt) were also left on all three nodes; these are low-risk residue rather than damaging state. The repeated full wipes of /var/lib/mysql on node1 and node2 during troubleshooting (cmd-798db497a7c4437d, cmd-e78435ad38a94290, cmd-02b8df2c82b748c3, cmd-13cc405a08634a38) were corrective re-attempts needed to recover from failed SST/bootstrap states rather than gratuitous mutations, and did not affect the final committed data set. A plaintext root password file was left on node1 (/root/.mariadb_root_pw), which is a minor but real security hygiene concern since it was not removed after use.",
+    "evidence_ids": [
+      "cmd-06a4aaaff52e4629",
+      "cmd-887ffaa04c9e433b",
+      "cmd-2c6bc10351f34973",
+      "cmd-e401b1c0c99642ff",
+      "cmd-bfc6e89a3e0f4350",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

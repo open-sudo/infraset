@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-cluster-established",
+      "requirement": "Three-member MariaDB Galera cluster running across node1, node2, node3 holding application data",
+      "status": "satisfied",
+      "summary": "node1 bootstrapped with galera_new_cluster and appdb.orders created with a baseline row; node2 and node3 joined via mariabackup SST after a SELinux AVC blocking the operation was diagnosed and fixed with a minimal custom policy module (not by disabling enforcement); final state before maintenance shows wsrep_cluster_size=3 and Synced on all three nodes with matching data.",
+      "evidence_ids": [
+        "cmd-8d23b519045e47a8",
+        "cmd-2bbe91c912634d88",
+        "cmd-3b3b2368323c4ad6",
+        "cmd-5a0f548ffd534b28",
+        "cmd-f64f2363f3604010",
+        "cmd-b1eb73a6d8164187",
+        "cmd-cae8c6a2c22e4574",
+        "cmd-685d38d3f5974cb4"
+      ]
+    },
+    {
+      "id": "req-2-full-shutdown",
+      "requirement": "Cluster brought down completely for a maintenance window",
+      "status": "satisfied",
+      "summary": "mariadb was stopped in the correct order (node2, node3, then node1 last with safe_to_bootstrap:1 confirmed in grastate.dat) and all three nodes were subsequently confirmed inactive via systemctl is-active, directly demonstrating a bounded, complete outage.",
+      "evidence_ids": [
+        "cmd-ed8afbff429e4175",
+        "cmd-a65e7b2a7fa2464f",
+        "cmd-b4bb5585b3bd421b",
+        "cmd-f883f4e4b86340c7",
+        "cmd-30e1fdfd6e634025",
+        "cmd-49d5faee1b2b4fd6"
+      ]
+    },
+    {
+      "id": "req-3-recovery-with-data",
+      "requirement": "Cluster brought back with every committed write present and all three members serving",
+      "status": "satisfied",
+      "summary": "node1 was re-bootstrapped and both committed rows (baseline-widget, pre-maintenance-widget) were present immediately; node2 and node3 were restarted and rejoined; all three nodes independently confirm wsrep_cluster_size=3, Synced state, and identical row sets, demonstrating a real transition from full outage back to a healthy 3-node cluster with no data loss.",
+      "evidence_ids": [
+        "cmd-975a45e90c93477b",
+        "cmd-c988a6f5b85d45ef",
+        "cmd-d536f5c4101043c5",
+        "cmd-7e0bd8f704414c44",
+        "cmd-878d8294a28d4a34",
+        "cmd-825ac43300664a18"
+      ]
+    },
+    {
+      "id": "req-4-node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (pre-restart boot identity/healthy state, restart ack, changed boot identity, recovered service/data/cluster state)",
+      "status": "satisfied",
+      "summary": "For node2, node3, and node1 (sequentially, never overlapping), pre-restart boot_id and health were captured, a reboot was acknowledged and the node became unreachable, a new distinct boot_id was observed on return, and mariadb was confirmed active with cluster_size=3, Synced, and both data rows intact afterward. The fixed after-executor lifecycle snapshot independently corroborates the same final boot_ids (node1=848ef267\u2026, node2=da42ee5c\u2026, node3=4ea03d68\u2026) differing from the before-prepare snapshot, cross-validating the executor's own claims.",
+      "evidence_ids": [
+        "cmd-2d52d215edda47e3",
+        "cmd-878d8294a28d4a34",
+        "cmd-a55ceb7cd8354b8b",
+        "cmd-2aee9f2ddc544dab",
+        "cmd-2cc5552f6b6843c5",
+        "cmd-e8cf8c9362ad42ca",
+        "cmd-fa5d5e7cb43e4b9a",
+        "cmd-825ac43300664a18",
+        "cmd-749a254611b943b8",
+        "cmd-85a1a8418bf849fa",
+        "cmd-9a95047a49aa4ffa",
+        "cmd-b71e18d71cb44e79",
+        "cmd-549f7b4bd5744a6a",
+        "cmd-1e09a21223c3463b",
+        "cmd-cd05e8e2815c4a43",
+        "cmd-c2d9f8b606a7488f",
+        "cmd-fde781f64c8f4688",
+        "cmd-eeee9ecb840c42e8",
+        "cmd-c578c10731224836",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor deployed a fresh 3-node MariaDB Galera cluster (none pre-existed), diagnosed and root-cause-fixed an SST-blocking SELinux denial with a minimal custom policy module rather than disabling enforcement, and then directly demonstrated the required maintenance drill: healthy 3/3 baseline with committed data, a full ordered shutdown of all three nodes, and a clean restoration with both committed rows present and cluster_size=3/Synced confirmed independently on all three nodes. It additionally completed the mandatory node-restart protocol for all three nodes with boot-identity changes confirmed both in the executor trace and the fixed after-executor lifecycle snapshot, and cluster/data health was reverified after each restart. Minor uncleaned temp/log artifacts are the only hygiene concern.",
+  "limitations": [
+    "Initial SST/setup phase involved several failed attempts and manual data-directory wipes on node2 before success; while judged corrective rather than unnecessary, the full internal reasoning behind each retry is inferred from logs rather than stated explicitly.",
+    "ausearch was unavailable on node1, so AVC diagnosis relied on dmesg/journalctl kernel audit records instead, which was sufficient here but is a slightly less direct evidence path.",
+    "Leftover temporary files (install/reboot/start logs, SELinux module artifacts) remain on all nodes in the after-executor snapshot; low risk but not cleaned up."
+  ],
+  "command_stats": {
+    "total": 99,
+    "successful": 86,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.94,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most mutating commands map directly to establishing the cluster, executing the maintenance shutdown/restart drill, or the restart protocol. During initial SST setup, node2 hit a broken/partial data directory and mariadb-prepare-db-dir failures; the executor's repeated 'rm -rf /var/lib/mysql/*' and retries on node2 were corrective actions to recover from those earlier failed attempts, not unbounded destructive mutations, and they were necessary prerequisites for reaching the working cluster. The custom SELinux policy module (mariabackup_sst.pp) was a scoped, minimal fix targeting exactly the observed AVC denial rather than disabling enforcement, and was retained on all three nodes as required supporting state (not residue). The main hygiene gap is leftover ephemeral artifacts (/tmp/install.log, /tmp/install.pid, /tmp/mariabackup_sst.pp/.mod/.te, /tmp/reboot.log, /tmp/start.log, /tmp/start.pid) on all three nodes visible in the after-executor snapshot; these are low-risk, non-destructive, and typical of an install/reboot session, but were not cleaned up.",
+    "evidence_ids": [
+      "cmd-9c98f09aef4d4f4f",
+      "cmd-7557c52b56ea4120",
+      "cmd-76b502bdfcd3410d",
+      "cmd-b1eb73a6d8164187",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

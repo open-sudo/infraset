@@ -1,0 +1,82 @@
+{
+  "status": "completed",
+  "summary": "Configured a 3-node MariaDB Galera cluster (node1/node2/node3, RHEL9, MariaDB 10.5 + galera 26.4) with wsrep replication over the private cluster network. Verified multi-master write visibility across all members, verified continued availability and automatic resync when a member is taken down and brought back, and completed the mandatory one-at-a-time node restart protocol on all three nodes with proof of changed boot identity and full cluster/data recovery after each restart.",
+  "actions_performed": [
+    "Installed mariadb-server, mariadb-server-galera, galera, rsync on node1/node2/node3 (RHEL9 AppStream repos)",
+    "Appended CLUSTER_HOSTS entries to /etc/hosts on node2 and node3 (node1 already had them)",
+    "Opened firewalld ports 3306/tcp, 4444/tcp, 4567/tcp+udp, 4568/tcp on all 3 nodes (SELinux mysqld_port_t already covered these ports)",
+    "Edited /etc/my.cnf.d/galera.cnf on each node: wsrep_on=1, wsrep_cluster_name=galera_cluster, wsrep_cluster_address=gcomm://10.100.154.10,10.100.154.11,10.100.154.12, per-node wsrep_node_name/wsrep_node_address, wsrep_sst_method=rsync",
+    "Bootstrapped the cluster on node1 via galera_new_cluster, then started mariadb normally on node2 and node3 to join via SST/IST",
+    "Enabled mariadb.service on all 3 nodes for boot persistence",
+    "Set root password and created replicated galera_app user (via mysql.global_priv, InnoDB, replicates through Galera) using secret_env-passed credentials",
+    "Created galeratest.t table and demonstrated cross-node write visibility (insert on node1/node2/node3, select from all)",
+    "Stopped mariadb on node3 to simulate a member outage, confirmed cluster stayed Primary at size 2 and accepted writes on node1/node2, restarted mariadb on node3 and confirmed automatic IST resync (state Synced, cluster size 3) with outage-period rows present",
+    "Executed mandatory restart protocol: captured boot_id + cluster health baseline on all nodes, rebooted node1/node2/node3 one at a time via systemctl reboot, polled each until exec access returned, confirmed changed boot_id, and verified cluster size 3 / Primary / Synced / consistent row count after each individual restart before proceeding to the next node"
+  ],
+  "evidence": [
+    {
+      "requirement": "Three-node Galera cluster formed, writes through any member visible on others",
+      "command_ids": [
+        "cmd-805544f653dc434c",
+        "cmd-e2384ae53eb348f3",
+        "cmd-bbf776a1967e43fa",
+        "cmd-35dc3855471a4ebf",
+        "cmd-9e76aa7736e045f9",
+        "cmd-65783e0fd9cd45b1",
+        "cmd-7e56a39e3d044614",
+        "cmd-3eb8506cefab4e88",
+        "cmd-f23606621b6243f3",
+        "cmd-0fb47a38b3d64106"
+      ],
+      "summary": "Cluster bootstrapped on node1, node2 and node3 joined and reached wsrep_local_state_comment=Synced with cluster_size=3; inserts made from node1, node2, and node3 each showed up on all other nodes' SELECT results."
+    },
+    {
+      "requirement": "Database stays available when one member is unavailable",
+      "command_ids": [
+        "cmd-a16cfde1d4b24ec3",
+        "cmd-5f354c8900bd48f1",
+        "cmd-0bf32968441447e1"
+      ],
+      "summary": "mariadb stopped on node3; cluster remained wsrep_cluster_status=Primary at size 2 on node1, and both node1 and node2 accepted and cross-replicated new writes while node3 was down."
+    },
+    {
+      "requirement": "Unavailable member resynchronizes automatically when it returns",
+      "command_ids": [
+        "cmd-fa325821cfae451e",
+        "cmd-9c89f40ea17e4b47"
+      ],
+      "summary": "mariadb restarted on node3 with no manual resync steps; it automatically rejoined via IST, reached wsrep_local_state_comment=Synced with cluster_size=3, and its galeratest.t table contained the rows written on node1/node2 during its outage."
+    },
+    {
+      "requirement": "Node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a298b7c6120a4ea7",
+        "cmd-968d339866984877",
+        "cmd-64b0b1add91845f1",
+        "cmd-1302953f335845f6",
+        "cmd-efdfe160e4d1459f"
+      ],
+      "summary": "Baseline boot_id 31949c21.../cluster healthy(size3,Synced,count5) captured; systemctl reboot acknowledged; node unreachable then boot_id changed to e9165b83...; post-restart cluster_size=3, Primary, Synced, count=5 confirmed."
+    },
+    {
+      "requirement": "Node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a061ea6057274889",
+        "cmd-346196206ad940c4",
+        "cmd-fad697efd4714c4f",
+        "cmd-747fd45163514aa1"
+      ],
+      "summary": "Baseline boot_id 55595e92.../cluster healthy captured; reboot acknowledged; boot_id changed to bbacda14... after reconnect; post-restart cluster_size=3, Primary, Synced, count=5 confirmed."
+    },
+    {
+      "requirement": "Node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a26047b6979c423f",
+        "cmd-327a799103754077",
+        "cmd-55d2d3c8e2cb43d3",
+        "cmd-abe9f3b8a45547fc"
+      ],
+      "summary": "Baseline boot_id 4999270d.../cluster healthy captured (this was after node3's earlier outage/resync test); reboot acknowledged; boot_id changed to 0618d422... after reconnect; post-restart cluster_size=3, Primary, Synced, count=5 confirmed. Restarts were performed strictly one node at a time, each verified fully synced before proceeding to the next."
+    }
+  ]
+}

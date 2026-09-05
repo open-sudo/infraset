@@ -1,0 +1,107 @@
+{
+  "status": "completed",
+  "summary": "Deployed a 4-member MariaDB Galera cluster (node1-node4, MariaDB 10.11.18 on CentOS Stream 10). Bootstrapped a 3-node cluster (node1,2,3) holding an appdb.orders table, then added node4 which received the existing data via SST (mariabackup) and now accepts writes replicated to all members. Fixed two environment issues along the way: wrong Galera provider library path (galera-4 -> galera) and an SELinux AVC denial blocking mariadb-backup's socket connection (resolved via a generated/installed local policy module). All 4 nodes were then restarted one at a time (native systemd reboot), each confirmed via changed /proc/sys/kernel/random/boot_id, and the cluster was verified to reach full 4-node quorum with all data intact after each restart, with a final cross-node write/read check confirming end-to-end consistency.",
+  "actions_performed": [
+    "Installed mariadb-server + mariadb-server-galera on node1-4",
+    "Opened firewalld ports 3306/4567/4568/4444 on all 4 nodes",
+    "Configured SSH between nodes using cluster keypair",
+    "Generated SST and app credentials on node1 and distributed via scp (never printed in transcript, verified via sha256sum)",
+    "Wrote /etc/my.cnf.d/galera.cnf on node1-3 for a 3-node cluster, then diagnosed and fixed wrong wsrep_provider path",
+    "Bootstrapped cluster on node1 via galera_new_cluster, created sstuser and appuser, created appdb.orders with sample data",
+    "Diagnosed SELinux AVC denial blocking mariadb-backup SST; generated and installed a local policy module (mariabackup_sst.pp) on all 4 nodes",
+    "Started mariadb on node2 and node3, verified SST joined and data replicated, verified multi-master writes from all 3 nodes",
+    "Enabled mariadb on boot for node1-3",
+    "Added node4: wrote its galera.cnf with 4-node gcomm address, updated node1-3 configs to include node4, started and enabled mariadb on node4",
+    "Verified node4 received all existing data via SST and cluster_size=4 Synced",
+    "Verified writes from node4 replicate back to node1",
+    "Captured pre-restart boot_id baseline on all 4 nodes",
+    "Restarted node1, node2, node3, node4 sequentially (one at a time) via systemctl reboot, polled each until reachable, verified changed boot_id, verified mariadb active + wsrep Synced + cluster_size=4 + data intact after each restart",
+    "Final cross-node write (node4) / read (node1) check confirming cluster consistency after all restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "3-member Galera cluster (node1,2,3) established and holding application data",
+      "command_ids": [
+        "cmd-afaf00a26a8247a3",
+        "cmd-de526db92e804b10",
+        "cmd-321218f7da2b426f",
+        "cmd-5fb5cb39d4834d2a"
+      ],
+      "summary": "node1 bootstrapped, appdb.orders created with sample rows; node2 and node3 joined via SST, each reaching wsrep_cluster_size=3, Synced, with COUNT(*)=3 matching node1's data"
+    },
+    {
+      "requirement": "All 3 original members accept writes (multi-master)",
+      "command_ids": [
+        "cmd-80d5e0d0083f4716",
+        "cmd-9a95c8a866474818",
+        "cmd-ddbd4c9a3f964677",
+        "cmd-65f196efea744baa"
+      ],
+      "summary": "Inserted a distinct row from each of node1/node2/node3; node1 subsequently shows all 6 rows (3 seed + 3 per-node) confirming multi-master write acceptance and replication"
+    },
+    {
+      "requirement": "node4 added as 4th member carrying existing data",
+      "command_ids": [
+        "cmd-e26b06272a9e4cdf",
+        "cmd-1d804eea610041f6"
+      ],
+      "summary": "node4 started with cluster_address including all 4 nodes, joined via SST, reached wsrep_cluster_size=4/Synced, and SELECT on appdb.orders returned all 6 pre-existing rows"
+    },
+    {
+      "requirement": "node4 accepts writes like other members",
+      "command_ids": [
+        "cmd-fd5cbf9cbaed4303",
+        "cmd-02e57bd561584c6f"
+      ],
+      "summary": "Inserted a row on node4; node1 immediately shows the new row (id 8, 'from-node4') and reports cluster_size=4, proving node4 is a full read/write member"
+    },
+    {
+      "requirement": "Healthy baseline captured on every node before restart",
+      "command_ids": [
+        "cmd-c4a9352fe2df4c4b",
+        "cmd-c1f6ca9f6de44a38",
+        "cmd-43d0eb233ec44898",
+        "cmd-b3282940427e483a"
+      ],
+      "summary": "Captured pre-restart boot_id via /proc/sys/kernel/random/boot_id on node1-4 (4d842549..., cce73776..., 4d340bf4..., deef5424...)"
+    },
+    {
+      "requirement": "node1 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-38ca730192884025",
+        "cmd-7b65eae7ab934160",
+        "cmd-80153b82179f4de1"
+      ],
+      "summary": "systemctl reboot acknowledged async; boot_id changed to 1339965b...; post-restart mariadb active, wsrep Synced, cluster_size=4, wsrep_ready ON, 7 rows present"
+    },
+    {
+      "requirement": "node2 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a60c07fe17e642d1",
+        "cmd-4bed07acba634cef",
+        "cmd-b4255d6505d642d9"
+      ],
+      "summary": "Reboot acknowledged; boot_id changed to 8cfeac0e...; post-restart mariadb active, wsrep Synced, cluster_size=4, wsrep_ready ON, 7 rows present"
+    },
+    {
+      "requirement": "node3 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a1edcb4012a24bcb",
+        "cmd-d9bed84d43554710",
+        "cmd-17045aa4b9da40b9"
+      ],
+      "summary": "Reboot acknowledged; boot_id changed to 0ce5d817...; initial poll showed Joining/State Transfer (wsrep_ready OFF), follow-up poll confirmed mariadb active, wsrep Synced, cluster_size=4, 7 rows present"
+    },
+    {
+      "requirement": "node4 restart: acknowledgement, changed boot identity, recovered state, final quorum/data check",
+      "command_ids": [
+        "cmd-96d0c9a73d1649ec",
+        "cmd-54ae70d081364b11",
+        "cmd-c8739492c4274eb7",
+        "cmd-590ff105f4e747e8",
+        "cmd-f35adb50781e4602"
+      ],
+      "summary": "Reboot acknowledged; boot_id changed to 3a3a47c8...; post-restart mariadb active, wsrep Synced, cluster_size=4; final cross-node write on node4 replicated and visible on node1 (8 total rows), confirming full cluster health after all 4 sequential restarts"
+    }
+  ]
+}

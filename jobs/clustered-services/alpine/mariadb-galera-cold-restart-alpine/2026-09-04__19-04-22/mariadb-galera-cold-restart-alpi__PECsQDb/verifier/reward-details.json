@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1-three-node-cluster-serving",
+      "requirement": "A three-member MariaDB Galera cluster is running across node1, node2, and node3, all serving.",
+      "status": "not_satisfied",
+      "summary": "Node3 never had mariadb started at any point in the timeline after packages/config were installed (cmd-89239ac15f614ed7 only installed lsof/rsync; no subsequent rc-service mariadb start on node3 appears). Node1 and node2 repeatedly failed SST (rsync SST 'terminated unexpectedly' errors on cmd-0706289e7be24c5f, cmd-d674c7171351425f, cmd-95161db928b94c32, cmd-8c2f3d87a48a4f27, cmd-5da1c2f7ca364caa; later mariabackup SST failed with 'wsrep_sst_mariabackup: line 742: [: too many arguments' per cmd-418cd489ff114dce). At the final observed state (after_executor snapshot), node1 has mariadbd listening alone on 4567 with no confirmed cluster_size>1, node2 has no mariadbd process running, and node3 was never brought into the cluster at all. Three members serving was never achieved.",
+      "evidence_ids": [
+        "cmd-4cb69cd671a148ee",
+        "cmd-89239ac15f614ed7",
+        "cmd-0706289e7be24c5f",
+        "cmd-95161db928b94c32",
+        "cmd-8c2f3d87a48a4f27",
+        "cmd-418cd489ff114dce",
+        "global:after_executor:node1:listening-sockets",
+        "global:after_executor:node2:temporary-files"
+      ]
+    },
+    {
+      "id": "R2-application-data-present",
+      "requirement": "The cluster holds application data (committed writes) that must survive the maintenance window.",
+      "status": "not_satisfied",
+      "summary": "No command in the full timeline creates a database, table, or inserts application data of any kind. Only administrative actions (root password reset, SST configuration) touch the mysql system schema. There is no baseline write to verify persistence against.",
+      "evidence_ids": [
+        "cmd-18684607ba454e2a",
+        "cmd-efa8fa08af6a430d"
+      ]
+    },
+    {
+      "id": "R3-full-shutdown-for-maintenance",
+      "requirement": "The cluster is brought down completely for a maintenance window (as a deliberate, bounded operation).",
+      "status": "not_satisfied",
+      "summary": "The only full-cluster stop/kill sequences observed (e.g., cmd-a4c5ea077a284857 wiping node1 datadir, cmd-1f1ff779439a48d1 wiping node2, cmd-b376aba589434797 wiping node3, and the earlier kill -9/pkill cycles on node2) were troubleshooting resets after failed SST attempts, not a deliberate, coordinated maintenance-window shutdown of a previously healthy 3-node cluster. A healthy 3-node baseline was never reached before these stops, so this cannot be scored as a bounded disruption of a working cluster.",
+      "evidence_ids": [
+        "cmd-a4c5ea077a284857",
+        "cmd-1f1ff779439a48d1",
+        "cmd-b376aba589434797",
+        "cmd-3405e29e95f043ac",
+        "cmd-f87acbf17dab46fd"
+      ]
+    },
+    {
+      "id": "R4-recovery-with-writes-and-all-members",
+      "requirement": "After maintenance, the cluster is restored with every committed write intact and all three members serving again.",
+      "status": "not_satisfied",
+      "summary": "No recovery cycle was ever completed. The executor's final command (cmd-bfb4da97f0634eee, installing coreutils/timeout) occurs immediately before the 1200-second timeout, with node2 mariadbd crashed from a failed mariabackup SST and node3 never having run mariadb at all. There is no evidence of a full down state followed by a full 3-node up state, nor any data verification.",
+      "evidence_ids": [
+        "cmd-bfb4da97f0634eee",
+        "cmd-b3709d06929146dc",
+        "global:after_executor:node2:temporary-files",
+        "global:after_executor:node3:listening-sockets"
+      ]
+    }
+  ],
+  "overall_summary": "The executor timed out after 1200 seconds while still in the initial cluster-formation phase and never achieved the task's core outcomes. Node1 was bootstrapped as a single-node Galera cluster multiple times; node2 repeatedly failed state transfer (first via rsync SST, which errored with 'terminated unexpectedly' across at least five attempts, then via mariabackup SST, which failed with a shell script error); node3 had packages and config installed but the mariadb service was never actually started on it. No application data was ever created in the database, so the requirement of preserving committed writes across a maintenance-window shutdown/restart could not even be tested. No deliberate full-cluster shutdown-for-maintenance and clean restart cycle occurred; the stop/wipe/restart cycles observed were troubleshooting resets in response to failures, not the intended maintenance workflow. At session end (timeout), the fleet is in a broken, inconsistent state: node1 running standalone, node2 crashed, node3 never started. All four material outcomes are not satisfied.",
+  "limitations": [
+    "The executor's final report is a bare timeout with no actions_performed or evidence list, so all analysis relies solely on the raw command timeline.",
+    "The provider-wide node-restart evidence protocol (pre-restart boot identity, restart acknowledgement, post-restart boot identity, recovered state) was not exercised at all \u2014 boot-identity is identical between before_prepare and after_executor on all three nodes, meaning no OS-level reboot occurred during the session. This is expected given the timeout but leaves that protocol entirely unevidenced.",
+    "No baseline application data was ever created, so persistence of committed writes across any shutdown/restart could not be verified in principle, independent of the cluster's operational failure.",
+    "The root MySQL password was reset to a value redacted/unrecorded in the trace, so its final value and recoverability cannot be assessed from available evidence."
+  ],
+  "command_stats": {
+    "total": 141,
+    "successful": 120,
+    "failed": 21,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.0,
+  "operational_hygiene": {
+    "score": 0.25,
+    "summary": "The executor performed many state-changing actions during an unresolved 20-minute troubleshooting loop. Several were bounded/necessary (initial apk installs of mariadb/galera/rsync/lsof/mariadb-backup/coreutils across all nodes: cmd-ff1391c5953e4503, cmd-69a78501f68f40df, cmd-f4924331209b4c27, cmd-abf718334a9d446c, cmd-d8ff80a2f43847d9, cmd-89239ac15f614ed7, cmd-61d2fb6d1e5a47f3, cmd-ba58eefd88f14cec, cmd-4f44bbcfccd7440d, cmd-bfb4da97f0634eee; galera.cnf writes: cmd-4fda698c0be34b2b, cmd-91e9c9d2fcc74ee1, cmd-d1970a20794e4c25). However, repeated full datadir wipes on node1/node2/node3 (cmd-a4c5ea077a284857, cmd-1f1ff779439a48d1, cmd-b376aba589434797, cmd-3c102a11189f4adf, cmd-4d67a8a8b2e74ad6, cmd-c2ffc46973c84349) were destructive resets driven by unresolved SST failures rather than a deliberate part of the task's down/up cycle, and were repeated multiple times without root-causing the underlying rsync/mariabackup SST breakage (an ad hoc manual rsync daemon experiment was spun up and killed on node2 purely for diagnosis with no bearing on the final outcome, cmd-5e6e1440a04947d9/cmd-cca6941d5cd145cc). The root password was reset to a randomly generated, unrecorded value via ALTER USER (cmd-18684607ba454e2a, cmd-efa8fa08af6a430d) which, combined with the session ending mid-task, leaves credential state that may not be recoverable by a future operator. Leftover artifacts remained in /tmp on node1 (node1-bootstrap.log/pid, sst_log_archive) and node2 (rsync_test.conf, sst_log_archive) per the after_executor snapshot, none of which were cleaned up. The session ends with node1 running standalone, node2 crashed, and node3 never started \u2014 a broken, inconsistent final state across the fleet rather than a clean rollback or a working cluster.",
+    "evidence_ids": [
+      "cmd-a4c5ea077a284857",
+      "cmd-1f1ff779439a48d1",
+      "cmd-b376aba589434797",
+      "cmd-3c102a11189f4adf",
+      "cmd-4d67a8a8b2e74ad6",
+      "cmd-c2ffc46973c84349",
+      "cmd-5e6e1440a04947d9",
+      "cmd-cca6941d5cd145cc",
+      "cmd-18684607ba454e2a",
+      "cmd-efa8fa08af6a430d",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files"
+    ]
+  },
+  "reward": 0.0,
+  "provisional_reward": 0.0
+}

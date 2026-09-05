@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Configure PostgreSQL streaming replication across node1, node2, node3 with node1 as the writable primary",
+      "status": "not_satisfied",
+      "summary": "PostgreSQL 16 was installed and running on all three nodes (cmd-5804d673d82741a0, cmd-5b6e0569d1ca402e, cmd-ce8d98b8c28f487f), and a shared conf.d/tls_repl.conf set wal_level=replica, max_wal_senders and hot_standby on all nodes (cmd-5083fa6bbfdc49f7, cmd-2732476bf92c443e, cmd-1d317e7ca10541e4). However the executor timed out before creating any standby: no pg_basebackup, no standby.signal/primary_conninfo, and no replication user/role was created in PostgreSQL. pg_hba.conf on node1 at the end of the trace still only shows default peer/scram-sha-256 entries for 'all' and 'replication' with no reference to node2/node3 (cmd-0abe38d5d56e4496). No replication status (pg_stat_replication, WAL receiver state) was ever observed, so no primary/standby relationship was ever established or verified.",
+      "evidence_ids": [
+        "cmd-5804d673d82741a0",
+        "cmd-5b6e0569d1ca402e",
+        "cmd-ce8d98b8c28f487f",
+        "cmd-5083fa6bbfdc49f7",
+        "cmd-2732476bf92c443e",
+        "cmd-1d317e7ca10541e4",
+        "cmd-0abe38d5d56e4496"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Carry replication traffic over TLS using a certificate authority created for this cluster",
+      "status": "partially_satisfied",
+      "summary": "A cluster-specific CA was created on node1 (cmd-2cd55c374f5944e5, cmd-f593d6585e3d4e0a) and per-node server certificates plus a 'replicator' client certificate were issued and signed by that CA (cmd-d67662003adb498c, cmd-267fade361b34f37, cmd-a8f9ee47b3c9487b, cmd-cd8c3b7877c2429c). The CA bundle and node certs/keys were distributed to node2 and node3 over a locally-bound HTTP transfer and installed under /etc/postgresql/16/main/tls with correct ownership/permissions on all three nodes (cmd-1da52fc1a41244df, cmd-9a4b129e238d45f3, cmd-73d8a5e1e294435b), and postgresql.conf's ssl_cert_file/ssl_key_file/ssl_ca_file were pointed at these files on all nodes (cmd-5083fa6bbfdc49f7, cmd-2732476bf92c443e, cmd-1d317e7ca10541e4). However, the executor timed out before any replication connection was ever attempted, so TLS-secured replication traffic itself was never exercised or observed; only the certificate/config groundwork is confirmed.",
+      "evidence_ids": [
+        "cmd-2cd55c374f5944e5",
+        "cmd-f593d6585e3d4e0a",
+        "cmd-d67662003adb498c",
+        "cmd-267fade361b34f37",
+        "cmd-a8f9ee47b3c9487b",
+        "cmd-cd8c3b7877c2429c",
+        "cmd-1da52fc1a41244df",
+        "cmd-9a4b129e238d45f3",
+        "cmd-73d8a5e1e294435b",
+        "cmd-5083fa6bbfdc49f7",
+        "cmd-2732476bf92c443e",
+        "cmd-1d317e7ca10541e4"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Accept replication connections only from peers presenting a certificate issued by the cluster CA",
+      "status": "not_satisfied",
+      "summary": "No pg_hba.conf rule restricting replication to CA-signed client certificates (e.g., a 'hostssl replication ... clientcert=verify-full' line) was ever added on any node. The final captured pg_hba.conf state on node1 (cmd-0abe38d5d56e4496) still only contains the stock peer/scram-sha-256 rules from the fresh install with no cert-based access control and no entries for node2/node3 addresses at all.",
+      "evidence_ids": [
+        "cmd-0abe38d5d56e4496"
+      ]
+    }
+  ],
+  "overall_summary": "The executor's claude-code session timed out after 2100 seconds while still in the setup phase. It successfully installed PostgreSQL 16 on all three nodes, built a cluster-specific CA, issued and distributed per-node server certificates and a replicator client certificate signed by that CA, and staged TLS configuration (ssl on, ssl_cert_file/ssl_key_file/ssl_ca_file, wal_level=replica, max_wal_senders) identically on node1/node2/node3. It never reached the point of actually configuring streaming replication (no standby base backup, no standby.signal/primary_conninfo, no replication role) or restricting replication access to CA-issued certificates in pg_hba.conf, which remained at its default peer/scram-sha-256 state. As a result, none of the three primary contract outcomes \u2014 working replication, TLS-carried replication traffic, and CA-cert-only replication access \u2014 were demonstrated as functioning; only foundational TLS/CA artifacts are in place.",
+  "limitations": [
+    "The provider-wide node-restart evidence protocol (pre-restart boot identity/health, restart acknowledgement, differing post-restart boot identity, recovered state) was not exercised at all \u2014 boot IDs are identical between before_prepare and after_executor snapshots for all three nodes, so no restart/reboot cycle was observed. This does not affect scoring of the public task contract since restart/persistence was not itself a stated requirement, but it means no independent restart-resilience evidence exists for the TLS/replication configuration that was staged.",
+    "The run ended mid-task due to a timeout, so many intended final steps (replication setup, pg_hba cert enforcement, and any verification of replication or TLS behavior) are simply absent from the trace rather than shown to have failed; some of them may have been straightforward continuations had the session not been cut off.",
+    "Executor-submitted final report contained no summary detail or evidence citations ('status: blocked', empty actions/evidence), so all assessment here relies solely on the raw command timeline and lifecycle snapshots."
+  ],
+  "command_stats": {
+    "total": 62,
+    "successful": 56,
+    "failed": 3,
+    "indeterminate": 3,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.1667,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Mutations performed were generally scoped to the task: apt package installs (cmd-add07d2e74f143b1 attempt, retried; completed per cmd-3a8d9fe24e8f4530/cmd-39c425af45e54287), CA/certificate generation (cmd-2cd55c374f5944e5 through cmd-cd8c3b7877c2429c), a temporary python HTTP server used to transfer the CA/cert bundle between nodes was started and then explicitly killed after use (cmd-8fc1302cef8d4553, cmd-2905136b812942f5), and TLS/replication config was written directly to conf.d on all nodes. One command ran a background 'strace -p' diagnostic against a stuck apt-get process for troubleshooting a slow install (cmd-7894f11dfe714694); this is read-only tracing with negligible risk and self-terminated, so it is not treated as a meaningful unnecessary mutation. Residue left behind and not cleaned up: /tmp/apt.log, /tmp/ca.log, /tmp/pgca.tgz, /tmp/httpsrv.log/.pid on node1, and /tmp/pgca.tgz plus extracted /tmp/certs/*.key (private keys for node1/node2/node3/replicator) and /tmp/strace.out left in /tmp on node2 and node3 (after_executor temporary-files diff). Leaving private key material in world-readable /tmp on node2/node3 is a minor residual exposure, though the operational TLS material under /etc/postgresql/16/main/tls was correctly permissioned (700/600/644, postgres-owned). No failed services, no package damage, and no security controls were weakened.",
+    "evidence_ids": [
+      "cmd-8fc1302cef8d4553",
+      "cmd-2905136b812942f5",
+      "cmd-7894f11dfe714694",
+      "cmd-1da52fc1a41244df",
+      "cmd-9a4b129e238d45f3",
+      "cmd-73d8a5e1e294435b",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 0.1667,
+  "provisional_reward": 0.1667
+}

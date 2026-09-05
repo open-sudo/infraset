@@ -1,0 +1,63 @@
+{
+  "summary": "The attempt never reached etcd cluster configuration. All observed activity (01:19\u201301:52, ~33 of the 35-minute budget) was spent on OS package management \u2014 apt-get update/install of etcd on Ubuntu 16.04 nodes \u2014 which was extremely slow and, twice, exceeded the 120s synchronous exec proxy timeout on node1 before the executor switched to the background+poll pattern. By the last recorded command, node1 had etcd 2.2.5 installed, node2/node3 were mid-install, and no ETCD_INITIAL_CLUSTER configuration, service start, or read/write verification had begun anywhere. The run then hit the 2100s executor timeout.",
+  "evidence": [
+    {
+      "source": "first three terminal records (node1/node2/node3 os-release + which etcd/etcdctl, all return_code 1)",
+      "finding": "Nodes run Ubuntu 16.04.7 (Xenial); etcd/etcdctl not preinstalled, confirming a from-scratch install was required."
+    },
+    {
+      "source": "node1 'sudo apt-get update -qq' at 01:21:47, outcome=failed, error='...did not return a complete response within the 120-second Proxy Read Timeout...'",
+      "finding": "A plain synchronous apt-get update on node1 exceeded the 120s exec timeout."
+    },
+    {
+      "source": "node1 repeat of the same command at 01:28:42, outcome=failed with the identical 120s proxy timeout error",
+      "finding": "The executor retried the same blocking approach a second time before adapting, costing roughly 4+ extra minutes with no progress."
+    },
+    {
+      "source": "node3 'nohup ... apt-get update ... & echo $! > pid' at 01:41:15, and matching backgrounded update/install commands on node1/node2",
+      "finding": "Executor switched to background+poll (nohup + pid file + sleep 110 polling) only after the two failures, matching the pattern recommended in the platform primer for long-running commands."
+    },
+    {
+      "source": "node1 poll at 01:48:42: 'Fetched 9063 kB in 6min 27s (23.4 kB/s)'",
+      "finding": "Package download throughput was ~23 KB/s \u2014 the underlying cause of the slow apt operations, not the polling mechanism itself."
+    },
+    {
+      "source": "node1 install log excerpt: 'Get:1 http://archive.ubuntu.com/ubuntu xenial/universe i386 pipexec i386 ...' and 'Get:2 ... etcd i386 2.2.5+dfsg-1ubuntu1 [9047 kB]'",
+      "finding": "The packages fetched are i386 architecture builds, and the etcd version resolved from the Ubuntu 16.04 universe repo is 2.2.5 (from ~2015), a very old release with a different CLI/API surface than modern etcd (v3 API, TLS defaults, etc.)."
+    },
+    {
+      "source": "last two selected records (01:52:26 and 01:52:29) show node2/node3 'apt-get install -y etcd' just launched and node1 already past install, inspecting etcd flags via 'systemctl cat etcd'",
+      "finding": "At the point the audit trail ends, no node had etcd running or configured; only node1 had the binary installed and was reading default config options."
+    },
+    {
+      "source": "Audit summary counts: 40 commands requested, 36 completed, 3 failed, 39 terminal records available but only 19 selected (20 terminal records omitted)",
+      "finding": "Roughly half the executor's actual command history is not shown in this redacted excerpt, so activity between 01:52:33 and the 2100s timeout is unknown \u2014 evidence is insufficient to say whether cluster bring-up was attempted and failed, or never attempted at all."
+    }
+  ],
+  "likely_causes": [
+    {
+      "cause": "Severely slow/rate-limited package mirror access (observed ~23 KB/s, multi-minute update/install times per node) consumed the majority of the time budget before any etcd configuration work could begin.",
+      "confidence": "high"
+    },
+    {
+      "cause": "Initial use of synchronous 'apt-get update' without backgrounding hit the platform's 120s exec proxy timeout twice, wasting several minutes before the executor adopted the background+poll pattern.",
+      "confidence": "high"
+    },
+    {
+      "cause": "Performing apt update/install largely one node at a time (or with staggered starts) rather than kicking off all three nodes' installs in parallel from the start extended the total wall-clock time needed.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "The distro-provided etcd package (2.2.5, i386, from 2015) is old enough that it may require different clustering flags/env vars (ETCD_INITIAL_CLUSTER, proxy mode defaults, v2-only API) than a modern etcd, which could have caused additional debugging time not visible in this truncated evidence.",
+      "confidence": "low"
+    }
+  ],
+  "next_attempt_guidance": [
+    "Immediately background any apt-get update/install with nohup+pid-file+poll (per the platform primer) on all three nodes \u2014 do not attempt a synchronous apt-get update, since it has already been observed to exceed the 120s exec timeout on this cluster type.",
+    "Kick off package installation on node1, node2, and node3 concurrently (fire all three 'launch' commands back-to-back) rather than waiting for one node before starting the next, to avoid serializing multi-minute installs across 3 nodes.",
+    "Given ~23 KB/s observed throughput on the previous cluster, budget realistic time (10+ minutes) purely for apt update+install across all nodes, and check early whether a faster mirror or cached package is available to avoid repeating this bottleneck.",
+    "Note the Ubuntu 16.04 repo installs etcd 2.2.5 (i386, v2-API era). Confirm this is acceptable for the task or consider installing a specific etcd binary release directly (e.g., via tarball) if v3 API features or amd64 binaries are required \u2014 verify architecture/version needs before configuring the cluster.",
+    "Since no evidence exists that ETCD_INITIAL_CLUSTER configuration, service start, or a cross-node key write/read test was ever attempted, treat cluster formation and read/write verification as entirely unstarted work for the next attempt, not something to debug or resume.",
+    "Do not assume the previous cluster's etcd install artifacts are reusable or diagnosable \u2014 this cluster is unavailable; start fresh package installs and configuration from scratch on the new cluster."
+  ]
+}

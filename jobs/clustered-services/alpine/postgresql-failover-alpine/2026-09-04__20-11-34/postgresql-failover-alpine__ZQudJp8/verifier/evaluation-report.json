@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Configure PostgreSQL streaming replication across node1 (primary), node2 and node3 (standbys)",
+      "status": "satisfied",
+      "summary": "node1 initialized as primary with wal_level=replica, replicator role created, and node2/node3 built via pg_basebackup -R showing standby.signal and pg_is_in_recovery=t; pg_stat_replication on node1 confirms both streaming.",
+      "evidence_ids": [
+        "cmd-33ce2b2256da43d0",
+        "cmd-277d66c25ce64710",
+        "cmd-d26d766bb09c45ee",
+        "cmd-9a5c63d666e94390",
+        "cmd-469d68e58a0f4564",
+        "cmd-0c56ee8908574f45",
+        "cmd-0c3f9fc54026494b",
+        "cmd-ab7de46831dc46fe",
+        "cmd-4dadcbf05aec475c",
+        "cmd-e760d5009c6e475b"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "On primary loss, a standby takes over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "A second row was committed on node1 and confirmed replicated to both standbys before node1 was stopped (simulated loss). node2 was promoted via pg_ctl promote (pg_is_in_recovery=f) and both pre-failover rows plus a new post-promotion write were present, directly demonstrating zero committed-data loss across a real stop/promote transition.",
+      "evidence_ids": [
+        "cmd-455ca1c0e2d64fee",
+        "cmd-01bf4565532b45fe",
+        "cmd-2f8fdeaf1a6741b7",
+        "cmd-b9ce9991b1004f01",
+        "cmd-6b045dd44bdc4388",
+        "cmd-add924dfd2ec4bc7"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Recovered former primary rejoins as a standby of whichever node is now primary; other standby is repointed to the new primary",
+      "status": "satisfied",
+      "summary": "node3's primary_conninfo was repointed to node2 and confirmed streaming with full data; node1 was rebuilt via fresh pg_basebackup from node2, restarted as standby (pg_is_in_recovery=t) with all rows present, and node2's pg_stat_replication confirmed both node1 and node3 streaming as the final topology.",
+      "evidence_ids": [
+        "cmd-3193ab9234e54905",
+        "cmd-70e91f5fb250461a",
+        "cmd-63d48b7ec81e4c50",
+        "cmd-74f87c866a3240a7",
+        "cmd-147a272c48e049c9"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task contract \u2014 establishing streaming replication from node1 to node2/node3, failing over to a promoted standby with no committed-data loss, and reintegrating both the repointed standby and the rebuilt former primary under the new primary \u2014 are directly and coherently evidenced by before/during/after command output, not just by the executor's narrative claims. The separately-mandated provider-wide restart protocol was also completed and cross-checked cleanly against the fixed lifecycle boot-identity snapshots: all three nodes show a different boot_id after_executor versus before_prepare, and each node's PostgreSQL role and data were confirmed recovered after its individual restart, with node2 correctly returning as primary and both standbys reconnected. The only notable issues are minor credential-hygiene lapses (a plaintext password echoed into trace output, and a password file left on disk) rather than any functional gap.",
+  "limitations": [
+    "The replication check after node1's basebackup shows a jump from serial id 2 to id 35 for the new primary-node2 write (cmd-add924dfd2ec4bc7), which is unexplained but does not affect the no-data-loss conclusion since ids 1 and 2 are both present.",
+    "Failed-services status is 'unsupported' on this Alpine/OpenRC platform (no systemctl), so failed-unit hygiene could not be independently verified beyond rc-status spot checks in the executor timeline.",
+    "Synchronous_commit=on was set in postgresql.conf but replication itself is async (per pg_stat_replication sync_state=async), so it provides no synchronous durability guarantee beyond WAL flush on the primary; this does not affect the demonstrated no-data-loss outcome, which relied on transactions already confirmed replicated before the primary was stopped."
+  ],
+  "command_stats": {
+    "total": 72,
+    "successful": 56,
+    "failed": 16,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most state-changing commands map directly to the task: package installs, initdb/config edits, pg_basebackup rebuilds, promote, repoint, and the mandated per-node restart cycle. Two minor concerns: (1) cmd-4a245f881f494c9e attempted to generate the replicator password via `openssl rand` which was not found on Alpine, producing an empty/garbage file before being corrected by cmd-441add660bf244f6 (bounded, immediately fixed, no lasting effect). (2) cmd-39a7886511cd4907 (`cat /root/.repl_pw`) printed the replicator password in plaintext into command output/trace, contradicting the executor's own claim that the password was 'never in commands/report' \u2014 a credential-hygiene lapse, though the file itself remained chmod 600 and root-only. The password file /root/.repl_pw was left on disk as residue rather than being removed after use. No abandoned services, conflicting packages, or unnecessarily broad/destructive mutations were observed; the `rm -rf` calls on PostgreSQL data directories (cmd-28f9149fe48145c4, cmd-c6955c0c10c848ed, cmd-3795b8c4c46e4c0b) were scoped to node-local data dirs immediately being rebuilt via basebackup and are necessary prerequisites, not unnecessary mutations.",
+    "evidence_ids": [
+      "cmd-4a245f881f494c9e",
+      "cmd-441add660bf244f6",
+      "cmd-39a7886511cd4907",
+      "cmd-28f9149fe48145c4",
+      "cmd-c6955c0c10c848ed",
+      "cmd-3795b8c4c46e4c0b"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

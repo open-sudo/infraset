@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Configure PostgreSQL streaming replication across node1, node2, node3 with node1 as the writable primary",
+      "status": "satisfied",
+      "summary": "PostgreSQL 16 installed on all three nodes. node1 initialized as primary (wal_level=replica, replication slots node2_slot/node3_slot created, replicator role created). node2 and node3 were provisioned via pg_basebackup -R from node1 and started as standbys (pg_is_in_recovery=t). Live replication verified: an INSERT on node1 (appdb.demo) appeared on both standbys, and pg_stat_replication showed both in 'streaming'/'async' state with active slots.",
+      "evidence_ids": [
+        "cmd-fa13d326e6894101",
+        "cmd-997b8ffefb344846",
+        "cmd-3221c10bd4a94595",
+        "cmd-75bb824838ea4d2d",
+        "cmd-c73e92fbf83045d6",
+        "cmd-fabb91d26caf4f3e",
+        "cmd-abd0e73a5d094bea",
+        "cmd-23ccb7675f5c4d80",
+        "cmd-06affe202f0e412e",
+        "cmd-9b31da89ab2749a3",
+        "cmd-a4e1da589065416e"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Carry replication traffic over TLS using a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A self-signed CA (CN=postgres-cluster-ca) was generated on node1 with openssl; per-node server certs (CN+SAN for node1/2/3) and a client cert (CN=replicator) were issued from that CA and distributed to all nodes. postgresql.conf on all nodes sets ssl=on with ssl_cert_file/ssl_key_file/ssl_ca_file pointing at the CA-issued material. pg_stat_ssl on the primary directly shows ssl=t and client_dn=/CN=replicator for both standby connections, both before and after a later restart, confirming TLS is actually in use for the replication streams, not just configured.",
+      "evidence_ids": [
+        "cmd-f8b51914a9fd4c37",
+        "cmd-945f7b8488aa4e85",
+        "cmd-ced76ec9bae04483",
+        "cmd-23ccb7675f5c4d80",
+        "cmd-b56c6648bd654e0f"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Accept replication connections only from peers presenting a certificate issued by that CA",
+      "status": "satisfied",
+      "summary": "pg_hba.conf on node1 restricts replication to hostssl+cert auth from node2/node3 IPs only, with catch-all reject rules for other replication attempts. Falsification testing directly demonstrated the control: a non-SSL replication attempt was rejected ('no encryption'), an SSL attempt without a client cert was rejected ('connection requires a valid client certificate'), a cert signed by a freshly generated rogue CA was rejected ('SSL error: tlsv1 alert unknown ca'), while a pg_basebackup using the CA-issued replicator cert succeeded (exit=0, backup completed). This is direct behavioral evidence, not just configuration.",
+      "evidence_ids": [
+        "cmd-25eeb5adb9b74fd6",
+        "cmd-70a9b1babc9f443a",
+        "cmd-506268fa4599457e",
+        "cmd-437af204eaa74342",
+        "cmd-fc91ae9607cd45d4"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task contract are satisfied with direct, behavioral evidence: streaming replication from node1 (writable primary) to node2/node3 (standbys) is established and shown working via live data propagation; replication traffic is TLS-encrypted using a cluster-generated CA, confirmed by pg_stat_ssl showing ssl=t and the correct client_dn; and access is restricted to CA-issued certificates, proven by falsification tests that reject no-SSL, no-client-cert, and rogue-CA connections while accepting the CA-signed client cert. The independent node-restart evidence protocol was also executed on all three nodes with pre-restart boot IDs, reboot acknowledgements, changed post-restart boot IDs (cross-checked against the fixed after-prepare/after-executor snapshots, which match exactly), and full recovery of PostgreSQL, replication, TLS client-cert identity, and data on every node \u2014 this is not a task requirement but its presence and quality raise overall confidence rather than detract from it. The main blemish is CA/server/client private key material left behind in /tmp on all three nodes rather than being cleaned up post-deployment.",
+  "limitations": [
+    "Restart/reboot recovery is not part of the public task contract, so it was evaluated only as supplemental cross-check evidence, not as a scored requirement; nonetheless all three nodes showed a coherent pre-restart baseline, changed boot identity, and full service/replication/data recovery, consistent with the fixed after-prepare/after-executor boot-identity snapshots.",
+    "CA and per-node/client private keys remain present under /tmp on all three nodes in the final captured state; while permissioned 600 and root-owned, this is retained residue that was not cleaned up.",
+    "Evidence is drawn from a single executor attempt's command trace and fixed lifecycle snapshots; no independent verification outside the provided evidence was possible."
+  ],
+  "command_stats": {
+    "total": 78,
+    "successful": 69,
+    "failed": 9,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Overall hygiene is good: no failed services, no damaged package state, and firewall/config changes are all directly tied to the task. Two categories of minor unnecessary residue remain uncleaned on all three nodes after task completion: (1) the CA private key (/tmp/pgca/ca.key) and all per-node CSR/key material generated on node1 during certificate issuance were never removed from /tmp, and the copied server/client private keys distributed to node2 and node3 (/tmp/node2.key, /tmp/node3.key, /tmp/replicator.key, /tmp/ca.crt) also remain in /tmp per the after-executor snapshot, rather than being cleaned up once copied into PGDATA \u2014 a retained (not reverted) piece of security-sensitive residue, though mitigated by root-only 600 permissions. (2) Several troubleshooting/falsification artifacts (rogue CA key/cert, test pg_basebackup directories under /tmp) were properly created and then removed in the same command, so these were bounded, low-risk, and fully reverted. No unnecessary mutations were found that were broad, destructive, or that weakened access controls; the pg_hba.conf.orig backup and firewalld port openings are legitimate prerequisites/config for the task.",
+    "evidence_ids": [
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "cmd-f8b51914a9fd4c37",
+      "cmd-945f7b8488aa4e85",
+      "cmd-506268fa4599457e",
+      "cmd-fc91ae9607cd45d4"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

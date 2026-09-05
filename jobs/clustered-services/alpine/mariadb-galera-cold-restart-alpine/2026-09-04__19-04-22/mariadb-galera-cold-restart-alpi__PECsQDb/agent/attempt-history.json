@@ -1,0 +1,77 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-04T23:25:09.390350+00:00",
+      "outcome": "executor_timed_out",
+      "finished_at": "2026-09-04T23:45:10.004817+00:00",
+      "error": "claude-code timed out after 1200 seconds",
+      "diagnosis": {
+        "summary": "Executor timed out after 1200s while stuck in a repeating stop/SIGKILL/restart/full-SST loop on node2, never completing the maintenance-window cold restart. Evidence points to mariadb not being cleanly stoppable via rc-service (forcing SIGKILL each cycle), which likely prevented clean seqno recording and forced full SST resyncs; an SST-related process was also observed hung, and no `timeout` tooling was available to bound it until very late in the run.\"",
+        "evidence": [
+          {
+            "source": "node2 command log 23:26:55-23:32:35",
+            "finding": "Every `rc-service mariadb stop` returns `[ ok ]` but also logs `start-stop-daemon: no matching processes found`, immediately followed by the executor manually running `pkill -9 mariadbd`/`pkill -9 -f rsync`. This pattern repeats at least 4 times across the transcript."
+          },
+          {
+            "source": "node2 /var/log/messages excerpt at 19:28:38",
+            "finding": "On restart, node2 logs `WSREP: State transfer required` with `Local state: 00000000-0000-0000-0000-000000000000:-1` (unknown/never-initialized position), forcing a full rsync SST from node1 as donor rather than a fast IST."
+          },
+          {
+            "source": "node2 /var/log/messages excerpt at 19:44:31 (later attempt)",
+            "finding": "`grastate.dat` is reported as missing on one attempt (\"Could not open state file for reading\") and on a later attempt is found with `Seqno: -1` and `safe_to_bootstrap: 1` \u2014 consistent with prior shutdowns having been unclean (SIGKILL) rather than graceful."
+          },
+          {
+            "source": "node2 command at 23:41:00",
+            "finding": "A bash process (pid 19806, exe -> /bin/bash, cwd /var/lib/mysql) is stuck in kernel `do_wait`, i.e. blocked waiting on a child process \u2014 consistent with the wsrep_sst_rsync helper script or its rsync child having stalled/hung rather than completing or erroring out."
+          },
+          {
+            "source": "node1 command at 23:30:38 and 23:31:51",
+            "finding": "An rsync SST connection from node1 (donor) to node2 (joiner) is observed succeeding once (`connect from node1 (10.100.122.10)` in node2's rsyncd log at 19:31:11), showing the network path/port 4444 was reachable at least once, so this is not a simple connectivity block."
+          },
+          {
+            "source": "node1 command at 23:45:09",
+            "finding": "`timeout` and `coreutils` were not installed on node1 until very late in the transcript (23:45, near the end of the 1200s budget), meaning the executor had no way to bound long-running/hanging commands for most of the attempt."
+          },
+          {
+            "source": "node1 command at 23:37:03 and 23:43:34",
+            "finding": "Executor tried `set global wsrep_provider_options='debug=yes'` (rejected, read-only variable) and `openssl rand -base64 24` (openssl not installed) \u2014 side investigations into SST debug/auth tooling that did not resolve the core issue and consumed time."
+          },
+          {
+            "source": "Attempt termination record",
+            "finding": "The attempt ended via `executor_timed_out` after 1200s with no structured report returned, i.e. the executor was still mid-troubleshooting (stop/kill/restart/SST loop) when time ran out."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "mariadb on at least node2 was not being managed by OpenRC's rc-service in a way that let `rc-service mariadb stop` find and gracefully stop the running process (repeated 'no matching processes found'), forcing the executor to SIGKILL mariadbd every time. SIGKILL prevents Galera from writing a clean seqno into grastate.dat, so every subsequent start sees an unknown/-1 position and requires a full SST resync instead of a fast rejoin \u2014 turning a routine cold-restart into a repeating full-SST loop.",
+            "confidence": "high"
+          },
+          {
+            "cause": "The wsrep_sst_rsync joiner-side script (or its rsync child) hung indefinitely on at least one attempt (evidenced by the bash process stuck in do_wait), and the executor had no `timeout`-wrapped invocation to bound it, so time was spent waiting/polling rather than recovering, consuming a large share of the 1200s budget.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "The executor never established which node held the authoritative last-committed state (highest seqno) before restarting, and instead cycled kill/restart attempts on node2 hoping SST would eventually succeed, rather than deliberately bootstrapping one node first (e.g. via safe_to_bootstrap/new-cluster) and only then joining the others.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "Time was partly diverted into unrelated tangents (attempting to set a read-only wsrep debug variable, installing openssl for what looks like SST auth) that did not address the stop/SIGKILL root cause, reducing the effective troubleshooting time within the 1200s window.",
+            "confidence": "low"
+          }
+        ],
+        "next_attempt_guidance": [
+          "Before the shutdown phase, verify each node's mariadb is actually tracked by its init system: confirm `rc-service mariadb stop` finds and stops the real PID (check /run/mysqld/*.pid matches the running mariadbd PID) rather than falling through to a manual pkill -9; if it doesn't, find out why the process wasn't started under OpenRC's supervision and fix that before relying on rc-service for a graceful stop.",
+          "Shut down all three nodes gracefully and in sequence (not in parallel, not with SIGKILL), then confirm on each node that grastate.dat was written with a real (non -1) seqno before considering the node cleanly stopped \u2014 a -1 seqno means the shutdown was not clean and that node will require a full SST on restart.",
+          "On the fresh cluster, install `coreutils` (for `timeout`) early, before starting any stop/start/SST cycle, and wrap any command that talks to network peers or waits on rsync/mariadbd (start, SST wait-loops) in `timeout N ...` so a stall is caught and reported within seconds rather than silently consuming the run budget.",
+          "When restarting after the maintenance window, identify the node with the highest recorded seqno (or the last node stopped, if all were stopped cleanly and simultaneously) and start exactly that one first with the appropriate bootstrap mechanism (e.g. `galera_new_cluster` / setting safe_to_bootstrap) before starting the other two nodes to join via SST/IST \u2014 don't just restart nodes in arbitrary order and hope SST resolves state.",
+          "Avoid side investigations (wsrep debug flags, SST auth/openssl) unless log evidence specifically points to auth or debug-logging as the blocker; in this transcript neither was shown to be the actual cause of the stall.",
+          "If an SST/rsync attempt appears stuck (e.g. a child process blocked in do_wait for more than a short timeout), kill and restart that specific attempt promptly with `timeout`-bounded commands rather than repeating the same untimed stop/pkill/start sequence multiple times."
+        ]
+      }
+    }
+  ]
+}

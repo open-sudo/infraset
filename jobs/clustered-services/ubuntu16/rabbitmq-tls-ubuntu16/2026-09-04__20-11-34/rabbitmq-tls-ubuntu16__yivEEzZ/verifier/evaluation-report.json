@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-running",
+      "requirement": "RabbitMQ is installed and running as a joined cluster across node1, node2, and node3",
+      "status": "not_satisfied",
+      "summary": "The apt-get install of rabbitmq-server never completed on any of the three nodes. The install.log tails on node1, node2, and node3 all show repeated 'Unable to connect' / 'Connection failed' errors fetching rabbitmq-server, erlang, and dependency packages from archive.ubuntu.com/security.ubuntu.com over roughly 45 minutes of retries. No command in the trace shows rabbitmq-server successfully installed, dpkg -l showing it present, rabbitmqctl output, or cluster_status. The run ended because claude-code timed out after 2100 seconds while apt-get was still stuck retrying downloads.",
+      "evidence_ids": [
+        "cmd-0092a0d9b8a14b4a",
+        "cmd-0e36d169b9d640e6",
+        "cmd-46cbec031cec40ea",
+        "cmd-d56f9726b7e84668",
+        "cmd-69f987bf7e8e4997",
+        "cmd-6e49c18e1c21491b",
+        "cmd-2af6669559fc4355"
+      ]
+    },
+    {
+      "id": "ca-and-certs-created",
+      "requirement": "A certificate authority is created for the cluster and used to issue per-node server certificates for AMQP TLS",
+      "status": "partially_satisfied",
+      "summary": "A self-signed CA (ca_cert.pem/ca_key.pem) was generated on node1, and per-node server certificates with correct CN/SAN entries for node1, node2, and node3 (matching their cluster IPs) were issued and signed by that CA. However, these artifacts were only generated locally on node1 under ~/tls; they were never distributed to node2/node3 or wired into any RabbitMQ TLS listener configuration, since RabbitMQ itself was never installed. The material outcome of 'serving AMQP over TLS' using this CA is therefore unmet even though the CA and certs exist as files.",
+      "evidence_ids": [
+        "cmd-e4df1cfbec564ff1",
+        "cmd-b01cdc49affe4c72"
+      ]
+    },
+    {
+      "id": "client-cert-auth-required",
+      "requirement": "Only client connections presenting a certificate issued by the cluster CA are accepted",
+      "status": "not_satisfied",
+      "summary": "A client certificate signed by the CA was generated (cert.pem under ~/tls/client), but no RabbitMQ configuration enforcing peer/client certificate verification (verify_peer, fail_if_no_peer_cert) was ever applied, since RabbitMQ was never installed or configured on any node.",
+      "evidence_ids": [
+        "cmd-885aea3336e848de"
+      ]
+    },
+    {
+      "id": "management-interface-restricted",
+      "requirement": "The RabbitMQ management interface is reachable only from within the cluster",
+      "status": "indeterminate",
+      "summary": "No firewall rule, bind-address restriction, or management plugin configuration was ever applied on any node. The trace contains no commands touching iptables/ufw or rabbitmq management config, consistent with RabbitMQ never having been installed. No valid captured evidence ID supported this conclusion.",
+      "evidence_ids": []
+    }
+  ],
+  "overall_summary": "The task was not completed. The environment suffered persistent apt/network connectivity failures reaching Ubuntu archive and security mirrors, causing repeated 'Connection failed'/'Unable to connect' errors across roughly 45 minutes of retries on all three nodes; rabbitmq-server (and its erlang dependencies) never finished installing on any node before the executor hit its 2100-second timeout. A CA and per-node/client TLS certificates were correctly generated with proper SANs and signed by that CA, but since RabbitMQ was never installed, none of the substantive outcomes \u2014 a running TLS-enabled AMQP cluster, CA-based client certificate enforcement, or a management interface restricted to the cluster \u2014 were achieved. The failure is attributable to environmental package-mirror flakiness rather than any flawed approach, and the executor's recovery actions (clearing stuck apt/dpkg locks, retrying with IPv4/timeout options) were reasonable, though ultimately insufficient within the time budget.",
+  "limitations": [
+    "No provider-wide node-restart evidence protocol was executed on any node in this trace \u2014 there are no restart acknowledgements or post-restart boot-identity comparisons; boot-identity values are identical between the before-prepare and after-executor snapshots for all three nodes, consistent with no restart occurring, but this could not be independently confirmed as intentional versus simply never reached.",
+    "The trace ends mid-installation due to a hard timeout, so it is unknown whether a subsequent attempt (not captured here) would have succeeded once network connectivity to the package mirrors stabilized.",
+    "No listening-socket or service evidence is available for RabbitMQ specifically, since it was never installed; absence of TLS/management-port evidence reflects the incomplete task rather than a security misconfiguration."
+  ],
+  "command_stats": {
+    "total": 55,
+    "successful": 51,
+    "failed": 3,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 0.75,
+  "confidence": 0.75,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "functionality": 0.1667,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most state-changing commands were legitimate installation attempts or reasonable recovery from stuck apt processes: repeatedly retrying `apt-get update`/`install` with IPv4/timeout/retry flags (cmd-ec122725eb3f463e, cmd-0092a0d9b8a14b4a, cmd-0e36d169b9d640e6, cmd-46cbec031cec40ea) after network flakiness, and killing/cleaning up stuck apt-get processes and stale dpkg/apt locks (cmd-85f48ca3aecb4eb2, cmd-40d75c65f5814bab, cmd-e54ea46286364b77) were direct, necessary corrective actions to unblock a hung install, not unrelated experiments. `sudo dpkg --configure -a` was run defensively after killing apt-get, which is appropriate and did not damage package state (after_executor package-health check still reports a clean dpkg manager state on all three nodes). The lifecycle diff shows only residual log/pid files left in /tmp (aptupdate.log, aptupdate.pid, aptupdate2.log, install.log on node1; install.log on node2 and node3) \u2014 these are low-risk, non-destructive artifacts from the aborted install attempts and were never cleaned up, since the run was cut off by the timeout rather than reaching a graceful completion step. No services were left in a failed state, no ports were opened, and no security controls were weakened; failed-services and listening-sockets are empty in both before and after snapshots. The CA/cert generation under ~/tls also persisted but is inert (not referenced by any running service) and poses no exposure.",
+    "evidence_ids": [
+      "cmd-85f48ca3aecb4eb2",
+      "cmd-40d75c65f5814bab",
+      "cmd-e54ea46286364b77",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": null,
+  "provisional_reward": 0.1667
+}
