@@ -28,7 +28,7 @@ MATRIX_ROOT = REPOSITORY / "tasks" / "sonic-networking"
 CATALOG_PATH = MATRIX_ROOT / "catalog.toml"
 
 EXPECTED_SYSTEMS = 8
-EXPECTED_TASKS = 9
+EXPECTED_TASKS = 10
 
 SENTINEL = """#!/bin/sh
 echo "InfraSet requires the configured Harbor-Antrieb verifier." >&2
