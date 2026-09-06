@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "SNAT #1 on node1 (VyOS) translates node3/lan-a source address as traffic enters the transit network",
+      "status": "satisfied",
+      "summary": "After correcting an initial NIC-mapping error (confirmed via ARP/tcpdump), VyOS nat source rule 10 was configured with outbound-interface eth1 (transit, correctly identified as facing node2) translating 10.10.1.0/24 to 10.10.2.1. 'show nat source rules' output directly confirms the active rule matches the corrected interface, and a subsequent successful ping/curl over the transit link confirms it is functioning.",
+      "evidence_ids": [
+        "cmd-498c7ab4f3d24f19",
+        "cmd-548ca5a59587446d",
+        "cmd-00fb9471991a4311"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "SNAT #2 on node2 (OPNsense) translates the transit-sourced traffic as it enters lan-b",
+      "status": "satisfied",
+      "summary": "A hybrid-mode outbound NAT rule was added via config.xml + configctl filter reload; pfctl -s nat directly shows 'nat on vtnet2 inet from 10.10.2.0/24 to any -> (vtnet2:0)', confirming the second SNAT hop is active on the lan-b egress interface, backed by pass filter rules on opt1/opt2 needed for the traffic to flow.",
+      "evidence_ids": [
+        "cmd-c6561721dc0c4bff",
+        "cmd-0e200dd2bdba4331",
+        "cmd-2a8e1706f4ec4e95",
+        "cmd-2e225455dad344fd"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node4 records the connection from node3 as arriving from node2's lan-b address (10.10.3.254), not from node3 or node1",
+      "status": "satisfied",
+      "summary": "A curl from node3 to node4:8080 succeeded, node4's HTTP access log directly shows the client IP as 10.10.3.254 (node2's lan-b address), and OPNsense's pf state table shows the double translation chain 10.10.1.10 -> 10.10.2.1 -> 10.10.3.254 -> node4:8080, directly confirming both NAT hops and the final observed source.",
+      "evidence_ids": [
+        "cmd-903938b7f2ce49c0",
+        "cmd-d3587b71b3da4da7",
+        "cmd-bc9078d98a724250"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "node4 serves an HTTP service on TCP port 8080 that node3 can reach",
+      "status": "satisfied",
+      "summary": "A persistent systemd unit (simple-http.service) was deployed on node4 serving /srv/www on 0.0.0.0:8080, firewalld opened port 8080, and curl from node3 succeeded returning the expected content both before and after all four node restarts.",
+      "evidence_ids": [
+        "cmd-3cd80ea6ae344907",
+        "cmd-903938b7f2ce49c0",
+        "cmd-4ee9baeb2a094f2d"
+      ]
+    }
+  ],
+  "overall_summary": "The double-NAT path was built and directly verified: node3 -> node1 (VyOS SNAT#1, corrected after ARP/tcpdump-based topology discovery) -> node2 (OPNsense SNAT#2 via hybrid outbound NAT) -> node4:8080 (systemd HTTP service). node4's access log and OPNsense's pf state table directly confirm the connection arrives with source 10.10.3.254 (node2's lan-b IP), satisfying the core requirement that node4 not see node3 or node1 as the source. Beyond the public task contract, all four nodes were individually restarted with pre-restart boot-identity/health capture, an explicit restart acknowledgement, a distinct post-restart boot identity, and recovered interface/NAT/service state, with the full double-NAT chain re-verified end-to-end via curl and access log after the final (node4) restart. Minor uncleaned temp files from OPNsense config scripting and ARP diagnostics are low-risk residue but were not removed.",
+  "limitations": [
+    "Full end-to-end curl + node4 log verification of the double-NAT chain was performed once before any restarts and again only after the node3 and node4 restarts; there is no discrete end-to-end curl test isolated immediately after only the node1 or node2 restart (though individual node1/node2 config/NAT state was directly re-verified after each of their restarts).",
+    "Restart/recovery evidence is supplemental to (not required by) the public task contract, which does not mention availability or reboot persistence; its quality is documented for completeness but does not affect the functional scoring of the core NAT-path requirements.",
+    "Minor leftover temporary files (/tmp/opn_step1.py, /tmp/opn_step2.py on node2, /tmp/tdump.log on node1) were not cleaned up, though these are low-risk and do not affect functionality."
+  ],
+  "command_stats": {
+    "total": 86,
+    "successful": 69,
+    "failed": 17,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Command trace reviewed chronologically for state-changing actions. The initial wrong NIC-to-link assignment on node1 (cmd-675c32dc0f824a1a: eth1=lan-a, eth2=transit) was a reasonable first attempt later corrected via evidence-driven troubleshooting (cmd-498c7ab4f3d24f19), not an unnecessary mutation \u2014 it was a necessary prerequisite correction, not a discarded experiment. All other mutations (VyOS interface/NAT/route config, OPNsense interface/NAT/filter config, node3/node4 static IP assignment via nmcli, node4 HTTP service + firewalld port) are directly tied to satisfying the task's material outcomes. Minor low-risk residue was left behind and not cleaned up: /tmp/opn_step1.py and /tmp/opn_step2.py (Python helper scripts used for config.xml surgery on node2, cmd-34f06f8695a849c7 and cmd-0e200dd2bdba4331) and a stray /tmp/tdump.log on node1 from ARP diagnostics (cmd-bb0393d663b04961). These are bounded, non-destructive, and do not weaken security or leave running/conflicting services, so they are treated as minor hygiene deductions rather than severe issues. No failed services, listening-socket anomalies (other than the intended node4:8080), or package-health problems appear in the after_executor snapshot versus after_prepare.",
+    "evidence_ids": [
+      "cmd-34f06f8695a849c7",
+      "cmd-0e200dd2bdba4331",
+      "cmd-bb0393d663b04961",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node4:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node3:package-health",
+      "global:after_executor:node4:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

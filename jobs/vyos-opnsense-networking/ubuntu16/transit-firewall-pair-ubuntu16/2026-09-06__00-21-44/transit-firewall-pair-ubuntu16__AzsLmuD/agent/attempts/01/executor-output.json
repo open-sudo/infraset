@@ -1,0 +1,101 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) and node2 (OPNsense) as back-to-back routers connecting lan-a (node3) and lan-b (node4) across a transit network, with default-deny forwarding on both routers and a single explicit allow for node3 -> node4 tcp/8080 (HTTP). Verified the allowed path works end-to-end and all other cross-network traffic (ping, other ports) is refused. Completed the mandatory one-at-a-time restart protocol on all four nodes with captured boot-identity change and post-restart recovery proof, including detecting and fixing a non-persistent /tmp-based HTTP service on node4 that did not survive its reboot.",
+  "actions_performed": [
+    "Mapped cluster topology via L2/ARP probing: node1 eth2=lan-a (node3), eth1=transit (node2 vtnet1); node2 vtnet2=lan-b (node4)",
+    "Assigned static IPs: lan-a 10.10.10.0/24, transit 10.10.99.0/24, lan-b 10.10.20.0/24",
+    "Configured VyOS (node1): static route to lan-b, firewall ipv4 forward filter default-action drop, rule 5 accept established/related, rule 10 accept tcp/8080 from lan-a to node4 only",
+    "Configured OPNsense (node2): assigned opt1 (transit)/opt2 (lan-b) interfaces, added gateway+static route to lan-a, added single pf pass rule on opt1 for tcp/8080 to node4, reloaded filter while preserving existing SSH pass rule on vtnet0",
+    "Configured node3 and node4 with persistent static IP/route via systemd-networkd drop-in files (ens7)",
+    "Started demo HTTP service on node4 port 8080, later made persistent via a systemd unit backed by /srv/www after discovering the original /tmp-based version did not survive reboot",
+    "Verified end-to-end: node3 curl to node4:8080 succeeds; ping, port 9999, and SSH from node3 to node4 all time out; VyOS firewall counters show rule 10 hits for the allowed flow and default-drop hits for everything else",
+    "Captured baseline boot_id/kern.boottime on all 4 nodes, then restarted node1, node2, node3, node4 one at a time via native reboot commands, polled each until exec access returned, confirmed boot identity changed on each, and re-verified config/service/connectivity recovery after each restart",
+    "Fixed node4's demo-http.service (updated WorkingDirectory to /srv/www, recreated content, restarted service) after discovering /tmp/www was wiped by the reboot",
+    "Cleaned up temporary test IPs, config backups paths, and reboot log files"
+  ],
+  "evidence": [
+    {
+      "requirement": "node3 can reach node4's HTTP service on tcp/8080 across both routers",
+      "command_ids": [
+        "cmd-fcdacf2612bb4c12",
+        "cmd-0b7e295ec27f490b",
+        "cmd-86843a55ccf24cc9",
+        "cmd-da870763e73e4eac"
+      ],
+      "summary": "curl from node3 to http://10.10.20.10:8080/ returns 'node4-http-ok' consistently, including after every node restart"
+    },
+    {
+      "requirement": "Other traffic between lan-a and lan-b is refused by default",
+      "command_ids": [
+        "cmd-603e3f95756b4d7a",
+        "cmd-514a1cc354114490",
+        "cmd-86843a55ccf24cc9",
+        "cmd-da870763e73e4eac"
+      ],
+      "summary": "ping, tcp/9999, and tcp/22 from node3 to node4 all fail/timeout; VyOS forward-filter counters show hits on default drop rule and zero on the explicit 8080 rule for other test traffic"
+    },
+    {
+      "requirement": "VyOS (node1) forward filter configured default-deny with explicit allow",
+      "command_ids": [
+        "cmd-1d74cc758f6c4a54",
+        "cmd-8a3054ee6d694c78"
+      ],
+      "summary": "show firewall confirms default-action drop, established/related accept rule 5, and tcp/8080 lan-a->node4 accept rule 10; config persisted after reboot"
+    },
+    {
+      "requirement": "OPNsense (node2) pf ruleset configured default-deny with explicit allow, SSH access preserved",
+      "command_ids": [
+        "cmd-f53050f15c684580",
+        "cmd-7a1a8d8b53994a79",
+        "cmd-adf8c0e9219141c6"
+      ],
+      "summary": "pfctl -s rules shows pass rule restricted to vtnet1/tcp/10.10.10.0/24->10.10.20.10:8080 plus intact vtnet0 SSH pass rule; identical ruleset present after reboot"
+    },
+    {
+      "requirement": "node1 mandatory restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-dc01c118655c4681",
+        "cmd-e9934552e5144e24",
+        "cmd-7a179d523be84f33",
+        "cmd-6c806d1b32a043aa",
+        "cmd-8a3054ee6d694c78"
+      ],
+      "summary": "boot_id e98d9010...->bdbce64f... after reboot; interfaces, static route, and firewall rules all confirmed restored post-restart"
+    },
+    {
+      "requirement": "node2 mandatory restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b1e3fe9c7a444482",
+        "cmd-f935c7d2748142bd",
+        "cmd-f3ad9d3412294595",
+        "cmd-6d4d0ef0b08e467a",
+        "cmd-adf8c0e9219141c6"
+      ],
+      "summary": "kern.boottime sec 1788676206->1788676918 after reboot; opt1/opt2 addresses, static route, and pf pass rule all confirmed restored post-restart"
+    },
+    {
+      "requirement": "node3 mandatory restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-42abe7f97ec04122",
+        "cmd-d987db20925f4641",
+        "cmd-523a54ce04374925",
+        "cmd-71cebd3d62fd47d4",
+        "cmd-cb835be5c3b54206"
+      ],
+      "summary": "boot_id 2ba78175...->7ef124ae... after reboot; ens7 static IP and route recovered via systemd-networkd, HTTP path confirmed working, ping still blocked"
+    },
+    {
+      "requirement": "node4 mandatory restart: healthy baseline, restart, changed boot identity, recovered state (including service persistence fix)",
+      "command_ids": [
+        "cmd-609918935e094885",
+        "cmd-b94df81dc9f640f9",
+        "cmd-9d1483612bd7459e",
+        "cmd-32260a0fefa6437c",
+        "cmd-d8af739f999b470e",
+        "cmd-7a1a8d8b53094a79",
+        "cmd-da870763e73e4eac"
+      ],
+      "summary": "boot_id f6f9440e...->89ab8496... after reboot; discovered demo-http.service failed (ExecStart CHDIR error, /tmp/www wiped), fixed by moving content to /srv/www and restarting service, then confirmed HTTP path fully recovered from node3"
+    }
+  ]
+}

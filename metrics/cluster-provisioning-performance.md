@@ -2,9 +2,9 @@
 
 Every task in this dataset runs on a disposable cluster that [Antrieb](https://antrieb.sh/) provisions on demand. This page reports how long that takes, measured from the provider's own `provision_time_ms` for each cluster actually created during a recorded job.
 
-Across **759 clusters**: median **1088 ms**, 95th percentile **2774 ms**, slowest **5080 ms**. 321 of 759 (42%) completed in under a second, and every one completed in under 5.1 seconds.
+Across **839 clusters**: median **1164 ms**, 95th percentile **3069 ms**, slowest **5080 ms**. 321 of 839 (38%) completed in under a second, and every one completed in under 5.1 seconds.
 
-Provisioning accounts for a median of **0.33%** of a trial's total wall clock, so the completion times reported in the per-category metrics are effectively all executor work rather than environment setup.
+Provisioning accounts for a median of **0.32%** of a trial's total wall clock, so the completion times reported in the per-category metrics are effectively all executor work rather than environment setup.
 
 ## By cluster shape
 
@@ -20,7 +20,7 @@ Grouped by what was actually provisioned rather than by operating system: within
 | 4 | 1 | 11 | 1210 ms | 1882 ms | 1882 ms |
 | 4 | 2 | 8 | 2820 ms | 3428 ms | 3428 ms |
 | 4 | 3 | 8 | 1446 ms | 1999 ms | 1999 ms |
-| 4 | 4 | 24 | 2101 ms | 3074 ms | 3379 ms |
-| 4 | 5 | 8 | 2646 ms | 3441 ms | 3441 ms |
+| 4 | 4 | 88 | 2547 ms | 3596 ms | 4434 ms |
+| 4 | 5 | 24 | 2560 ms | 3515 ms | 3846 ms |
 
 Provisioning stays broadly flat as clusters grow: adding nodes and additional isolated networks moves the median by a few hundred milliseconds rather than by orders of magnitude.

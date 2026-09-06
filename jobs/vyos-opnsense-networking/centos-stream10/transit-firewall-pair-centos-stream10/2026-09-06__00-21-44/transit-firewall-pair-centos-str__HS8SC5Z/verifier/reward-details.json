@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Open exactly node3 -> node4:8080/tcp across the transit path while all other lan-a<->lan-b traffic remains refused by default",
+      "status": "satisfied",
+      "summary": "Post-configuration and post-reboot testing from node3 shows curl to 10.10.30.13:8080 succeeds (returns 'hello from node4'), while ping and curl to port 80 both fail (100% packet loss / connection refused/timeout). This was verified both immediately after configuration and again after all four nodes were rebooted, confirming the restrictive policy persists and functions correctly.",
+      "evidence_ids": [
+        "cmd-ae6ad4bc9f5648cc",
+        "cmd-c81877bb1f564da4",
+        "cmd-1535a9dc87f14442",
+        "cmd-6f3fdf5b0cc94be5",
+        "cmd-411a11597f904414",
+        "cmd-cdcbb8a0dce540a5",
+        "cmd-180955c6ad264eff"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "VyOS (node1) forward filter must default-deny and contain an explicit allow only for the required flow, and this must persist",
+      "status": "satisfied",
+      "summary": "show firewall ipv4 forward filter confirms default-action drop, rule 5 (established/related) and rule 10 (tcp/8080, src 10.10.20.0/24, dst 10.10.30.13, inbound eth2). Rule hit counters are nonzero after real traffic. The same ruleset with incremented hit counters is shown again after the node1 reboot, confirming persistence via 'save'.",
+      "evidence_ids": [
+        "cmd-041b1820913240d3",
+        "cmd-5fe21f4610ea4a28",
+        "cmd-ea8eb34b3a8d42c4"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "OPNsense (node2) must have opt interfaces, a route to lan-a, and a pf pass rule scoped to the required flow, persisted across restart",
+      "status": "satisfied",
+      "summary": "config.xml edits assigned opt1/opt2, added a static route via GW_TRANSIT, and a filter pass rule restricted to tcp/8080 from 10.10.20.0/24 to 10.10.30.13; configctl reconfigure/filter reload applied it and pfctl -s rules shows the default block-all plus exactly one added quick-pass rule (plus pre-existing mgmt SSH/HTTP(S) rules, unrelated to lan traffic). After reboot, netstat -rn and pfctl -s rules show the same interfaces, route, and pass rule intact.",
+      "evidence_ids": [
+        "cmd-11120b1b82fe490f",
+        "cmd-9407d5c8b099452d",
+        "cmd-c3d8c596ad2e4c75",
+        "cmd-ca2bf1689ee8411c"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "node1 restart: healthy baseline, restart acknowledgement, changed boot identity, and recovered configuration/functional state",
+      "status": "satisfied",
+      "summary": "boot_id captured pre-reboot (2eb8b6e8...), reboot issued and acknowledged, boot_id changed post-reboot (2f56f740..., corroborated by the fixed after_executor snapshot), and firewall/routes/interfaces were shown intact afterward with a successful end-to-end curl from node3.",
+      "evidence_ids": [
+        "cmd-5488cb8f9bfe4a65",
+        "cmd-749bc6743a50469d",
+        "cmd-9bf5c0e69ec44df6",
+        "cmd-ea8eb34b3a8d42c4",
+        "cmd-1535a9dc87f14442"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "node2 restart: healthy baseline, restart acknowledgement, changed boot identity, and recovered configuration/functional state",
+      "status": "satisfied",
+      "summary": "kern.boottime captured before (sec=1788671155) and issued shutdown -r now; boottime after reboot differs (sec=1788671913), matching the fixed lifecycle snapshot. Post-reboot checks confirm interfaces/routes/pf rule intact and the end-to-end flow (8080 works, ping refused) still functions.",
+      "evidence_ids": [
+        "cmd-d62187cf833c432a",
+        "cmd-4032285c480447f0",
+        "cmd-4891b512875f4d43",
+        "cmd-ca2bf1689ee8411c",
+        "cmd-6f3fdf5b0cc94be5"
+      ]
+    },
+    {
+      "id": "req-6",
+      "requirement": "node3 restart: healthy baseline, restart acknowledgement, changed boot identity, and recovered configuration/functional state",
+      "status": "satisfied",
+      "summary": "boot_id captured before (f7db4b4e...) and after reboot (fd71c8d4..., matching fixed snapshot); static IP/route were restored via NetworkManager persistence and the end-to-end curl to node4:8080 succeeded post-reboot.",
+      "evidence_ids": [
+        "cmd-2e6da42cd055450b",
+        "cmd-acce485d4d814d53",
+        "cmd-f551e0945bf74bdc",
+        "cmd-411a11597f904414"
+      ]
+    },
+    {
+      "id": "req-7",
+      "requirement": "node4 restart: healthy baseline, restart acknowledgement, changed boot identity, and recovered configuration/functional/service state",
+      "status": "satisfied",
+      "summary": "boot_id captured before (df8bab0d...) and after reboot (5dce350e..., matching fixed snapshot); demo-http.service was found active and listening, firewalld port 8080/tcp remained open, static IP/route were restored, and the full flow (8080 works, ping/port80 refused) was re-verified from node3.",
+      "evidence_ids": [
+        "cmd-d36fed877a354e45",
+        "cmd-9c5e99930bf240aa",
+        "cmd-31d646290b504ea4",
+        "cmd-cdcbb8a0dce540a5",
+        "cmd-180955c6ad264eff"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes are satisfied: the executor built the required cross-vendor transit topology, configured VyOS (node1) and OPNsense (node2) with default-deny forward/pf policies plus a single explicit allow for node3->node4:8080/tcp, and verified end-to-end that only the HTTP flow succeeds while ping and port 80 are refused -- both before and after a full one-at-a-time restart of all four nodes, with boot-identity changes confirmed against the fixed lifecycle snapshots. Hygiene is generally good; the only blemishes are a handful of low-risk diagnostic residues (an installed strace package, leftover tcpdump/http log files, and a config.xml backup) that were not cleaned up but do not affect functionality or security posture.",
+  "limitations": [
+    "The requirement that 'other traffic' be refused is demonstrated only for ICMP and port 80 as proxies; not every possible protocol/port combination was tested, though the router configurations (default-drop plus a single narrow allow) support the general claim.",
+    "Node4's host-level firewalld also independently blocks port 80/other traffic, so some of the observed refusals are reinforced at the host layer in addition to the router layer; this does not contradict the requirement but means router-only enforcement was not isolated in every test.",
+    "Some troubleshooting mutations (package install, capture files, ephemeral service, config backup) were left in place; while low-risk, they represent minor unreverted residue not accounted for in the executor's final report."
+  ],
+  "command_stats": {
+    "total": 123,
+    "successful": 98,
+    "failed": 25,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands were directly tied to building or verifying the required topology and firewall policy (interface addressing, VyOS firewall rules, OPNsense config.xml edits, NetworkManager persistence, systemd unit for the HTTP demo service, firewalld port opening) or were bounded troubleshooting later corrected (e.g., node3/node4 initial wrong-subnet IP assignment on enp8s0 in cmd-4b82801c55cc47bc and cmd-e063e54ed6b1477a, immediately corrected in cmd-967ec30af4814b00 and later via proper nmcli config). A few unnecessary or unreverted residue items were left: (1) the 'strace' package was permanently installed on node3 via dnf (cmd-a3e540c755914e80) purely for a diagnostic experiment (confirming an already-diagnosed EHOSTUNREACH cause) and never removed; (2) several ad-hoc tcpdump capture commands left log/pid files under /tmp on node2/node3/node4 (cmd-b802f857f8af4b2e, cmd-884c640a82274293, cmd-194e8c05c0344f91, cmd-1a20104dd7304032, cmd-6b2c1164e35347c3) that persist in the after_executor snapshot; (3) an initial ephemeral python http.server + its /tmp/http.log and /tmp/http.pid files (cmd-757f00e2da3445f3) were superseded by a systemd unit but the log/pid files were not cleaned up; (4) a config.xml.bak1 backup was created on node2 (cmd-da8063dc084f4eca) and left in place. None of these are destructive, security-weakening, or broad in scope -- they are low-risk residual diagnostic artifacts and one unnecessary but harmless package install.",
+    "evidence_ids": [
+      "cmd-a3e540c755914e80",
+      "cmd-b802f857f8af4b2e",
+      "cmd-884c640a82274293",
+      "cmd-194e8c05c0344f91",
+      "cmd-1a20104dd7304032",
+      "cmd-6b2c1164e35347c3",
+      "cmd-757f00e2da3445f3",
+      "cmd-da8063dc084f4eca",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node4:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

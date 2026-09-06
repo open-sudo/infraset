@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Open a path for node3 (lan-a) to reach node4's HTTP service on TCP port 8080 through both routers",
+      "status": "satisfied",
+      "summary": "curl from node3 to http://10.10.2.10:8080/ succeeds (cmd-1dce79191903460c) and tcpdump captures the same SYN/response 3-way flow hop-by-hop on node1's eth2/eth1 (cmd-c1a7f57edc9f4036, cmd-8f9087a8c2b64983), node2's vtnet1/vtnet2 (cmd-bc3d2d33ed824096, cmd-e4a7ebbb0cae486e), and node4's eth1 (cmd-99816fbb6d994a7c, cmd-fe867deae59d4dfb), directly demonstrating the end-to-end path through both routers.",
+      "evidence_ids": [
+        "cmd-1dce79191903460c",
+        "cmd-c1a7f57edc9f4036",
+        "cmd-8f9087a8c2b64983",
+        "cmd-bc3d2d33ed824096",
+        "cmd-e4a7ebbb0cae486e",
+        "cmd-99816fbb6d994a7c",
+        "cmd-fe867deae59d4dfb"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "All other forwarded traffic between lan-a and lan-b (ping, other TCP ports) remains refused (default-deny preserved)",
+      "status": "satisfied",
+      "summary": "From node3, ICMP echo to 10.10.2.10 times out, TCP/8081 times out, and TCP/22 times out while port 8080 succeeds in the same test run (cmd-c45ae4d612ac4cff). This was re-confirmed after all four restarts (cmd-e00a24b11fb34771, cmd-5daa9f0b7f294d4d), showing the refusal is not an artifact of a transient state.",
+      "evidence_ids": [
+        "cmd-c45ae4d612ac4cff",
+        "cmd-e00a24b11fb34771",
+        "cmd-5daa9f0b7f294d4d"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "VyOS (node1) forward filter enforces default-drop with a narrowly scoped allow for the required flow",
+      "status": "satisfied",
+      "summary": "config.boot shows firewall ipv4 forward filter default-action drop, an established/related accept rule 5, and rule 10 allowing only tcp/8080 from 10.10.1.0/24 to 10.10.2.10 (cmd-24a3e349f9004bf1). This configuration persisted and was re-verified identical after node1's restart (cmd-a2d026dadce4401a).",
+      "evidence_ids": [
+        "cmd-24a3e349f9004bf1",
+        "cmd-a2d026dadce4401a"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "OPNsense (node2) pf ruleset enforces default-deny on the transit-facing interface with a narrowly scoped pass rule for the required flow",
+      "status": "satisfied",
+      "summary": "pfctl -s rules shows only 'pass in quick on vtnet1 inet proto tcp from 10.10.1.0/24 to 10.10.2.10 port = http-alt' as the specific pass rule on the transit interface, with block-drop rules for everything else not explicitly passed (cmd-74af583bb4554a37, cmd-264a754dd77e46ad). Rule persisted in config.xml (cmd-4ef1988d2a7147d8) and was re-verified after node2's restart (cmd-dc10348bd3104a66).",
+      "evidence_ids": [
+        "cmd-74af583bb4554a37",
+        "cmd-264a754dd77e46ad",
+        "cmd-4ef1988d2a7147d8",
+        "cmd-dc10348bd3104a66"
+      ]
+    },
+    {
+      "id": "R5",
+      "requirement": "Provider-wide restart evidence protocol: each managed node shows a healthy pre-restart baseline, a restart acknowledgement, a changed boot identity, and recovered service/config state",
+      "status": "satisfied",
+      "summary": "All four nodes show boot_id/kern.boottime baselines before restart, an issued reboot with connection loss confirming the transition, a post-restart identity change, and re-verified forwarding config plus working HTTP path with refusal of other traffic. The post-restart boot identities (node1 15054aff, node2 kern.boottime 04:54:27, node3 7d605894, node4 dd4c49bb) match the fixed after-executor lifecycle snapshot exactly for all four nodes, corroborating the trace independently.",
+      "evidence_ids": [
+        "cmd-785ada3ce5e24514",
+        "cmd-02a45c6a5e274e88",
+        "cmd-cf1e25db6c9741df",
+        "cmd-a2d026dadce4401a",
+        "cmd-0ee5c98e2d6b4cac",
+        "cmd-7740861f070044a8",
+        "cmd-7fbeb4c19ca347c5",
+        "cmd-dc10348bd3104a66",
+        "cmd-abf407c6c8bb4c5e",
+        "cmd-3723b3d82a844b06",
+        "cmd-92db7570304f4193",
+        "cmd-e00a24b11fb34771",
+        "cmd-457bb225b3804bbc",
+        "cmd-4a5d371c06fb4cd9",
+        "cmd-51330e01182749b9",
+        "cmd-7334e00ca53f45f6",
+        "cmd-5daa9f0b7f294d4d",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established a working transit path from node3 through node1 (VyOS) and node2 (OPNsense) to node4's HTTP service on port 8080, with default-deny forward policy preserved on both routers and confirmed by hop-by-hop tcpdump captures and multi-protocol negative tests (ping, alt port, SSH) that fail while port 8080 succeeds. Both routers' firewall configurations were directly inspected and show narrowly scoped allow rules consistent with the task. All four nodes were individually restarted with pre/post boot-identity capture, and post-restart identities match the fixed after-executor lifecycle snapshot, giving strong independent corroboration that recovery (routing, firewall, HTTP path, refusal of other traffic) was genuinely re-verified after each reboot rather than assumed.",
+  "limitations": [
+    "A base64-encoded Python script executed on node2 (cmd-29d88bbaabc44565) to apply OPNsense config changes is opaque in the trace; its exact edits cannot be independently audited beyond the resulting pfctl/config.xml state that was separately verified.",
+    "node2's captured pre-restart-test boot time (Sep 6 04:45:34, cmd-0ee5c98e2d6b4cac) differs from the before_prepare snapshot's boot time (Jun 15), suggesting an earlier unlogged boot/restart of the container between provisioning and task start; this does not affect verification of the intentional restart later in the trace but is unexplained in the record.",
+    "Node4's HTTP service is an ephemeral python http.server process (not a persistent system service), so its 'recovery' after reboot required a manual restart by the executor rather than automatic persistence; the executor disclosed this limitation in the final report."
+  ],
+  "command_stats": {
+    "total": 110,
+    "successful": 89,
+    "failed": 21,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.78,
+    "summary": "Two bounded, fully reverted troubleshooting mutations occurred while addressing the wrong transit interface: node1's eth1 was briefly assigned the lan-a address 10.10.1.254/24 (cmd-730a002b12f04615) then deleted and correctly moved to eth2 (cmd-a394542eacbb44c1); node2's vtnet2 was briefly assigned the transit address 10.10.99.2/30 (cmd-9b64a7dd15504d82) then deleted and correctly moved to vtnet1 (cmd-238c760256f8448d). Both were low-risk, ephemeral (not persisted to config), and immediately corrected. A base64-encoded Python script was decoded and executed on node2 to apply persistent config.xml changes (cmd-29d88bbaabc44565); its exact contents are not visible in the trace, so its full scope cannot be independently audited, though downstream pfctl/config.xml evidence confirms the resulting rule matches the intended narrow allow. Packages (tcpdump, curl, python3) were installed on the Alpine nodes for testing/diagnostics and retained; this is reasonable since python3 also backs the required HTTP test service on node4. Minor residual temp files (/tmp/reboot.log, /tmp/tcp_node3.log, /tmp/tcp4.log, /tmp/http.log, /tmp/www) were left on node3/node4 after testing, which is low-impact.",
+    "evidence_ids": [
+      "cmd-730a002b12f04615",
+      "cmd-a394542eacbb44c1",
+      "cmd-9b64a7dd15504d82",
+      "cmd-238c760256f8448d",
+      "cmd-29d88bbaabc44565",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node4:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

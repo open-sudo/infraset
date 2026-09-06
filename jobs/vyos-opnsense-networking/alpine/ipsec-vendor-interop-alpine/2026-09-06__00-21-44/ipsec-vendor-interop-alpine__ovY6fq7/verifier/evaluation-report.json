@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Establish an IPsec tunnel between node1 (VyOS) and node2 (OPNsense) across the transit network",
+      "status": "satisfied",
+      "summary": "VyOS site-to-site peer NODE2 (IKEv2, PSK, AES256/SHA256/DH14) and OPNsense Swanctl connection/local/remote/PSK were configured on both ends over 172.16.0.1/172.16.0.2 transit addresses. swanctl --list-sas on both node1 and node2 independently shows an ESTABLISHED IKEv2 SA and INSTALLED child SA between the two endpoints.",
+      "evidence_ids": [
+        "cmd-c0b6e1b294aa4ddb",
+        "cmd-de999d347cd5444a",
+        "cmd-868213a12ca44daf",
+        "cmd-c5a9edb2a7e04af4",
+        "cmd-ab8a92c0d1c5470a",
+        "cmd-b24ed0e6a1fd4309"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Carry both private networks (lan-a 10.50.1.0/24 behind node1, lan-b 10.50.2.0/24 behind node2) over the tunnel",
+      "status": "satisfied",
+      "summary": "The child SA / traffic selectors on both sides are configured for local 10.50.1.0/24 <-> remote 10.50.2.0/24, and node1's kernel IPsec policy database (ip xfrm policy) shows tunnel-mode ESP policies for that exact source/destination pair, confirming both subnets are carried through the tunnel rather than routed directly.",
+      "evidence_ids": [
+        "cmd-868213a12ca44daf",
+        "cmd-ab8a92c0d1c5470a",
+        "cmd-bef4f8f627a74913"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node3 and node4 reach each other by their private addresses",
+      "status": "satisfied",
+      "summary": "After configuring node3 (10.50.1.2/24) and node4 (10.50.2.2/24) with routes to the tunnel, node3 pinged node4's private address and node4 pinged node3's private address, both with 0% packet loss.",
+      "evidence_ids": [
+        "cmd-5758478622614da4",
+        "cmd-9a8e8a6dbe85404c"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "That node3-node4 traffic is encrypted in transit (i.e., actually traverses the IPsec tunnel rather than a plaintext/direct path)",
+      "status": "satisfied",
+      "summary": "Immediately following the node3<->node4 pings, node1's ESP SA counters (swanctl --list-sas) show packet/byte counts incrementing from 0 to non-zero (11/14 packets) consistent with the ping traffic, and the kernel policy/SA database confirms tunnel-mode ESP is applied to that traffic. This directly ties the observed connectivity to the encrypted tunnel rather than an unencrypted path.",
+      "evidence_ids": [
+        "cmd-dfebf8857b724a3b",
+        "cmd-bef4f8f627a74913"
+      ]
+    }
+  ],
+  "overall_summary": "The core task contract is satisfied with direct, corroborating evidence: node1 and node2 have an established, correctly-scoped IPsec tunnel (IKEv2 + PSK, matching child SA selectors for 10.50.1.0/24 <-> 10.50.2.0/24), and node3 and node4 successfully ping each other by private address with concurrent, incrementing ESP SA counters on node1 confirming the traffic is encrypted and tunneled rather than routed in the clear. Separately, the mandatory node-restart evidence protocol was well executed for node1 and node2 (VyOS/OPNsense), each showing a healthy pre-restart baseline, an acknowledged reboot, a changed boot identity, and fully auto-restored IPsec/interface state with re-verified node3<->node4 connectivity. For the Alpine leaf nodes, the picture is mixed: the executor reported node3 and node4 as never recovering within the session, but the fixed after-executor lifecycle snapshot (captured after the executor's polling window closed) shows node3 actually did come back with a new boot identity and functioning services \u2014 meaning the executor's monitoring window was too short and its final claim about node3 was inaccurate. node4, however, remained unreachable even in the later fixed snapshot, so its restart/recovery genuinely could not be confirmed. Since restart/persistence for the Alpine leaves is not itself part of the public task contract, these gaps do not reduce the core functional outcome, but they are material limitations affecting confidence and are reflected below. Hygiene concerns include a temporary full firewall disable on node2 during troubleshooting and some leftover temporary credential files and a config backup that were never cleaned up.",
+  "limitations": [
+    "The executor's final report claims node3 never recovered from reboot, but the fixed after-executor lifecycle snapshot (captured after the executor stopped polling) shows node3 returned with a new boot identity and functioning SSH/DHCP/services \u2014 the executor's monitoring window was too short, so its claim about node3 is contradicted by the independent fixed snapshot.",
+    "node4 remained unreachable ([Errno 110] Connection timed out) even in the fixed after-executor snapshot taken well after the executor gave up polling, so node4's post-restart recovery genuinely could not be confirmed by any available evidence.",
+    "Because node3/node4 restart persistence is not part of the public task contract, these gaps do not lower the functional task score, but they do lower confidence in the completeness of the executor's self-reported restart evidence.",
+    "The firewall-disable window on node2 (pfctl -d) was not bounded by an explicit re-enable command in the trace; its resolution depends on the later reboot rather than a deliberate restoration step."
+  ],
+  "command_stats": {
+    "total": 212,
+    "successful": 145,
+    "failed": 67,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.72,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "Several bounded, reverted experimental mutations occurred during troubleshooting (temporary 10.10.x.x test addresses added/removed on node1, node3, and node4 before final addressing was applied) \u2014 low risk since fully cleaned up. More significant: the executor ran `pfctl -d` on node2 (cmd-971ded92baa64f9d), fully disabling the OPNsense firewall for roughly 11 minutes while diagnosing a connectivity block, rather than adding a narrowly-scoped diagnostic rule; there is no explicit `pfctl -e` re-enable in the trace, and pf only returns to Enabled after node2's later reboot (cmd-1c3b1a13f6e14b42), meaning the firewall was left disabled for a non-trivial window during live troubleshooting. Temporary API credential material was also left behind on node2: /tmp/apicreds.txt, /tmp/api.key, /tmp/api.secret, and helper scripts /tmp/setkey.py and /tmp/addif.py were never removed (though the underlying API key itself was deleted from config.xml at cmd-ea07d810bfc649a8, so the leftover files are stale/invalid by session end). A full config backup /conf/config.xml.bak-preipsec was created (cmd-0e9601cd9aac4825) and never cleaned up. Minor tcpdump log residue was left in /tmp on node1 and node3. None of these residues are functionally damaging, but the firewall-disable action and leftover credential-shaped files are notable hygiene concerns.",
+    "evidence_ids": [
+      "cmd-971ded92baa64f9d",
+      "cmd-1c3b1a13f6e14b42",
+      "cmd-2013a77871754d06",
+      "cmd-34868b93f3824fd2",
+      "cmd-0e9601cd9aac4825",
+      "cmd-ea07d810bfc649a8",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

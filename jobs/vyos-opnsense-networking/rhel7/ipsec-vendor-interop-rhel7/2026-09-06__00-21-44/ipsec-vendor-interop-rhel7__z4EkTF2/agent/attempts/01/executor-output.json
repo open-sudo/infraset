@@ -1,0 +1,106 @@
+{
+  "status": "completed",
+  "summary": "Established a VyOS(node1)-to-OPNsense(node2) site-to-site IPsec tunnel over the transit network, carrying lan-a (10.10.1.0/24, node3) and lan-b (10.10.2.0/24, node4) so node3 and node4 reach each other by private address with traffic encrypted on the wire. Discovered the physical wiring empirically (node1 eth1<->node2 vtnet1 = transit; node1 eth2<->node3 eth1 = lan-a; node2 vtnet2<->node4 eth1 = lan-b), addressed all links, configured VyOS IKEv2/ESP site-to-site peer with PSK auth, configured OPNsense's swanctl-based IPsec (Connections/locals/remotes/children plus the legacy ipsec.enable flag and dynamic enc0 interface registration) plus firewall pass rules for IKE/ESP and the enc0 pseudo-interface, added static routes on the RHEL7 leaf nodes, and validated bidirectional encrypted ping traffic (ESP frames observed on the transit wire, byte counters incrementing on both IPsec SAs). Then executed the mandatory one-at-a-time restart protocol on all 4 nodes, confirming changed boot identity (boot_id/boottime) and full post-restart recovery of interfaces, the IPsec tunnel (auto-reconnected), firewall rules, and end-to-end node3<->node4 connectivity after each restart.",
+  "actions_performed": [
+    "Inspected all 4 nodes' OS/interfaces/routes: VyOS(node1), OPNsense(node2), RHEL7(node3,node4)",
+    "Empirically mapped physical wiring via temporary IP assignment + tcpdump/ARP analysis",
+    "Assigned static addressing: transit 10.10.9.0/30, lan-a 10.10.1.0/24, lan-b 10.10.2.0/24",
+    "Generated a random PSK on node1 and transferred it node-to-node via scp over the cluster SSH key, never exposing it in orchestrator output",
+    "Configured VyOS site-to-site IPsec (ike-group, esp-group, psk-keyed peer, tunnel local/remote prefixes) via configure/commit/save",
+    "Edited OPNsense /conf/config.xml (backed up first) to add opt1/opt2 interfaces, firewall pass rules (opt2 outbound, IKE/ESP on opt1, enc0 lan-to-lan), and Swanctl Connections/locals/remotes/children plus a preSharedKey entry",
+    "Debugged and fixed OPNsense-specific gaps: legacy ipsec.enable flag required to start strongswan, and enc0 pseudo-interface needed dynamic registration via plugins_interfaces()+write_config before filter rules referencing it would compile",
+    "Added static routes to remote subnets on node3 and node4 via RHEL7 route-eth1 files",
+    "Verified ESP-encrypted traffic on the transit wire and bidirectional ping between node3 (10.10.1.10) and node4 (10.10.2.10)",
+    "Captured pre-restart boot identity baselines (boot_id on Linux nodes, kern.boottime on OPNsense) and health evidence for all 4 nodes",
+    "Restarted node1, node2, node3, node4 sequentially (one at a time), polling until exec access returned, confirming changed boot identity, and re-verifying interface config, IPsec tunnel state, firewall rules, and end-to-end connectivity after each restart",
+    "Cleaned up plaintext PSK temp files from node1 and node2"
+  ],
+  "evidence": [
+    {
+      "requirement": "IPsec tunnel established between node1 and node2 carrying both private networks",
+      "command_ids": [
+        "cmd-ea0e29425e2a465a",
+        "cmd-baa499019e3c4e91",
+        "cmd-b5b9835bed384f99",
+        "cmd-691fab86ef8d4f1f",
+        "cmd-772b3a1a4601474f"
+      ],
+      "summary": "VyOS shows tunnel 'up' via show vpn ipsec sa; OPNsense swanctl shows ESTABLISHED IKE_SA and INSTALLED TUNNEL child SA with matching local/remote traffic selectors 10.10.1.0/24 <-> 10.10.2.0/24"
+    },
+    {
+      "requirement": "node3 and node4 reach each other by private address",
+      "command_ids": [
+        "cmd-1fd1821d491d4880",
+        "cmd-e1de4e260f4e4ae7"
+      ],
+      "summary": "node3 (10.10.1.10) successfully pings node4 (10.10.2.10) and vice versa with 0% packet loss"
+    },
+    {
+      "requirement": "traffic encrypted in transit",
+      "command_ids": [
+        "cmd-1c06ea954f884b82"
+      ],
+      "summary": "tcpdump on node1's transit interface (eth1) during a node3->node4 ping shows ESP(spi=...) packets between 10.10.9.1 and 10.10.9.2, not plaintext ICMP, confirming encryption on the wire; VyOS/OPNsense byte counters (cmd-00139a609c7a4ae9, cmd-645484a57cc749d0) confirm real traffic volume through the SAs"
+    },
+    {
+      "requirement": "node1 pre-restart baseline and healthy state",
+      "command_ids": [
+        "cmd-09ee5084492641a9",
+        "cmd-b2335e3692574320",
+        "cmd-ea0e29425e2a465a"
+      ],
+      "summary": "Captured boot_id 5bcff8f9-... and confirmed working lan-a interface/ping and active IPsec SA before restart"
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-73c5abed06e74d9c",
+        "cmd-a7df718cc1634c39",
+        "cmd-76341bb131e64c05",
+        "cmd-2d7147b3a050465f"
+      ],
+      "summary": "Reboot command acknowledged before disconnect; boot_id changed to 15e6cf3e-...; post-restart interfaces, IPsec tunnel (re-established automatically), and node3->node4 ping all verified healthy"
+    },
+    {
+      "requirement": "node2 pre-restart baseline and healthy state",
+      "command_ids": [
+        "cmd-aab21508549d474f",
+        "cmd-2aae66cfb25c4551",
+        "cmd-691fab86ef8d4f1f"
+      ],
+      "summary": "Captured kern.boottime baseline and confirmed working opt1/opt2 interfaces and established IPsec SA before restart"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-95c23915be034ba0",
+        "cmd-412ac264ef9b4e34",
+        "cmd-3e79a6c7db1e4076",
+        "cmd-645484a57cc749d0",
+        "cmd-9b2ced9dad604f1e",
+        "cmd-944d48aa317f4f04"
+      ],
+      "summary": "Reboot command acknowledged before disconnect; kern.boottime/uptime confirm fresh boot (up 13 secs); post-restart interfaces, strongswan/IPsec tunnel, enc0 firewall rule, and node3->node4 ping all verified healthy"
+    },
+    {
+      "requirement": "node3 pre-restart baseline, restart, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-0e5b819715a9406f",
+        "cmd-f27c813afee84890",
+        "cmd-7bb67ab4d41847d9",
+        "cmd-44b24312cf0e46d0"
+      ],
+      "summary": "Baseline boot_id d7a80301-...; reboot acknowledged; boot_id changed to 4b1b11fa-...; post-restart eth1 address, static route, and ping to node4 all confirmed recovered"
+    },
+    {
+      "requirement": "node4 pre-restart baseline, restart, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-05003aaf584e4e20",
+        "cmd-37a3c454af7c4bcb",
+        "cmd-fd1b935784e243d9",
+        "cmd-5507ad61130f43b3"
+      ],
+      "summary": "Baseline boot_id 73bafeef-...; reboot acknowledged; boot_id changed to 4b8c7722-...; post-restart eth1 address, static route, and ping to node3 all confirmed recovered"
+    }
+  ]
+}

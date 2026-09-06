@@ -1,0 +1,101 @@
+{
+  "status": "completed",
+  "summary": "Configured split-horizon DNS across a VyOS (node1) + OPNsense (node2) transit topology: node1 answers app.internal -> 10.10.10.10 (node3) for lan-a hosts via PowerDNS Recursor authoritative-domain records; node2 answers app.internal -> 10.20.20.10 (node4) for lan-b hosts via Unbound host overrides. Discovered the physical topology via ARP/ping probing since no topology docs existed (node1 eth1 <-> node2 vtnet1 = transit; node1 eth2 <-> node3 enp8s0 = lan-a; node2 vtnet2 <-> node4 enp8s0 = lan-b). Applied static addressing, DNS services, and firewall pass rules, verified end-to-end resolution via each node's default system resolver, then restarted all four nodes one at a time (preserving the other three throughout) and confirmed changed boot identities plus full recovery of interfaces, DNS services, and app.internal resolution on both sides.",
+  "actions_performed": [
+    "Mapped physical NIC topology across node1-node4 via ARP/ping probing using temporary addresses",
+    "Configured VyOS (node1): eth1=10.10.99.1/30 (transit), eth2=10.10.10.1/24 (lan-a), pdns-recursor authoritative-domain 'internal' with A record app->10.10.10.10, listen/allow-from restricted to lan-a",
+    "Configured OPNsense (node2) via config.xml + configctl: added opt1 (vtnet1, transit 10.10.99.2/30) and opt2 (vtnet2, lan-b 10.20.20.1/24) interfaces, Unbound (unboundplus) host override app.internal->10.20.20.10, firewall pass rule for opt2 network, reloaded interface/dns/unbound/filter subsystems",
+    "Configured node3 and node4 (CentOS Stream) via nmcli: static IPs on enp8s0 (10.10.10.10/24 and 10.20.20.10/24), DNS pointed at their respective router with dns-priority to override the management-network resolver",
+    "Verified end-to-end resolution via dig and getent hosts on both node3 (app.internal->10.10.10.10) and node4 (app.internal->10.20.20.10)",
+    "Captured pre-restart baseline (boot_id/kern.boottime and service health) for all four nodes",
+    "Restarted node1, node2, node3, node4 sequentially (one at a time, others left running), polled each until exec was available again",
+    "Verified each node's boot identity changed post-restart and that interfaces, DNS services, and app.internal resolution recovered fully"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 (VyOS) resolves app.internal to node3's address (10.10.10.10) for lan-a hosts",
+      "command_ids": [
+        "cmd-ae93ceb789344ba1",
+        "cmd-d2ac80eca47f4b4b",
+        "cmd-f30d99e6472f4c5e"
+      ],
+      "summary": "Configured pdns-recursor authoritative-domain 'internal' with A record app->10.10.10.10 on node1, committed/saved; dig from node3 against 10.10.10.1 returned 10.10.10.10"
+    },
+    {
+      "requirement": "node2 (OPNsense) resolves app.internal to node4's address (10.20.20.10) for lan-b hosts",
+      "command_ids": [
+        "cmd-30388a2f6de8424b",
+        "cmd-ec27a376a7a54369",
+        "cmd-d63373594cd4436c"
+      ],
+      "summary": "Added Unbound host override app.internal->10.20.20.10 in OPNsense config.xml under OPNsense/unboundplus/hosts, restarted unbound, verified host_entries.conf contains the record, and dig from node4 against 10.20.20.1 returned 10.20.20.10"
+    },
+    {
+      "requirement": "Each host resolves the name via its own default system resolver (not just direct dig to router)",
+      "command_ids": [
+        "cmd-5105ed11a74a4a64",
+        "cmd-2c2946ce8ac34bd5"
+      ],
+      "summary": "getent hosts app.internal on node3 returned 10.10.10.10 and on node4 returned 10.20.20.10 using /etc/resolv.conf pointed at each local router"
+    },
+    {
+      "requirement": "Physical topology correctly identified before configuration (transit vs lan-a vs lan-b)",
+      "command_ids": [
+        "cmd-52cccf83793b4107",
+        "cmd-f4e893ff585d4733",
+        "cmd-e23cbd86e0294b95"
+      ],
+      "summary": "Ping tests across temporarily assigned /30 addresses confirmed node1 eth2<->node3 enp8s0 (lan-a), node1 eth1<->node2 vtnet1 (transit), node2 vtnet2<->node4 enp8s0 (lan-b)"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-bd24c856f63a4716",
+        "cmd-08a90664a1394842",
+        "cmd-cf0d5a51491f4e74",
+        "cmd-a4428919d5564df2",
+        "cmd-fd9776b77afb44bc"
+      ],
+      "summary": "Baseline boot_id 32669db3...; reboot acknowledged; post-reboot boot_id changed to af3dd2b9...; eth1/eth2 addresses and pdns-recursor active confirmed; dig from node3 still resolves app.internal"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-89d5cc14636f4957",
+        "cmd-b5715c9447604aaa",
+        "cmd-a347f16d8c1246dc",
+        "cmd-154cd11e607248bd",
+        "cmd-e27860d423c5455b"
+      ],
+      "summary": "Baseline kern.boottime sec=1788671088; reboot acknowledged; post-reboot kern.boottime changed to sec=1788671817; vtnet1/vtnet2 addresses and unbound process confirmed; dig from node4 still resolves app.internal"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-d5431fe40d6d4fcc",
+        "cmd-be67460ced0b4e73",
+        "cmd-92ac6a3cf5b04fbd",
+        "cmd-2ad13403c1e64a8b"
+      ],
+      "summary": "Baseline boot_id 71f12f87...; reboot triggered; post-reboot boot_id changed to 249b8a79...; enp8s0 static IP persisted via NetworkManager and getent hosts app.internal resolved correctly"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-c21bf6887b2d4f74",
+        "cmd-8c14daca7f5c4ef7",
+        "cmd-52c584a317da4e12"
+      ],
+      "summary": "Baseline boot_id bf8b9d80...; reboot triggered; post-reboot boot_id changed to 787ab97a...; enp8s0 static IP persisted and getent hosts app.internal resolved correctly"
+    },
+    {
+      "requirement": "Overall cluster health maintained (quorum/independent recovery path) throughout sequential restarts",
+      "command_ids": [
+        "cmd-d37cc0690a1b4e4d",
+        "cmd-2c2022e2d5ff4dc0",
+        "cmd-e1a7cf784e9840c4"
+      ],
+      "summary": "After all four sequential restarts completed, final checks confirmed pdns-recursor active on node1, exactly one unbound process on node2, and node3 still resolving app.internal, showing steady-state health across the whole topology"
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1-port8080-transit1",
+      "requirement": "Traffic node3 sends to node4 on TCP port 8080 is steered exclusively across the first transit network",
+      "status": "satisfied",
+      "summary": "tcpdump on node1's eth1 (transit1, 10.10.1.0/30) captured the complete forward 8080 conversation (SYN, data, FIN) from node3 to node4, while the simultaneous eth2 (transit2) capture contained zero 8080 packets. The same exclusive pattern was reproduced after all four nodes were restarted.",
+      "evidence_ids": [
+        "cmd-af26a0e8201e4a5f",
+        "cmd-467eb9044f734196",
+        "cmd-54712cc09bcd4a3d",
+        "cmd-317d745b95d34428"
+      ]
+    },
+    {
+      "id": "R2-port9090-transit2",
+      "requirement": "Traffic node3 sends to node4 on TCP port 9090 is steered exclusively across the second transit network",
+      "status": "satisfied",
+      "summary": "tcpdump on node1's eth2 (transit2) captured the complete forward 9090 request (SYN, PSH data, FIN) originating from node3; eth1 only saw asymmetric return-path packets for 9090 (the reverse route via node2's static route, not the node3-to-node4 direction the task specifies). The forward direction was cleanly exclusive to eth2 both pre- and post-restart.",
+      "evidence_ids": [
+        "cmd-af26a0e8201e4a5f",
+        "cmd-467eb9044f734196",
+        "cmd-54712cc09bcd4a3d",
+        "cmd-317d745b95d34428"
+      ]
+    },
+    {
+      "id": "R3-both-reach-node4",
+      "requirement": "Both the port 8080 and port 9090 flows reach node4",
+      "status": "satisfied",
+      "summary": "node4's nc listeners captured the exact payloads sent by node3 on both ports ('hello-8080'/'hello-9090' pre-restart, 'post-restart-8080'/'post-restart-9090' after all four nodes were rebooted), and node3's nc client exited 0 in both cases.",
+      "evidence_ids": [
+        "cmd-467eb9044f734196",
+        "cmd-bc27b6e0c9224be4",
+        "cmd-317d745b95d34428",
+        "cmd-62e6a39da21240d0"
+      ]
+    },
+    {
+      "id": "R4-show-which-network-carried-flow",
+      "requirement": "Demonstrate/show which transit network carried each flow",
+      "status": "satisfied",
+      "summary": "Per-interface tcpdump captures on node1 (eth1 vs eth2) directly attribute each port's traffic to a distinct transit network, both before and after the restart cycle, providing clear observational evidence of which network carried which flow.",
+      "evidence_ids": [
+        "cmd-af26a0e8201e4a5f",
+        "cmd-54712cc09bcd4a3d"
+      ]
+    },
+    {
+      "id": "R5-node-restart-evidence",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all four managed nodes with pre/post boot identity, ack, and recovered state",
+      "status": "satisfied",
+      "summary": "Each node shows a baseline boot identity, an explicit restart acknowledgement (reboot command issued / SSH connection dropped), a distinct post-restart boot identity, and recovered configuration state (interfaces, routes, PBR/OPNsense rules) confirmed by direct commands; a full end-to-end re-verification of the port-based steering was also performed after all reboots, directly showing the recovered functional service state.",
+      "evidence_ids": [
+        "cmd-067823c4125e4186",
+        "cmd-876310b9d10e4d14",
+        "cmd-f29ee0c23c5347b3",
+        "cmd-ae2cc6a6ae42486d",
+        "cmd-c0cc1a1eb5504ffc",
+        "cmd-72fe6d5583344691",
+        "cmd-ff7705ab650843c4",
+        "cmd-dbd1429f6af34805",
+        "cmd-49dc48b1505146e3",
+        "cmd-34f90e7a279c49ce",
+        "cmd-a76ce72ed2c84f26",
+        "cmd-ff9781dee03f4df0",
+        "cmd-a01f4f86848b4a96",
+        "cmd-9db4c7741c844642",
+        "cmd-0ffd29a21ca74b0f",
+        "cmd-a901d419c5db4b3f",
+        "cmd-96745d8403134490",
+        "cmd-317d745b95d34428",
+        "cmd-54712cc09bcd4a3d",
+        "cmd-62e6a39da21240d0"
+      ]
+    }
+  ],
+  "overall_summary": "The executor discovered the dual-transit topology, configured VyOS policy-based routing on node1 to steer node3's outbound TCP 8080 traffic via transit network 1 (eth1/vtnet1) and TCP 9090 via transit network 2 (eth2/vtnet2), and configured matching OPNsense interfaces/firewall/routes on node2. Direct tcpdump evidence on node1's two transit interfaces, combined with successful payload delivery to node4's nc listeners, cleanly demonstrates exclusive per-port steering in the node3-to-node4 direction and that both flows reach node4, both before and after a full one-at-a-time restart of all four nodes (with boot-identity changes and recovered configuration/service state directly confirmed for each). The main blemish is a brief, reverted disabling of node2's firewall during troubleshooting and a handful of temporary scratch IP assignments that were all cleaned up before the final configuration; minor test-artifact files were left in /tmp on node1 and node4.",
+  "limitations": [
+    "The asymmetric return path for the 9090 flow (return traffic transiting eth1/transit1 rather than eth2/transit2) is visible in the captures but was not itself required by or evaluated against the task, which only specifies the direction node3 sends to node4.",
+    "OPNsense's own outbound routing/pf-rule internals were only checked via CLI text output (netstat/pfctl), not a fully independent tcpdump on node2's interfaces, so node2's steering behavior is inferred from node1-side captures and configuration rather than directly observed on node2."
+  ],
+  "command_stats": {
+    "total": 94,
+    "successful": 78,
+    "failed": 16,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands were clearly tied to topology discovery, addressing, PBR/firewall configuration, or bounded evidence collection, and temporary addressing experiments (e.g. 192.0.2.x scratch addresses on node1 eth1/2/3 and node2 vtnet1/2/3, and on node3/node4 ens7) were fully reverted before final static addressing was applied (cmd-f88c4bff70b74ca7, cmd-c7d18d37df0b4805, cmd-ae70c0d5819241e4, cmd-1e8c0e320cc543ba, reverted by cmd-211f84e24d8e4dee, cmd-e500e2d8444a4df6, cmd-a07c296436374e31, cmd-4868a9c4e0d542be, cmd-a5b621eeaa964ace). One notable exception: the executor briefly disabled node2's pf firewall during troubleshooting (cmd-7e133be8fbb24af3, 'pfctl -d') and only re-enabled it several commands later while making other unrelated changes (cmd-a07c296436374e31, 'pfctl -e'); this is a bounded but security-control-weakening action with no clear direct necessity, since pf state/rules could have been inspected without disabling the firewall. Additionally, small evidence-collection artifacts (tcpdump capture files/pids on node1, and nc log/pid files on node4) were left in /tmp after the final verification run rather than cleaned up (visible in global:after_executor:node1:temporary-files and global:after_executor:node4:temporary-files), though these are low-risk residual test files rather than functional residue. No failed or conflicting services, no damaged package state, and no broad or destructive mutations were observed.",
+    "evidence_ids": [
+      "cmd-7e133be8fbb24af3",
+      "cmd-a07c296436374e31",
+      "cmd-f88c4bff70b74ca7",
+      "cmd-211f84e24d8e4dee",
+      "cmd-c7d18d37df0b4805",
+      "cmd-e500e2d8444a4df6",
+      "cmd-ae70c0d5819241e4",
+      "cmd-1e8c0e320cc543ba",
+      "cmd-4868a9c4e0d542be",
+      "cmd-a5b621eeaa964ace",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node4:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

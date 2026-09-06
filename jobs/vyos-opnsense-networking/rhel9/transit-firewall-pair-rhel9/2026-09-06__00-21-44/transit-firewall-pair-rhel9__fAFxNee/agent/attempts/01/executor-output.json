@@ -1,0 +1,106 @@
+{
+  "status": "completed",
+  "summary": "Configured a routed path from node3 (behind VyOS node1 on lan-a) through transit to node4's HTTP service on TCP/8080 (behind OPNsense node2 on lan-b), with both routers keeping default-deny forward/filter policies for all other traffic. Discovered the actual physical wiring via arping (node1 eth1\u2194node2 vtnet1 = transit; node1 eth2\u2194node3 = lan-a; node2 vtnet2\u2194node4 = lan-b), addressed all links (transit 10.10.100.0/24, lan-a 10.10.10.0/24, lan-b 10.10.20.0/24), added static routes on node1 (VyOS) and node2 (OPNsense) plus host routes on node3/node4, stood up a systemd HTTP service on node4:8080 (opened in firewalld), added a VyOS forward-filter default-drop + established/related + explicit tcp/8080-to-10.10.20.10 rule on node1, and an OPNsense pf pass rule on the transit (wan) interface scoped to lan-a source / node4:8080 destination only. Verified node3 can curl node4:8080 successfully while ping and other ports/hosts between the two networks remain refused. Completed the mandatory one-at-a-time restart protocol for all four nodes (node1, node2, node3, node4), confirming changed boot identity (boot_id/kern.boottime) after each reboot and full recovery of interfaces, routes, firewall rules, and the HTTP service/data path before proceeding to the next node.",
+  "actions_performed": [
+    "Enumerated topology and confirmed wiring node1-eth1\u2194node2-vtnet1 (transit), node1-eth2\u2194node3 (lan-a), node2-vtnet2\u2194node4 (lan-b) via arping",
+    "Addressed transit (10.10.100.0/24), lan-a (10.10.10.0/24) and lan-b (10.10.20.0/24) links on node1 (VyOS set/commit/save), node2 (OPNsense config.xml + configctl interface reconfigure), node3 and node4 (nmcli static)",
+    "Added static routes: node1 to 10.10.20.0/24 via 10.10.100.2 (VyOS), node2 to 10.10.10.0/24 via 10.10.100.1 (OPNsense gateway object + staticroutes + rc.routing_configure), node3 to 10.10.20.0/24 via 10.10.10.254, node4 to 10.10.10.0/24 via 10.10.20.254",
+    "Deployed a systemd-managed python http.server on node4:8080 serving /srv/http8080/index.html, opened firewalld port 8080/tcp",
+    "Configured VyOS forward filter: default-action drop, rule 5 accept established/related, rule 10 accept tcp/8080 to 10.10.20.10 inbound on eth2 (lan-a)",
+    "Configured OPNsense filter: added pass rule on wan (transit) restricted to source 10.10.10.0/24 destination 10.10.20.10 port 8080/tcp via config.xml edit + configctl filter reload",
+    "Verified golden path (node3 curl node4:8080 succeeds) and refused paths (ping and other ports time out) both pre- and post-restart",
+    "Restarted node1, node2, node3, node4 sequentially (one at a time), polling for command execution to resume and confirming changed boot_id (Linux nodes) or kern.boottime (OPNsense) each time, followed by re-verification of interfaces, routes, firewall rules, and the HTTP data path before moving to the next node"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline topology/wiring discovery (node1-node3 lan-a, node1-node2 transit, node2-node4 lan-b)",
+      "command_ids": [
+        "cmd-f89652c0b05340d0",
+        "cmd-10380f8853cc4d3e",
+        "cmd-b3c062216a2a4860",
+        "cmd-ea405b316c654b13",
+        "cmd-45e95663e6ae4602",
+        "cmd-271323dddd084916",
+        "cmd-8d85d94192b349bc"
+      ],
+      "summary": "Confirmed real L2 adjacency via arping MAC matches, establishing eth1(node1)-vtnet1(node2)=transit, eth2(node1)-enp8s0(node3)=lan-a, vtnet2(node2)-enp8s0(node4)=lan-b"
+    },
+    {
+      "requirement": "Interface/route configuration on node1 (VyOS) and node2 (OPNsense) and end hosts",
+      "command_ids": [
+        "cmd-ef21816645504c5f",
+        "cmd-f371a85f1be7446d",
+        "cmd-5df09fb025074341",
+        "cmd-2ac8740e1b4743a3",
+        "cmd-5d3c949bba2844ec",
+        "cmd-6f8d52302bf24462",
+        "cmd-b6f90d15543f46ad"
+      ],
+      "summary": "Verified addresses and routes present via show/ip route/netstat -rn on all four nodes after configuration"
+    },
+    {
+      "requirement": "HTTP service on node4:8080 stood up and reachable",
+      "command_ids": [
+        "cmd-56627103b1334878",
+        "cmd-946dca9213fc49a8"
+      ],
+      "summary": "systemd service demo-http8080 active and firewalld port 8080/tcp opened; curl localhost:8080 returned expected content"
+    },
+    {
+      "requirement": "Firewall path opened only for node3->node4:8080, other traffic refused",
+      "command_ids": [
+        "cmd-cc04d5a6a9054944",
+        "cmd-fd242cfca74c49cb",
+        "cmd-a20e6e456d8d4211",
+        "cmd-19ebc30d6ee242b5",
+        "cmd-7480d8f5d9a64dd8",
+        "cmd-1972ccf58c134b06"
+      ],
+      "summary": "OPNsense pf rule and VyOS forward-filter rule confirmed in ruleset dumps; curl to node4:8080 from node3 succeeded (node4 http ok) while ping and port 22/80 to the far network timed out"
+    },
+    {
+      "requirement": "node1 restart: baseline, acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-84308e1f5dfd437e",
+        "cmd-4596a1789a5f44c8",
+        "cmd-6ba2d3bd0e65431c",
+        "cmd-cf0ef1b3e0c74017",
+        "cmd-401bdb5e973b4063"
+      ],
+      "summary": "boot_id changed 2674ee60->9f2dfa07; post-reboot interfaces/routes/firewall config and node3->node4:8080 path verified working"
+    },
+    {
+      "requirement": "node2 restart: baseline, acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-926b8929721d41ab",
+        "cmd-4333020a8cb248ff",
+        "cmd-2e95a11a996b4879",
+        "cmd-73935160c1614d76",
+        "cmd-c2b8dcb274144c72",
+        "cmd-c1d9cccd9a3245e2"
+      ],
+      "summary": "kern.boottime changed 06:08:34->06:19:09; post-reboot vtnet1/vtnet2 addresses, static route, and pf pass rule all present; HTTP path re-verified"
+    },
+    {
+      "requirement": "node3 restart: baseline, acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-50a26988173b40c8",
+        "cmd-308a2410c4634691",
+        "cmd-e6abe23cd8474618",
+        "cmd-3e782d6d441c4014"
+      ],
+      "summary": "boot_id changed 98aa35f5->9abf4c12; post-reboot routes intact and curl to node4:8080 succeeded"
+    },
+    {
+      "requirement": "node4 restart: baseline, acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b30407eba9714e29",
+        "cmd-007d2582da6b4829",
+        "cmd-9e6df71e63bb4e93",
+        "cmd-b1b94db128164456",
+        "cmd-bcf818b5c08841f4"
+      ],
+      "summary": "boot_id changed fbdf5b2c->da79786a; post-reboot demo-http8080 service active, firewalld port open, routes intact, and final end-to-end check from node3 confirmed HTTP works while ping remains refused"
+    }
+  ]
+}

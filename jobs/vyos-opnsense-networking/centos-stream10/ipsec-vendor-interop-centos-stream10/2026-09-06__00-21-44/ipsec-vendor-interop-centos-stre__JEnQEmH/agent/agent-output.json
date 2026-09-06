@@ -1,0 +1,145 @@
+{
+  "status": "completed",
+  "summary": "Built an IKEv2 IPsec site-to-site tunnel between node1 (VyOS) and node2 (OPNsense) across a dedicated transit network (10.99.0.0/30), carrying node3's lan-a (10.50.10.0/24) and node4's lan-b (10.50.20.0/24) subnets so node3 and node4 reach each other by private address with traffic encrypted in transit. All four nodes were then restarted one at a time per the mandatory protocol, each recovering fully (tunnel and connectivity restored automatically) with proven boot-identity change.",
+  "actions_performed": [
+    "Mapped physical topology via tcpdump/arping/temporary-IP probes: node1 eth1<->node2 vtnet1 = transit; node1 eth2 -> node3 enp8s0 = lan-a; node2 vtnet2 -> node4 enp8s0 = lan-b (node1 eth0 / node2 vtnet0 / node3+node4 enp1s0 are the shared management network)",
+    "Addressed transit link 10.99.0.1/10.99.0.2 (/30) on node1 eth1 and node2 (opt1/vtnet1)",
+    "Addressed lan-a: node1 eth2 = 10.50.10.254/24 gateway; node3 enp8s0 = 10.50.10.10/24 via NetworkManager (persistent) plus static route to 10.50.20.0/24 via gateway",
+    "Addressed lan-b: node2 opt2/vtnet2 = 10.50.20.254/24 gateway; node4 enp8s0 = 10.50.20.10/24 via NetworkManager (persistent) plus static route to 10.50.10.0/24 via gateway",
+    "Generated IPsec PSK on node2 (openssl rand), relayed it to node1 exclusively via secret_env (never typed literally in any command)",
+    "Configured VyOS (2026-rolling syntax) site-to-site IPsec: ike-group/esp-group proposals, vpn ipsec authentication psk with id-based secret, site-to-site peer NODE2 with tunnel prefixes 10.50.10.0/24 <-> 10.50.20.0/24, committed and saved",
+    "Configured OPNsense via /conf/config.xml surgery: Swanctl Connections/locals/remotes/children (IKEv2, matching proposals, matching traffic selectors), IPsec preSharedKeys entry, legacy <ipsec><enable> toggle (required because the modern model's enabled flag is a LegacyLinkField), reloaded via pluginctl -c ipsec",
+    "Assigned opt1 (transit) and opt2 (lan-b) interfaces on OPNsense; added firewall pass rules for IKE (udp/500,4500) and ESP on opt1, and LAN-B-to-any on opt2",
+    "Discovered OPNsense's automatic IPsec-passthrough firewall rule only fires when enc0 is an assigned interface; assigned enc0 as opt3 and added an explicit pass rule on it to permit decrypted tunnel traffic",
+    "Verified single clean ESTABLISHED IKE_SA and INSTALLED tunnel on both node1 and node2 (terminated a duplicate SA caused by simultaneous auto-start + manual initiate)",
+    "Verified end-to-end encrypted connectivity: node3<->node4 ping succeeds; tcpdump on node2's vtnet1 (transit) shows only ESP packets, confirming encryption in transit",
+    "Captured pre-restart healthy baselines (boot_id/kern.boottime, established SA state, working pings) on all four nodes",
+    "Restarted node3, node4, node1, node2 one at a time (native reboot/shutdown -r), polled each until exec access returned, proved changed boot identity on each, and confirmed IPsec tunnel and cross-subnet ping recovery after each restart, including both tunnel-endpoint routers"
+  ],
+  "evidence": [
+    {
+      "requirement": "Topology discovery (which router interface serves which network)",
+      "command_ids": [
+        "cmd-c770421fca744e47",
+        "cmd-286c364a1ac34aad",
+        "cmd-58f0d5f34cd44b93",
+        "cmd-b8834166e2bd4965",
+        "cmd-e040c24d64574c82",
+        "cmd-d0fe92794f034869",
+        "cmd-0ce97597bca6498d",
+        "cmd-476f660c5d96441f",
+        "cmd-6c83a1cb8c094f4e",
+        "cmd-172bb204d2a64ffc",
+        "cmd-57e4964dd1d04da6"
+      ],
+      "summary": "tcpdump/arping/temp-IP tests identify node1 eth1<->node2 vtnet1 as transit, node1 eth2 as lan-a (node3), node2 vtnet2 as lan-b (node4)"
+    },
+    {
+      "requirement": "Router and leaf interface addressing configured and persistent",
+      "command_ids": [
+        "cmd-9ea4660b97114585",
+        "cmd-94c6e443b49b41d7",
+        "cmd-6311d76a0c1d409a",
+        "cmd-ce2ed7e8b5c749e6",
+        "cmd-467b8f28e92d4e9a",
+        "cmd-01fce16a79a64e31",
+        "cmd-4cfe308532c84d69",
+        "cmd-0f2382c83ed54967"
+      ],
+      "summary": "VyOS eth1/eth2 addressed and committed; OPNsense opt1/opt2 assigned and addressed; node3/node4 enp8s0 addressed and routed via NetworkManager profiles (survive reboot)"
+    },
+    {
+      "requirement": "IPsec tunnel established carrying both private subnets, PSK handled securely",
+      "command_ids": [
+        "cmd-4fd6964e35bb4d4f",
+        "cmd-a0e93292deb84c5b",
+        "cmd-96ae17029987472f",
+        "cmd-deb8f1020e6d4d3c",
+        "cmd-afc7898625af46c7",
+        "cmd-69bf41b7eda44e9d",
+        "cmd-e0c384cc9f3d4d67",
+        "cmd-2fda436426ac4321",
+        "cmd-1d279930680b41e0"
+      ],
+      "summary": "PSK generated on node2, passed to node1 via secret_env only; VyOS and OPNsense both show a single ESTABLISHED IKEv2 SA with INSTALLED tunnel covering 10.50.10.0/24<->10.50.20.0/24"
+    },
+    {
+      "requirement": "Firewall rules permit tunnel negotiation and decrypted traffic without fencing out exec",
+      "command_ids": [
+        "cmd-f0d1e582fdaf462b",
+        "cmd-a39c4f18636346eb",
+        "cmd-8c6a813fb89a4567",
+        "cmd-11089f93ccc54e64",
+        "cmd-50bfdcc24d5b4af7",
+        "cmd-1afd715596cd4552",
+        "cmd-b912688ef0414017"
+      ],
+      "summary": "OPNsense pf rules pass IKE/ESP on opt1 and traffic on the enc0-mapped opt3 interface; exec access confirmed alive after each filter reload"
+    },
+    {
+      "requirement": "End-to-end connectivity between node3 and node4 by private address, encrypted in transit",
+      "command_ids": [
+        "cmd-b0b7c827c38e44b6",
+        "cmd-96e679534534478b",
+        "cmd-334a769d09f24e91",
+        "cmd-60e8bdbdce7b476a",
+        "cmd-948095f650514774"
+      ],
+      "summary": "node3<->node4 ping succeeds bidirectionally; tcpdump on node2's vtnet1 transit interface shows only ESP packets (no plaintext) during the ping"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline captured for all four nodes",
+      "command_ids": [
+        "cmd-aefdb2f514034bee",
+        "cmd-b7b15b53610c4c97",
+        "cmd-0b448ad4408f4d64",
+        "cmd-2c9c8a4f81f94e64"
+      ],
+      "summary": "boot_id/kern.boottime, established IKE SA state, and working pings captured before any restart"
+    },
+    {
+      "requirement": "node3 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-d24450ab3a7842a4",
+        "cmd-ccaf81d08b3c4343",
+        "cmd-4ca4f5b97c7044f2",
+        "cmd-d9c39ce33555462c"
+      ],
+      "summary": "reboot acked, boot_id changed deef5424->fd9ecc67, addressing/route/ping to node4 recovered"
+    },
+    {
+      "requirement": "node4 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-d0866ba98705468c",
+        "cmd-9ea216888375410d",
+        "cmd-305e210a24e14adf",
+        "cmd-203bd47f65524ec7"
+      ],
+      "summary": "reboot acked, boot_id changed 4d340bf4->1bc924d4, addressing/route/ping to node3 recovered"
+    },
+    {
+      "requirement": "node1 (VyOS) restart: acknowledgement, changed boot identity, recovered tunnel",
+      "command_ids": [
+        "cmd-becbef2cacfd4e33",
+        "cmd-d9663565063c4c9f",
+        "cmd-2cded4b73766477d",
+        "cmd-445590b895a446d7",
+        "cmd-a8d0a01643f34771",
+        "cmd-c768f2f062cb4c2b"
+      ],
+      "summary": "reboot acked, boot_id changed 9028a473->2568f2de, IPsec auto-reconnected on boot (duplicate SA cleaned up), end-to-end ping to node4 recovered"
+    },
+    {
+      "requirement": "node2 (OPNsense) restart: acknowledgement, changed boot identity, recovered tunnel",
+      "command_ids": [
+        "cmd-6fcb481e33b54e5d",
+        "cmd-fe380abed93a4289",
+        "cmd-01355618a4b44e1a",
+        "cmd-654c3065c93047a6",
+        "cmd-e61f4d6684c445d2",
+        "cmd-1b9885d593574e68"
+      ],
+      "summary": "shutdown -r acked, kern.boottime changed 05:00:01->05:16:36, interfaces/IPsec/tunnel auto-recovered, end-to-end ping both directions confirmed"
+    }
+  ]
+}

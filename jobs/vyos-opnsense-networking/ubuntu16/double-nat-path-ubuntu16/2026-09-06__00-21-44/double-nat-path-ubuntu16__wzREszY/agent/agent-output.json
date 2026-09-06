@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "Built the required double-NAT path: node3 (lan-a, 10.10.1.12) opens TCP connections to node4's HTTP service on port 8080 (lan-b, 10.10.3.13). node1 (VyOS) source-NATs traffic entering the transit network (masquerade to its eth1 address 10.10.2.1) via `nat source rule 100`. node2 (OPNsense) source-NATs traffic entering lan-b via automatic outbound NAT on vtnet2 (masquerade to its lan-b address 10.10.3.254). node4 records the connection as arriving from 10.10.3.254 (node2), never seeing node3's or node1's real address \u2014 confirmed via curl and packet captures at every hop (lan-a, transit, lan-b). Interface-to-NIC mapping was discovered empirically via ARP/STP probing since node1 (VyOS, 3 NICs) and node2 (OPNsense, 3 NICs) needed correct pairing with node3/node4's second NICs. Ran the full mandatory node-restart protocol: captured boot-identity baselines on all 4 nodes, restarted them one at a time (node1 VyOS reboot, node2 OPNsense shutdown -r, node3/node4 Ubuntu sudo reboot), confirmed changed boot identity on each (boot_id for Linux nodes, kern.boottime for FreeBSD), and re-verified the double-NAT chain end-to-end and per-hop after each restart and after all four restarts completed. All configuration (VyOS config.boot via save, OPNsense config.xml, Ubuntu /etc/network/interfaces.d static configs) persisted correctly across reboots; only the ephemeral test HTTP server on node4 (running from /tmp) needed manual restart after its reboot, which was done and re-verified.",
+  "actions_performed": [
+    "Inspected all 4 nodes' OS/images and NICs (node1=VyOS w/ eth0-2, node2=OPNsense/FreeBSD w/ vtnet0-2, node3/node4=Ubuntu 16.04 w/ ens2+ens7)",
+    "Empirically determined interface pairing via ARP/STP capture: node1 eth2<->node3 ens7 (lan-a), node1 eth1<->node2 vtnet1 (transit), node2 vtnet2<->node4 ens7 (lan-b)",
+    "Assigned static IPs: node3 ens7=10.10.1.12/24, node1 eth2=10.10.1.254/24 (lan-a), node1 eth1=10.10.2.1/24, node2 vtnet1(opt1)=10.10.2.2/24 (transit), node2 vtnet2(opt2)=10.10.3.254/24, node4 ens7=10.10.3.13/24 (lan-b)",
+    "Configured VyOS node1: nat source rule 100 masquerading eth1 outbound for 10.10.1.0/24, static route 10.10.3.0/24 via 10.10.2.2, committed and saved",
+    "Configured OPNsense node2 via config.xml: assigned opt1 (transit/vtnet1) and opt2 (lanb/vtnet2) interfaces, added filter pass rules for both interfaces, verified automatic outbound NAT masquerades traffic egressing vtnet2 to node2's lan-b IP; applied via configctl interface reconfigure and configctl filter reload",
+    "Added static route on node3 to 10.10.3.0/24 via 10.10.1.254",
+    "Persisted Ubuntu network config via /etc/network/interfaces.d/60-ens7.cfg on node3 and node4",
+    "Deployed a Python http.server on node4:8080 serving a test page",
+    "Verified double-NAT end-to-end via curl and tcpdump captures at lan-a, transit, and lan-b interfaces showing progressive source-address rewriting (10.10.1.12 -> 10.10.2.1 -> 10.10.3.254)",
+    "Captured pre-restart boot-identity and health baselines on all 4 nodes",
+    "Restarted node1 (VyOS reboot), node2 (OPNsense shutdown -r now), node3 and node4 (Ubuntu sudo reboot) one at a time, polling for command availability after each",
+    "Confirmed changed boot identity for each node (boot_id for Linux, kern.boottime for FreeBSD)",
+    "Re-verified interface config, NAT/firewall rules, routes, and end-to-end double-NAT connectivity after each individual restart and after all 4 restarts completed",
+    "Restarted the ephemeral test HTTP server on node4 after its reboot since it ran from /tmp which was cleared"
+  ],
+  "evidence": [
+    {
+      "requirement": "Double NAT path established: node3->node1 (SNAT to transit)->node2 (SNAT to lan-b)->node4, node4 sees source as node2",
+      "command_ids": [
+        "cmd-470a84febe8e45ce",
+        "cmd-2e97c58cc382443e",
+        "cmd-94f6a3736dc84345",
+        "cmd-1531683e06a147ec",
+        "cmd-0fd675ed02a340fc",
+        "cmd-b640a2ec2fc0461f",
+        "cmd-2ab64467caab4d59"
+      ],
+      "summary": "Configured VyOS SNAT rule on node1 (masquerade to eth1/10.10.2.1) and confirmed OPNsense automatic outbound NAT on node2 (masquerade to vtnet2/10.10.3.254); packet captures at all three hops (lan-a, transit, lan-b) show progressive source rewriting, with node4 receiving the HTTP GET from 10.10.3.254."
+    },
+    {
+      "requirement": "Full per-hop packet-level proof of the double translation for the actual HTTP service on port 8080",
+      "command_ids": [
+        "cmd-7534dceaac6b4962",
+        "cmd-dcbcf340bc3e40a6"
+      ],
+      "summary": "Simultaneous tcpdump on node1 eth2 (lan-a, source 10.10.1.12), node1 eth1/node2 vtnet1 (transit, source 10.10.2.1), and node2 vtnet2 (lan-b, source 10.10.3.254) for the same TCP handshake+GET request, proving two independent source rewrites."
+    },
+    {
+      "requirement": "node1 (VyOS) restart baseline, acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-4ce34a02c4104457",
+        "cmd-2605bbd155674f42",
+        "cmd-872358dc33354895",
+        "cmd-a18ceddba57c4f70",
+        "cmd-aafc9feb6b1c49ab",
+        "cmd-58b717763e6e49da"
+      ],
+      "summary": "Baseline boot_id 01e92881...; reboot acknowledged; boot_id changed to e82a3a35... after reboot; interfaces/routes/NAT rule confirmed persisted from config.boot; end-to-end curl through the NAT chain succeeded post-restart."
+    },
+    {
+      "requirement": "node2 (OPNsense) restart baseline, acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-6e1901cd507847ae",
+        "cmd-1f6686a1bf3a4bd4",
+        "cmd-3be56f60dfab4cc5",
+        "cmd-7333a1c572d54044",
+        "cmd-ce81ad9b5230450f",
+        "cmd-397bc280b3304ad4"
+      ],
+      "summary": "Baseline kern.boottime 06:19:07; reboot acknowledged; boottime changed to 06:30:47 after reboot; opt1/opt2 interface config, filter rules, and NAT persisted from config.xml; end-to-end curl succeeded and tcpdump confirmed source IP still 10.10.3.254 post-restart."
+    },
+    {
+      "requirement": "node3 (Ubuntu) restart baseline, acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-851c84605bdd439a",
+        "cmd-3a8fe4a625804fbe",
+        "cmd-05b41d9ec22b43a0",
+        "cmd-951cce72ad9b4306"
+      ],
+      "summary": "Baseline boot_id afd04380...; reboot acknowledged; boot_id changed to ce7bdcbd... after reboot; ens7 static IP and route to lan-b persisted via /etc/network/interfaces.d; curl to node4:8080 succeeded post-restart."
+    },
+    {
+      "requirement": "node4 (Ubuntu) restart baseline, acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-e36681a068cd4549",
+        "cmd-fed137a43bf44310",
+        "cmd-01ac3c77ba3b49d1",
+        "cmd-0a045ebbc7c54262",
+        "cmd-1f98755e57434add",
+        "cmd-35d985607b844b1a"
+      ],
+      "summary": "Baseline boot_id 8660e8f0...; reboot acknowledged; boot_id changed to 6883cf31... after reboot; ens7 static IP persisted; HTTP test server (ephemeral, ran from /tmp which was cleared) restarted manually; final tcpdump after all 4 node restarts confirms the double-NAT chain still delivers traffic to node4 with source IP 10.10.3.254."
+    }
+  ]
+}

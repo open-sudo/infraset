@@ -1,0 +1,115 @@
+{
+  "status": "completed",
+  "summary": "Built a redundant dual-transit-path topology between node1 (VyOS) and node2 (OPNsense), each fronting a private LAN (node3 behind node1, node4 behind node2), using OSPF (FRR on both routers) for automatic, stateless failover between the two independent transit networks. Verified private-to-private reachability in both directions, demonstrated a live failover (disabling one transit link) with zero packet loss on a continuous ping, verified recovery when the link was restored, then performed the mandatory one-at-a-time restart of all four nodes with boot-identity and service/connectivity proof for each.",
+  "actions_performed": [
+    "Surveyed all 4 nodes: node1=VyOS (eth0 mgmt, eth1/eth2/eth3 spare), node2=OPNsense/FreeBSD (vtnet0 mgmt, vtnet1/2/3 spare), node3/node4=RHEL10 with enp1s0 mgmt + enp8s0 spare",
+    "Confirmed physical NIC pairing via ping tests: eth1<->vtnet1 (transit A 10.10.1.0/24), eth2<->vtnet2 (transit B 10.10.2.0/24), eth3<->node3 enp8s0 (private LAN A 10.10.3.0/24), vtnet3<->node4 enp8s0 (private LAN B 10.10.4.0/24)",
+    "Configured VyOS interface addresses (eth1/eth2/eth3) via configure/commit/save",
+    "Configured OPNsense interfaces opt1/opt2/opt3 (vtnet1/vtnet2/vtnet3) with static IPs and firewall pass rules via config.xml surgery + configctl interface reconfigure",
+    "Configured node3 and node4 static IPs plus routes to the peer private subnet via nmcli, with ipv4.never-default to avoid default-route contention",
+    "Attempted a floating-static-route + OPNsense Gateway Group/policy-routing (route-to) design; diagnosed via tcpdump/pfctl that pf state tracking applied the wrong (first-matched) rule to the asymmetric return leg, breaking one direction",
+    "Replaced the design with dynamic OSPF routing: native set protocols ospf on VyOS, and installed+configured the os-frr (Quagga) OPNsense plugin (general+ospf enabled, networks for 10.10.1.0/24, 10.10.2.0/24, 10.10.4.0/24, passive on opt3), rendered via configctl template reload OPNsense/Quagga and started via configctl quagga start",
+    "Verified OSPF Full adjacency over both transit links and ECMP route installation on both routers",
+    "Verified node3<->node4 bidirectional reachability with 0% packet loss",
+    "Ran a continuous ping from node3 to node4, disabled node1's eth1 (transit A) mid-stream, confirmed OSPF reconverged and zero ICMP sequence numbers were lost across the transition, then re-enabled eth1 and confirmed both paths (ECMP) were restored",
+    "Executed the mandatory node-restart protocol: captured boot_id/kern.boottime and live service/connectivity baselines, restarted node1, node2, node3, node4 one at a time via native reboot commands, polled until exec access returned, verified changed boot identity, and confirmed OSPF adjacency, routes, and end-to-end connectivity recovered fully after each restart before proceeding to the next node"
+  ],
+  "evidence": [
+    {
+      "requirement": "Redundant dual transit-path topology between node1 and node2 with private LANs behind each",
+      "command_ids": [
+        "cmd-030552b188fa430b",
+        "cmd-c4520863ddfc4e5d",
+        "cmd-31a83ea8d1964804",
+        "cmd-039f1a15c3b74e5d",
+        "cmd-6b905c787df94301",
+        "cmd-9cda3aaf6d6a4ed1",
+        "cmd-56901a32286a423c",
+        "cmd-455dafa59f914769",
+        "cmd-51c398282bbc4d19",
+        "cmd-f5a85b8ff1f94666",
+        "cmd-9744cfc605294a16"
+      ],
+      "summary": "Confirmed NIC topology and paired transit/private networks via direct address ping tests before assigning final config"
+    },
+    {
+      "requirement": "Bidirectional connectivity between node3 and node4 across the redundant path",
+      "command_ids": [
+        "cmd-c4882fbd66324c0d",
+        "cmd-77b4227b8a564787",
+        "cmd-ddef9f9c7b6c4d4d"
+      ],
+      "summary": "OSPF ECMP route installed on node1 to 10.10.4.0/24 via both transit next-hops; ping from node3->node4 and node4->node3 both succeed with 0% loss"
+    },
+    {
+      "requirement": "Redundant path failover demonstrated live with continuity across the transition",
+      "command_ids": [
+        "cmd-d981de2b1a7e4875",
+        "cmd-d3e90a6171ab4866",
+        "cmd-7ec1d30989674c72",
+        "cmd-8e4f1ddb12644bf9",
+        "cmd-069aefe80d7a4b89"
+      ],
+      "summary": "Started continuous ping node3->node4, disabled node1 eth1 (transit A), confirmed OSPF neighbor lost and route recomputed to sole remaining path (eth2), and verified the ping log has zero ICMP sequence gaps across the transition (seq 1 through 111 all present)"
+    },
+    {
+      "requirement": "Recovery after restoring the failed transit path",
+      "command_ids": [
+        "cmd-22d0c775b254424f",
+        "cmd-5142fe7e0fb94cda"
+      ],
+      "summary": "Re-enabled eth1; OSPF adjacency re-formed Full/DR and ECMP route via both paths restored; ping continued healthy post-recovery"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node1 (VyOS)",
+      "command_ids": [
+        "cmd-108a61208d354fbb",
+        "cmd-0bdbbf60244d4893",
+        "cmd-0d69da079b204718",
+        "cmd-a1ab122af9954cc0",
+        "cmd-d0a39e5907e94b27"
+      ],
+      "summary": "Captured boot_id 50503c5d..., issued native /sbin/reboot, polled until exec returned with new boot_id dc2c1013..., verified interfaces/OSPF/config persisted and node3->node4 ping succeeded post-restart"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node2 (OPNsense/FreeBSD)",
+      "command_ids": [
+        "cmd-570b556f50d34d99",
+        "cmd-cc44d2404ea84dc9",
+        "cmd-be3fb61a08ba4b1d",
+        "cmd-0755353fdbfd49d1",
+        "cmd-c4966dea95da4786",
+        "cmd-798605150f1d49ce",
+        "cmd-f4de47e348a945f8"
+      ],
+      "summary": "Captured kern.boottime 05:20:34, issued native /sbin/shutdown -r now, polled until exec returned with new kern.boottime 05:50:47, verified interfaces/FRR-OSPF auto-restarted from persisted config.xml, OSPF Full adjacency reformed on node1, and bidirectional connectivity confirmed"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node3 (RHEL10)",
+      "command_ids": [
+        "cmd-baa86d74baca4786",
+        "cmd-5b6178d3f6484096",
+        "cmd-99090c82c0ee4fe9",
+        "cmd-3627aea601064ffd"
+      ],
+      "summary": "Captured boot_id e625b9a5..., issued native reboot, polled until exec returned with new boot_id b990fd0b..., verified NetworkManager-persisted static IP/route and successful ping to node4"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node4 (RHEL10)",
+      "command_ids": [
+        "cmd-d7ca50bb52384684",
+        "cmd-cd191f4ae62740c4",
+        "cmd-61bd1f9013a34435",
+        "cmd-815801bf9d2f4ca3"
+      ],
+      "summary": "Captured boot_id 7223d5b7..., issued native reboot, polled until exec returned with new boot_id 496ab4e3..., verified persisted static IP and successful ping to node3"
+    },
+    {
+      "requirement": "Final overall cluster health after all four restarts",
+      "command_ids": [
+        "cmd-c7b6252c285a4b8f"
+      ],
+      "summary": "Post-restart-cycle check shows OSPF Full adjacency on both transit interfaces and ECMP route to 10.10.4.0/24 via both eth1 and eth2 still active"
+    }
+  ]
+}

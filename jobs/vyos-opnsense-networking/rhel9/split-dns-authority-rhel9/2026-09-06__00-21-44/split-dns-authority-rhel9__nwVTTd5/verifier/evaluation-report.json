@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "node1-dns-lan-a",
+      "requirement": "node1 (VyOS) resolves app.internal to node3's address (10.60.0.10) for hosts on lan-a",
+      "status": "satisfied",
+      "summary": "node1's eth2 was addressed 10.60.0.1/24, a static-host-mapping app.internal->10.60.0.10 was configured, pdns_recursor bound to 10.60.0.1:53, and the config was committed and saved. A raw DNS query issued from node3 (the actual lan-a client, addressed 10.60.0.10 on that segment) against 10.60.0.1:53 returned 10.60.0.10, confirming end-to-end client resolution. After a full node1 reboot, the boot identity changed and the same client-style query and listener state were reverified as recovered.",
+      "evidence_ids": [
+        "cmd-198828a1ce05494e",
+        "cmd-c66fb1380a9d4ec5",
+        "cmd-651b8552b9df49f5",
+        "cmd-1799c885ecbb4ca7",
+        "cmd-32f7b0130d9148aa",
+        "cmd-7bf84d5791204b92"
+      ]
+    },
+    {
+      "id": "node2-dns-lan-b",
+      "requirement": "node2 (OPNsense) resolves app.internal to node4's address (10.61.0.10) for hosts on lan-b",
+      "status": "satisfied",
+      "summary": "node2's config.xml was edited to add an opt1 interface on vtnet2 (10.61.0.1/24), a matching pass firewall rule, and an Unbound host override for app.internal -> 10.61.0.10; changes were applied via configctl interface reconfigure, filter reload, and unbound restart, all returning OK. A raw DNS query issued from node4 (the lan-b client, addressed 10.61.0.10) against 10.61.0.1:53 returned 10.61.0.10. After a full node2 reboot (verified via changed FreeBSD kern.boottime), the opt1 interface, Unbound listener, and the same client-style query were reverified as recovered.",
+      "evidence_ids": [
+        "cmd-04aae8777fc14c30",
+        "cmd-4320014dac324518",
+        "cmd-18537973ff87491a",
+        "cmd-85a9a4ca1ac344fa",
+        "cmd-06ae003b48cd4a89",
+        "cmd-d550b220c7cf4df4",
+        "cmd-931ef8a9b10d48d5",
+        "cmd-028cad0b58a44dc7",
+        "cmd-86f55a17b4ad4434",
+        "cmd-3cacfb1b55b743fa"
+      ]
+    },
+    {
+      "id": "topology-based-scoping",
+      "requirement": "Each host reaches the service on its own side of the transit network by the single name app.internal (correct scoping to the physical topology)",
+      "status": "satisfied",
+      "summary": "Topology was independently verified via ARP/ICMP capture (node1 eth2<->node3 on lan-a, node2 vtnet2<->node4 on lan-b, node1 eth1<->node2 vtnet1 as transit), and each router's DNS answer was queried directly from its own-side client (node3 against node1, node4 against node2), both returning the correct same-side address. No evidence of a required cross-side isolation test was captured, and the executor's isolation claim is not independently supported by cited evidence, but this is not a distinct contractual requirement given the physically separate lan-a/lan-b segments.",
+      "evidence_ids": [
+        "cmd-0e60fa7462ea45f8",
+        "cmd-2a0bc7ffda5b4de3",
+        "cmd-1def2777af474454",
+        "cmd-c66fb1380a9d4ec5",
+        "cmd-06ae003b48cd4a89"
+      ]
+    }
+  ],
+  "overall_summary": "Both material DNS outcomes are satisfied: node1 correctly answers app.internal with node3's lan-a address and node2 correctly answers with node4's lan-b address, each verified with live queries issued from the actual client node on that segment rather than only from the router itself. The provider-wide restart protocol was executed and evidenced completely for all four nodes (pre-restart healthy baseline, reboot acknowledgement, changed boot identity, and recovered interface/DNS/service state), independently cross-checked by the fixed before/after lifecycle snapshots which show matching boot-identity transitions. The main quality gaps are an uncleaned diagnostic /30 address likely left on node1's eth1 from transit-topology discovery, and a stray config backup file on node2, neither of which affects the DNS functionality delivered.",
+  "limitations": [
+    "No direct evidence was captured explicitly testing that node1 and node2 refuse to answer for the other's lan segment (isolation), only that each correctly answers for its own; this is inferred from topology (physically separate lan-a/lan-b networks) rather than directly observed.",
+    "It could not be confirmed from the trace whether the temporary eth1 10.99.0.1/30 address on node1 was removed before or after the final 'commit; save', so its persistence into the saved VyOS configuration is inferred rather than directly observed via a listing of the final config.boot.",
+    "The node2 'service unbound status' output showing 'unbound is not running' immediately after restart-related checks appears to be a known FreeBSD rc-status quirk (sockstat and DNS query in the same command block confirm the process is in fact listening and answering), not a real service failure."
+  ],
+  "command_stats": {
+    "total": 114,
+    "successful": 90,
+    "failed": 24,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.82,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.6,
+    "summary": "Most state-changing commands (topology discovery IP/ARP probes, final static addressing via NetworkManager, DNS configuration on both routers) were bounded and directly tied to the task or to necessary discovery/verification. However, two issues were identified: (1) a temporary /30 test address (10.99.0.1/30) was committed to node1's VyOS running config on eth1 purely to confirm the transit link via ICMP capture (cmd-d6e0e9128c75467a); this was never explicitly removed before the later 'commit; save' that persisted the eth2/DNS configuration (cmd-198828a1ce05494e), so it likely remains in node1's saved config as an unnecessary residual mutation unrelated to the DNS task. (2) A config.xml backup file (/conf/config.xml.bak.lanb) was created on node2 during the Unbound/interface edit script (cmd-04aae8777fc14c30) and never cleaned up, leaving low-severity residue. The equivalent transit-link test IP on node2 (vtnet1, cmd-a5dcf6785c544702) was applied only via ifconfig (not committed to config.xml), so it was implicitly cleared by node2's subsequent reboot and left no residue. No failed, conflicting services, or damaged package state were observed; package-health checks were clean before and after on all nodes.",
+    "evidence_ids": [
+      "cmd-d6e0e9128c75467a",
+      "cmd-198828a1ce05494e",
+      "cmd-04aae8777fc14c30",
+      "cmd-a5dcf6785c544702",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node3:package-health",
+      "global:after_executor:node4:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

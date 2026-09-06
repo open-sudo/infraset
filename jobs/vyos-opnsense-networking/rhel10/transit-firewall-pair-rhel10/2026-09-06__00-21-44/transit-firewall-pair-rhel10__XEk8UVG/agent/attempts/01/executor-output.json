@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) and node2 (OPNsense) as the two transit-facing routers between lan-a (node3) and lan-b (node4). Discovered the physical topology via ARP probing (node1-eth1\u2194node2-vtnet1 = transit 10.99.99.0/24; node1-eth2\u2194node3-enp8s0 = lan-a 10.50.10.0/24; node2-vtnet2\u2194node4-enp8s0 = lan-b 10.50.20.0/24). Assigned static addressing, added cross-router static routes, set both routers' forward filters to default-deny, and added a single narrow pass rule on each router permitting only TCP/8080 from lan-a (10.50.10.0/24) to node4 (10.50.20.10). Stood up a systemd-managed HTTP service on node4:8080 and opened it in firewalld. Verified node3 can reach node4:8080 (HTTP 200) while all other cross-network traffic (e.g. ICMP) is refused by default on both routers. Completed the mandatory node-restart protocol: captured pre-restart boot identities and health, restarted each of the 4 nodes one at a time via native reboot mechanisms, polled until exec access returned, confirmed changed boot identifiers on every node, and re-verified full config persistence, routing, firewall rules, and HTTP reachability post-restart.",
+  "actions_performed": [
+    "Probed topology via ARP resolution on temporary IPs to map physical links between node1/node2/node3/node4 extra NICs",
+    "Configured node3 and node4 enp8s0 static IPs via nmcli (10.50.10.10/24 and 10.50.20.10/24) since NetworkManager reconciled away raw `ip addr add`",
+    "Configured node1 (VyOS) eth1=10.99.99.1/24 (transit), eth2=10.50.10.254/24 (lan-a), static route to 10.50.20.0/24 via 10.99.99.2, forward filter default-drop + established/related + tcp/8080 lan-a->node4 pass rule; committed and saved",
+    "Configured node2 (OPNsense) opt1=10.99.99.2/24 (transit, vtnet1), opt2=10.50.20.254/24 (lan-b, vtnet2) via config.xml edits + configctl interface reconfigure; added gateway+static route for 10.50.10.0/24 via node1; added filter pass rule for tcp/8080 from 10.50.10.0/24 to 10.50.20.10 on opt1, reloaded via configctl filter reload",
+    "Added host static routes on node3 (to 10.50.20.0/24 via 10.50.10.254) and node4 (to 10.50.10.0/24 via 10.50.20.254) with ipv4.never-default to prevent the mgmt default route from winning over lan traffic",
+    "Deployed a systemd-managed python http.server on node4:8080 serving a test page, opened firewalld port 8080/tcp",
+    "Verified node3->node4:8080 HTTP succeeds (200) while node3->node4 ICMP and node4->node3 traffic are refused by default",
+    "Captured baseline boot IDs/boottime and service health on all 4 nodes, restarted each node one at a time via native reboot (VyOS /sbin/reboot, OPNsense rc.reboot, RHEL systemctl reboot), polled until exec access returned, confirmed changed boot identifiers, and re-verified config persistence, routing, firewall state, and end-to-end HTTP reachability after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "Both routers refuse forwarded traffic by default",
+      "command_ids": [
+        "cmd-0608e2dcab584fa7",
+        "cmd-12f879a45f3d4285"
+      ],
+      "summary": "node1 forward filter shows default-drop counters incrementing (2/4 dropped packets from blocked ICMP); node2 pf ruleset shows no general opt1/opt2 pass rule beyond the specific http-alt rule, confirming default deny"
+    },
+    {
+      "requirement": "node3 can reach node4's HTTP service on TCP 8080",
+      "command_ids": [
+        "cmd-e43f0e450b514242",
+        "cmd-34ce0a315f954b33",
+        "cmd-ef0cea8bd7994f2d",
+        "cmd-a94f4c8749d24deb",
+        "cmd-ba1e493ad56b4304",
+        "cmd-9df37f39f10744f0"
+      ],
+      "summary": "curl from node3 to http://10.50.20.10:8080/ returns HTTP 200 with body 'hello from node4', verified before and after every node restart"
+    },
+    {
+      "requirement": "Other traffic between the networks remains refused",
+      "command_ids": [
+        "cmd-34ce0a315f954b33",
+        "cmd-bfedf84e81884fb5",
+        "cmd-ea88f681cac34f9e",
+        "cmd-9df37f39f10744f0"
+      ],
+      "summary": "ICMP ping from node3 to node4 (10.50.20.10) fails with 100% packet loss both before and after restarts; node4-initiated curl to node3 port 80 times out (curl exit 28), confirming only the 8080 path is open"
+    },
+    {
+      "requirement": "node1 (VyOS) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-1dbde1d763ba47b2",
+        "cmd-bf7bbe740d4c44e8",
+        "cmd-9d0564c1fa2747d8",
+        "cmd-f82564c057534b34",
+        "cmd-a94f4c8749d24deb"
+      ],
+      "summary": "boot_id changed from 9d3cb897... to 8b597053... after reboot; post-restart show firewall confirms forward filter rules restored and interfaces/routes intact; HTTP path re-verified working"
+    },
+    {
+      "requirement": "node2 (OPNsense) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-3ed38708147946b0",
+        "cmd-d892c307f6a04133",
+        "cmd-db3ccb4f5555432c",
+        "cmd-0e376400836a4ac5",
+        "cmd-bfedf84e81884fb5"
+      ],
+      "summary": "kern.boottime changed from 1788672307 to 1788672861 after reboot; post-restart interface IPs, static route, and pf pass rule for tcp/8080 all confirmed present; HTTP path re-verified working"
+    },
+    {
+      "requirement": "node3 (RHEL) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-da17371cb23a455a",
+        "cmd-6e580c1ac9bb442d",
+        "cmd-6abb04685d7b4302",
+        "cmd-ba1e493ad56b4304"
+      ],
+      "summary": "boot_id changed from 2db46909... to 80131551... after reboot; post-restart static route to 10.50.20.0/24 persisted via NetworkManager profile; curl to node4:8080 returns 200"
+    },
+    {
+      "requirement": "node4 (RHEL) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-d4dc49e25dd04dda",
+        "cmd-017b385a6eb24df2",
+        "cmd-9db119456f384533",
+        "cmd-374e7c73c4dc4a33",
+        "cmd-9df37f39f10744f0"
+      ],
+      "summary": "boot_id changed from 368725cb... to 248e35a7... after reboot; post-restart static route, firewalld port 8080, and systemd testhttp.service (active, serving content) all confirmed recovered; final curl from node3 succeeds with 200"
+    }
+  ]
+}

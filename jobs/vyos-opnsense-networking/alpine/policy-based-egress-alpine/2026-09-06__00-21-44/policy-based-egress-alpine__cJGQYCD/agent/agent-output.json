@@ -1,0 +1,125 @@
+{
+  "status": "completed",
+  "summary": "Discovered that node1 (VyOS) and node2 (OPNsense) each have two additional NICs forming two independent point-to-point transit networks (eth1/vtnet1 = transit1 10.77.1.0/30; eth2/vtnet2 = transit2 10.77.2.0/30), while node3 and node4 (Alpine) sit only on the shared default /24. Implemented policy-based egress on node3 (iproute2 ip rule matching tcp dport 8080/9090, sending matched traffic via next-hop node1 through two custom routing tables), and per-port policy routing on node1 (VyOS `policy route` with per-table static next-hops) that selects eth1 for port 8080 and eth2 for port 9090 toward node2, which forwards natively onto the LAN to node4. Verified with simultaneous tcpdump captures on both transit segments plus the destination LAN link and live nc payload delivery: port 8080 traffic exclusively traverses transit network 1 (eth1/vtnet1), port 9090 traffic exclusively traverses transit network 2 (eth2/vtnet2), and both flows successfully complete a full TCP handshake and payload delivery to node4. All configuration was made persistent (VyOS config save, OPNsense config.xml, Alpine OpenRC local.d service) and then all four nodes were restarted one at a time (VyOS/Alpine via systemd/OpenRC reboot, OPNsense via shutdown -r), boot-identity change was proven via boot_id/kern.boottime on each, and the full policy-routed dual-path flow was independently re-verified working after each restart and again after all four had been restarted.",
+  "actions_performed": [
+    "Mapped topology: node1(VyOS)/node2(OPNsense) extra NICs eth1-3/vtnet1-3; confirmed via ARP/ping which pairs form L2 segments (eth1<->vtnet1=transit1, eth2<->vtnet2=transit2; eth3/vtnet3 unrelated)",
+    "Assigned persistent /30 addresses to node1 eth1/eth2 (VyOS set+commit+save) and node2 opt1/opt2 (OPNsense config.xml + configctl interface reconfigure)",
+    "Installed iproute2/iptables/netcat/tcpdump on Alpine nodes 3 and 4 for policy routing and verification tooling",
+    "Configured policy-based egress on node3: ip rule (ipproto tcp dport 8080/9090) + two custom routing tables routing via node1 as next-hop",
+    "Configured VyOS policy route PBR-EGRESS on node1 with per-port rules setting fwmark, bound to eth0, with static routes in custom tables 101/102 pointing out eth1/eth2 to node2",
+    "Added and fixed OPNsense filter pass rules on opt1/opt2 (initial rule wrongly scoped source to transit subnet; corrected to allow any source) then reloaded pf via configctl filter reload without losing exec/SSH access",
+    "Verified end-to-end with simultaneous tcpdump on eth1/eth2 (node1), vtnet1/vtnet2/vtnet0 (node2), and nc listeners on node4: port 8080 flows only via transit1, port 9090 only via transit2, payload delivered",
+    "Persisted node3 policy routing via /etc/local.d/policy-egress.start + rc-update add local default so it survives reboot",
+    "Captured healthy baseline (boot_id / kern.boottime, interface/route state) on all 4 nodes",
+    "Restarted node1 via systemctl reboot (VyOS's own 'reboot now' was blocked by stale unionfs config-session locks), polled until reachable, confirmed changed boot_id and full PBR/route recovery, re-verified live traffic",
+    "Restarted node2 via shutdown -r now, confirmed changed kern.boottime and full pf/interface config recovery from config.xml, re-verified live traffic",
+    "Restarted node3 via reboot, confirmed changed boot_id and automatic re-application of policy routing via the local service, re-verified live traffic",
+    "Restarted node4 via reboot, confirmed changed boot_id, restarted nc listeners, ran final full verification of both flows across all interfaces after all 4 nodes had been restarted",
+    "Cleaned up temporary listeners"
+  ],
+  "evidence": [
+    {
+      "requirement": "Two independent transit networks identified between node1 and node2",
+      "command_ids": [
+        "cmd-375831bbec304130",
+        "cmd-27ec697df41b4de7",
+        "cmd-99efd1e842664ebb",
+        "cmd-5fcb5534da2b414a",
+        "cmd-c0c8a112a3a84b03",
+        "cmd-47bdbefe0c0b4ffb",
+        "cmd-7ac7db56393c46df"
+      ],
+      "summary": "eth1/vtnet1 and eth2/vtnet2 confirmed as the two L2-connected transit segments (eth3/vtnet3 do not pair) via ARP resolution and successful ping across the assigned /30s"
+    },
+    {
+      "requirement": "Port 8080 traffic from node3 to node4 steered across transit network 1",
+      "command_ids": [
+        "cmd-8284f9a6e46e41a1",
+        "cmd-66d6638383b6476c",
+        "cmd-1cc8f9d3e4d04fee",
+        "cmd-e4cc5d43831647e4",
+        "cmd-14a4217a8f354663",
+        "cmd-e1ea9d251eb64ea1",
+        "cmd-d4cdf3d0a6e849fd"
+      ],
+      "summary": "node3 ip rule + node1 VyOS policy route send tcp/8080 out eth1; tcpdump on node1 eth1 and node2 vtnet1 (transit1) shows full handshake+payload, tcpdump on eth2/vtnet2 (transit2) shows nothing for this port, and node4's listener received the payload"
+    },
+    {
+      "requirement": "Port 9090 traffic from node3 to node4 steered across transit network 2",
+      "command_ids": [
+        "cmd-e4cc5d43831647e4",
+        "cmd-66d6638383b6476c",
+        "cmd-14a4217a8f354663",
+        "cmd-e1ea9d251eb64ea1",
+        "cmd-d4cdf3d0a6e849fd"
+      ],
+      "summary": "tcp/9090 exclusively traverses eth2 on node1 and vtnet2 on node2 (transit2), confirmed via tcpdump capture correlated with node4 receiving the payload"
+    },
+    {
+      "requirement": "Both flows reach node4",
+      "command_ids": [
+        "cmd-d7fba8ea8ffa427c",
+        "cmd-2cf4e3ecfe6f4ce6",
+        "cmd-d4cdf3d0a6e849fd"
+      ],
+      "summary": "nc connections from node3 to 10.100.15.13:8080 and :9090 both succeeded and node4's listeners captured the distinct payload markers"
+    },
+    {
+      "requirement": "Which transit network carried each flow (visual proof)",
+      "command_ids": [
+        "cmd-14a4217a8f354663",
+        "cmd-e1ea9d251eb64ea1",
+        "cmd-95d93245a20943d3"
+      ],
+      "summary": "Side-by-side tcpdump reads on eth1 vs eth2 (node1) and vtnet1 vs vtnet2 (node2) show port 8080 only on the transit1 capture and port 9090 only on the transit2 capture, both before and after the full restart cycle"
+    },
+    {
+      "requirement": "node1 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-92e6401081514e0d",
+        "cmd-221a45d434cf45ac",
+        "cmd-25a120a841f54b95",
+        "cmd-7a7c89a28a584135",
+        "cmd-2609db14488e4a18",
+        "cmd-03e45a51a73d4099",
+        "cmd-f726ca37960c4075"
+      ],
+      "summary": "Baseline boot_id ebd78841...; systemctl reboot issued (native VyOS 'reboot now' blocked by stale config-session lock, used systemd reboot instead); node unreachable then boot_id changed to 3e56389b...; PBR rules/routes/interfaces recovered from saved VyOS config; live dual-port traffic re-verified"
+    },
+    {
+      "requirement": "node2 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-f7c37d52cc884329",
+        "cmd-87f44e190daf43a1",
+        "cmd-81b82c96f8694912",
+        "cmd-5d0c4ed202d7412b",
+        "cmd-d16e1f6096aa47b9"
+      ],
+      "summary": "Baseline kern.boottime sec=1788669685; shutdown -r now issued; post-restart kern.boottime changed to sec=1788670381; opt1/opt2 IPs, pf enabled with correct pass rules, and forwarding all recovered from config.xml; live dual-port traffic re-verified"
+    },
+    {
+      "requirement": "node3 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-fe391916659e496e",
+        "cmd-31197c42f8194960",
+        "cmd-e4fd240a89ac472e",
+        "cmd-8cc9f9d3e4d04fee",
+        "cmd-8cfe74417b494c66",
+        "cmd-c43c68d633eb471e"
+      ],
+      "summary": "Baseline boot_id af39dd23...; reboot issued (connection dropped); post-restart boot_id changed to 2a6c1b77...; ip rule/route policy state automatically restored via persisted /etc/local.d/policy-egress.start + local service; live dual-port traffic re-verified"
+    },
+    {
+      "requirement": "node4 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-eb73b431cc2f43cb",
+        "cmd-f8dffd623afd407d",
+        "cmd-3cc922d1862a4022",
+        "cmd-8e276cd3ef21438f",
+        "cmd-5510cbbcf82c4c6d",
+        "cmd-7c4919e35f1f40d0"
+      ],
+      "summary": "Baseline boot_id 23576eff...; reboot issued; post-restart boot_id changed to 25b407b0...; interface/IP recovered automatically via DHCP, listeners restarted, and both port 8080/9090 flows verified end-to-end (including per-segment tcpdump) after all four nodes had been restarted"
+    }
+  ]
+}

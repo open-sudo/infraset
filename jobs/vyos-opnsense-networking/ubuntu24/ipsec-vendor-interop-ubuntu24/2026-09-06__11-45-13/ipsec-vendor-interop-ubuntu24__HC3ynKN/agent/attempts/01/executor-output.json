@@ -1,0 +1,99 @@
+{
+  "status": "completed",
+  "summary": "Built a site-to-site IPsec (IKEv2/ESP, AES256-SHA256) tunnel between node1 (VyOS) and node2 (OPNsense) across their transit link (10.10.0.0/30), carrying node3's LAN-A (10.20.0.0/24) and node4's LAN-B (10.30.0.0/24) private subnets. Discovered the real interface topology by ARP-probing unaddressed NICs (node1 eth1=transit/eth2=lan-a, node2 vtnet1=transit/vtnet2=lan-b), configured VyOS natively (set/commit/save) and OPNsense via a generated local API key plus the swanctl model schema (read directly from the on-disk model XML to avoid guessing). Diagnosed and fixed a real OPNsense pf gap: the built-in auto-generated 'pass out on enc0' rule was non-quick and did not reliably permit freshly-decrypted (state-less) forwarded traffic from node3->node4, while state-matched reply traffic passed; added an explicit 'pass in quick on enc0' rule, verified with pfctl -d that pf was indeed the blocker, then confirmed the proper fix restored bidirectional, 0%-loss encrypted connectivity. All four nodes were restarted one at a time (VyOS/OPNsense native reboot, Ubuntu native reboot), boot-identity change confirmed via boot_id/kern.boottime, and full tunnel + end-to-end private-address reachability was reverified after each restart, finishing with a clean bidirectional test after all four restarts.",
+  "actions_performed": [
+    "Mapped physical topology by ARP-probing unaddressed interfaces on node1/node2/node3/node4",
+    "Assigned static IPs: node1 eth1=10.10.0.1/30 (transit), eth2=10.20.0.1/24 (lan-a); node2 opt1(vtnet1)=10.10.0.2/30 (transit), opt2(vtnet2)=10.30.0.1/24 (lan-b); node3 enp8s0=10.20.0.10/24; node4 enp8s0=10.30.0.10/24, via VyOS 'set interfaces' and OPNsense config.xml + interfaces_configure(), and systemd-networkd drop-ins on the Ubuntu nodes",
+    "Added specific (non-default) static routes on node3/node4 for the remote private subnet via their local gateway, preserving each node's original management default route",
+    "Generated an IPsec PSK via openssl on node1 and configured VyOS site-to-site IPsec (ike-group/esp-group/psk/peer/tunnel) via the native CLI",
+    "Generated a local OPNsense API key/secret via a PHP script invoking the ApiKeyField model, then used the OPNsense REST API (Swanctl connections/locals/remotes/children, preSharedKeys) built from the on-disk model XML schema to configure the matching IPsec connection",
+    "Enabled IPsec service on OPNsense via the legacy ipsec.enable toggle endpoint (the swanctl-model 'general.enabled' LegacyLinkField required this) and ran service/reconfigure",
+    "Diagnosed a real forwarding gap using SA/SPD byte counters, pf state tables, and a pfctl -d control test; fixed by adding an explicit 'pass in quick on enc0' firewall rule on OPNsense",
+    "Verified bidirectional 0%-loss ping between node3 (10.20.0.10) and node4 (10.30.0.10) and confirmed traffic traverses the IPsec SA (SPI byte/packet counters incrementing) rather than any plaintext path",
+    "Captured pre-restart boot identity (boot_id / kern.boottime) and health evidence for all four nodes",
+    "Restarted node3, node4, node1, and node2 one at a time using each OS's native reboot command, polling exec availability and confirming changed boot identity after each",
+    "Reverified interface configuration persistence, IPsec tunnel re-establishment, and full node3<->node4 encrypted connectivity after every individual restart, and after all four restarts completed",
+    "Cleaned up temporary scripts/logs on node1 and node2"
+  ],
+  "evidence": [
+    {
+      "requirement": "IPsec tunnel established between node1 and node2 carrying both private networks",
+      "command_ids": [
+        "cmd-b3ff... (VyOS ipsec set/commit)",
+        "cmd-943... approx",
+        "cmd-947a5aaad4eb4b28",
+        "cmd-537fe0875f594e82",
+        "cmd-a95979bd18a3485e"
+      ],
+      "summary": "VyOS 'show vpn ipsec sa' showed NODE2-tunnel-1 up, and OPNsense swanctl -l showed the IKE_SA ESTABLISHED and CHILD_SA INSTALLED with local 10.30.0.0/24 / remote 10.20.0.0/24 selectors immediately after configuration."
+    },
+    {
+      "requirement": "node3 and node4 reach each other by private addresses with traffic encrypted in transit",
+      "command_ids": [
+        "cmd-72dc4f84ba974889",
+        "cmd-b00b1138241748a8",
+        "cmd-5bafac2beb934dfa",
+        "cmd-316164b085754951"
+      ],
+      "summary": "Bidirectional ping node3(10.20.0.10)<->node4(10.30.0.10) succeeded with 0% loss, and VyOS SA in/out byte+packet counters incremented in lockstep with the pings, proving the path used the encrypted ESP tunnel rather than a plaintext route (none exists on the transit network for those subnets)."
+    },
+    {
+      "requirement": "Diagnosed/fixed real firewall gap blocking one direction of decrypted forwarding",
+      "command_ids": [
+        "cmd-8d5340aa2a144ade",
+        "cmd-c9083e10418a43f0",
+        "cmd-8bdc8607c0514bbb",
+        "cmd-a6ae6a095e1e411e",
+        "cmd-2e241b7bd754461b"
+      ],
+      "summary": "pfctl -d (disable pf) made node3->node4 succeed, proving pf was the blocker; added explicit 'pass in quick on enc0' rule, reloaded filter, re-enabled pf, and reproduced success with pf enabled."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-694758830730470d",
+        "cmd-84bc08beb36d4105",
+        "cmd-c2ab00aa20b94ba1",
+        "cmd-cb4c79fcdad44a9b",
+        "cmd-802ede2512244204"
+      ],
+      "summary": "Captured original boot_id df9e2dce...; issued native reboot; confirmed connection drop; polled until exec available; new boot_id fee8eb9d... confirmed changed; verified static IP, route, and encrypted ping to node4 all recovered."
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-7b297dbbd5df4a5e",
+        "cmd-a68e19bb3c8e44b2",
+        "cmd-b8c4359b47604e02",
+        "cmd-b5b3f753a67247b0",
+        "cmd-588c6ad0e5d84cbc"
+      ],
+      "summary": "Captured original boot_id 37344ae4...; issued native reboot; confirmed connection drop; polled until exec available; new boot_id 6129a71a... confirmed changed; verified static IP and encrypted ping to node3 recovered."
+    },
+    {
+      "requirement": "node1 (VyOS) restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-fd11d5603f7c4dde",
+        "cmd-b5a86226546c4cde",
+        "cmd-dd573768c5a349de",
+        "cmd-de9027ee1f67435f",
+        "cmd-cc9518da45274c3f",
+        "cmd-918e564cbead4baf"
+      ],
+      "summary": "Captured original boot_id 2674ee60...; issued native reboot; confirmed unreachability during reboot; polled until exec available; new boot_id 07904b95... confirmed changed; verified interfaces, IPsec tunnel auto re-establishment, and end-to-end encrypted ping all recovered."
+    },
+    {
+      "requirement": "node2 (OPNsense) restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-afe938d8175a4d94",
+        "cmd-ee7bb8b6de6b4722",
+        "cmd-f14192bd977e4adc",
+        "cmd-6058ceabd7f14eef",
+        "cmd-4d7977f5dad84d9b",
+        "cmd-38bc90f6643049b6",
+        "cmd-c55f280446834cfa"
+      ],
+      "summary": "Captured original kern.boottime 15:45:06; issued native reboot; confirmed SSH transport drop; polled until exec available; new kern.boottime 16:19:36 confirmed changed; verified interface IPs, IPsec tunnel re-establishment, and final bidirectional encrypted ping recovered with 0% loss."
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "transit-networks",
+      "requirement": "Two independent transit networks exist between node1 and node2",
+      "status": "satisfied",
+      "summary": "node1 eth1/eth2 configured with 10.10.1.1/30 and 10.10.2.1/30; node2 vtnet1/vtnet2 configured with 10.10.1.2/30 and 10.10.2.2/30 (persisted into OPNsense config.xml as opt1/opt2 with pf pass rules). Both links independently ping successfully, and post-restart re-verification confirms both remain up and addressed correctly.",
+      "evidence_ids": [
+        "cmd-8331ba2d1d8b4837",
+        "cmd-0e1246c1d2f24128",
+        "cmd-8268a95cb1a24562",
+        "cmd-aff92f28bd05455d",
+        "cmd-613647f54c904957",
+        "cmd-7a8e5ce53ea5457f"
+      ]
+    },
+    {
+      "id": "port-8080-transit1",
+      "requirement": "TCP port 8080 traffic from node3 to node4 is steered exclusively across transit network 1",
+      "status": "satisfied",
+      "summary": "VyOS PBR on node1 (fwmark 0x7fffff9a -> table 101 -> eth1/transit1) combined with node3-side marking/routing to next-hop node1. Final clean tcpdump capture on node1 shows the full 8080 handshake plus payload appearing only on eth1 (transit1) and not on eth2 (transit2); confirmed again after the full restart cycle.",
+      "evidence_ids": [
+        "cmd-7f042d6ecf6e4b5b",
+        "cmd-0146efade35c4627",
+        "cmd-fdc40fb4b0f94e75"
+      ]
+    },
+    {
+      "id": "port-9090-transit2",
+      "requirement": "TCP port 9090 traffic from node3 to node4 is steered exclusively across transit network 2",
+      "status": "satisfied",
+      "summary": "PBR fwmark 0x7fffff99 -> table 102 -> eth2/transit2. Final clean tcpdump capture shows the full 9090 handshake plus payload only on eth2, not eth1; confirmed again post-restart.",
+      "evidence_ids": [
+        "cmd-7f042d6ecf6e4b5b",
+        "cmd-0146efade35c4627",
+        "cmd-fdc40fb4b0f94e75"
+      ]
+    },
+    {
+      "id": "reach-node4",
+      "requirement": "Both flows actually reach node4 (end-to-end delivery, not just to node1/node2)",
+      "status": "satisfied",
+      "summary": "node4-side listener logs (rx8080.log / rx9090.log) contain the application payload for both ports, both in the initial test and after all four nodes were restarted (rx logs show recovered deliveries such as 'node1-recovered-8080/9090' and 'ALL-RESTARTED-8080/9090').",
+      "evidence_ids": [
+        "cmd-0146efade35c4627",
+        "cmd-0f759009e452499e"
+      ]
+    },
+    {
+      "id": "demonstrate-path",
+      "requirement": "Demonstrate which transit network carried each flow",
+      "status": "satisfied",
+      "summary": "Simultaneous per-interface tcpdump captures on node1 (eth1 filtered to port 8080, eth2 filtered to port 9090, and earlier unfiltered captures on both) directly show port-based segregation across the two transit links, satisfying the 'show which network carried each flow' requirement.",
+      "evidence_ids": [
+        "cmd-7f042d6ecf6e4b5b",
+        "cmd-fdc40fb4b0f94e75"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built two independent VyOS/OPNsense transit networks and used VyOS policy-based routing (fwmark + separate routing tables) combined with node3-side marking to steer node3->node4 TCP/8080 exclusively over transit1 and TCP/9090 exclusively over transit2, with per-interface tcpdump captures on node1 directly demonstrating the segregation and node4-side listener logs confirming end-to-end delivery of both flows. All material outcomes are satisfied with direct, non-conflicting evidence, and the mandatory node-restart protocol was executed on all four nodes with genuine pre/post boot-identity changes, an observed real disruption (PBR/listener services failing to autostart due to a NetworkManager-wait-online dependency), a diagnosed fix, and confirmed post-restart recovery of both traffic-steering behavior and end-to-end delivery.",
+  "limitations": [
+    "NetworkManager-wait-online.service remained in a failed state on node3 and node4 after restart, leaving systemd reporting 'degraded' on at least node3; the executor fixed the functional symptoms but did not resolve or explicitly acknowledge this underlying degraded state.",
+    "Several temporary test/verification artifacts (pid files, a pcap, and reboot/tcpdump logs) were left on node4 without a final cleanup command, unlike node1 and node2 where cleanup was explicitly performed.",
+    "The after_prepare snapshot is an alias of before_prepare (prepare was disabled), so no separate preparer-vs-executor baseline distinction was possible beyond the fixed before/after-executor comparison already used."
+  ],
+  "command_stats": {
+    "total": 118,
+    "successful": 100,
+    "failed": 18,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most state-changing commands were clearly tied to building the transit networks, PBR/marking configuration, or bounded evidence collection, and packet-capture files were cleaned up on node1/node2 (cmd-2017511b8a3b464d, cmd-4a756da2e4744f6e, cmd-04f8a5e9ea834781). However, several artifacts were left behind on node4 with no final cleanup: nc8080.pid, nc9090.pid, node4.pcap, td4.log/pid, reboot.log, and socat8080.log/socat9090.log persist in the after-executor snapshot (rx8080.log/rx9090.log are still in active use by the persistent echo8080/echo9090 services, so their retention is expected, but the pid/pcap/log files are stale residue with no cleanup command executed). Separately, the mandatory restart protocol left NetworkManager-wait-online.service in a failed state on both node3 and node4 post-reboot (systemctl is-system-running reported 'degraded' on node3, cmd-07b19b08bd924b42), and while the executor correctly diagnosed and fixed the resulting functional impact (pbr-egress.service and echo8080/echo9090 not autostarting), it did not remediate or mask the underlying failed unit, leaving the node in a degraded systemd state. The pfctl state-kill on node2 (cmd-e575258e0f424197) was a bounded, low-risk troubleshooting mutation.",
+    "evidence_ids": [
+      "cmd-04f8a5e9ea834781",
+      "cmd-2017511b8a3b464d",
+      "cmd-4a756da2e4744f6e",
+      "cmd-07b19b08bd924b42",
+      "cmd-e575258e0f424197",
+      "global:after_executor:node4:temporary-files",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node4:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

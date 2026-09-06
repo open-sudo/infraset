@@ -1,0 +1,124 @@
+{
+  "status": "completed",
+  "summary": "Built a WireGuard site-to-site tunnel between node1 (VyOS) and node2 (OPNsense), the two routers facing each other across the transit network, joining their private networks (node3 behind node1, node4 behind node2). node3 (10.10.10.2/24) and node4 (10.20.20.2/24) now reach each other by their private addresses, with all inter-router traffic traveling encrypted inside the WireGuard tunnel (verified via tcpdump showing only UDP/51820 on the transit link). Topology discovered via arping: node1 eth1 <-> node2 vtnet1 (transit, 10.99.99.0/30), node1 eth2 <-> node3 ens7 (private net A, 10.10.10.0/24), node2 vtnet2 <-> node4 ens7 (private net B, 10.20.20.0/24). Configured VyOS via its native `configure/commit/save` workflow (wg0 10.255.255.1/30, static route to 10.20.20.0/24 via wg0, forward/input firewall rules) and OPNsense via config.xml + configd (opt1/opt2 interface assignments, WireGuard server+client instances via the built-in WireGuard menu, and \u2014 critically \u2014 assigned wg0 as interface opt3 since OPNsense's legacy filter compiler cannot resolve pf rules against the dynamic 'wireguard' interface group, only against assigned interfaces). node3/node4 got persistent static addressing and cross-subnet routes via systemd-networkd .network files (overriding the platform's blanket en*/eth* DHCP match). All four nodes were then restarted one at a time (VyOS reboot, OPNsense reboot, Ubuntu reboot x2), each verified via a changed OS-native boot marker (Linux boot_id, FreeBSD kern.boottime), and full private-to-private connectivity plus WireGuard handshake/tunnel state was reverified after each restart, confirming the configuration is persistent and survives reboot.",
+  "actions_performed": [
+    "Mapped physical NIC topology across all 4 nodes using arping/ARP tests to find point-to-point link pairs",
+    "Assigned static addressing: node1 eth1=10.99.99.1/30 (transit), eth2=10.10.10.1/24 (private A); node2 vtnet1=10.99.99.2/30 (opt1), vtnet2=10.20.20.1/24 (opt2)",
+    "Generated WireGuard keypairs on node1 (wg genkey) and node2 (configctl wireguard gen_keypair)",
+    "Configured VyOS wg0 interface (10.255.255.1/30, port 51820, peer node2, allowed-ips 10.20.20.0/24) via configure/commit/save",
+    "Added VyOS static route for 10.20.20.0/24 via wg0 (allowed-ips alone did not install a kernel route)",
+    "Configured VyOS firewall forward/input filter rules to permit eth2<->wg0 forwarding and inbound UDP/51820",
+    "Installed and configured OPNsense's built-in WireGuard (server 'wg0' + client peer 'node1') via config.xml edits under OPNsense/wireguard, fixed a missing /usr/local/etc/wireguard directory blocking configd, and rendered templates via configctl template reload",
+    "Diagnosed and fixed OPNsense firewall: legacy filter engine can't resolve the dynamic 'wireguard' pf group, so assigned wg0 as a real interface (opt3) and added a Firewall/Filter rule against opt3 to allow tunnel traffic",
+    "Added persistent static routing and addressing on node3/node4 via systemd-networkd 10-ens7-static.network overrides (to take priority over the platform's default en*/eth* DHCP match), including static routes to each other's private subnet",
+    "Verified end-to-end ping between node3 (10.10.10.2) and node4 (10.20.20.2) in both directions, and confirmed via tcpdump on node1 eth1 that only encrypted WireGuard UDP crosses the transit link",
+    "Captured baseline boot identity (Linux boot_id / FreeBSD kern.boottime) and health evidence on all 4 nodes",
+    "Restarted node1, node3, node2, node4 one at a time (native reboot), polled each until exec was available again, and verified changed boot identity plus full recovery of interfaces, routes, WireGuard tunnel/handshake, and firewall rules on each",
+    "Re-verified full node3<->node4 connectivity after all four restarts completed"
+  ],
+  "evidence": [
+    {
+      "requirement": "Discover and confirm physical link topology between routers and private hosts",
+      "command_ids": [
+        "cmd-402a496455e14a68",
+        "cmd-b8bc0ed052b84ca7"
+      ],
+      "summary": "arping confirmed node1 eth1<->node2 vtnet1 (transit) and earlier ping tests confirmed node1 eth2<->node3 ens7 and node2 vtnet2<->node4 ens7"
+    },
+    {
+      "requirement": "WireGuard tunnel established between node1 and node2 routers",
+      "command_ids": [
+        "cmd-5e2ba22f98cf44dc",
+        "cmd-bfd1cacfd59a42fc"
+      ],
+      "summary": "wg show on both node1 and node2 shows successful handshake and allowed-ips covering each other's private subnet"
+    },
+    {
+      "requirement": "Private hosts (node3, node4) reach each other by private addresses through the tunnel",
+      "command_ids": [
+        "cmd-6e1b9a88314f4f06",
+        "cmd-b09089dac0e14bba"
+      ],
+      "summary": "Bidirectional ping between node3 (10.10.10.2) and node4 (10.20.20.2) succeeds, and wg transfer counters on node1 increase confirming traffic traversed the tunnel"
+    },
+    {
+      "requirement": "Traffic between routers travels inside the WireGuard tunnel (encrypted), not plaintext",
+      "command_ids": [
+        "cmd-27eb1260d5434f7a"
+      ],
+      "summary": "tcpdump on node1 eth1 (transit link) during a node3->node4 ping shows only encrypted UDP/51820 WireGuard packets, no plaintext ICMP"
+    },
+    {
+      "requirement": "node1 (VyOS) healthy baseline before restart",
+      "command_ids": [
+        "cmd-be2956b6890141f4"
+      ],
+      "summary": "Captured boot_id 2674ee60-... plus working WireGuard handshake and route to 10.20.20.0/24"
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-ffe5bb2e5a3549bc",
+        "cmd-810a92044b89468b",
+        "cmd-d092addd16b64b21",
+        "cmd-8f43246bcad44138"
+      ],
+      "summary": "Reboot acknowledged and returned before disconnect; boot_id changed to 444d6b0c-...; interfaces, static route, and WireGuard tunnel (fresh handshake) recovered from persisted VyOS config; node3->node4 ping still succeeds"
+    },
+    {
+      "requirement": "node3 (Ubuntu) healthy baseline before restart",
+      "command_ids": [
+        "cmd-4a8f435edbda4a72"
+      ],
+      "summary": "Captured boot_id a1dc8e25-... plus static ens7 address and route to 10.20.20.0/24"
+    },
+    {
+      "requirement": "node3 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-47a3eef353c747c3",
+        "cmd-bb773b3bb5b0443b",
+        "cmd-61116f8a16fb4b95"
+      ],
+      "summary": "Reboot acknowledged; boot_id changed to f255538c-...; static ens7 address, route, and ping to node4 all recovered from persisted systemd-networkd config"
+    },
+    {
+      "requirement": "node2 (OPNsense) healthy baseline before restart",
+      "command_ids": [
+        "cmd-846d6fb5bc3a464d"
+      ],
+      "summary": "Captured kern.boottime 14:27:07 plus working WireGuard handshake and interface addresses"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-9dc6c124f639479e",
+        "cmd-69c285f55c7541c6",
+        "cmd-8c75bb43fd574f3f"
+      ],
+      "summary": "Reboot acknowledged; kern.boottime changed to 14:44:59; interfaces, WireGuard tunnel (fresh handshake), and pf filter rule on wg0 all recovered automatically from config.xml"
+    },
+    {
+      "requirement": "node4 (Ubuntu) healthy baseline before restart",
+      "command_ids": [
+        "cmd-0b2c0cfb58b44e28"
+      ],
+      "summary": "Captured boot_id 9094f607-... plus static ens7 address and route to 10.10.10.0/24"
+    },
+    {
+      "requirement": "node4 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-b1bd820cfb0e4f00",
+        "cmd-c74d7c3d77ba422d",
+        "cmd-82c3fd25a86349a1"
+      ],
+      "summary": "Reboot acknowledged; boot_id changed to 57b25023-...; static ens7 address, route, and ping to node3 all recovered"
+    },
+    {
+      "requirement": "Final full-mesh connectivity after all four restarts",
+      "command_ids": [
+        "cmd-6167ca13b0d4444c"
+      ],
+      "summary": "node3 to node4 ping succeeds cleanly (0% loss) after all four nodes have been sequentially restarted and recovered"
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "transit-networks",
+      "requirement": "Two independent transit networks exist and are configured between node1 (VyOS) and node2 (OPNsense)",
+      "status": "satisfied",
+      "summary": "10.10.1.0/30 (eth1/vtnet1, Transit A) and 10.10.2.0/30 (eth2/vtnet2, Transit B) were configured on both routers and directly verified reachable by ping in both directions.",
+      "evidence_ids": [
+        "cmd-2a50ad99893e41b9",
+        "cmd-b742d13ac0c2404b",
+        "cmd-fbd1d7199cc64d08",
+        "cmd-310d842f123449fd"
+      ]
+    },
+    {
+      "id": "private-net-reachability",
+      "requirement": "node3 and node4 private networks are configured and reachable through their respective routers",
+      "status": "satisfied",
+      "summary": "node3 (10.10.3.2/24) and node4 (10.10.4.2/24) were configured with static routes to each other's subnet; bidirectional 0% packet-loss pings were directly observed after NAT/reply-to fixes were applied.",
+      "evidence_ids": [
+        "cmd-ed15922179184549",
+        "cmd-6c6ddda679214c00",
+        "cmd-0379a9476aef4392",
+        "cmd-8a3564b70aac44e6",
+        "cmd-62fcdc6a228c48c6"
+      ]
+    },
+    {
+      "id": "redundant-failover",
+      "requirement": "Traffic between node3 and node4 continues when either transit network is taken out of service, demonstrated across a live transition",
+      "status": "partially_satisfied",
+      "summary": "A continuous node3->node4 ping was started before disabling node1's Transit A interface, and the executor's final report claims 'zero packet loss / no sequence gaps' across the disruption. However, the executor's own gap-detection commands directly contradict this: cmd-3ee10ef1e9ce4522 found 'GAP: 56 -> 302' (roughly 245 missed ping sequences, ~120s at the 0.5s send interval) during the outage window. This gap corresponds to a period (05:03:01-05:05:04) when node1's static route to 10.10.4.0/24 was misconfigured (next-hop without interface binding, causing recursive resolution via the mgmt default gateway rather than clean ECMP failover) and had to be corrected live via multiple failed/retried VyOS configuration commands before the automatic mechanism began working. After the fix, no further sequence gaps were observed through the rest of the test and OPNsense's policy-route/dpinger monitoring correctly switched route-to from vtnet1 to vtnet2. This shows the redundancy mechanism works once correctly configured, but the specific demonstrated transition experienced substantial loss and required manual intervention mid-test, contradicting the claimed seamless failover.",
+      "evidence_ids": [
+        "cmd-c4008a629b5543b6",
+        "cmd-ba9cccf6ab1247c9",
+        "cmd-b434feba3d644fc0",
+        "cmd-5307d581fc724d11",
+        "cmd-8eb5c86cc2f24845",
+        "cmd-1cbe846cf3df4ca8",
+        "cmd-dcc407896cf8482d",
+        "cmd-662b63f5309e4274",
+        "cmd-3ee10ef1e9ce4522",
+        "cmd-bb2668a2c4764235",
+        "cmd-c26418bcbc1a4656"
+      ]
+    },
+    {
+      "id": "failback-recovery",
+      "requirement": "Restoring the failed transit network returns traffic to the primary path",
+      "status": "satisfied",
+      "summary": "After re-enabling node1's eth1, dpinger's GW_TRANSIT_A status was directly observed transitioning from 'down'/high loss to 'Online' over roughly 58 seconds, the pf route-to rule was confirmed switched back to vtnet1, and 0% packet-loss bidirectional connectivity was reconfirmed.",
+      "evidence_ids": [
+        "cmd-d8ae9717cf684cbf",
+        "cmd-c14c08adf0634844",
+        "cmd-75b3b03e57d941b0",
+        "cmd-bf521e9390044208",
+        "cmd-ee79c85daa364b98"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all four managed nodes with pre-restart baseline, restart acknowledgement, changed boot identity, and recovered state",
+      "status": "satisfied",
+      "summary": "For all four nodes, boot identity (Linux boot_id or FreeBSD kern.boottime) was captured before restart, a restart command was issued, connection loss was observed, and a directly different post-restart boot identity was captured (node1: 9d3cb897->ae7efeee; node2: 04:43:45->05:09:58 boottime; node3: 262732eb->4db2a52d; node4: 49776767->a9bcd2a4), matching the fixed lifecycle snapshot cross-check. Post-restart recovery of interfaces, routes, NAT/filter rules, dpinger monitors, and end-to-end connectivity was directly re-verified on each node.",
+      "evidence_ids": [
+        "cmd-73ff36d647cb4628",
+        "cmd-f8c09dcea1bb4606",
+        "cmd-65c1840777a5430a",
+        "cmd-ca960e9d90a64eb3",
+        "cmd-d3dcc5933600463c",
+        "cmd-2a8e4b4accea422a",
+        "cmd-35e9d93bd0ba4e2d",
+        "cmd-404307d10f334321",
+        "cmd-86a149cf4830429c",
+        "cmd-896390435097442d",
+        "cmd-77f01af83c9249be",
+        "cmd-9e1132aca5d1446c",
+        "cmd-c56da7eca9a848a8",
+        "cmd-3d2783f8cc6e4935",
+        "cmd-99cd91e961644ea9",
+        "cmd-e5000221a7a64778"
+      ]
+    },
+    {
+      "id": "final-post-restart-check",
+      "requirement": "Final end-to-end verification of node3<->node4 connectivity and primary-path routing after all node restarts",
+      "status": "satisfied",
+      "summary": "After restarting all four nodes, bidirectional pings between node3 and node4 succeeded with 0% loss and pf rules confirmed Transit A (vtnet1) as the active route-to path.",
+      "evidence_ids": [
+        "cmd-1763fe0bdbef42b7",
+        "cmd-094d104ffccd4cdd",
+        "cmd-b3f69e59adac4d74"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built and verified two independent transit networks between node1 and node2, established reachable private networks for node3/node4, and successfully demonstrated the redundancy mechanism (VyOS ECMP static route + OPNsense dpinger-monitored gateway with policy-route/reply-to) working correctly with clean failback to the primary path. All four nodes were restarted with well-documented boot-identity changes and confirmed post-restart recovery. However, the specific failover transition evidence directly contradicts the executor's claim of 'zero packet loss': the executor's own sequence-gap analysis found a large gap (~245 missed pings, roughly 2 minutes) during the outage window, coinciding with a VyOS static-route misconfiguration that had to be fixed live mid-test before the automatic failover began working cleanly. This is a material discrepancy between the final report and the underlying evidence that lowers confidence in the redundancy demonstration, though the underlying failover/failback design does work once correctly configured.",
+  "limitations": [
+    "The executor's summary claim of 'zero packet loss / no sequence gaps' during the failover transition is directly contradicted by its own diagnostic command output (a large sequence gap was found), and this discrepancy could not be further resolved from the available evidence.",
+    "It is unclear from the trace whether the packet-loss window during the failover test was purely due to the VyOS route misconfiguration or partly due to dpinger/pf convergence timing, since both were being fixed and observed concurrently.",
+    "No independent test of taking Transit B out of service (only Transit A was tested) was captured; the task only requires demonstrating one such transition, which was captured, but its quality is compromised as noted."
+  ],
+  "command_stats": {
+    "total": 175,
+    "successful": 145,
+    "failed": 30,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.72,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.9167,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Most mutating actions were directly tied to the task (interface/route configuration on VyOS, gateway/policy-route/NAT-exception configuration on OPNsense, private-network interface setup on the Alpine hosts) and were retained as required final state. The VyOS static-route configuration required several failed 'set protocols static route ... commit' attempts (cmd-0ef51340c07a4c76, cmd-68e8a9f772514a8d, cmd-34ecd85650f64081) while discovering correct CLI syntax; these failed and made no persisted change, so they are not counted as unnecessary mutations, but the initially-successful but flawed route (cmd-b434feba3d644fc0, lacking interface binding) directly contributed to the extended packet-loss window during the failover demonstration before being corrected (cmd-5307d581fc724d11, cmd-8eb5c86cc2f24845) - this is a corrective sequence rather than an abandoned experiment, but it materially affected the quality of the failover evidence. A legacy OPNsense gateway_group object (GWGRP_TO_NODE3NET, added via cmd-a37016222c22485d/cmd-f8430a28ff314536 exploration) appears to have been created but is not the mechanism actually used for failover (policy-route with gateway-per-interface reply-to was used instead); it was left in the final config as low-risk unused residue. Diagnostic tcpdump processes and temp files (ping logs, pcap attempts, seqs.txt) were left in /tmp on node2/node3/node4 but are bounded, non-sensitive, and low-risk. No destructive actions, no broad or unreverted security-control weakening were observed; disabling outbound NAT for the specific node3-net<->node4-net traffic was a necessary and scoped configuration change for the routing design, not a general security downgrade.",
+    "evidence_ids": [
+      "cmd-b434feba3d644fc0",
+      "cmd-5307d581fc724d11",
+      "cmd-8eb5c86cc2f24845",
+      "cmd-0ef51340c07a4c76",
+      "cmd-a37016222c22485d",
+      "cmd-f8430a28ff314536",
+      "cmd-e6f84c8571e34fa9",
+      "cmd-0591fe68497a42c2"
+    ]
+  },
+  "reward": 0.9167,
+  "provisional_reward": 0.9167
+}

@@ -1,0 +1,108 @@
+{
+  "status": "completed",
+  "summary": "Discovered the real physical topology (node3-lan-a-node1-transit-node2-lan-b-node4, a two-hop chain), started a persistent HTTP service on node4:8080, published it via a port-forward (DNAT) on node2's transit address (10.10.12.2:80), and wired up all routing (node1 forwarding lan-a to transit, node3's route to the transit subnet via node1, node2's return route to lan-a via node1, and node4's return routes to transit/lan-a via node2) so node3 reaches the service by asking node2 rather than addressing node4 directly. Verified node3 cannot reach node4 directly. All 4 nodes were restarted one at a time (node4, node3, node1 VyOS, node2 OPNsense) with confirmed boot-identity changes and full post-restart recovery of addressing, routes, NAT/firewall rules, and the working service path.",
+  "actions_performed": [
+    "Mapped physical NIC adjacency across all 4 nodes via IP assignment, ping, and tcpdump probing, discovering node1 is VyOS (lan-a router) and node2 is OPNsense (lan-b router) connected via a transit network",
+    "Started a persistent systemd HTTP service (python3 http.server) on node4:8080 bound to 0.0.0.0, enabled at boot",
+    "On node2 (OPNsense): assigned opt1=vtnet1 (transit, 10.10.12.2/24) and opt2=vtnet2 (lan-b, 10.10.14.1/24) via config.xml, added a DNAT port-forward (transit tcp/80 -> 10.10.14.2:8080), added the matching pf pass rule keyed to the post-NAT destination, added a gateway and static route to 10.10.13.0/24 via node1's transit IP, and applied changes via configctl filter/routes reload",
+    "On node1 (VyOS): persistently configured eth1=10.10.12.1/24 (transit) and eth2=10.10.13.1/24 (lan-a) via configure/commit/save; confirmed ip_forward=1 and unblocked FORWARD chain",
+    "On node3 (Ubuntu): added persistent static addressing (10.10.13.2/24) and a route to 10.10.12.0/24 via node1, via a dedicated systemd-networkd .network file, without touching the default control-plane route",
+    "On node4 (Ubuntu): added persistent static addressing (10.10.14.2/24) and routes to 10.10.12.0/24 and 10.10.13.0/24 via node2, via a dedicated systemd-networkd .network file, without touching the default control-plane route",
+    "Verified end-to-end: node3 curl to node2's transit address returns node4's service content; node3 cannot reach node4 directly (falls through to control-plane route)",
+    "Captured healthy baselines (boot_id/boottime, service status, routes) on all 4 nodes",
+    "Restarted node4, node3, node1, and node2 one at a time using each platform's native reboot mechanism, confirmed changed boot identity via boot_id/kern.boottime, and verified post-restart recovery of interfaces, routes, NAT/filter rules, the systemd service, and the end-to-end curl path before moving to the next node"
+  ],
+  "evidence": [
+    {
+      "requirement": "Publish node4:8080 on TCP port 80 of node2's transit address",
+      "command_ids": [
+        "cmd-0da78c2e97fc47fd",
+        "cmd-5baec3db64784985",
+        "cmd-c0283ea986294ae4",
+        "cmd-9466acae6a3c4906",
+        "cmd-65e7785865f548fc"
+      ],
+      "summary": "config.xml DNAT rule added on node2 (opt1/vtnet1 transit interface tcp/80 -> 10.10.14.2:8080), filter reloaded, and node1 successfully curled http://10.10.12.2:80/ and got node4's service content"
+    },
+    {
+      "requirement": "node1 has a route to node2's transit address enabling downstream lan-a routing",
+      "command_ids": [
+        "cmd-2ee69bdbfc16497b",
+        "cmd-b26c301b9f984abb"
+      ],
+      "summary": "VyOS persistent config on node1 assigns eth1=10.10.12.1/24 (directly connected to node2's transit IP 10.10.12.2), committed and saved to config.boot"
+    },
+    {
+      "requirement": "node3 (lan-a) reaches the service by asking node2, not node4 directly",
+      "command_ids": [
+        "cmd-91b8bdd76e1140b4",
+        "cmd-31b975c4dedf40ff",
+        "cmd-7b1da98bc6994be7"
+      ],
+      "summary": "node3 given persistent route to 10.10.12.0/24 via node1; curl to node2's transit address (10.10.12.2:80) succeeds returning node4's content, while direct curl to node4 (10.10.14.2:8080) times out and falls through to the control-plane default route"
+    },
+    {
+      "requirement": "Return path works (node2 route to lan-a, node4 routes to transit/lan-a)",
+      "command_ids": [
+        "cmd-9f37ccddbda24874",
+        "cmd-9c2f0d170a9e490b"
+      ],
+      "summary": "node2 has a static route to 10.10.13.0/24 via node1's transit IP; node4 has persistent routes to 10.10.12.0/24 and 10.10.13.0/24 via node2's lan-b IP, confirmed via ip route show"
+    },
+    {
+      "requirement": "Healthy baseline before restarts (all 4 nodes)",
+      "command_ids": [
+        "cmd-f3ce728074454179",
+        "cmd-1d19601ddb784a33",
+        "cmd-4728f31b33ab4909",
+        "cmd-98e114296f6d4f36"
+      ],
+      "summary": "Captured boot_id/kern.boottime and confirmed service/route health on node1, node2, node3, node4 prior to any restart"
+    },
+    {
+      "requirement": "node4 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-4a5ad7f423dd4dac",
+        "cmd-764092b9773f4236",
+        "cmd-640ddeb63f2a4b89",
+        "cmd-a87cfe93d74241cd",
+        "cmd-0bd3f10b5c7f43a5"
+      ],
+      "summary": "Reboot acknowledged before disconnect; boot_id changed from a9593011... to 379b5eea...; post-restart shows ens7 addressing, routes, active service, and successful curl from node3 through node2"
+    },
+    {
+      "requirement": "node3 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-60d50cfc2ae545ec",
+        "cmd-7acf067f48ea43ec",
+        "cmd-ed31b35c128d4144",
+        "cmd-8f35421428b54623"
+      ],
+      "summary": "Reboot acknowledged; boot_id changed from 35c87ec9... to e81bbcc4...; post-restart shows ens7 addressing, route to transit subnet, and successful curl to the published service"
+    },
+    {
+      "requirement": "node1 (VyOS) restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-8375409cea8e44d4",
+        "cmd-ece00d4343054c63",
+        "cmd-cb8c5b9f5b5343ee",
+        "cmd-c182bde6751044bb",
+        "cmd-de8ef9c3cbc24052",
+        "cmd-700e7eaf5f474353"
+      ],
+      "summary": "Reboot acknowledged; boot_id changed from 32669db3... to 22f6d1cd...; post-restart shows eth1/eth2 addressing and ip_forward=1 restored, and node3's curl through node2 still succeeds"
+    },
+    {
+      "requirement": "node2 (OPNsense) restart: acknowledgement, changed boot identity, recovered state, quorum/service health",
+      "command_ids": [
+        "cmd-36a3c16ce5d84f87",
+        "cmd-5e7ebdde946247c2",
+        "cmd-56af334385444522",
+        "cmd-6470a5964ec54904",
+        "cmd-5016f8496736493d",
+        "cmd-f56ab276813d4398"
+      ],
+      "summary": "Reboot acknowledged; kern.boottime changed from Sun Sep 6 06:24:52 2026 to Sun Sep 6 06:42:42 2026; post-restart shows opt1/opt2 addressing, static route to lan-a, active DNAT rdr rule all restored from config.xml, and node3's curl through node2 still returns node4's content"
+    }
+  ]
+}

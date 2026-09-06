@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Traffic from node3 to node4 on TCP port 8080 is steered across the first transit network",
+      "status": "satisfied",
+      "summary": "VyOS PBR on node1 (policy route PBR-EGRESS rule 10, tcp dport 8080 -> table 101 -> eth1/10.10.98.2) was committed and confirmed compiled into nftables mangle rules with nonzero packet counters after real traffic. Independent tcpdump captures on node1's eth1 and node2's vtnet1 (the two ends of the first transit link) show the complete SYN/data/FIN exchange for port 8080 between 10.10.99.2 (node3) and 10.10.96.2 (node4), both before and after all four node restarts, with no 8080 traffic observed on eth2/vtnet2.",
+      "evidence_ids": [
+        "cmd-bb9b6417ef724950",
+        "cmd-fb31694e0a3747f4",
+        "cmd-b2783fb531784350",
+        "cmd-60ea082f86064bd2",
+        "cmd-9a22353976c74b18",
+        "cmd-bd6615f202114687"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Traffic from node3 to node4 on TCP port 9090 is steered across the second transit network",
+      "status": "satisfied",
+      "summary": "PBR rule 20 (tcp dport 9090 -> table 102 -> eth2/10.10.97.2) was committed and shown active in nftables with nonzero counters. tcpdump captures on node1's eth2 and node2's vtnet2 independently confirm the 9090 SYN and forward-direction segments traverse only the second transit link, both pre- and post-restart, with no 9090 traffic observed on eth1/vtnet1.",
+      "evidence_ids": [
+        "cmd-bb9b6417ef724950",
+        "cmd-fb31694e0a3747f4",
+        "cmd-8b12f8239c6b42f9",
+        "cmd-9a22353976c74b18",
+        "cmd-bd6615f202114687"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Both flows successfully reach node4",
+      "status": "satisfied",
+      "summary": "Repeated real TCP connections from node3 to node4 (10.10.96.2) on port 8080 returned the exact echoed payload via a socat listener, and port 9090 (cockpit) returned HTTP 200, confirmed multiple times before and after the full restart cycle.",
+      "evidence_ids": [
+        "cmd-e907962b3989475f",
+        "cmd-a7a4f204a6ae4a78",
+        "cmd-f95abe402d31481f",
+        "cmd-2f526d32b92246bb",
+        "cmd-21707b1cc1184a81",
+        "cmd-fccfe223f7f6440d"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Show which transit network carried each flow",
+      "status": "satisfied",
+      "summary": "tcpdump captures taken independently on both node1's per-link interfaces (eth1/eth2) and node2's per-link interfaces (vtnet1/vtnet2) unambiguously attribute port 8080 traffic to the first transit network and port 9090 traffic to the second, corroborated by nftables packet counters split by rule.",
+      "evidence_ids": [
+        "cmd-b2783fb531784350",
+        "cmd-60ea082f86064bd2",
+        "cmd-8b12f8239c6b42f9",
+        "cmd-9a22353976c74b18",
+        "cmd-fb31694e0a3747f4"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly discovered the physical topology, configured VyOS policy-based routing on node1 to steer TCP port 8080 over the first transit network and port 9090 over the second, mirrored the addressing/firewall pass rules on OPNsense (node2), and proved with independently captured tcpdump evidence on both routers' own interfaces that each port's traffic traverses only its assigned transit link and reaches node4 successfully. All four nodes were restarted with clear pre/post boot-identity changes and demonstrated recovery of addressing, PBR/pf configuration, and the end-to-end flows, matching the fixed restart-evidence protocol reasonably well (node2 required manual re-addition of a non-persistent BSD static route, which the executor recognized and handled). Minor hygiene shortcomings include leftover diagnostic pcap/log files and an unclosed ephemeral test service/firewall port on node4.",
+  "limitations": [
+    "OPNsense's runtime return route (10.10.99.0/30 via 10.10.98.1) is not persisted in config.xml's schema and must be manually re-added after every OPNsense restart; this is a platform limitation the executor worked around rather than a task failure, but it is not self-healing.",
+    "Diagnostic pcap and log files were left in /tmp on node1, node3, and node4 after the final verification pass rather than being cleaned up.",
+    "The node4 socat test listener and the permanently-added firewalld port 8080 rule remain active after task completion; these are test artifacts rather than a required production configuration for the task's port-steering objective."
+  ],
+  "command_stats": {
+    "total": 131,
+    "successful": 102,
+    "failed": 29,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands map clearly to topology discovery, final configuration, or bounded evidence collection. Temporary address assignments on node1's eth1/eth2/eth3 and node4's/node3's link interfaces during topology discovery (cmd-6a0da9c8f62a4a6a, cmd-4087b913721747c9, cmd-db6fd9a627754719, cmd-8acbcab466c344bc, cmd-8a7fc3e1193b4e3f) were superseded by the final correct addressing and left no residue. A failed OPNsense config.xml edit attempt adding an invalid 'gateway_item' schema element (cmd-91b726b5bb334742) was fully reverted from backup before a correct static-route edit was applied (cmd-1d5a6ef45f1c4b61), consistent with a corrective action rather than an unnecessary mutation. Several tcpdump capture attempts failed or were empty (wrong interface, race conditions) and were retried; these are low-risk, mostly self-cleaned (pkill + rm, cmd-7e31a51fe60745f3), and do not represent unwanted state. However, some diagnostic residue was retained in the final state: /tmp/post_eth1.pcap, /tmp/post_eth2.pcap and their logs on node1, and /tmp/8080.log, /tmp/9090.log, /tmp/reboot.log on node4 (and /tmp/reboot.log on node3) were not cleaned up after the final verification pass. The ephemeral socat echo listener and a permanently-opened firewalld port 8080 on node4 remain running/enabled after task completion; these were needed to demonstrate the flow but were not cleaned up, representing a minor unnecessary residual artifact rather than a security or availability risk.",
+    "evidence_ids": [
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node4:temporary-files",
+      "global:after_executor:node4:listening-sockets",
+      "cmd-91b726b5bb334742",
+      "cmd-1d5a6ef45f1c4b61",
+      "cmd-7e31a51fe60745f3",
+      "cmd-c94919f23bc14b4f",
+      "cmd-69221c9880fe400f"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

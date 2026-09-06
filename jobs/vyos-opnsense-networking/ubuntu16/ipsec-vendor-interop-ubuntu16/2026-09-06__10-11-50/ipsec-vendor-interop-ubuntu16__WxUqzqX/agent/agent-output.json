@@ -1,0 +1,95 @@
+{
+  "status": "completed",
+  "summary": "Established a site-to-site IPsec tunnel between VyOS (node1) and OPNsense (node2) carrying lan-a (10.10.1.0/24, node3) and lan-b (10.10.2.0/24, node4) over the transit network (10.10.3.0/24). Configured static addressing on the four routed interfaces, static routes on node3/node4, an IKEv2 tunnel (AES256/SHA256/MODP2048, PSK auth) using each vendor's native config surface (VyOS `set vpn ipsec` CLI; OPNsense config.xml Swanctl/IPsec model plus enc0 pseudo-interface registration and firewall pass rules), and verified encrypted end-to-end reachability between node3 and node4's private addresses. Completed the mandatory one-at-a-time restart protocol on all four nodes, confirming changed boot identity and full post-restart recovery (interfaces, IPsec SA, firewall, cross-tunnel ping) at each step.",
+  "actions_performed": [
+    "Surveyed topology: node1=VyOS (eth0 mgmt, eth1 transit, eth2 lan-a), node2=OPNsense (vtnet0 mgmt, vtnet1/opt1 transit, vtnet2/opt2 lan-b), node3/node4=Ubuntu 16.04 (ens2 mgmt, ens7 lan link)",
+    "Empirically determined physical interface mapping via ARP/neighbor discovery and ping tests",
+    "Assigned static IPs: lan-a 10.10.1.0/24 (node1 eth2 / node3 ens7), transit 10.10.3.0/24 (node1 eth1 / node2 opt1), lan-b 10.10.2.0/24 (node2 opt2 / node4 ens7); persisted via VyOS commit/save and Ubuntu /etc/network/interfaces",
+    "Added static routes on node3 (10.10.2.0/24 via 10.10.1.1) and node4 (10.10.1.0/24 via 10.10.2.1), persisted in /etc/network/interfaces",
+    "Configured VyOS site-to-site IPsec (ike-group, esp-group with PFS, authentication psk, site-to-site peer with tunnel local/remote prefixes) via native set vpn ipsec CLI, resolving 2026-rolling syntax differences by inspecting VyOS config templates",
+    "Configured OPNsense IPsec via config.xml edits to OPNsense.Swanctl (Connection/local/remote/child) and OPNsense.IPsec.preSharedKeys, matching VyOS's IKEv2/AES256/SHA256/MODP2048 proposal and tunnel selectors",
+    "Discovered and fixed that OPNsense's enc0 pseudo-interface must be registered via pluginctl -i before firewall rules referencing it compile; added pass rules for enc0, opt1, opt2",
+    "Verified IPsec SA established on both ends and confirmed via tcpdump that only ESP traverses the transit link between node1 and node2",
+    "Verified bidirectional ping between node3 (10.10.1.2) and node4 (10.10.2.2) succeeds through the encrypted tunnel",
+    "Captured pre-restart baselines (boot_id/kern.boottime, interface state, IPsec/route state) on all four nodes",
+    "Restarted node3, node4, node1, then node2 one at a time using each OS's native reboot mechanism, polling until exec access returned",
+    "Confirmed changed boot identity on every node post-restart",
+    "Verified full recovery per node: persisted interface config, static routes, VyOS/OPNsense IPsec auto-reconnect, OPNsense firewall rules, and end-to-end encrypted ping between node3 and node4"
+  ],
+  "evidence": [
+    {
+      "requirement": "IPsec tunnel established between node1 and node2 carrying both private networks",
+      "command_ids": [
+        "cmd-72416e24be684171",
+        "cmd-9086c1a420b54163",
+        "cmd-e8b94dec4b4542fc",
+        "cmd-2fc6e173116744f0",
+        "cmd-e46783d259a04b93",
+        "cmd-0422ffb075b84ec1"
+      ],
+      "summary": "VyOS and OPNsense IPsec configs applied; swanctl shows ESTABLISHED IKEv2 SA and INSTALLED tunnel child SA with local/remote selectors 10.10.1.0/24 and 10.10.2.0/24 on both ends"
+    },
+    {
+      "requirement": "node3 and node4 reach each other by private addresses",
+      "command_ids": [
+        "cmd-993c8f607a0c40a9",
+        "cmd-ee93c63af73d4308"
+      ],
+      "summary": "Bidirectional ping between node3 (10.10.1.2) and node4 (10.10.2.2) succeeds with 0% loss after full tunnel setup"
+    },
+    {
+      "requirement": "Traffic is encrypted in transit across the transit network",
+      "command_ids": [
+        "cmd-b5ec8aaa23e04ad1",
+        "cmd-88a5782054bb4b65"
+      ],
+      "summary": "tcpdump on node1's transit interface (eth1) during test pings shows only ESP packets between 10.10.3.1 and 10.10.3.2 on the wire; plaintext ICMP only appears as post-decryption capture on the receiving host, not as separate wire traffic"
+    },
+    {
+      "requirement": "node1 (VyOS) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-c98310870b3c4049",
+        "cmd-a8826abe83d34553",
+        "cmd-7304a5bec7df4589",
+        "cmd-9d1a01501d094a00",
+        "cmd-fff9434872e14acc",
+        "cmd-8c7a4ab4b2d54bf7"
+      ],
+      "summary": "Baseline boot_id 2674ee60...; reboot acked; connection timed out confirming disconnection; boot_id changed to 6c5d5e63...; IPsec SA re-ESTABLISHED and tunnel INSTALLED automatically; node3->node4 ping succeeded post-restart"
+    },
+    {
+      "requirement": "node2 (OPNsense) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-adf16bcbdea94204",
+        "cmd-441a205d37cc4747",
+        "cmd-cb9071dbf2a94cf1",
+        "cmd-09540ec0169d486c",
+        "cmd-9db268189f0141ab",
+        "cmd-746ae12042704ad5"
+      ],
+      "summary": "Baseline kern.boottime 14:11:44; reboot triggered; connection timed out confirming disconnection; kern.boottime changed to 14:24:19; interfaces, IPsec SA (ESTABLISHED/INSTALLED), and enc0 firewall rules all recovered from persisted config.xml; node3->node4 ping succeeded post-restart"
+    },
+    {
+      "requirement": "node3 (Ubuntu) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-3e9392abc19b4045",
+        "cmd-a1c33783c2434906",
+        "cmd-ecdb36df80214b8a",
+        "cmd-d39839efbebb413c",
+        "cmd-ff369e5ef7f74605"
+      ],
+      "summary": "Baseline boot_id 9094f607...; reboot triggered; SSH connection refused confirming disconnection; boot_id changed to a70b78e9...; ens7 static IP persisted from /etc/network/interfaces and cross-tunnel ping to node4 succeeded"
+    },
+    {
+      "requirement": "node4 (Ubuntu) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-7060dc2aa2ab4fb8",
+        "cmd-e845118a247b4e76",
+        "cmd-817649ec6d9b4e76",
+        "cmd-8cdb56b9e2a0488c",
+        "cmd-75eba0e7ec684804"
+      ],
+      "summary": "Baseline boot_id a1dc8e25...; reboot triggered; SSH connection refused confirming disconnection; boot_id changed to bf0fab4d...; ens7 static IP persisted and cross-tunnel ping to node3 succeeded"
+    }
+  ]
+}

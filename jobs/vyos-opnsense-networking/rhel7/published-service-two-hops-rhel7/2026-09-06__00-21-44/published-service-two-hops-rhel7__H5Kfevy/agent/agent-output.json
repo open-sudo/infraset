@@ -1,0 +1,105 @@
+{
+  "status": "completed",
+  "summary": "Discovered the actual wired topology (node3--node1--node2--node4, verified by ARP/pcap since it wasn't documented), configured node1 (VyOS) as the lan-a/transit router, node2 (OPNsense) with a transit interface (10.0.23.2) publishing port 80 via a destination-NAT port-forward to node4's HTTP service on 10.0.24.2:8080, added the required static routes on node1/node2/node3/node4 for the round trip, started the missing node4 HTTP service persistently, and validated node3 reaches the service purely by addressing node2's transit address. All config was made persistent (VyOS commit/save, OPNsense config.xml, NetworkManager profiles, systemd unit, firewalld permanent rule). Completed the mandatory one-at-a-time restart protocol on all 4 nodes, confirming changed boot identity and full recovery (network config, NAT/filter rules, HTTP service, and end-to-end reachability) after each restart.",
+  "actions_performed": [
+    "Surveyed node1 (VyOS), node2 (OPNsense/FreeBSD), node3 and node4 (RHEL7) interfaces and routes",
+    "Empirically determined L2 wiring via temporary IP aliasing, ARP, ping, and packet captures: node1 eth1<->node2 vtnet1 (transit), node1 eth2<->node3 eth1 (lan-a), node2 vtnet2<->node4 eth1 (lan-b)",
+    "Configured node1 (VyOS) eth1=10.0.23.1/24 and eth2=10.0.12.1/24 via configure/commit/save",
+    "Configured node3 eth1=10.0.12.2/24 and node4 eth1=10.0.24.2/24 via persistent NetworkManager connection profiles, each with a static route back through node1/node2",
+    "Added OPNsense opt1 (vtnet1, 10.0.23.2/24, transit) and opt2 (vtnet2, 10.0.24.1/24, lan-b) interfaces in config.xml and applied via configctl interface reconfigure",
+    "Added an OPNsense static route (10.0.12.0/24 via new gateway on opt1) and applied via rc.routing_configure",
+    "Added an OPNsense NAT port-forward: opt1 tcp/80 -> 10.0.24.2:8080, plus a matching firewall pass rule (destination corrected to match the post-NAT translated destination, since OPNsense filters against the translated packet)",
+    "Diagnosed a silent pf drop for the forwarded traffic using pflog/tcpdump, fixed the pass rule's destination match, and confirmed the fix via pfctl -sr and pfctl -s states",
+    "Created and enabled a persistent systemd HTTP service (python2 SimpleHTTPServer) on node4:8080 since none existed, and opened firewalld port 8080",
+    "Verified end-to-end: curl from node3 to node2's transit address (10.0.23.2:80) returns node4's response",
+    "Captured healthy baselines (boot_id/kern.boottime, interface state, NAT/filter rules, service status) on all 4 nodes",
+    "Restarted node1, node2, node3, node4 one at a time using native reboot, waited for exec to reconnect, and verified changed boot identity plus full recovery of config, NAT/routing state, HTTP service, and end-to-end reachability after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "Publish node4:8080 on TCP port 80 of node2's transit address",
+      "command_ids": [
+        "cmd-5f420a3c283c4856",
+        "cmd-ea6a8c2e25bf4022",
+        "cmd-5b8bd04e05894f26",
+        "cmd-738c5a5e54d440cb",
+        "cmd-720aaa7d8e3c4392",
+        "cmd-2c38c192d3f74b71"
+      ],
+      "summary": "Added OPNsense opt1 interface (10.0.23.2) and a port-forward rule tcp/80->10.0.24.2:8080; fixed the associated filter rule to match the post-NAT destination; verified via pfctl -sr and a successful curl from node3 to 10.0.23.2:80 returning node4's response"
+    },
+    {
+      "requirement": "Give node1 a route to node2's transit address",
+      "command_ids": [
+        "cmd-8c304cfa7af040e5",
+        "cmd-fcd9776d639e43e4",
+        "cmd-8b5b744f49874a92"
+      ],
+      "summary": "Configured node1 eth1=10.0.23.1/24 (same subnet as node2's transit address 10.0.23.2) via VyOS commit/save, confirmed the resulting connected route in node1's routing table, and reconfirmed it after node1's restart"
+    },
+    {
+      "requirement": "node3 (lan-a) reaches the service by asking node2 rather than addressing node4 directly",
+      "command_ids": [
+        "cmd-9ec4f593b5fa4bff",
+        "cmd-2c38c192d3f74b71",
+        "cmd-a327cacf45f74526",
+        "cmd-e460c78e23454cdc",
+        "cmd-28d590836a2c4387",
+        "cmd-31d9dfd903124d7f"
+      ],
+      "summary": "Configured node3's static route to 10.0.23.0/24 via node1; multiple successful curl calls from node3 to 10.0.23.2:80 (before and after every node restart) returned node4's service content"
+    },
+    {
+      "requirement": "node4 actually runs the HTTP service on port 8080 (precondition was unmet in the environment)",
+      "command_ids": [
+        "cmd-e90b836857314cad",
+        "cmd-1c5b86f6ce8f412e",
+        "cmd-f3b404e3ea6c41c6"
+      ],
+      "summary": "Created and enabled a persistent systemd unit running a Python HTTP server on node4:8080, opened firewalld port 8080, verified active and serving before and after node4's restart"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-55e48e301fd84c83",
+        "cmd-ca438d5f44b34376",
+        "cmd-d5fcf8b714174df3",
+        "cmd-8b5b744f49874a92",
+        "cmd-3af9eef82cfc45be"
+      ],
+      "summary": "Captured baseline boot_id 32669db3..., issued reboot, polled until reconnect, confirmed new boot_id b5fb3ab0..., and verified eth1/eth2 addressing, routes, ip_forward, and end-to-end curl from node3 all recovered"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-320e89992cab49de",
+        "cmd-09153f4b7fcf4e61",
+        "cmd-4c09610c5ba2465b",
+        "cmd-1b7f0f0f5f594629",
+        "cmd-e460c78e23454cdc"
+      ],
+      "summary": "Captured baseline kern.boottime 05:42:38, issued reboot, polled until reconnect, confirmed new kern.boottime 06:04:07, and verified opt1/opt2 addressing, static route, NAT rdr rule, filter rule, and end-to-end curl from node3 all recovered"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-e684013bb8f2436f",
+        "cmd-a407003d49dd42f0",
+        "cmd-460b9c5fa3f9498f",
+        "cmd-28d590836a2c4387"
+      ],
+      "summary": "Captured baseline boot_id 809708f3..., issued sudo reboot, polled until reconnect, confirmed new boot_id 4371b46f..., and verified eth1 addressing, static route, and successful curl to node2's transit address all recovered"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-64397c06e5f84f67",
+        "cmd-d1fe48da869f4cef",
+        "cmd-66e25dd5df9741f5",
+        "cmd-f3b404e3ea6c41c6",
+        "cmd-31d9dfd903124d7f"
+      ],
+      "summary": "Captured baseline boot_id d72bd4ec..., issued sudo reboot, polled until reconnect, confirmed new boot_id 8d01b152..., and verified eth1 addressing, node4-http.service active, firewalld port 8080 open, and end-to-end curl from node3 all recovered"
+    }
+  ]
+}

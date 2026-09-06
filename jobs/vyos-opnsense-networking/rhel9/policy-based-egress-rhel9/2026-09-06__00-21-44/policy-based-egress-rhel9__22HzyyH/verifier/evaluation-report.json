@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "steer-8080-transit1",
+      "requirement": "Traffic node3 sends to node4 on TCP/8080 is steered across the first transit network",
+      "status": "satisfied",
+      "summary": "VyOS PBR rule 10 matches TCP dport 8080 into table 108 routing via eth1 (transit1). Live tcpdump captures on node1 eth1 during a real curl from node3 show the complete SYN-through-FIN 8080 exchange, with zero 8080 packets appearing on eth2. Re-confirmed after full four-node reboot cycle (11 tagged 8080 packets on eth1, 0 on eth2).",
+      "evidence_ids": [
+        "cmd-355e40f251a2407d",
+        "cmd-d8e0550181fc490d",
+        "cmd-90de94a01d2c4c98",
+        "cmd-10e2501e945c4e59",
+        "cmd-6f24fc6c082840a5"
+      ]
+    },
+    {
+      "id": "steer-9090-transit2",
+      "requirement": "Traffic node3 sends to node4 on TCP/9090 is steered across the second transit network",
+      "status": "satisfied",
+      "summary": "VyOS PBR rule 20 matches TCP dport 9090 into table 109 routing via eth2 (transit2). tcpdump on node1 eth2 shows the complete 9090 SYN-through-FIN exchange with zero 9090 packets on eth1, confirmed both before and after the full reboot cycle.",
+      "evidence_ids": [
+        "cmd-355e40f251a2407d",
+        "cmd-d8e0550181fc490d",
+        "cmd-90de94a01d2c4c98",
+        "cmd-10e2501e945c4e59",
+        "cmd-6f24fc6c082840a5"
+      ]
+    },
+    {
+      "id": "both-flows-reach-node4",
+      "requirement": "Both the 8080 and 9090 flows actually reach node4",
+      "status": "satisfied",
+      "summary": "curl from node3 to node4 (10.10.22.2) returns HTTP 200 on both port 8080 and port 9090, confirmed at multiple points including after the full sequential reboot of all four nodes.",
+      "evidence_ids": [
+        "cmd-1a567f2b82b64117",
+        "cmd-d3f445361f584a35",
+        "cmd-6f7440d83fe94bce",
+        "cmd-f4806ce3d0f9445f"
+      ]
+    },
+    {
+      "id": "show-which-network-carried-flow",
+      "requirement": "Show which transit network carried each flow",
+      "status": "satisfied",
+      "summary": "Simultaneous, interface-tagged tcpdump captures on node1 (eth1=transit1, eth2=transit2) directly demonstrate exclusive separation of the two flows, both pre- and post-reboot, with packet-count summaries (11 8080 packets on eth1, 11 9090 packets on eth2, zero cross-contamination).",
+      "evidence_ids": [
+        "cmd-90de94a01d2c4c98",
+        "cmd-10e2501e945c4e59",
+        "cmd-6f24fc6c082840a5"
+      ]
+    },
+    {
+      "id": "provider-wide-node-restart-evidence",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (baseline, restart ack, changed boot identity, recovered service/data/cluster state)",
+      "status": "satisfied",
+      "summary": "All four nodes show a complete transition: pre-restart healthy baseline (boot_id/kern.boottime plus working curl or config), an explicit reboot acknowledgement, a directly observed changed post-restart boot identity, and recovered routing/firewall/PBR configuration confirmed functionally via successful cross-node curl retests. This is cross-checked and consistent with the fixed after-prepare/after-executor lifecycle snapshots, which independently show all four boot identities changed. node4's ad-hoc python HTTP test listeners (not part of the task, purely executor test tooling) were not persisted and were manually restarted post-reboot, which is a reasonable and disclosed limitation rather than a task defect.",
+      "evidence_ids": [
+        "cmd-24529f615ca44df0",
+        "cmd-0baf2915b80c41a8",
+        "cmd-b62b92863a874f48",
+        "cmd-5491acf72ac74e9c",
+        "cmd-38b46cf30a204243",
+        "cmd-9cc536e772c64807",
+        "cmd-b8ad294750d5478b",
+        "cmd-04606adf4f414999",
+        "cmd-b01f29d9a1584526",
+        "cmd-2fb282f8e61340fa",
+        "cmd-dde56f619f594873",
+        "cmd-8d01c812ad2047f1",
+        "cmd-b7aa3445f3ec4e85",
+        "cmd-bb9e633d5d15413c",
+        "cmd-bbe468f6187c4970",
+        "cmd-f4806ce3d0f9445f",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material outcomes of the task: TCP/8080 and TCP/9090 traffic from node3 to node4 are steered via distinct, verified transit paths (VyOS policy-based routing plus OPNsense route-to/reply-to pf rules), both flows successfully reach node4 (HTTP 200), and simultaneous per-interface tcpdump captures directly and repeatedly demonstrate which transit network carried each flow, both before and after a full sequential reboot of all four nodes. The independent provider-wide restart-evidence protocol is also satisfied for all four nodes with coherent baseline/ack/changed-identity/recovered-functional evidence, cross-checked against the fixed lifecycle boot-identity snapshots. Hygiene is good overall: iterative topology discovery and pf-rule refinement were bounded and superseded, one duplicate-IP mistake was self-corrected, and only minor uncleaned temp-file residue remains on node3/node4.",
+  "limitations": [
+    "node4's HTTP test servers (python3 http.server) were ad-hoc executor test tooling, not a task requirement, and were not persisted across reboot \u2014 they required manual restart, which is disclosed but is a minor gap in an otherwise complete restart-evidence chain.",
+    "Small residual temp files (/tmp/reboot.log, /tmp/pingout.log, /tmp/srv8080.log, /tmp/srv9090.log) were left on node3 and node4 and not cleaned up, unlike node1/node2 which had explicit cleanup commands.",
+    "OPNsense pf pass rules on opt1/opt2/opt3 are broader ('inet all') than the two specific ports required by the task; this appears necessary for bidirectional PBR/reply-to correctness in this topology rather than an unrelated security weakening, but it is a wider exposure than a port-scoped rule would be.",
+    "Requirement provider-wide-node-restart-evidence cited unknown evidence IDs: global:after_prepare:node1:boot-identity, global:after_prepare:node2:boot-identity, global:after_prepare:node3:boot-identity, global:after_prepare:node4:boot-identity"
+  ],
+  "command_stats": {
+    "total": 158,
+    "successful": 132,
+    "failed": 26,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.78,
+    "summary": "The executor performed a reasonable amount of hands-on topology discovery via trial IP assignment on node1/node2 interfaces (e.g. cmd-8be46033426e452f, cmd-92c9b149cf2145aa, cmd-b3201ffebf194423, cmd-4af3fce204b14bec cycling through several throwaway subnets before settling on 10.10.21/31/32), which is bounded, low-risk, and fully superseded by the final persisted config \u2014 acceptable discovery given the task did not specify exact physical wiring. One self-corrected mistake occurred: node4 and node2 were briefly both assigned 10.10.22.1 (cmd-acc736de0cc14061 vs cmd-37c0bc804c444033/cmd-cd5b9744bec6447c), caught via failed ARP resolution and fixed without lasting effect. OPNsense pf rules were iterated multiple times (route-to, then reply-to via gateway auto-assignment) via base64-piped python edits to config.xml (cmd-23336d4115024972, cmd-12e9a26d12634c9d, cmd-ab9be3a0819e4678, cmd-94e656abd6e64cf5) \u2014 this was necessary iterative refinement to get asymmetric routing/reply-to correct, not unrelated churn, though the resulting 'pass in quick ... inet all' rules on opt1/opt2/opt3 are broader than strictly needed for only ports 8080/9090; this is a minor, low-risk permissiveness intrinsic to enabling bidirectional PBR through-routing rather than a genuine security downgrade of pre-existing controls. Temp-file cleanup was performed on node1 and node2 (cmd-4c9ea1c917b848a9, cmd-b793c72b1e084a97, cmd-8d995fde3010457f) but not on node3/node4, leaving small residual files (/tmp/pingout.log, /tmp/reboot.log on node3; /tmp/reboot.log, /tmp/srv8080.log, /tmp/srv9090.log on node4) visible in the after-executor lifecycle snapshot \u2014 minor, non-destructive residue.",
+    "evidence_ids": [
+      "cmd-8be46033426e452f",
+      "cmd-92c9b149cf2145aa",
+      "cmd-b3201ffebf194423",
+      "cmd-4af3fce204b14bec",
+      "cmd-acc736de0cc14061",
+      "cmd-cd5b9744bec6447c",
+      "cmd-e1ee91a8d42e4f68",
+      "cmd-23336d4115024972",
+      "cmd-12e9a26d12634c9d",
+      "cmd-ab9be3a0819e4678",
+      "cmd-94e656abd6e64cf5",
+      "cmd-4c9ea1c917b848a9",
+      "cmd-b793c72b1e084a97",
+      "cmd-8d995fde3010457f",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node4:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

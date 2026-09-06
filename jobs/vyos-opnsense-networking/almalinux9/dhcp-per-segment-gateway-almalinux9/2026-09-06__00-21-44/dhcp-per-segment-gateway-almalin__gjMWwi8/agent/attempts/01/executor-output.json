@@ -1,0 +1,91 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) to serve DHCP on lan-a (10.50.10.0/24, gateway 10.50.10.1) via Kea DHCPv4, and node2 (OPNsense) to serve DHCP on lan-b (10.50.20.0/24, gateway 10.50.20.1) via dnsmasq. node3 (eth1, lan-a) and node4 (eth1, lan-b) already had NetworkManager configured for DHCP (ipv4.method auto) on their second NIC and now obtain their address and default route dynamically from their respective router rather than static config. All 4 nodes were then restarted one at a time per the mandatory protocol, with boot-identity changes confirmed and post-restart recovery verified (DHCP services active, static router-side addressing persisted across reboot, and both node3 and node4 automatically re-acquired the same leases with correct default routes to their segment's router).",
+  "actions_performed": [
+    "Mapped physical topology via L2 ping tests: node1 eth2 <-> node3 eth1 (lan-a), node2 vtnet2 <-> node4 eth1 (lan-b), node1 eth1 <-> node2 vtnet1 (unrelated inter-router link, left untouched)",
+    "Configured VyOS node1: eth2 address 10.50.10.1/24, Kea DHCPv4 shared-network LAN-A subnet 10.50.10.0/24 with pool .100-.200, default-router 10.50.10.1; committed and saved",
+    "Investigated OPNsense node2's config.xml/model layer (Kea vs dnsmasq); discovered dnsmasq is the actually-running DHCP backend (Kea conflicted on port 67, address-in-use) so reverted the Kea subnet/enable change and instead added interface opt1 (vtnet2, 10.50.20.1/24) plus a dnsmasq dhcp_ranges entry (10.50.20.100-.200) via OPNsense's PHP model API, then applied via configctl interface reconfigure / template reload / filter reload / dnsmasq restart",
+    "Verified node3 and node4 acquire addresses and default routes automatically via their existing NetworkManager DHCP (auto) profiles on eth1",
+    "Captured pre-restart boot-identity baselines (boot_id / kern.boottime) and DHCP/service health for all 4 nodes",
+    "Restarted node1, node2, node3, node4 one at a time via native reboot, polled each until exec was available again, confirmed changed boot identity, and verified recovered DHCP service state and client leases/routes after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 (VyOS) serves lan-a addresses to node3 with itself as default route",
+      "command_ids": [
+        "cmd-e357f051378e4b8d",
+        "cmd-30e8b10036d74c05",
+        "cmd-ed32b17a83864419",
+        "cmd-1a6497014c66465e",
+        "cmd-e941c482561e45b2",
+        "cmd-97a6710767544a6c"
+      ],
+      "summary": "node1 eth2 set to 10.50.10.1/24, Kea DHCPv4 configured and active; node3 eth1 receives 10.50.10.100/24 with default route via 10.50.10.1"
+    },
+    {
+      "requirement": "node2 (OPNsense) serves lan-b addresses to node4 with itself as default route",
+      "command_ids": [
+        "cmd-a73bb2e215ad44a3",
+        "cmd-b173174a46704ed9",
+        "cmd-24317816df334584",
+        "cmd-953c32fe429b498e",
+        "cmd-94ca798a03cb423c",
+        "cmd-e59383b42ca247e1",
+        "cmd-1c6d5daedeec4588"
+      ],
+      "summary": "node2 opt1/vtnet2 set to 10.50.20.1/24, dnsmasq configured with dhcp-range for vtnet2 and active on port 67; node4 eth1 receives 10.50.20.135/24 with default route via 10.50.20.1"
+    },
+    {
+      "requirement": "node3 and node4 obtain addressing dynamically (not statically) from the router in front of them",
+      "command_ids": [
+        "cmd-36db010e800b4de5",
+        "cmd-aceaf6bc503d49b4",
+        "cmd-97a6710767544a6c",
+        "cmd-1c6d5daedeec4588"
+      ],
+      "summary": "Both node3 and node4 have ipv4.method=auto (DHCP) on their segment-facing NICs and confirmed dynamic lease acquisition with the router-provided default route"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-bc123bc6293c4a1f",
+        "cmd-08b188bb1f184b3a",
+        "cmd-2dbf7950fef848c3",
+        "cmd-75b5fbb2fdfd40ac",
+        "cmd-941e08a90a1b4762"
+      ],
+      "summary": "boot_id 7668189d before -> 0f6a05d5 after; Kea DHCPv4 active and eth2 IP persisted post-reboot; node3 retained working lease/gateway"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-21b4925b6e0b423e",
+        "cmd-9a7d8b1847524c6b",
+        "cmd-a0a9f80537aa4f5e",
+        "cmd-3a4f1f633c1b46fb",
+        "cmd-5b4d9d10d80e47a4"
+      ],
+      "summary": "kern.boottime changed from 04:22:27 to 04:41:39; opt1 static IP and dnsmasq service persisted/restarted post-reboot; node4 retained working lease/gateway"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-ac093bc866dc43d6",
+        "cmd-bdce9d9ed8bd4a75",
+        "cmd-fe61062722e8467e",
+        "cmd-daa71bf042eb46ad"
+      ],
+      "summary": "boot_id 8c28f3cd before -> 1ac94893 after; node3 automatically re-acquired 10.50.10.100/24 from node1 with correct default route after reboot"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-4ee8d74edd83438f",
+        "cmd-f58d3593eb6c4f64",
+        "cmd-fd618d69d3c04602",
+        "cmd-d0a2b09368b94da3"
+      ],
+      "summary": "boot_id e65e6bcf before -> e531d838 after; node4 automatically re-acquired 10.50.20.135/24 from node2 with correct default route after reboot"
+    }
+  ]
+}
