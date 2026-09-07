@@ -19,12 +19,17 @@ REPLACEMENTS = [
     (
         "fail-rate-by-release.png",
         "Command fail rate by release",
-        re.compile(r"\*\*RHEL\*\*\n\n\|.*?\n\n\*\*Ubuntu\*\*\n\n\|.*?(?=\n\n[^|])", re.S),
+        re.compile(
+            r"\*\*RHEL\*\*\n\n<table.*?</table>\n\n\*\*Ubuntu\*\*\n\n<table.*?</table>",
+            re.S,
+        ),
     ),
     (
         "clustered-sleep.png",
         "Time spent working versus asleep, clustered-services",
-        re.compile(r"\*\*clustered-services, by image\*\*\n\n\|.*?(?=\n\n[^|])", re.S),
+        re.compile(
+            r"\*\*clustered-services, by image\*\*\n\n<table.*?</table>", re.S
+        ),
     ),
 ]
 

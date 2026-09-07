@@ -30,12 +30,73 @@ def text_of(fragment: str) -> str:
     return re.sub(r"[ \t]+", " ", out).strip()
 
 
-def convert_table(block: str) -> str:
-    """Render a table, carrying the page's good/bad emphasis into the text.
+PALETTE = {
+    "head_bg": "#b26a00",
+    "head_fg": "#ffffff",
+    "rule": "#dde1e7",
+    "stripe": "#fafbfc",
+    "ink": "#131820",
+    "good": "#2f6f5e",
+    "warn": "#a33a2a",
+    "mid": "#b26a00",
+}
 
-    Markdown has no styling, and Hashnode strips inline CSS, so the colour the
-    artifact applies through classes is re-expressed with a marker and bold.
+
+def convert_table(block: str) -> str:
+    """Render a table as styled HTML in the article's palette.
+
+    Inline style attributes survive the publishing platform's sanitiser, so the
+    colour the artifact carries through CSS classes can be carried through here
+    too. Markdown tables would drop both the colour and the alignment.
     """
+    rows = [
+        re.findall(r"<t[hd]([^>]*)>(.*?)</t[hd]>", row, re.S)
+        for row in re.findall(r"<tr>(.*?)</tr>", block, re.S)
+    ]
+    if not rows:
+        return ""
+
+    table_style = (
+        "border-collapse:collapse;width:100%;"
+        f"font-size:0.95em;border:1px solid {PALETTE['rule']}"
+    )
+    out = [f'<table style="{table_style}">']
+
+    for index, row in enumerate(rows):
+        if index == 0:
+            out.append("<thead><tr>")
+            for attrs, inner in row:
+                align = "right" if "num" in attrs else "left"
+                out.append(
+                    f'<th style="background:{PALETTE["head_bg"]};'
+                    f'color:{PALETTE["head_fg"]};text-align:{align};'
+                    f'padding:9px 12px;font-weight:600">{text_of(inner)}</th>'
+                )
+            out.append("</tr></thead><tbody>")
+            continue
+
+        stripe = f"background:{PALETTE['stripe']};" if index % 2 == 0 else ""
+        out.append(f'<tr style="{stripe}">')
+        for attrs, inner in row:
+            align = "right" if "num" in attrs else "left"
+            if "bad" in attrs:
+                emphasis = f"color:{PALETTE['warn']};font-weight:700;"
+            elif "good" in attrs:
+                emphasis = f"color:{PALETTE['good']};font-weight:600;"
+            else:
+                emphasis = f"color:{PALETTE['ink']};"
+            out.append(
+                f'<td style="{emphasis}text-align:{align};padding:8px 12px;'
+                f'border-top:1px solid {PALETTE["rule"]}">{text_of(inner)}</td>'
+            )
+        out.append("</tr>")
+
+    out.append("</tbody></table>")
+    return "".join(out)
+
+
+def convert_table_markdown(block: str) -> str:
+    """Plain Markdown fallback, kept for renderers that strip HTML."""
     rows = [
         re.findall(r"<t[hd]([^>]*)>(.*?)</t[hd]>", row, re.S)
         for row in re.findall(r"<tr>(.*?)</tr>", block, re.S)
