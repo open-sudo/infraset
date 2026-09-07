@@ -30,15 +30,6 @@ def text_of(fragment: str) -> str:
     return re.sub(r"[ \t]+", " ", out).strip()
 
 
-# The publishing theme caps the article at a reading measure, which is right for
-# prose and too narrow for a six-column table or a wide chart. Inline styles
-# survive the sanitiser, so wide content breaks out of that column and centres
-# itself, bounded so it never exceeds a sensible width on a large display.
-BREAKOUT = (
-    "position:relative;left:50%;transform:translateX(-50%);"
-    "width:92vw;max-width:1040px"
-)
-
 PALETTE = {
     "head_bg": "#b26a00",
     "head_fg": "#ffffff",
@@ -69,7 +60,7 @@ def convert_table(block: str) -> str:
         "border-collapse:collapse;width:100%;"
         f"font-size:0.95em;border:1px solid {PALETTE['rule']}"
     )
-    out = [f'<div style="{BREAKOUT}">', f'<table style="{table_style}">']
+    out = [f'<table style="{table_style}">']
 
     for index, row in enumerate(rows):
         if index == 0:
@@ -100,7 +91,7 @@ def convert_table(block: str) -> str:
             )
         out.append("</tr>")
 
-    out.append("</tbody></table></div>")
+    out.append("</tbody></table>")
     return "".join(out)
 
 
