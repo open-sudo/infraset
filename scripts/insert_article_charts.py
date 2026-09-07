@@ -20,7 +20,8 @@ REPLACEMENTS = [
         "fail-rate-by-release.png",
         "Command fail rate by release",
         re.compile(
-            r"\*\*RHEL\*\*\n\n<table.*?</table>\n\n\*\*Ubuntu\*\*\n\n<table.*?</table>",
+            r"\*\*RHEL\*\*\n\n<div style[^>]*><table.*?</table></div>"
+            r"\n\n\*\*Ubuntu\*\*\n\n<div style[^>]*><table.*?</table></div>",
             re.S,
         ),
     ),
@@ -28,7 +29,8 @@ REPLACEMENTS = [
         "clustered-sleep.png",
         "Time spent working versus asleep, clustered-services",
         re.compile(
-            r"\*\*clustered-services, by image\*\*\n\n<table.*?</table>", re.S
+            r"\*\*clustered-services, by image\*\*\n\n<div style[^>]*><table.*?</table></div>",
+            re.S,
         ),
     ),
 ]
@@ -43,7 +45,13 @@ def main() -> int:
     text = document.read_text()
 
     for image, alt, pattern in REPLACEMENTS:
-        text, count = pattern.subn(f"![{alt}]({base}/{image})", text, count=1)
+        figure = (
+            '<figure style="position:relative;left:50%;'
+            'transform:translateX(-50%);width:92vw;max-width:1040px;margin:0">'
+            f'<img src="{base}/{image}" alt="{alt}" style="width:100%;height:auto">'
+            "</figure>"
+        )
+        text, count = pattern.subn(lambda _: figure, text, count=1)
         if not count:
             raise SystemExit(f"no match for {image}")
 
