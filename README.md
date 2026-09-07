@@ -99,12 +99,13 @@ is free to use; create a key in the [dashboard](https://antrieb.sh/dash).
 
 The same thing against RHEL 7.9, 9.8 and 10.0, which is where the generational
 comparisons come from. These images register with Red Hat Subscription Manager on
-boot, so they need entitlements of your own.
+boot, so they need an account of your own.
 
-**Requires a free Antrieb API key and an active Red Hat subscription.** The Red
-Hat entitlements are the part you have to bring yourself. Set
-`REDHAT_USERNAME` and `REDHAT_PASSWORD` in your credentials file; tasks declare
-`initialize = ["rhsm"]` and will fail cleanly without them.
+**Requires a free Antrieb API key and a free Red Hat account.** Register at
+[developers.redhat.com](https://developers.redhat.com), then put the same username
+and password in `$HOME/credentials.env` as `REDHAT_USERNAME` and
+`REDHAT_PASSWORD`. Tasks declare `initialize = ["rhsm"]` and will fail cleanly
+without them.
 
 ## Running a task
 
@@ -119,7 +120,9 @@ REDHAT_PASSWORD=your-red-hat-password
 ```
 
 The Red Hat entries are needed only for tasks that initialize subscribed RHEL
-systems. Protect the file before running tasks:
+systems, and a free account from
+[developers.redhat.com](https://developers.redhat.com) is enough. Protect the file
+before running tasks:
 
 ```bash
 chmod 600 "$HOME/credentials.env"
