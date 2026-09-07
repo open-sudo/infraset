@@ -31,15 +31,49 @@ def text_of(fragment: str) -> str:
 
 
 def convert_table(block: str) -> str:
-    rows = re.findall(r"<tr>(.*?)</tr>", block, re.S)
+    """Render a table, carrying the page's good/bad emphasis into the text.
+
+    Markdown has no styling, and Hashnode strips inline CSS, so the colour the
+    artifact applies through classes is re-expressed with a marker and bold.
+    """
+    rows = [
+        re.findall(r"<t[hd]([^>]*)>(.*?)</t[hd]>", row, re.S)
+        for row in re.findall(r"<tr>(.*?)</tr>", block, re.S)
+    ]
     if not rows:
         return ""
+
+    # A marker only earns its place where a column mixes good and bad. Flagging
+    # every row of an all-failure table adds noise and no information.
+    width = max(len(row) for row in rows)
+    mixed = []
+    for column in range(width):
+        classes = {
+            "bad" if "bad" in attrs else "good" if "good" in attrs else ""
+            for row in rows
+            for attrs, _ in [row[column]]
+            if column < len(row)
+        }
+        mixed.append({"good", "bad"} <= classes)
+
     lines = []
     for index, row in enumerate(rows):
-        cells = [text_of(c) for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, re.S)]
+        cells = []
+        for column, (attrs, inner) in enumerate(row):
+            value = text_of(inner)
+            if value and mixed[column]:
+                if "bad" in attrs:
+                    value = f"🔴 **{value}**"
+                elif "good" in attrs:
+                    value = f"🟢 {value}"
+            elif value and "bad" in attrs:
+                value = f"**{value}**"
+            cells.append(value)
         lines.append("| " + " | ".join(cells) + " |")
         if index == 0:
-            lines.append("|" + "|".join("---" for _ in cells) + "|")
+            lines.append(
+                "|" + "|".join("---:" if "num" in a else "---" for a, _ in row) + "|"
+            )
     return "\n".join(lines)
 
 

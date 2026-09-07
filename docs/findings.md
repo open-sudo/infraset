@@ -19,7 +19,7 @@ In the table below, 759 of 804 runs came back with a perfect score: every requir
 **Perfect-score rate by category**
 
 | Category | Runs | Perfect | Rate |
-|---|---|---|---|
+|---|---:|---:|---:|
 | multi-node-os-comparison | 78 | 78 | 100% |
 | single-node-os-comparison | 235 | 231 | 98% |
 | vyos-networking | 79 | 77 | 97% |
@@ -36,16 +36,16 @@ Fail rate is the ratio of failed commands to all commands run on that release. N
 **RHEL**
 
 | Release | Fail rate |
-|---|---|
-| RHEL 7.9 | 11.7% |
-| RHEL 9.8 | 3.8% |
+|---|---:|
+| RHEL 7.9 | 🔴 **11.7%** |
+| RHEL 9.8 | 🟢 3.8% |
 | RHEL 10.0 | 6.9% |
 
 **Ubuntu**
 
 | Release | Fail rate |
-|---|---|
-| Ubuntu 16.04 | 11.8% |
+|---|---:|
+| Ubuntu 16.04 | **11.8%** |
 | Ubuntu 24.04 | 8.0% |
 
 We observe three times as many commands fail on RHEL 7.9 as on RHEL 9.8, running the same 29 tasks with the same wording. Ubuntu shows the same pattern across its two releases.
@@ -73,10 +73,10 @@ As we suspected, cost climbs wherever two or more nodes have to agree on replica
 **Mean completion by task shape**
 
 | Shape | Typical run |
-|---|---|
-| Single-host administration | 3–4 min |
+|---|---:|
+| Single-host administration | 🟢 3–4 min |
 | Routed / firewalled networks | 6–13 min |
-| Stateful clusters (replication, quorum) | 10–25 min |
+| Stateful clusters (replication, quorum) | 🔴 **10–25 min** |
 
 A PostgreSQL failover on Ubuntu 24.04 ran for 36 minutes and hit the wall. Same model, same fleet, same day as three-minute single-host tasks that scored clean.
 
@@ -89,7 +89,7 @@ An engineer who is stuck usually knows it. They slow down as the system gets har
 **Forceful commands by kind**
 
 | Kind | Commands | Runs |
-|---|---|---|
+|---|---:|---:|
 | Flush network state (`iptables -F`, `ip addr flush`) | 327 | 100 |
 | `rm -rf` | 241 | 75 |
 | Stop or kill a service | 201 | 117 |
@@ -108,11 +108,11 @@ I pulled every hostname the model tried to reach out of the command logs and loo
 **Invented hostnames and the real ones**
 
 | Hostname the model used | Commands | Real hostname for that content |
-|---|---|---|
-| el9.rabbitmq.com | 14 | ppa1.novemberain.com |
-| ppa1.rabbitmq.com | 12 | ppa1.novemberain.com |
-| dl.almalinux.org | 2 | repo.almalinux.org |
-| yum-eu-west.packagecloud.io | 1 | packagecloud.io |
+|---|---:|---|
+| **el9.rabbitmq.com** | 14 | ppa1.novemberain.com |
+| **ppa1.rabbitmq.com** | 12 | ppa1.novemberain.com |
+| **dl.almalinux.org** | 2 | repo.almalinux.org |
+| **yum-eu-west.packagecloud.io** | 1 | packagecloud.io |
 
 > **A supply-chain problem**
 >
@@ -125,12 +125,12 @@ In one run out of eight the model leaves a change that dies at the next reboot. 
 **firewall-cmd runs that never used --permanent**
 
 | Image | Runs | Left transient | Rate |
-|---|---|---|---|
-| RHEL 10.0 | 39 | 5 | 13% |
-| CentOS Stream 10 | 53 | 7 | 13% |
-| AlmaLinux 9 | 57 | 7 | 12% |
-| RHEL 9.8 | 44 | 5 | 11% |
-| RHEL 7.9 | 44 | 3 | 7% |
+|---|---:|---:|---:|
+| RHEL 10.0 | 39 | **5** | **13%** |
+| CentOS Stream 10 | 53 | **7** | **13%** |
+| AlmaLinux 9 | 57 | **7** | **12%** |
+| RHEL 9.8 | 44 | **5** | **11%** |
+| RHEL 7.9 | 44 | **3** | **7%** |
 
 It is important to note that our prompt asks the model to reboot the machine and prove the services came back. It is possible that including this guides the model towards persistence, and that a request with no mention of a reboot would do worse.
 
@@ -145,15 +145,15 @@ Every task in `clustered-services` installs and configures software, so a pollin
 **clustered-services, by image**
 
 | Image | Runs | Median run | Mean sleep | Asleep |
-|---|---|---|---|---|
-| CentOS Stream 10 | 18 | 4.8 min | 0.9 min | 16% |
-| RHEL 10.0 | 10 | 4.8 min | 0.7 min | 10% |
-| RHEL 9.8 | 10 | 5.5 min | 0.5 min | 8% |
-| AlmaLinux 9 | 20 | 6.4 min | 1.1 min | 14% |
+|---|---:|---:|---:|---:|
+| CentOS Stream 10 | 18 | 4.8 min | 0.9 min | 🟢 16% |
+| RHEL 10.0 | 10 | 4.8 min | 0.7 min | 🟢 10% |
+| RHEL 9.8 | 10 | 5.5 min | 0.5 min | 🟢 8% |
+| AlmaLinux 9 | 20 | 6.4 min | 1.1 min | 🟢 14% |
 | Alpine | 20 | 9.9 min | 2.7 min | 23% |
 | RHEL 7.9 | 10 | 12.0 min | 2.5 min | 20% |
-| Ubuntu 24.04 | 9 | 17.2 min | 7.0 min | 33% |
-| Ubuntu 16.04 | 7 | 21.4 min | 8.6 min | 37% |
+| Ubuntu 24.04 | 9 | **17.2 min** | **7.0 min** | 🔴 **33%** |
+| Ubuntu 16.04 | 7 | **21.4 min** | **8.6 min** | 🔴 **37%** |
 
 The extreme case was `file-integrity-baseline`, which ran 32 minutes on Ubuntu 24.04 against 9 minutes on Ubuntu 16.04, with 24 of those minutes spent in 19 separate sleep commands.
 
@@ -182,7 +182,7 @@ All of it ran in a basement on five machines. The ProLiant is `server1`, which h
 **The fleet**
 
 | Host | Machine | CPU | Threads | RAM | Storage |
-|---|---|---|---|---|---|
+|---|---|---|---:|---:|---:|
 | server1 | HPE ProLiant ML10 Gen9 | Xeon E3-1225 v5 | 4 | 62 GB | 1 TB HDD |
 | server2 | GMKtec NucBox K10 | Core i9-13900HK | 20 | 62 GB | 2 × 1 TB NVMe |
 | server3 | GMKtec NucBox EVO-T1 | Core Ultra 9 285H | 16 | 62 GB | 1 TB NVMe |
