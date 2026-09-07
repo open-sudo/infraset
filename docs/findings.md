@@ -35,21 +35,6 @@ Fail rate is the ratio of failed commands to all commands run on that release. N
 
 ![Command fail rate by release](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/fail-rate-by-release.png)
 
-**RHEL**
-
-| Release | Fail rate |
-|---|---:|
-| RHEL 7.9 | 🔴 **11.7%** |
-| RHEL 9.8 | 🟢 3.8% |
-| RHEL 10.0 | 🟠 6.9% |
-
-**Ubuntu**
-
-| Release | Fail rate |
-|---|---:|
-| Ubuntu 16.04 | **11.8%** |
-| Ubuntu 24.04 | 8.0% |
-
 We observe three times as many commands fail on RHEL 7.9 as on RHEL 9.8, running the same 29 tasks with the same wording. Ubuntu shows the same pattern across its two releases.
 
 We suspect that an important factor of this fail rate is how much material about a release exists publicly, and how long that material has stood before a newer version supersedes it. RHEL 9 superseded RHEL 7, so most of what the model has read about RHEL describes 9 rather than 7. RHEL 10 is newer than RHEL 9, but it has not superseded RHEL 9 in the written record yet, which would explain why it fails more often than the release it replaces.
