@@ -68,7 +68,7 @@ python3 scripts/validate_hf_dataset.py
 
 ## Usage modes
 
-InfraSet works at three levels, depending on whether you want to read the data or
+InfraSet works at three levels, depending on whether you want to mine the data or
 produce more of it. Only the last two need an account anywhere.
 
 ### Mode 1: mine the traces
