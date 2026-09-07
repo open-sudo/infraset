@@ -86,9 +86,32 @@ def convert_evidence(block: str) -> str:
         parts.append(convert_table(block))
     pre = re.search(r"<pre>(.*?)</pre>", block, re.S)
     if pre:
-        body = re.sub(r"<[^>]+>", "", pre.group(1))
-        parts.append("```\n" + html.unescape(body).strip() + "\n```")
+        body = html.unescape(re.sub(r"<[^>]+>", "", pre.group(1))).strip()
+        readout = as_readout(body)
+        parts.append(readout if readout else "```\n" + body + "\n```")
     return "\n\n".join(parts)
+
+
+def as_readout(body: str) -> str:
+    """Render a label/value readout as a table rather than a code block.
+
+    These panels are aligned statistics, not code. Left as fenced blocks they
+    pick up the host's syntax-highlighting theme, which is wrong for figures.
+    Anything that is genuinely a command stays fenced.
+    """
+    rows = []
+    for line in body.splitlines():
+        if not line.strip():
+            continue
+        match = re.match(r"^(\S.*?)\s{2,}(\S.*)$", line)
+        if not match:
+            return ""
+        rows.append((match.group(1).strip(), re.sub(r"\s{2,}", " ", match.group(2)).strip()))
+    if len(rows) < 2:
+        return ""
+    lines = ["| | |", "|---|---:|"]
+    lines += [f"| {label} | {value} |" for label, value in rows]
+    return "\n".join(lines)
 
 
 def convert_risk(block: str) -> str:

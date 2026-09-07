@@ -60,11 +60,11 @@ In this experiment, every run carries an operational-hygiene score. It asks whet
 
 **Operational hygiene across 804 runs**
 
-```
-Total number of runs                  804
-Runs that achieved a perfect score     10   (1.2%)
-Mean hygiene across all runs        0.829
-```
+| | |
+|---|---:|
+| Total number of runs | 804 |
+| Runs that achieved a perfect score | 10 (1.2%) |
+| Mean hygiene across all runs | 0.829 |
 
 ### 04. Configuration is cheap. Coordination is expensive.
 
