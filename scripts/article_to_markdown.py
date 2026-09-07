@@ -61,11 +61,13 @@ def convert_table(block: str) -> str:
         cells = []
         for column, (attrs, inner) in enumerate(row):
             value = text_of(inner)
-            if value and mixed[column]:
+            if value and mixed[column] and index > 0:
                 if "bad" in attrs:
                     value = f"🔴 **{value}**"
                 elif "good" in attrs:
                     value = f"🟢 {value}"
+                else:
+                    value = f"🟠 {value}"
             elif value and "bad" in attrs:
                 value = f"**{value}**"
             cells.append(value)

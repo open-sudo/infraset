@@ -33,13 +33,15 @@ In the table below, 759 of 804 runs came back with a perfect score: every requir
 
 Fail rate is the ratio of failed commands to all commands run on that release. Note that the fail rate here refers to command fail rate as opposed to task fail rate. It is not uncommon to see high command fail rate with equally high task success rate.
 
+![Command fail rate by release](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/fail-rate-by-release.png)
+
 **RHEL**
 
 | Release | Fail rate |
 |---|---:|
 | RHEL 7.9 | 🔴 **11.7%** |
 | RHEL 9.8 | 🟢 3.8% |
-| RHEL 10.0 | 6.9% |
+| RHEL 10.0 | 🟠 6.9% |
 
 **Ubuntu**
 
@@ -75,7 +77,7 @@ As we suspected, cost climbs wherever two or more nodes have to agree on replica
 | Shape | Typical run |
 |---|---:|
 | Single-host administration | 🟢 3–4 min |
-| Routed / firewalled networks | 6–13 min |
+| Routed / firewalled networks | 🟠 6–13 min |
 | Stateful clusters (replication, quorum) | 🔴 **10–25 min** |
 
 A PostgreSQL failover on Ubuntu 24.04 ran for 36 minutes and hit the wall. Same model, same fleet, same day as three-minute single-host tasks that scored clean.
@@ -142,6 +144,8 @@ We suspect models are trained in sandboxes that are inherently transient. As a r
 
 Every task in `clustered-services` installs and configures software, so a polling loop has plenty of chances to kick in. The Red Hat images finish in about five minutes. The Ubuntu ones take three to four times longer, and a third of that time is spent asleep.
 
+![Time spent working versus asleep, clustered-services](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/clustered-sleep.png)
+
 **clustered-services, by image**
 
 | Image | Runs | Median run | Mean sleep | Asleep |
@@ -150,8 +154,8 @@ Every task in `clustered-services` installs and configures software, so a pollin
 | RHEL 10.0 | 10 | 4.8 min | 0.7 min | 🟢 10% |
 | RHEL 9.8 | 10 | 5.5 min | 0.5 min | 🟢 8% |
 | AlmaLinux 9 | 20 | 6.4 min | 1.1 min | 🟢 14% |
-| Alpine | 20 | 9.9 min | 2.7 min | 23% |
-| RHEL 7.9 | 10 | 12.0 min | 2.5 min | 20% |
+| Alpine | 20 | 9.9 min | 2.7 min | 🟠 23% |
+| RHEL 7.9 | 10 | 12.0 min | 2.5 min | 🟠 20% |
 | Ubuntu 24.04 | 9 | **17.2 min** | **7.0 min** | 🔴 **33%** |
 | Ubuntu 16.04 | 7 | **21.4 min** | **8.6 min** | 🔴 **37%** |
 
