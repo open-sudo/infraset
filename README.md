@@ -66,6 +66,46 @@ python3 scripts/generate_hf_card.py
 python3 scripts/validate_hf_dataset.py
 ```
 
+## Usage modes
+
+InfraSet works at three levels, depending on whether you want to read the data or
+produce more of it. Only the last two need an account anywhere.
+
+### Mode 1: mine the traces
+
+Download the dataset and analyse it with whatever you like: pandas, DuckDB, your
+own agent, Claude Code. The 52,027 commands ship as Parquet alongside the raw job
+tree, so you can start from a table or from the original artifacts.
+
+```python
+from datasets import load_dataset
+commands = load_dataset("infraset/infraset", "commands")
+```
+
+**Requires nothing.** No API key, no configuration, no execution. Everything the
+findings rest on is already published.
+
+### Mode 2: run tasks on community images
+
+Execute tasks live to capture new traces. Antrieb provisions the cluster, Harbor
+drives the run, and the results land under `jobs/` in the same shape as the
+published data. This covers Alpine, AlmaLinux, CentOS Stream, Ubuntu, and the four
+network platforms: VyOS, OpenWrt, SONiC and OPNsense.
+
+**Requires an Antrieb API key** for the provisioning and lifecycle loop. Antrieb
+is free to use; create a key in the [dashboard](https://antrieb.sh/dash).
+
+### Mode 3: run tasks on RHEL
+
+The same thing against RHEL 7.9, 9.8 and 10.0, which is where the generational
+comparisons come from. These images register with Red Hat Subscription Manager on
+boot, so they need entitlements of your own.
+
+**Requires a free Antrieb API key and an active Red Hat subscription.** The Red
+Hat entitlements are the part you have to bring yourself. Set
+`REDHAT_USERNAME` and `REDHAT_PASSWORD` in your credentials file; tasks declare
+`initialize = ["rhsm"]` and will fail cleanly without them.
+
 ## Running a task
 
 Install `uv` and log in to the agent you want to use, such as Codex or Claude
