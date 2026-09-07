@@ -1,4 +1,4 @@
-# What I learned running 52k sysadmin commands across 2k VMs using LLMs
+# What I learned running 52,027 sysadmin commands across 2,104 VMs using LLMs
 
 Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded traces across 804 tasks and started mining the data.
 
