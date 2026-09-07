@@ -21,16 +21,15 @@ REPLACEMENTS = [
         "Command fail rate by release",
         re.compile(r"\*\*RHEL\*\*\n\n\|.*?\n\n\*\*Ubuntu\*\*\n\n\|.*?(?=\n\n[^|])", re.S),
     ),
-]
-
-# (chart file, alt text, anchor the chart is placed above and which stays)
-ADDITIONS = [
     (
         "clustered-sleep.png",
         "Time spent working versus asleep, clustered-services",
-        "**clustered-services, by image**",
+        re.compile(r"\*\*clustered-services, by image\*\*\n\n\|.*?(?=\n\n[^|])", re.S),
     ),
 ]
+
+# (chart file, alt text, anchor the chart is placed above and which stays)
+ADDITIONS: list[tuple[str, str, str]] = []
 
 
 def main() -> int:

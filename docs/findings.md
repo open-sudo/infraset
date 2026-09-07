@@ -131,19 +131,6 @@ Every task in `clustered-services` installs and configures software, so a pollin
 
 ![Time spent working versus asleep, clustered-services](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/clustered-sleep.png)
 
-**clustered-services, by image**
-
-| Image | Runs | Median run | Mean sleep | Asleep |
-|---|---:|---:|---:|---:|
-| CentOS Stream 10 | 18 | 4.8 min | 0.9 min | 🟢 16% |
-| RHEL 10.0 | 10 | 4.8 min | 0.7 min | 🟢 10% |
-| RHEL 9.8 | 10 | 5.5 min | 0.5 min | 🟢 8% |
-| AlmaLinux 9 | 20 | 6.4 min | 1.1 min | 🟢 14% |
-| Alpine | 20 | 9.9 min | 2.7 min | 🟠 23% |
-| RHEL 7.9 | 10 | 12.0 min | 2.5 min | 🟠 20% |
-| Ubuntu 24.04 | 9 | **17.2 min** | **7.0 min** | 🔴 **33%** |
-| Ubuntu 16.04 | 7 | **21.4 min** | **8.6 min** | 🔴 **37%** |
-
 The extreme case was `file-integrity-baseline`, which ran 32 minutes on Ubuntu 24.04 against 9 minutes on Ubuntu 16.04, with 24 of those minutes spent in 19 separate sleep commands.
 
 Sleeping explains about half the gap. Take it away and Ubuntu is still twice as slow, and we have not worked out why. It may yet turn out to be something in our own platform rather than the model, which is why this sits here rather than among the findings. It was a surprise either way, because Ubuntu and Debian are the distributions the big AI labs run in their own sandboxes.
