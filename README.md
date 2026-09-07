@@ -104,8 +104,8 @@ boot, so they need an account of your own.
 **Requires a free Antrieb API key and a free Red Hat account.** Register at
 [developers.redhat.com](https://developers.redhat.com), then put the same username
 and password in `$HOME/credentials.env` as `REDHAT_USERNAME` and
-`REDHAT_PASSWORD`. Tasks declare `initialize = ["rhsm"]` and will fail cleanly
-without them.
+`REDHAT_PASSWORD`. Without them the nodes cannot register, and the run fails
+before the task starts.
 
 ## Running a task
 
