@@ -44,6 +44,18 @@ In this experiment, every run carries an operational-hygiene score. It asks whet
 | Runs that achieved a perfect score | 10 (1.2%) |
 | Mean hygiene across all runs | 0.829 |
 
+The table shows that ten runs out of 804 left the machine in a clean state. The other 98.8% left something behind: a package pulled in to test a theory, a service stopped and never restarted, scratch files in `/tmp`, a config edited and not reverted.
+
+> **Residue is a security problem**
+>
+> Residue is attack surface. The debugging packages the agent installed are now unpatched software on your host. The service it stopped may be auditd or a log shipper.
+>
+> Many tasks left private key material in `/tmp` when the run ended, including `/tmp/pgca/ca.key`, the signing key of the certificate authority the model had just created for the cluster ([post-run snapshot](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel9/postgresql-replication-tls-rhel9/2026-09-04__20-11-34/postgresql-replication-tls-rhel9__oskDi9n/collector/attempts/01/snapshots/after-executor.json)). WireGuard private keys and client keys turn up the same way.
+>
+> Whether that is a breach depends on where the box sits. On a throwaway lab VM it is untidy. Anywhere else, that key is now outside the store it belongs in, sitting in a scratch directory, and it is the key that signs certificates for every node in the cluster. Anyone who can read it can mint a certificate the whole cluster trusts. Backups and snapshots pick the file up as well, which moves the key somewhere with a different and usually longer retention. Under a compliance boundary, such as payment processing, medical devices or plant control, key material outside its intended store is an audit finding on its own, before anyone has to show it was read.
+>
+> The model has no concept of your data classification. It writes where the shell put it, and it does not come back for it.
+
 ### 04. Configuration is cheap. Coordination is expensive.
 
 As we suspected, cost climbs wherever two or more nodes have to agree on replication, quorum, state transfer or failover, because the result has to be demonstrated through a real state transition instead of read out of a config file. The table shows the mean completion time in 3 different scenarios.

@@ -191,10 +191,47 @@ def convert_risk(block: str) -> str:
     return "\n".join(lines)
 
 
+def balanced_div(text: str, start: int) -> int:
+    """Index just past the <div> opening at `start`, matching nesting properly.
+
+    An evidence block may or may not nest a scroll wrapper, so a pattern that
+    counts closing tags gets one of the two shapes wrong and silently swallows
+    whatever follows.
+    """
+    depth = 0
+    for match in re.finditer(r"<div\b[^>]*>|</div>", text[start:]):
+        depth += 1 if match.group(0) != "</div>" else -1
+        if depth == 0:
+            return start + match.end()
+    return len(text)
+
+
+def extract_blocks(body: str) -> tuple[str, dict[str, str]]:
+    """Replace evidence and risk blocks with placeholders, converted in place."""
+    blocks: dict[str, str] = {}
+    out = []
+    cursor = 0
+    for match in re.finditer(r'<div class="(ev|risk)">', body):
+        if match.start() < cursor:
+            continue
+        end = balanced_div(body, match.start())
+        raw = body[match.start():end]
+        token = f"\x00block{len(blocks)}\x00"
+        blocks[token] = (
+            convert_evidence(raw) if match.group(1) == "ev" else convert_risk(raw)
+        )
+        out.append(body[cursor:match.start()])
+        out.append(f"<p>{token}</p>")
+        cursor = end
+    out.append(body[cursor:])
+    return "".join(out), blocks
+
+
 def convert(source: Path, image_url: str) -> str:
     raw = source.read_text()
     body = raw[raw.index("<p class=\"eyebrow\">") :]
     body = body[: body.index("<footer>")]
+    body, blocks = extract_blocks(body)
 
     out: list[str] = []
     position = 0
@@ -204,8 +241,6 @@ def convert(source: Path, image_url: str) -> str:
         r'|<h2 class="section">(?P<section>.*?)</h2>'
         r'|<div class="fnum">(?P<fnum>[^<]*)</div>'
         r'|<h3[^>]*>(?P<h3>.*?)</h3>'
-        r'|<div class="ev">(?P<ev>.*?)</div>\s*</div>'
-        r'|<div class="risk">(?P<risk>.*?)</div>'
         r'|<figure class="lab">(?P<fig>.*?)</figure>'
         r'|<div class="close">\s*<h2>(?P<close>.*?)</h2>'
         r'|<p class="caveat">(?P<caveat>.*?)</p>'
@@ -240,10 +275,6 @@ def convert(source: Path, image_url: str) -> str:
             prefix = f"{pending_number}. " if pending_number.isdigit() else ""
             out.append(f"### {prefix}{heading}")
             pending_number = ""
-        elif group["ev"]:
-            out.append(convert_evidence(match.group(0)))
-        elif group["risk"]:
-            out.append(convert_risk(match.group(0)))
         elif group["fig"]:
             caption = re.search(r"<figcaption>(.*?)</figcaption>", group["fig"], re.S)
             alt = re.search(r'alt="([^"]*)"', group["fig"])
@@ -261,7 +292,10 @@ def convert(source: Path, image_url: str) -> str:
             if rendered:
                 out.append(rendered)
 
-    return "\n\n".join(out) + "\n"
+    text = "\n\n".join(out) + "\n"
+    for token, rendered in blocks.items():
+        text = text.replace(token, rendered)
+    return text
 
 
 def main() -> int:
