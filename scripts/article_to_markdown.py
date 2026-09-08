@@ -42,6 +42,17 @@ PALETTE = {
 }
 
 
+def inline_html(fragment: str) -> str:
+    """Flatten a fragment for use inside an HTML table cell.
+
+    Markdown is not processed inside a raw HTML block, so links and code spans
+    have to stay as HTML here rather than becoming [text](url) and backticks.
+    """
+    out = re.sub(r"<br\s*/?>", " ", fragment)
+    out = re.sub(r"<(?!/?(?:a|code|em|strong|b|i)\b)[^>]+>", "", out)
+    return re.sub(r"\s+", " ", out).strip()
+
+
 def convert_table(block: str) -> str:
     """Render a table as styled HTML in the article's palette.
 
@@ -70,7 +81,7 @@ def convert_table(block: str) -> str:
                 out.append(
                     f'<th style="background:{PALETTE["head_bg"]};'
                     f'color:{PALETTE["head_fg"]};text-align:{align};'
-                    f'padding:9px 12px;font-weight:600">{text_of(inner)}</th>'
+                    f'padding:9px 12px;font-weight:600">{inline_html(inner)}</th>'
                 )
             out.append("</tr></thead><tbody>")
             continue
@@ -87,7 +98,7 @@ def convert_table(block: str) -> str:
                 emphasis = f"color:{PALETTE['ink']};"
             out.append(
                 f'<td style="{emphasis}text-align:{align};padding:8px 12px;'
-                f'border-top:1px solid {PALETTE["rule"]}">{text_of(inner)}</td>'
+                f'border-top:1px solid {PALETTE["rule"]}">{inline_html(inner)}</td>'
             )
         out.append("</tr>")
 
