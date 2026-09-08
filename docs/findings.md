@@ -64,14 +64,14 @@ An engineer who is stuck usually knows it. They slow down as the system gets har
 
 <table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Kind</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Commands</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Runs</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Flush network state (`iptables -F`, `ip addr flush`)</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">327</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">100</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">`rm -rf`</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">241</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">75</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Stop or kill a service</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">201</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">117</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">`kill -9` / SIGKILL</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">91</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">37</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Truncate or zero a file</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">5</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">4</td></tr></tbody></table>
 
-177 of those commands remove a live database or cluster state directory, such as `/var/lib/pgsql/14/data`, `/var/lib/etcd` or `/var/lib/postgresql/16/main`. They are spread across 55 runs.
+[177 of those commands](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel7/postgresql-failover-rhel7/2026-09-04__20-11-34/postgresql-failover-rhel7__cofwkf3/agent/executor-commands.jsonl) remove a live database or cluster state directory, such as `/var/lib/pgsql/14/data`, `/var/lib/etcd` or `/var/lib/postgresql/16/main`. They are spread across 55 runs.
 
 ### 06. LLMs hallucinate download URLs
 
 Installing packages sometimes requires the agent to download binaries. Such is the case for instance when the package is 
 located outside of the distro repos. We have observed that the LLM proceeds to stich together a URL with hallucinated hostnames.
 
-I pulled every hostname the model tried to reach out of the command logs and looked each one up in DNS. There were 71 of them. Four do not resolve at all, so the model made them up. In every one of those cases it was setting up a third-party package repository.
+I pulled every hostname the model tried to reach out of the command logs and looked each one up in DNS. There were 71 of them. Four do not resolve at all, so the model made them up. In every one of those cases it was setting up a third-party package repository ([one such run](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/almalinux9/rabbitmq-cluster-almalinux9/2026-09-04__20-11-34/rabbitmq-cluster-almalinux9__EWg7s4d/agent/executor-commands.jsonl)).
 
 **Invented hostnames and the real ones**
 
@@ -83,7 +83,7 @@ I pulled every hostname the model tried to reach out of the command logs and loo
 
 ### 07. One kernel config change in eight is transient
 
-In one run out of eight the model leaves a change that dies at the next reboot. It reports success, the port answers when you test it, and the failure re-appears weeks later during an unrelated reboot with nothing connecting the two.
+In [one run out of eight](https://github.com/open-sudo/infraset/blob/main/jobs/multi-node-os-comparison/rhel10/ssh-controller-access-rhel10/2026-09-03__13-11-25/ssh-controller-access-rhel10__T6tZ2cd/agent/executor-commands.jsonl) the model leaves a change that dies at the next reboot. It reports success, the port answers when you test it, and the failure re-appears weeks later during an unrelated reboot with nothing connecting the two.
 
 **firewall-cmd runs that never used --permanent**
 
@@ -101,7 +101,7 @@ Every task in `clustered-services` installs and configures software, so a pollin
 
 ![Time spent working versus asleep, clustered-services](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/clustered-sleep.png)
 
-The extreme case was `file-integrity-baseline`, which ran 32 minutes on Ubuntu 24.04 against 9 minutes on Ubuntu 16.04, with 24 of those minutes spent in 19 separate sleep commands.
+The extreme case was [`file-integrity-baseline`](https://github.com/open-sudo/infraset/blob/main/jobs/single-node-os-comparison/ubuntu24/file-integrity-baseline-ubuntu24/2026-09-04__22-51-06/file-integrity-baseline-ubuntu24__BauFueK/agent/executor-commands.jsonl), which ran 32 minutes on Ubuntu 24.04 against 9 minutes on Ubuntu 16.04, with 24 of those minutes spent in 19 separate sleep commands.
 
 Sleeping explains about half the gap. Take it away and Ubuntu is still twice as slow, and we have not worked out why. It may yet turn out to be something in our own platform rather than the model, which is why this sits here rather than among the findings. It was a surprise either way, because Ubuntu and Debian are the distributions the big AI labs run in their own sandboxes.
 
