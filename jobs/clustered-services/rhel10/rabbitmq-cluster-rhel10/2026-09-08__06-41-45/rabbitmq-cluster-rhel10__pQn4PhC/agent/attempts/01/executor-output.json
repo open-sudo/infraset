@@ -1,0 +1,111 @@
+{
+  "status": "completed",
+  "summary": "Joined node1, node2, node3 (RHEL 10) into a single RabbitMQ 4.3.5 cluster (Erlang/OTP 27), created the payments vhost with a durable quorum queue \"orders\" and an appuser application account scoped to that vhost with full publish/consume permissions. Demonstrated that durable messages survive the loss of any one node and remain consumable from the remaining nodes, then executed the mandatory one-at-a-time reboot protocol on all three nodes, verifying changed boot identities and full cluster/data recovery after each.",
+  "actions_performed": [
+    "Populated /etc/hosts on all nodes from CLUSTER_HOSTS; removed a conflicting 127.0.1.1 self-alias on node1",
+    "Installed Erlang 27.3.4.16 from RabbitMQ's modern-erlang (el/9, RHEL9/10-compatible) Cloudsmith mirror on all three nodes",
+    "Fixed Erlang crypto NIF load failure by upgrading openssl-libs from 3.2.2 to 3.5.5 on all three nodes (missing EVP_MD_CTX_get_size_ex symbol)",
+    "Installed rabbitmq-server 4.3.5 (generic noarch RPM from GitHub releases) on all three nodes",
+    "Generated a shared Erlang cookie on node1 and distributed it via SSH/scp (cluster keypair) to node2/node3 without exposing it in command text",
+    "Set explicit NODENAME per node, enabled and started rabbitmq-server",
+    "Opened firewalld ports 4369, 25672, 5672, 15672 on all three nodes (previously blocked, causing cluster join to fail with 'no route to host')",
+    "Joined node2 and node3 to node1 via rabbitmqctl join_cluster; verified 3/3 disk nodes running with no partitions",
+    "Created payments vhost; created appuser with full permissions scoped to payments; deleted default guest user; generated the app password on-node via /dev/urandom, kept off command text/report",
+    "Enabled rabbitmq_management plugin on all nodes and declared a durable quorum queue 'orders' (replicated across all 3 members) in payments",
+    "Published a persistent message, stopped rabbitmq-server on the leader node (node1), confirmed automatic leader re-election to node2 and successful consumption of the message while node1 was down",
+    "Published a second message during the outage, restarted node1, confirmed it rejoined and the queue fully re-synced (all 3 members online, message present and consumable)",
+    "Ran the mandatory one-at-a-time native reboot (systemctl reboot) on node1, node2, then node3, capturing pre/post /proc/sys/kernel/random/boot_id to prove each was an actual reboot",
+    "After each reboot, waited for exec to reconnect, enabled rabbitmq-server for boot persistence where missing, and verified cluster_status showed all 3 running nodes with no partitions before proceeding to the next node",
+    "Ran a final publish/consume round-trip as appuser after all three restarts to confirm end-to-end functionality",
+    "Cleaned up temporary password copies left on node2/node3"
+  ],
+  "evidence": [
+    {
+      "requirement": "RabbitMQ cluster formed across node1, node2, node3",
+      "command_ids": [
+        "cmd-9210ecb1b87b4001"
+      ],
+      "summary": "rabbitmqctl cluster_status shows all 3 nodes as disk nodes and running nodes, no partitions, khepri metadata store with all 3 as members"
+    },
+    {
+      "requirement": "payments vhost created",
+      "command_ids": [
+        "cmd-7d22ba05cb41428e"
+      ],
+      "summary": "rabbitmqctl add_vhost payments succeeded; list_vhosts shows payments"
+    },
+    {
+      "requirement": "Application account with publish/consume rights on payments",
+      "command_ids": [
+        "cmd-8d78c94db8e64783"
+      ],
+      "summary": "appuser created, granted .*/.*/.* permissions on payments vhost, guest user removed"
+    },
+    {
+      "requirement": "Durable quorum queue created and replicated to all 3 nodes",
+      "command_ids": [
+        "cmd-1f4379d0af604469"
+      ],
+      "summary": "PUT /api/queues/payments/orders with x-queue-type quorum; response shows leader rabbit@node1, members and online = all 3 nodes"
+    },
+    {
+      "requirement": "Message published and persisted durably",
+      "command_ids": [
+        "cmd-fa0f2fba5bae4947",
+        "cmd-89da160f2e074e93"
+      ],
+      "summary": "Publish routed:true, then messages=1 messages_persistent=1 confirmed on the queue"
+    },
+    {
+      "requirement": "Durable message survives loss of one node and stays consumable from remaining nodes",
+      "command_ids": [
+        "cmd-2c411c6aef084cdf",
+        "cmd-082aea47272c4733"
+      ],
+      "summary": "node1 (original leader) stopped; from node2, queue shows online=[node2,node3], new leader rabbit@node2, and the persisted message was successfully fetched with correct payload"
+    },
+    {
+      "requirement": "Recovery/resync after disrupted node returns",
+      "command_ids": [
+        "cmd-f80d70a50bcb4336",
+        "cmd-b239201efe5e4436",
+        "cmd-86c4f8594f2e4611",
+        "cmd-cb28e13923fc450c"
+      ],
+      "summary": "second message published while node1 down; node1 restarted and rejoined; queue shows all 3 nodes online with the message present, then consumed successfully"
+    },
+    {
+      "requirement": "node1 mandatory restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-1721106c601d436e",
+        "cmd-cb0284a0e67448a5",
+        "cmd-3e1594f8e5274bb2",
+        "cmd-bcb28723084f45b1",
+        "cmd-8382733deabe422e"
+      ],
+      "summary": "baseline boot_id 6ab6a71b...; reboot acknowledged before disconnect; post-reboot boot_id 8d910e69... (changed); rabbitmq-server active and cluster_status shows all 3 nodes running/online post-recovery"
+    },
+    {
+      "requirement": "node2 mandatory restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-6e38a2d7b3a84454",
+        "cmd-ed3cd5e156854830",
+        "cmd-d8f088af537242f6",
+        "cmd-a276dfa5c9764118",
+        "cmd-0ae8dc71f9104ec8"
+      ],
+      "summary": "baseline boot_id 4ebdfa06...; reboot acknowledged before disconnect; post-reboot boot_id c0c642da... (changed); rabbitmq-server re-enabled/started and cluster_status confirms all 3 nodes running with the quorum queue online on all members"
+    },
+    {
+      "requirement": "node3 mandatory restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-49749af2a0824693",
+        "cmd-c45fd7dc06694b6c",
+        "cmd-3a5b746ce9184a52",
+        "cmd-4c87ba8ddd3f4b62",
+        "cmd-984c3be7b5d746eb"
+      ],
+      "summary": "baseline boot_id 646e5f74...; reboot acknowledged before disconnect; post-reboot boot_id 0f29cbf6... (changed); rabbitmq-server active, cluster_status shows all 3 nodes running/online, and a final publish+consume round-trip as appuser succeeded"
+    }
+  ]
+}

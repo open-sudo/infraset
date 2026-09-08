@@ -1,0 +1,92 @@
+{
+  "status": "completed",
+  "summary": "Deployed a 3-member MariaDB Galera cluster on node1, node2, node3 (Alpine 3.23, MariaDB 11.4.12 + Galera 26.4.13). Writes on any member replicate to the others (multi-master verified). The cluster stays available on 2/3 quorum when one member is stopped or rebooted, and a returning member auto-resyncs its data (verified via graceful stop/start and via full OS reboot for all three nodes). All three nodes were individually rebooted one at a time, quorum preserved throughout, each showing a changed OS boot_id and full cluster/data recovery afterward.",
+  "actions_performed": [
+    "Installed mariadb, mariadb-client, galera, rsync, iproute2, procps via apk on all three Alpine nodes",
+    "Diagnosed and fixed two Alpine-specific SST blockers: BusyBox lsof's -i filter not working (fixed by installing iproute2 for a working 'ss') and BusyBox ps lacking -p support, which caused wsrep_sst_rsync to falsely report the rsync daemon as dead (fixed by installing procps)",
+    "Wrote /etc/my.cnf.d/galera.cnf on each node with wsrep_cluster_address listing all 3 node IPs, unique wsrep_node_address/wsrep_node_name, wsrep_sst_method=rsync; disabled the default skip-networking in mariadb-server.cnf",
+    "Initialized datadirs with mysql_install_db, bootstrapped node1 as founding member via mysqld_safe --wsrep-new-cluster, then joined node2 and node3 via normal OpenRC start (rsync SST from donor)",
+    "Generated a root password via /dev/urandom on node1 and set it for root@localhost/root@%; propagated the value to node2/node3 (for local admin convenience) using the exec tool's secret_env parameter rather than embedding it in command text",
+    "Gracefully stopped and restarted node1 under OpenRC so all three nodes are uniformly rc-service-managed; enabled mariadb in the default runlevel on all nodes for boot persistence",
+    "Verified multi-master replication by inserting distinct rows from node1, node2, and node3 and confirming all rows visible everywhere",
+    "Stopped node2 (rc-service stop), wrote through node1 and node3 while it was down confirming 2/3 quorum availability, then restarted node2 and confirmed automatic resync of all missed rows",
+    "Captured a healthy baseline (boot_id, service status, wsrep sync/cluster state, row count) on all three nodes",
+    "Rebooted node1, node2, and node3 one at a time via native 'reboot', preserving 2-node quorum during each restart; polled each node until exec access returned, confirmed each node's /proc/sys/kernel/random/boot_id changed and uptime reset to 0, and confirmed each node rejoined as Synced/Primary with cluster_size 3 and full data recovery including rows written while it was offline",
+    "Ran a final full-cluster health check across all three nodes confirming consistent cluster_size=3, Primary status, Synced state, and identical row counts (7) after all restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "Three-member Galera cluster formed, writes on any member visible on others",
+      "command_ids": [
+        "cmd-b57ed20e32b8455a",
+        "cmd-a475023de5d7498c",
+        "cmd-b4f26501ed404f02",
+        "cmd-363a6987ef1c4dc2",
+        "cmd-4f38840728154692",
+        "cmd-113019f72eb54549",
+        "cmd-592954938eb34643",
+        "cmd-2476a0ed920b4641",
+        "cmd-18e60fc5de644e61",
+        "cmd-657c3859fc1f4dcf"
+      ],
+      "summary": "Node1 bootstrapped, node2/node3 joined via SST reaching cluster_size 3 and Synced state; inserts from node1, node2, and node3 each became visible on all other nodes and node1 shows all 3 rows"
+    },
+    {
+      "requirement": "Availability preserved when one member is unavailable",
+      "command_ids": [
+        "cmd-6e6edee7dfb2426d",
+        "cmd-e1a2839e49f34f23",
+        "cmd-ebdd91dc269d4b6c"
+      ],
+      "summary": "node2 stopped via rc-service; node1 (cluster_size 2, status Primary) and node3 both accepted writes and read consistent data while node2 was down"
+    },
+    {
+      "requirement": "Automatic resynchronization when a member returns",
+      "command_ids": [
+        "cmd-be61685380a34a70"
+      ],
+      "summary": "node2 restarted and immediately shows wsrep_local_state_comment=Synced, cluster_size 3, and all 5 rows including ones written while it was offline, with no manual intervention"
+    },
+    {
+      "requirement": "node1 restart evidence: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-fec4e2f1b2ed4ec2",
+        "cmd-a28512fe864d476b",
+        "cmd-4a6e343914104139",
+        "cmd-96f79de095174612",
+        "cmd-ffcf3d5054504b16"
+      ],
+      "summary": "Baseline captured (boot_id 151ed56c, Synced/Primary/size3/5 rows); reboot acknowledged and node became unreachable; boot_id changed to cd3920ae with uptime 0; post-reboot cluster status Synced/Primary/size3 with 5 rows intact"
+    },
+    {
+      "requirement": "node2 restart evidence: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-fec4e2f1b2ed4ec2",
+        "cmd-22230beab2254dab",
+        "cmd-9ce1c4dfa26f479c",
+        "cmd-df3b73b7f8544147",
+        "cmd-d26e8cef68de4696"
+      ],
+      "summary": "Baseline boot_id ca0e9043 captured pre-restart; reboot acknowledged; node2 came back with boot_id 10521fb5 and uptime 0; post-reboot query shows Synced/Primary/size3 with all 6 rows including the one written while it was down"
+    },
+    {
+      "requirement": "node3 restart evidence: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-a6fe2765ede14727",
+        "cmd-bf6dfd24963e40b3",
+        "cmd-d4cc8f273a6f4ac6",
+        "cmd-bb8e090f5ee244c0"
+      ],
+      "summary": "Baseline boot_id 70ac31b4 captured pre-restart; reboot acknowledged and boot_id captured again immediately before disruption confirming pre-state; node3 returned with new boot_id 6560e2bf and uptime 0; post-reboot shows Synced/Primary/size3 with all 7 rows including ones written while it was offline"
+    },
+    {
+      "requirement": "Final full-cluster consistency after all three restarts",
+      "command_ids": [
+        "cmd-b9054bce6cd74de6",
+        "cmd-8a732c8906dc4ed7",
+        "cmd-08945559af724288"
+      ],
+      "summary": "All three nodes independently report cluster_size=3, status=Primary, local_state=Synced, and identical row count (7) confirming full recovery and consistency after sequential restarts of every node"
+    }
+  ]
+}

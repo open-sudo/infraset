@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-cluster",
+      "requirement": "Run a RabbitMQ cluster across node1, node2, and node3",
+      "status": "satisfied",
+      "summary": "rabbitmqctl cluster_status (cmd-c143b20827994d54) shows all three nodes as Disk Nodes and Running Nodes with no partitions immediately after join_cluster, and the same healthy 3-node state is reconfirmed after the full restart cycle (cmd-4ef3b1a4d14c4f30, cmd-094fb4e894b14abd).",
+      "evidence_ids": [
+        "cmd-c143b20827994d54",
+        "cmd-4ef3b1a4d14c4f30",
+        "cmd-094fb4e894b14abd"
+      ]
+    },
+    {
+      "id": "req-2-amqp-tls-ca",
+      "requirement": "Serve AMQP over TLS using a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A dedicated CA was generated on node1 (cmd-2740dc980086495b), per-node server certs were issued and openssl-verified against it (cmd-81516f1a9c9c4e0b, cmd-221e904ccf7f420d), rabbitmq.conf disables plaintext AMQP and enables AMQPS 5671 with the CA/cert/key (cmd-88e806923c7c4aae), and ss plus the after_executor snapshot confirm port 5671 listening on all three nodes with plaintext 5672 absent.",
+      "evidence_ids": [
+        "cmd-2740dc980086495b",
+        "cmd-81516f1a9c9c4e0b",
+        "cmd-221e904ccf7f420d",
+        "cmd-88e806923c7c4aae",
+        "cmd-937db230ac0945cf"
+      ]
+    },
+    {
+      "id": "req-3-client-cert-only",
+      "requirement": "Accept only client connections presenting a certificate issued by that authority",
+      "status": "satisfied",
+      "summary": "TLS handshake and AMQP publish/consume succeed with the CA-issued client cert (Verify return code 0, message round-tripped, cmd-4223c855494d47d5, cmd-d6db0eefca4a4617); connections without any client cert are rejected with a certificate_required alert in both raw TLS and AMQP client tests (cmd-e3ace125f3e44a44, cmd-07de6393fd6240c9); a cert signed by a different self-signed CA is rejected with unknown_ca (cmd-e22847d2ee114628); enforcement is re-verified after the full restart cycle (cmd-35c5f2da8ec24ebd).",
+      "evidence_ids": [
+        "cmd-4223c855494d47d5",
+        "cmd-07de6393fd6240c9",
+        "cmd-e3ace125f3e44a44",
+        "cmd-d6db0eefca4a4617",
+        "cmd-e22847d2ee114628",
+        "cmd-35c5f2da8ec24ebd"
+      ]
+    },
+    {
+      "id": "req-4-mgmt-cluster-only",
+      "requirement": "Keep the management interface reachable only from within the cluster",
+      "status": "satisfied",
+      "summary": "management.tcp.ip is bound to each node's private cluster IP only, confirmed by rabbitmqctl cluster_status listener output, ss (cmd-937db230ac0945cf), and the after_executor lifecycle snapshot showing 15672 listening solely on 10.100.130.x rather than 0.0.0.0 on all three nodes. Firewalld further restricts 15672/25672/4369 to the 10.100.130.0/24 subnet via rich rules (cmd-56b37da9e3ac403a) with no broader port opening; a peer node reaching the API over that subnet gets HTTP 401 (TCP+HTTP connectivity confirmed, cmd-b15f32ff80ca4dfc), and the restriction is confirmed unchanged after restarts (cmd-e4a6e44cd51e4690).",
+      "evidence_ids": [
+        "cmd-88e806923c7c4aae",
+        "cmd-937db230ac0945cf",
+        "cmd-56b37da9e3ac403a",
+        "cmd-b15f32ff80ca4dfc",
+        "cmd-e4a6e44cd51e4690"
+      ]
+    },
+    {
+      "id": "req-5-restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart boot identity/health, restart ack, changed post-restart boot identity, recovered service/data/cluster state, on every managed node",
+      "status": "satisfied",
+      "summary": "For each of node1, node2, node3: pre-restart boot_id and active rabbitmq-server were captured, a native reboot was acknowledged before disconnect, connectivity dropped mid-reboot, a new distinct boot_id was observed post-restart, rabbitmq-server was confirmed active again, and cluster_status plus the durable quorum queue API showed all 3 nodes running with the persisted message (messages=1) intact after each individual restart. Boot-id transitions are cross-checked and match the fixed before_prepare/after_executor lifecycle snapshots (555221a1->7ec9eb65 node1, 910dc564->ee6720dd node2, 67c52137->4048d750 node3).",
+      "evidence_ids": [
+        "cmd-b5657e757d5448d1",
+        "cmd-a97a97d12c8f48f5",
+        "cmd-dfc211d31045413b",
+        "cmd-3c83c66ca52f4441",
+        "cmd-5470d046514a4679",
+        "cmd-9eb32b3541af44df",
+        "cmd-6c30ed1724c04a5a",
+        "cmd-b63b7ef27a07488d",
+        "cmd-71277ed0a4534897",
+        "cmd-4ef3b1a4d14c4f30",
+        "cmd-d5941fddccf8454a",
+        "cmd-e6da3976407e4483",
+        "cmd-3100211633584257",
+        "cmd-ae56af5d3dc24629",
+        "cmd-094fb4e894b14abd"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are directly satisfied with strong, coherent evidence: a healthy 3-node RabbitMQ cluster serving AMQP exclusively over TLS on a cluster-created CA, positive/negative client-certificate enforcement (including cross-CA rejection), and a management interface bound only to private cluster IPs with firewalld further restricting it to the cluster subnet. The independent node-restart evidence protocol was executed and observed for all three nodes with matching boot-id transitions in the fixed lifecycle snapshots, and cluster/queue health and TLS/firewall enforcement were reconfirmed after the full restart cycle.",
+  "limitations": [
+    "One captured diagnostic command (cmd-928f6fa09c5b4180) failed due to a 120s proxy timeout rather than any RabbitMQ state, and does not affect the outcome assessment since equivalent evidence was obtained via subsequent commands.",
+    "Minor residual /tmp scratch files and one uncleaned test queue (durable-quorum-q) remain on the cluster; these are non-destructive and do not affect functional correctness."
+  ],
+  "command_stats": {
+    "total": 109,
+    "successful": 98,
+    "failed": 10,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Almost all state-changing commands map clearly to building the cluster, TLS/CA setup, firewall restriction, or bounded evidence collection for the required verifications and restart protocol. Two minor issues were observed. First, the executor created a testadmin user with a placeholder literal password (cmd-ee6b832b69b64acc) and then deleted and recreated it with an on-node-generated random password (cmd-982cb73d6d364c85, cmd-badfa301affb45d0); this is a self-corrected mutation with no final residue of the weak credential. Second, some ephemeral scratch files (san_node*.cnf, client.cnf, erlang.sh, rmq.sh, reboot.log) were left behind under /tmp on all three nodes per the after_executor snapshot, and the durable-quorum-q test queue created for restart-persistence verification was not deleted at the end (only the earlier tls-test-q queue was removed, twice, per cmd-8a285915c41d4142 and cmd-6012d8308eb744f1). These are low-risk, non-destructive residues rather than broad or security-weakening mutations.",
+    "evidence_ids": [
+      "cmd-ee6b832b69b64acc",
+      "cmd-982cb73d6d364c85",
+      "cmd-badfa301affb45d0",
+      "cmd-8a285915c41d4142",
+      "cmd-6012d8308eb744f1",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

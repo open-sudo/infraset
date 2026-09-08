@@ -1,0 +1,115 @@
+{
+  "status": "completed",
+  "summary": "Configured node1, node2, node3 as a 3-member MariaDB Galera cluster (mariadb-server-galera 10.5.29, galera 26.4.22 from RHEL 9 AppStream). Bootstrapped node1 via galera_new_cluster, joined node2 and node3 via SST (mariabackup). Had to fix a SELinux AVC denial (mysqld_t self connectto on unix_stream_socket, required for the mariabackup SST donor/joiner) by loading a small local policy module (mysqld_sst.pp) on all three nodes. Opened firewalld ports 3306/4444/4567(tcp+udp)/4568 on all nodes. Verified writes from any of the three members replicate synchronously to the other two. Demonstrated availability during a member outage: stopped node3, cluster stayed Primary with 2/3 quorum and accepted writes; on node3 restart it auto-resynced via IST and picked up the write made while it was down. Completed the mandatory node-restart evidence protocol: captured pre-restart boot_id + healthy Synced/Primary status + data on each node, restarted node1, node2, then node3 one at a time via `systemctl reboot` (backgrounded so the ack returned first), polled each until reachable again, confirmed changed boot_id, and confirmed each rejoined as Synced/Primary with cluster_size 3 and correct data after every restart, only proceeding to the next node once full health/quorum was restored. Final cross-node write/read check after all restarts confirms consistent replication. Root and SST credentials were generated on node1 with openssl and distributed to node2/node3 over cluster SSH; not included in this report (the SST password did appear in one earlier debug `cat` command's tool output, but was not reused or logged further).",
+  "actions_performed": [
+    "Inspected OS (RHEL 9.8) and root/sudo access on all 3 nodes",
+    "Installed mariadb-server, mariadb-server-galera, mariadb-backup, galera from AppStream on all 3 nodes",
+    "Configured /etc/hosts with cluster host mappings on all 3 nodes",
+    "Opened firewalld ports 3306/4444/4567(tcp,udp)/4568 on all 3 nodes",
+    "Confirmed SELinux mysqld_port_t already covered Galera ports",
+    "Set up cluster SSH keypair for inter-node file transfer",
+    "Generated SST auth password and MariaDB root password on node1 via openssl and securely copied to node2/node3 over SSH",
+    "Wrote /etc/my.cnf.d/galera.cnf wsrep configuration (cluster address, node name/address, mariabackup SST) on all 3 nodes, correcting the galera provider .so path",
+    "Bootstrapped Galera cluster on node1 with galera_new_cluster; enabled mariadb service",
+    "Created sstuser account and set root password on node1",
+    "Diagnosed SST failure (mariadb-backup socket connect EACCES) as a missing SELinux allow rule (mysqld_t self connectto unix_stream_socket) via audit.log; built and loaded a local policy module (mysqld_sst.pp) on all 3 nodes",
+    "Started/joined node2 and node3 to the cluster via SST; enabled mariadb on both",
+    "Verified 3-node cluster: wsrep_cluster_size=3, Synced, Primary on all nodes",
+    "Verified write-from-any-node replication with a test table (writes from node1, node2, node3 all visible everywhere)",
+    "Stopped node3 to test availability under member outage; confirmed 2-node quorum stayed Primary and accepted a write",
+    "Restarted node3; confirmed automatic resync (IST) picked up the write made during its outage",
+    "Executed mandatory node-restart evidence protocol: captured boot_id + healthy status/data baseline, sequentially rebooted node1, node2, node3 (one at a time, waiting for full cluster health before the next), polled each until reachable, confirmed boot_id changed, and confirmed mariadb auto-started/rejoined as Synced/Primary with correct data after each restart",
+    "Performed final post-restart write/read check from node3 confirming replication to node1 and node2"
+  ],
+  "evidence": [
+    {
+      "requirement": "Three-member Galera cluster configured; writes through any member visible on the others",
+      "command_ids": [
+        "cmd-c1d911ebd749463c",
+        "cmd-e00edca706ab4ca0",
+        "cmd-9ffde058f9fb4e98",
+        "cmd-fab0234b1e3a4968",
+        "cmd-1e7b2269deeb4598",
+        "cmd-92eeffac2c7d4bb9"
+      ],
+      "summary": "All 3 nodes report wsrep_cluster_size=3/Synced/Primary; inserts made on node1, node2, and node3 each appear on all other nodes' SELECTs."
+    },
+    {
+      "requirement": "Root cause / fix for SST failures (SELinux)",
+      "command_ids": [
+        "cmd-7041ea4b18be48e9",
+        "cmd-4f99a0cca70c4053",
+        "cmd-df5ffd8ac9b2433e",
+        "cmd-47a51d66bce44ece"
+      ],
+      "summary": "AVC denial for mysqld_t self connectto unix_stream_socket found in audit.log; local policy module built and loaded on all 3 nodes to permit the Galera SST donor/joiner socket connection."
+    },
+    {
+      "requirement": "Node2 and node3 successfully joined the cluster via SST",
+      "command_ids": [
+        "cmd-eca430f62445458f",
+        "cmd-997be6ec91ad45bb",
+        "cmd-163cff9d865f4314",
+        "cmd-c1d911ebd749463c"
+      ],
+      "summary": "node2 started active and reported wsrep_cluster_size=2/Synced after SST; node3 started active on first attempt (post-fix) and reported wsrep_cluster_size=3/Synced/Primary."
+    },
+    {
+      "requirement": "Database stays available when one member is unavailable",
+      "command_ids": [
+        "cmd-4f09a4136011471f",
+        "cmd-f80f181e6454488a",
+        "cmd-b75656ca534d4efc"
+      ],
+      "summary": "node3 stopped; node1 (2/3 nodes) still reports cluster_status=Primary, wsrep_ready=ON, and accepts an INSERT that immediately appears on node2."
+    },
+    {
+      "requirement": "Unavailable member resynchronizes automatically when it returns",
+      "command_ids": [
+        "cmd-51152e41062b4565",
+        "cmd-48cc0ce733a54890"
+      ],
+      "summary": "node3 restarted, cluster_size returned to 3/Synced, and the row written while node3 was down is present on node3 without manual intervention (automatic IST)."
+    },
+    {
+      "requirement": "Node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-44c0259dcdc74bd5",
+        "cmd-498426b9b3db4895",
+        "cmd-56fe648b56174889",
+        "cmd-f74b4cb7f0a24f08",
+        "cmd-bc937b35d798475c"
+      ],
+      "summary": "Baseline boot_id 4999270d.../Synced/Primary + data captured; reboot acked before disconnect; post-reboot boot_id 175700d9... (changed); mariadb auto-started/enabled and rejoined as cluster_size=3/Synced/Primary with all rows intact."
+    },
+    {
+      "requirement": "Node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b559ddaa6846496b",
+        "cmd-bf0bd7453dda4df1",
+        "cmd-b1a02d68413c4ce7",
+        "cmd-f35255b60b83459f"
+      ],
+      "summary": "Baseline boot_id bef0e5ec.../Synced/Primary + data captured; reboot acked; post-reboot boot_id 8f59c869... (changed); mariadb active/enabled and rejoined as cluster_size=3/Synced/Primary with data intact."
+    },
+    {
+      "requirement": "Node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b847596986374a1f",
+        "cmd-6fc3138d6d744052",
+        "cmd-6b601c7617d846b8",
+        "cmd-60430b6493d64c41"
+      ],
+      "summary": "Baseline boot_id 31949c21.../Synced/Primary + data captured; reboot acked; post-reboot boot_id 1371e686... (changed); mariadb active/enabled and rejoined as cluster_size=3/Synced/Primary with all incoming_addresses present and data intact."
+    },
+    {
+      "requirement": "Post-restart full-cluster write/replication check across all members",
+      "command_ids": [
+        "cmd-776f69be291c49b6",
+        "cmd-a930c4fc1fd44bfd",
+        "cmd-686c8c4d004c4631"
+      ],
+      "summary": "After all three restarts, a write on node3 (id=6) is immediately visible on both node1 and node2, confirming full bidirectional replication survives the restart sequence."
+    }
+  ]
+}

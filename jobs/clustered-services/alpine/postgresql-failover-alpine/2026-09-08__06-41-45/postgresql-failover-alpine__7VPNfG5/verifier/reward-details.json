@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Streaming replication established with node1 as writable primary and node2/node3 as standbys, replicating initial and live data",
+      "status": "satisfied",
+      "summary": "node1 was configured with wal_level=replica, max_wal_senders, listen_addresses='*' and confirmed listening on all interfaces. node2 and node3 were built via pg_basebackup -R against node1 and both showed 'streaming'/'async' state with near-zero replay lag in pg_stat_replication. Rows inserted on node1 (repl_test) were confirmed present on both standbys.",
+      "evidence_ids": [
+        "cmd-c4d85d4cf1234003",
+        "cmd-a77d7258049b48e9",
+        "cmd-4be5121ee46a424b",
+        "cmd-dabbe2d1f3df4ceb",
+        "cmd-eb1b6746ac25411a",
+        "cmd-680fe6484c644059"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "When the primary is lost, a standby is promoted to writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "Before crashing node1, replay_lsn was confirmed equal to sent_lsn on both standbys (no in-flight, unreplicated commits). node1 was force-stopped (stop_force). node2 was promoted via pg_ctl promote --wait, confirmed pg_is_in_recovery=false, and all 4 pre-crash rows (including the final row written immediately before the crash) were present; node2 then accepted a new write as primary.",
+      "evidence_ids": [
+        "cmd-e461fb14bb44423d",
+        "cmd-41d136ec017345cf",
+        "cmd-6c93e75114b141d9",
+        "cmd-aa855c2c5f1c4cd6",
+        "cmd-6eae176de6424569",
+        "cmd-dc8075c511ee4757"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Surviving standby (node3) follows the newly promoted primary",
+      "status": "satisfied",
+      "summary": "node3 was observed still pointed at the dead node1 and missing the post-failover row; primary_conninfo was repointed to node2, postgres restarted, and node3 came up in recovery streaming from node2, showing the post-failover row. node2's pg_stat_replication confirmed node3 as a connected streaming standby.",
+      "evidence_ids": [
+        "cmd-7b57f2c8feb54051",
+        "cmd-3d9532dca3af4ac7",
+        "cmd-d079d3b18d8d426e"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Recovered former primary (node1) rejoins as a standby of the current primary (node2) without losing committed data",
+      "status": "satisfied",
+      "summary": "pg_rewind was attempted and failed because the diverged WAL segment had already been recycled during node1's crash recovery. node1 was then rebuilt from scratch via pg_basebackup from node2, restarted, and confirmed in recovery mode streaming from node2 with all rows present including the post-failover write. node2's replication view showed both node1 and node3 as active standbys, and a subsequent write replicated to both.",
+      "evidence_ids": [
+        "cmd-add1b0fb4ab84723",
+        "cmd-6496d47cf3824d10",
+        "cmd-3062dfed663b489a",
+        "cmd-240b647569ec4e16",
+        "cmd-aaa38343500f468c",
+        "cmd-388108c61b1041a1",
+        "cmd-53a3ba0a7ea44631",
+        "cmd-a5f002a53fcb4fa5"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the task contract are directly and coherently satisfied: initial streaming replication (node1 primary, node2/node3 standbys) was established and verified with live data; a bounded primary-loss disruption was staged with pre-crash LSN parity confirmed, node1 force-stopped, node2 promoted with zero committed-data loss, and a post-failover write accepted; the surviving standby (node3) was repointed and confirmed streaming from the new primary; and the recovered former primary (node1) was rejoined as a standby of node2 (via pg_basebackup rebuild after pg_rewind proved infeasible) with all data, including post-failover writes, intact. The independent node-restart evidence protocol was also fully and coherently executed for all three nodes, each showing a pre-restart boot identity/healthy baseline, a restart acknowledgement, a distinct post-restart boot identity (cross-checked against the fixed after-executor snapshot for every node), and full recovery of PostgreSQL, data, and replication/quorum state, including node2's primary role and both standbys reconnecting after the primary's own restart.",
+  "limitations": [
+    "Root accounts were unlocked on all three nodes to enable passwordless root SSH; this is a retained, security-weakening change not required by the task itself.",
+    "A broad file-read privilege grant made to the replicator role to support pg_rewind was left in place even though pg_rewind was abandoned in favor of a full pg_basebackup rebuild.",
+    "Command outputs are captured in bounded/truncated form in places (e.g., tail -N piping), so some intermediate detail (e.g., full postgresql.conf contents) was not directly inspected, though the specific settings relevant to replication were explicitly grepped and confirmed."
+  ],
+  "command_stats": {
+    "total": 102,
+    "successful": 89,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.62,
+    "summary": "Command state changes were largely tied to legitimate replication/failover work: package installs, postgresql.conf/pg_hba.conf edits, pg_basebackup rebuilds, and the crash/promote/repoint/rebuild sequence all map directly to the task outcomes or to the mandatory restart protocol. Two retained mutations are not clearly justified by the final solution: (1) root accounts on all three nodes were unlocked (passwd -u root, cmd-c20659bc9cbd407e, cmd-285042d2c4d64554, cmd-d6a2f49fecb44e8f) to enable passwordless root SSH for scp-based file transfer, weakening a default security control and left in place for the remainder of the run; (2) on node2, broad file-read privileges (pg_read_binary_file, pg_ls_dir, pg_stat_file) were granted to the replicator role (cmd-210f7371a1804de0) specifically to support pg_rewind, but pg_rewind was subsequently abandoned in favor of a full pg_basebackup rebuild, leaving an unused, unrevoked privilege escalation on the replication role. Neither mutation left orphaned files or broken services, and both were bounded to a small number of accounts/grants, but they represent unreverted, security-relevant residue with no role in the final accepted solution.",
+    "evidence_ids": [
+      "cmd-c20659bc9cbd407e",
+      "cmd-285042d2c4d64554",
+      "cmd-d6a2f49fecb44e8f",
+      "cmd-210f7371a1804de0",
+      "cmd-6496d47cf3824d10",
+      "cmd-3062dfed663b489a"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

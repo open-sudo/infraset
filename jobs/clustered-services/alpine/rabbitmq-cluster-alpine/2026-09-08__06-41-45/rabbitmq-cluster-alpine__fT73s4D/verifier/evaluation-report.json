@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Join node1, node2, and node3 into a single RabbitMQ cluster",
+      "status": "satisfied",
+      "summary": "node2 and node3 were joined to node1 via rabbitmqctl join_cluster; cluster_status on node1 subsequently shows all three as running disk nodes with no network partitions, and this state persists through the final verification after all restarts.",
+      "evidence_ids": [
+        "cmd-8507b3840a33409d",
+        "cmd-bade21c43e5d4307",
+        "cmd-eb9e1fe6fc274ce1",
+        "cmd-60a64ba597f7472e"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Create a payments virtual host",
+      "status": "satisfied",
+      "summary": "add_vhost payments was run and list_vhosts confirms the vhost exists; it is still present in the final list_vhosts check after all node restarts.",
+      "evidence_ids": [
+        "cmd-60ae1bfe5377459f",
+        "cmd-60a64ba597f7472e"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Create an application account that can publish and consume in the payments vhost",
+      "status": "satisfied",
+      "summary": "app_svc user was created with configure/write/read '.*' permissions scoped to payments, confirmed by list_permissions. The account was then actually used (not just granted permissions) to publish three persistent messages and to fetch/ack messages from the queue via the management HTTP API, directly demonstrating working publish and consume access.",
+      "evidence_ids": [
+        "cmd-f00aafe5ef79482a",
+        "cmd-47eaa0acc828460d",
+        "cmd-fea9d99e1594480c",
+        "cmd-4702bceba4b94686"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Messages on a durable queue survive the loss of any one node and remain consumable from the remaining nodes",
+      "status": "satisfied",
+      "summary": "A durable quorum queue 'orders' (3-way replicated) was created and populated with 3 persistent messages while all 3 nodes were healthy. node3 was then rebooted; cluster_status on node1 confirmed only node1/node2 running, the queue still reported all 3 messages with node3 marked offline, and a message was successfully fetched and acked via the app_svc account against the remaining two nodes during the outage \u2014 a direct, bounded before/during/after demonstration of the required behavior.",
+      "evidence_ids": [
+        "cmd-1920b41e26b647a5",
+        "cmd-f9928864cfc74296",
+        "cmd-28993233644446c6",
+        "cmd-ed58683c26f241ce",
+        "cmd-fea9d99e1594480c"
+      ]
+    }
+  ],
+  "overall_summary": "The executor formed a genuine 3-node RabbitMQ cluster, created the payments vhost, and created an app_svc account whose publish/consume rights were actually exercised (not just granted) against a durable, 3-way replicated quorum queue. Node-loss durability was directly demonstrated: messages persisted and remained consumable from the surviving two nodes while node3 was down. The independent (non-contractual) node-restart evidence protocol was completed for all three nodes with clear pre-restart boot IDs, reboot acknowledgements, changed post-restart boot IDs, and fully recovered cluster/queue/vhost/user state, cross-checked against the fixed before-prepare/after-executor boot-identity snapshots, which match exactly. The main deductions are in operational hygiene: root SSH login was unlocked and left enabled rather than restored, and the app_svc account was granted a broader 'management' tag than the task strictly required.",
+  "limitations": [
+    "The executor's own evidence list referenced an unresolvable command ID (cmd-eb9e1fe6fc76b437f) for the node3 restart summary; the underlying claim is nonetheless supported by other cited, resolvable command IDs (cmd-896be15566a94d30, cmd-4a37ee2eee304904, cmd-4498faf431a344b0).",
+    "Root account unlock (removing the PAM lock) was necessary to complete Erlang-cookie distribution over SSH but was never reverted; this is a persisted security-relevant change with no task-contract requirement to keep root locked, so it affects hygiene scoring rather than task-outcome scoring.",
+    "Failed-services checks were unsupported on this platform (no systemd), so OpenRC service health could only be inferred from rc-service status output and rabbitmqctl status, not a systemd failed-unit inventory.",
+    "Executor evidence item 5 referenced unknown command IDs: cmd-eb9e1fe6fc76b437f"
+  ],
+  "command_stats": {
+    "total": 96,
+    "successful": 83,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "Most state-changing actions were necessary and appropriately scoped (package installs, /etc/hosts population, Erlang cookie distribution, vhost/user creation, quorum queue setup). However, three issues stand out. (1) The executor unlocked the root account by removing the PAM lock in /etc/shadow on node2 and node3 (cmd-693600edb6cd4eb2, cmd-fa58291016ec4276, cmd-a81e5e7be0584d3b) to enable root SSH login for cookie distribution; this is a weakened security control (root login now possible) and was never re-locked \u2014 it remained in place through the end of the run. (2) During SSH troubleshooting on node2, the executor started a manual sshd instance bound to port 2222 (cmd-3b898622b1ad4f7c) purely as a diagnostic experiment; it was later killed (cmd-693600edb6cd4eb2) and left no residue, a bounded, low-risk, fully-reverted mutation. (3) The app_svc account was tagged 'management' (cmd-fcac240f05eb4224), granting it access to the RabbitMQ management UI/API beyond the strict publish/consume scope requested by the task; this tag remained at the end (confirmed in the final list_users, cmd-60a64ba597f7472e) and was used only as a convenience to drive verification over HTTP rather than AMQP. The temporary password file /root/app_user_pw.txt was properly cleaned up (cmd-215d152e07b14f99). The Alpine package-health check ('U var/lib/chrony/chrony.drift') is identical in before-prepare and after-executor snapshots on all nodes and is not executor-caused.",
+    "evidence_ids": [
+      "cmd-693600edb6cd4eb2",
+      "cmd-fa58291016ec4276",
+      "cmd-a81e5e7be0584d3b",
+      "cmd-3b898622b1ad4f7c",
+      "cmd-fcac240f05eb4224",
+      "cmd-215d152e07b14f99",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

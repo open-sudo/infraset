@@ -1,0 +1,110 @@
+{
+  "status": "completed",
+  "summary": "Built a 3-node MariaDB Galera cluster (node1-node3, AlmaLinux9, MariaDB 10.5/Galera 26.4) from scratch since no cluster pre-existed, seeded application data (appdb.orders), then added node4 as a fourth member that received the existing data via mariabackup SST and accepted writes just like the other members. Resolved two blockers along the way: wrong galera provider .so path in the initial config, and an SELinux denial blocking mariabackup SST connectto (fixed via the daemons_enable_cluster_mode boolean on all four nodes). Completed the mandatory one-at-a-time restart protocol on all four nodes, confirming boot-id changes and full 4-node quorum/data recovery after each restart.",
+  "actions_performed": [
+    "Inspected all 4 nodes and found no MariaDB/Galera installed anywhere",
+    "Installed mariadb-server, mariadb-server-galera, mariadb-backup, galera on node1, node2, node3",
+    "Opened firewalld ports 3306, 4567/tcp+udp, 4568/tcp, 4444/tcp on node1-3",
+    "Wrote /etc/my.cnf.d/galera.cnf on node1-3 with wsrep_cluster_address=gcomm://node1,node2,node3, generated SST and root passwords on node1 and distributed the SST password via secret_env",
+    "Fixed wsrep_provider path from /usr/lib64/galera-4/... to actual /usr/lib64/galera/libgalera_smm.so",
+    "Bootstrapped node1 via galera_new_cluster, set root password, created sst_user, created appdb.orders with 3 seed rows",
+    "Diagnosed and fixed an SST failure caused by SELinux denying mariadb-backup connectto on the mysqld socket by setting the daemons_enable_cluster_mode boolean (persistently) on node1, node2, node3",
+    "Cleaned a stale partial datadir on node2 from the first failed SST attempt, then started mariadb on node2 (SST succeeded, cluster_size=2) and node3 (cluster_size=3, Synced)",
+    "Verified multi-master writes: inserted on node2, confirmed visible on node3 immediately",
+    "Installed mariadb-server, mariadb-server-galera, mariadb-backup, galera on node4; opened the same firewall ports; set daemons_enable_cluster_mode there too",
+    "Wrote node4's galera.cnf with the 4-node gcomm list and updated node1-3's cluster_address to include node4",
+    "Started mariadb on node4; SST completed cleanly; verified cluster_size=4, Synced, full existing data present, and a write issued on node4 replicated to node1",
+    "Enabled mariadb service on all 4 nodes for boot persistence",
+    "Captured baseline boot_id and cluster health (size=4, Synced, 5 rows) on all 4 nodes",
+    "Restarted node1, node2, node3, node4 one at a time via systemctl reboot (backgrounded so the ack returned before disconnect), polled each until reachable, confirmed changed boot_id, and verified each rejoined the cluster automatically with cluster_size=4, status Primary, state Synced, and correct row count before moving to the next node",
+    "After all 4 restarts, performed a final write on node4 and confirmed it replicated to node1, proving end-to-end cluster health post-restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "3-member Galera cluster (node1-3) established and holding application data",
+      "command_ids": [
+        "cmd-35c7ab546ee240d1",
+        "cmd-e20c141e2e364d85",
+        "cmd-19a35fbba3f64878",
+        "cmd-32264348fc3f41a7",
+        "cmd-50ae845542304d29",
+        "cmd-e48f6c7145504504",
+        "cmd-94d9aa4bad754e8c"
+      ],
+      "summary": "node1 bootstrapped alone (size=1), seed data inserted, node2 joined via SST (size=2, data present), node3 joined (size=3, Primary/Synced, data present)"
+    },
+    {
+      "requirement": "Multi-master write capability confirmed on original 3 members before scale-out",
+      "command_ids": [
+        "cmd-a688bb4c03514a18",
+        "cmd-0cf0b57331104be2"
+      ],
+      "summary": "Insert issued on node2 appeared instantly on node3"
+    },
+    {
+      "requirement": "node4 added, receives existing data, and accepts writes like other members",
+      "command_ids": [
+        "cmd-99bc13e1d5d84959",
+        "cmd-dc56ccc562174379",
+        "cmd-c86da4154b904863",
+        "cmd-ee6983533be94050",
+        "cmd-13d222fba14c4096",
+        "cmd-35bcc4c4666b49e1"
+      ],
+      "summary": "node4 installed/configured, joined via SST with cluster_size=4 and all pre-existing rows present, inserted a row from node4 which replicated back to node1"
+    },
+    {
+      "requirement": "Node1 restart evidence: baseline, restart ack, changed boot identity, recovered cluster state",
+      "command_ids": [
+        "cmd-9b2d7f816c5b417e",
+        "cmd-7a6c769969a842f3",
+        "cmd-dbdde6ccbd3a44d9",
+        "cmd-99de283fe1ca4e4b",
+        "cmd-4cf9a4c97c244031",
+        "cmd-acc34e78e4b0427b"
+      ],
+      "summary": "Baseline boot_id 15443601...; reboot acknowledged; connection reset confirms disconnection; boot_id changed to e71d7bd2...; mariadb active and cluster_size=4/Primary/Synced with 5 rows intact after restart"
+    },
+    {
+      "requirement": "Node2 restart evidence: baseline, restart ack, changed boot identity, recovered cluster state",
+      "command_ids": [
+        "cmd-1d8540bcceed4b1c",
+        "cmd-083386a893444fa1",
+        "cmd-bdbf02038cc442a1",
+        "cmd-74f136930c2f4907",
+        "cmd-b8fcac5d7464438f"
+      ],
+      "summary": "Baseline boot_id 97c5762b...; reboot acknowledged and disconnection observed; boot_id changed to 8bba5a4f...; cluster_size=4/Primary/Synced with 5 rows after restart"
+    },
+    {
+      "requirement": "Node3 restart evidence: baseline, restart ack, changed boot identity, recovered cluster state",
+      "command_ids": [
+        "cmd-f49f9271c63e480a",
+        "cmd-90b3d7d23be04a43",
+        "cmd-728055a8a35342eb",
+        "cmd-0b25f0dff4874311",
+        "cmd-57bb1b0a123a48e8"
+      ],
+      "summary": "Baseline boot_id 989aa755...; reboot acknowledged and disconnection observed; boot_id changed to 0c0f1894...; cluster_size=4/Primary/Synced with 5 rows after restart"
+    },
+    {
+      "requirement": "Node4 restart evidence: baseline, restart ack, changed boot identity, recovered cluster state",
+      "command_ids": [
+        "cmd-46799ef2b1f24ed6",
+        "cmd-9905e73d779a46cf",
+        "cmd-62b19ddbb2584acd",
+        "cmd-102e136abc4d49ad",
+        "cmd-2c26e75f52d941d8"
+      ],
+      "summary": "Baseline boot_id 513c865e...; reboot acknowledged and disconnection observed; boot_id changed to 5ddd81c2...; cluster_size=4/Primary/Synced with 5 rows after restart"
+    },
+    {
+      "requirement": "Full-cluster health confirmed after all 4 nodes were individually restarted",
+      "command_ids": [
+        "cmd-ab1e68567f0542a5",
+        "cmd-ef4c8cd5322f48c1"
+      ],
+      "summary": "Post-restart write issued on node4 (id 12) replicated correctly to node1, confirming end-to-end cluster function after the complete restart cycle"
+    }
+  ]
+}

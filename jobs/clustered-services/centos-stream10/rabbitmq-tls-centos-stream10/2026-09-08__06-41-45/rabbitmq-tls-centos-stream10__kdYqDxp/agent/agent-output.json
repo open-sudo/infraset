@@ -1,0 +1,111 @@
+{
+  "status": "completed",
+  "summary": "Deployed a 3-node RabbitMQ cluster (node1/node2/node3, CentOS Stream 10, RabbitMQ 3.13.7 / Erlang 26.2.5.4) serving AMQP exclusively over TLS on port 5671, using a dedicated CA generated on node1. mTLS is enforced (verify_peer, fail_if_no_peer_cert=true) so only clients presenting a certificate issued by that CA can connect; plaintext AMQP (5672) is disabled entirely. The management HTTP API (15672) is reachable only from the cluster's own /24 subnet via a dedicated firewalld zone scoped to that subnet; the node-facing public zone exposes only 5671/tcp. All three nodes were then restarted one at a time with quorum preserved, boot_id changes proved real reboots, and RabbitMQ/cluster/TLS/management-restriction health was re-verified after each.",
+  "actions_performed": [
+    "Installed erlang + rabbitmq-server on all 3 nodes via packagecloud.io rabbitmq/erlang and rabbitmq/rabbitmq-server el/9 repos (only working repo path for CentOS Stream 10)",
+    "Populated /etc/hosts with CLUSTER_HOSTS and set up inter-node SSH from node1 for cert/cookie distribution",
+    "Generated a dedicated CA (RabbitMQ Cluster CA, 4096-bit RSA, 10y validity) on node1",
+    "Generated per-node server certs (CN=nodeN, SAN=DNS:nodeN + node's cluster IP) signed by that CA and distributed to /etc/rabbitmq/tls on each node",
+    "Generated a CA-signed test client cert and a self-signed untrusted client cert for negative testing",
+    "Generated and distributed a shared Erlang cookie to /var/lib/rabbitmq/.erlang.cookie (mode 400) on all nodes",
+    "Wrote rabbitmq.conf on all nodes: listeners.tcp=none, listeners.ssl.default=5671 with cacertfile/certfile/keyfile, ssl_options.verify=verify_peer, fail_if_no_peer_cert=true, management.tcp.port=15672",
+    "Enabled rabbitmq_management plugin and started rabbitmq-server on all nodes",
+    "Created firewalld zone 'rabbitcluster' scoped to source 10.100.114.0/24 on each node opening 4369/25672/5671/15672 only to cluster peers; public zone only opens 5671/tcp",
+    "Joined node2 and node3 to node1's cluster via rabbitmqctl join_cluster; confirmed 3/3 running nodes",
+    "Created cluster_admin administrator user with a generated password, deleted default guest user",
+    "Verified via openssl s_client: CA-signed client cert handshake succeeds (Verification: OK); untrusted self-signed cert rejected with 'bad certificate' alert; no client cert rejected with 'handshake failure' alert",
+    "Verified full AMQPS publish/consume with pika using the CA-signed client cert against all three node IPs",
+    "Verified management API returns 401 without valid RabbitMQ credentials and 200-class success with cluster_admin credentials from a cluster peer, while public-zone firewall config exposes only 5671",
+    "Captured pre-restart boot_id and cluster/service health baseline on all 3 nodes",
+    "Sequentially rebooted node1, then node2, then node3 via systemctl reboot, polling until reachable, confirming changed boot_id after each, waiting for rabbitmq-server active and full 3/3 cluster quorum before proceeding to the next node",
+    "Post-restart re-verified AMQPS+mTLS functional test, untrusted-cert rejection, and management-port firewall restriction on all nodes"
+  ],
+  "evidence": [
+    {
+      "requirement": "3-node RabbitMQ cluster formed across node1/node2/node3",
+      "command_ids": [
+        "cmd-09cbf47e63504464",
+        "cmd-b4ce203aa91d4a75",
+        "cmd-a2afe8b305cf46e1"
+      ],
+      "summary": "join_cluster on node2 and node3, then cluster_status on node1 shows 3 disk nodes / 3 running nodes"
+    },
+    {
+      "requirement": "AMQP served only over TLS (plaintext disabled)",
+      "command_ids": [
+        "cmd-3c307dc8365045a9"
+      ],
+      "summary": "rabbitmqctl status listeners show amqp/ssl on 5671 only, no plain 5672 listener; ss -tlnp confirms no 5672 socket"
+    },
+    {
+      "requirement": "Certificate authority created for this cluster and used to issue node/client certs",
+      "command_ids": [
+        "cmd-b459c7589c574318",
+        "cmd-70d0a2b72dc84050",
+        "cmd-6bb17fd119a34330"
+      ],
+      "summary": "Self-signed CA generated (CN=RabbitMQ Cluster CA); per-node server certs and a client cert signed by that CA with correct SANs/subjects"
+    },
+    {
+      "requirement": "Only clients presenting a certificate issued by the cluster CA are accepted (mTLS enforced)",
+      "command_ids": [
+        "cmd-b7f6522d80874e9b",
+        "cmd-1809a7c4363143f2"
+      ],
+      "summary": "openssl s_client: CA-signed client cert handshake succeeds with Verification: OK; self-signed untrusted cert rejected with bad-certificate TLS alert; no-cert connection rejected with handshake-failure alert"
+    },
+    {
+      "requirement": "AMQPS functions end-to-end with CA-issued client cert across all cluster nodes",
+      "command_ids": [
+        "cmd-1face63d4a7c4fe8",
+        "cmd-0999f5316b5b4ef4"
+      ],
+      "summary": "pika client using the trusted client cert publishes and consumes a message against node1, node2, and node3 over port 5671"
+    },
+    {
+      "requirement": "Management interface reachable only from within the cluster",
+      "command_ids": [
+        "cmd-06d13637b0d64e29",
+        "cmd-9413113a1ca24f35",
+        "cmd-deb006e6d6964a5d",
+        "cmd-29f25c464d27473f",
+        "cmd-10b6446fed984277",
+        "cmd-03e9b1b4e1c348e8"
+      ],
+      "summary": "firewalld 'rabbitcluster' zone (source 10.100.114.0/24 only) opens 15672 on all nodes; the node-facing public/default zone lists only 5671/tcp (no 15672); a cluster-peer request to the management API returns 401 (reaches the app) while auth correctly rejects bad credentials and accepts valid ones"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovered cluster/TLS/mgmt state",
+      "command_ids": [
+        "cmd-575f873365464df2",
+        "cmd-9c40278c9d984423",
+        "cmd-e86b1ff618064454",
+        "cmd-2cd25373feb9455a",
+        "cmd-cee210a431c9431a"
+      ],
+      "summary": "Baseline boot_id 83a0a80f.../active/3-node cluster captured; systemctl reboot issued (connection dropped); post-reboot boot_id e032bbaa... (changed) with uptime 0 min; rabbitmq-server active and 3/3 cluster restored; AMQPS+mTLS retest succeeds and firewall restriction persisted"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovered cluster state",
+      "command_ids": [
+        "cmd-a96c35d26847485e",
+        "cmd-82a02aff023740d9",
+        "cmd-464d3c4be65a4d2b",
+        "cmd-1b5efeac30db4b1e",
+        "cmd-fdbe0a8449af4d62"
+      ],
+      "summary": "Baseline boot_id 21de1f79.../active/3-node cluster captured; systemctl reboot issued; post-reboot boot_id 110bf0ee... (changed) with uptime 0 min; rabbitmq-server active and 3/3 cluster restored; firewall restriction confirmed post-reboot"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovered cluster state",
+      "command_ids": [
+        "cmd-58abd569c49144e8",
+        "cmd-f137a4d943b84c7a",
+        "cmd-7a3acb08ccf14129",
+        "cmd-820945623dfd4323",
+        "cmd-ee3ae4c44e354518"
+      ],
+      "summary": "Baseline boot_id 8f258838.../active/3-node cluster captured; systemctl reboot issued; post-reboot boot_id 82c619e7... (changed) with uptime 0 min; rabbitmq-server active and 3/3 cluster restored; firewall restriction confirmed post-reboot"
+    }
+  ]
+}

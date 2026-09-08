@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Establish PostgreSQL streaming replication with node1 as writable primary and node2, node3 as standbys",
+      "status": "satisfied",
+      "summary": "node1 installed, initialized, and configured with wal_level/max_wal_senders/hot_standby and pg_hba for replication; node2 and node3 base-backed-up from node1 with physical replication slots and brought up as standbys. pg_stat_replication on node1 shows both node2 and node3 streaming with active slots, and a live INSERT on node1 propagated to both standbys' failover_demo table.",
+      "evidence_ids": [
+        "cmd-c2698ff469204744",
+        "cmd-04a64c3465fc40fb",
+        "cmd-7e83baf350da4286",
+        "cmd-dca031daebf04c50",
+        "cmd-f9661b36f4874b91",
+        "cmd-218be97706294f23",
+        "cmd-2169e0c30a6d43fc"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "On primary loss, a standby takes over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "node1 stopped at LSN 0/703C778; both standbys independently confirmed caught up past that LSN (0/703C7F0) before promotion, directly demonstrating no data loss window. node2 promoted via pg_ctl promote (pg_is_in_recovery=f), verified to retain all pre-failover rows and accept a new write.",
+      "evidence_ids": [
+        "cmd-7ca7704bbe774aba",
+        "cmd-4a6767bb1612463e",
+        "cmd-cfb151f1e0cc47af",
+        "cmd-59b5dfb98e3a4058",
+        "cmd-7eedfd1d07054677"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Recovered former primary rejoins as standby of whichever node is now primary; surviving standby reparented to new primary",
+      "status": "satisfied",
+      "summary": "node3's primary_conninfo/primary_slot_name repointed to node2 and restarted, confirmed streaming with all rows including the post-failover write. node1 rebuilt via fresh pg_basebackup from node2 and brought up as a standby with its own slot; node2's pg_stat_replication shows both node1 and node3 streaming, and a subsequent insert on node2 propagated to node1.",
+      "evidence_ids": [
+        "cmd-227a63cefa0f4a09",
+        "cmd-7b4f3ac906b04b8f",
+        "cmd-60792764a3824dfd",
+        "cmd-19475057907f494d",
+        "cmd-5e43d3868c0741b4"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (independent of public task contract)",
+      "status": "satisfied",
+      "summary": "Each of node3, node1, and node2 (final primary) shows a pre-restart boot_id and healthy DB state, a systemctl reboot acknowledgement, a changed post-restart boot_id, and recovered PostgreSQL/recovery/replication state with intact data. The fixed after-prepare and after-executor lifecycle snapshots independently corroborate the same boot_id transitions (before: aad96cc9/6d37896c/180a78a0 -> after: 940b617f/362f38c4/5c5af0ff) and show postgresql listening and no failed services post-restart on all three nodes.",
+      "evidence_ids": [
+        "cmd-b15ece2183b64340",
+        "cmd-432c0dd30f434139",
+        "cmd-a6406b7a54fa457c",
+        "cmd-82cfc9ba729b4c0c",
+        "cmd-ac62a27caebc45a7",
+        "cmd-3f0c074146cd4f9d",
+        "cmd-3e37af6f9a874666",
+        "cmd-2e738ebca0e948dd",
+        "cmd-97f9a80658374461",
+        "cmd-5cea2976c542464c",
+        "cmd-43a7e54b0c4b4d01",
+        "cmd-98bcd52ef5ac45f0",
+        "cmd-1400f0e00e8a440f",
+        "cmd-42ebdc52eaec4a2a",
+        "cmd-4a6d526586264d38"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Final full-cluster data consistency after restarts",
+      "status": "satisfied",
+      "summary": "After all three restarts, an insert on node2 (primary) propagated and row count of 5 was confirmed identical on both node1 and node3 standbys.",
+      "evidence_ids": [
+        "cmd-8e7db0ae73e347e9",
+        "cmd-0aefdf6f9fd7483d",
+        "cmd-507b1ca56db1421c"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established node1-primary/node2+node3-standby streaming replication, then performed a genuine bounded disruption test: stopped node1, confirmed both standbys were caught up past the primary's last LSN before promoting node2, verified zero data loss plus a new post-promotion write, reparented node3 to the new primary, and rebuilt node1 as a standby of node2 \u2014 directly demonstrating the required failover/recovery transition rather than relying on configuration alone. The separately-required node-restart evidence protocol was completed for all three nodes with boot_id changes cross-validated by the fixed lifecycle snapshots, and each node showed full PostgreSQL/replication/data recovery after reboot. A final cross-node row-count check (5/5/5) confirms consistency after all restarts. The only hygiene issue is an unremoved plaintext replicator password file left on each node, a low-risk but avoidable residue.",
+  "limitations": [
+    "The provided evidence set is bounded to selected command outputs and may not include every intermediate diagnostic; full raw logs were not independently reviewed beyond the timeline extract.",
+    "Password/credential handling relies on the executor's claim that the password was never printed unredacted in the final report; the audit trail shows PGPASSWORD values were redacted by the logging system, which supports but does not fully independently verify that claim.",
+    "Operational hygiene cited unknown evidence IDs: cmd-6249795148fb4874"
+  ],
+  "command_stats": {
+    "total": 81,
+    "successful": 74,
+    "failed": 7,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Almost all state-changing commands map directly to a material outcome or a necessary prerequisite: package installs, postgresql.conf/pg_hba edits, firewall port opens (needed and retained for ongoing replication traffic), SSH key placement using cluster-provided keys (needed for node-to-node password relay), repeated `rm -rf /var/lib/pgsql/data/*` + pg_basebackup rebuilds during standby (re)provisioning, and the sequential reboots for the mandatory restart protocol. The seven failed commands (openssl missing, unresolved hostnames before /etc/hosts was populated, a premature CREATE ROLE attempt before postgresql started, two pg_basebackup attempts before the firewall port was opened, and transient reboot-window connection timeouts) were either no-ops or were corrected by subsequent commands with no lasting effect \u2014 not unnecessary mutations. One minor residue: a plaintext replicator-role password file (/root/.repl_pw, chmod 600, root-only) was created on all three nodes and never cleaned up after replication setup completed, per the after-executor snapshot showing it was not removed. This is a bounded, low-risk residue (restricted permissions, no external exposure) rather than a broad or security-weakening one.",
+    "evidence_ids": [
+      "cmd-ecf449fe8fdd4b33",
+      "cmd-17543136c1ee418e",
+      "cmd-50a9d9414e434732",
+      "cmd-c5a05f9adc134adb",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

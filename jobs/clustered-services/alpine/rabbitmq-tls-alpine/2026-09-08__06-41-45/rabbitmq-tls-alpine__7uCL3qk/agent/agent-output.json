@@ -1,0 +1,94 @@
+{
+  "status": "completed",
+  "summary": "Deployed a 3-node RabbitMQ 4.2.7 cluster (node1/node2/node3, Alpine 3.23) serving AMQP exclusively over TLS on port 5671, secured by a purpose-built CA. Client certificate authentication is mandatory (verify_peer + fail_if_no_peer_cert=true); the plaintext 5672 listener is disabled entirely. The management UI (15672) is gated by an iptables chain (RMQ_MGMT) that only accepts traffic from the three cluster node IPs and drops everything else, persisted via rc-update/iptables-save. Ran the mandatory one-at-a-time restart protocol on all three nodes: captured baseline boot_id, rebooted, confirmed boot_id changed, and verified RabbitMQ/TLS/firewall/cluster membership fully recovered before moving to the next node, preserving quorum throughout. Along the way discovered and fixed a persistence bug: /etc/hostname was \"localhost\" (runtime hostname set out-of-band by provisioning), which caused node3's first reboot to rejoin the cluster under a spurious Erlang node name; fixed /etc/hostname on all three nodes and cleaned up the stray cluster member before node2/node1 restarts, after which both came back correctly as rabbit@node2/rabbit@node1.",
+  "actions_performed": [
+    "Installed rabbitmq-server, erlang27, openssl, iptables on all three nodes via apk",
+    "Generated a dedicated CA (ca_key.pem/ca_cert.pem) on node1",
+    "Issued CA-signed server certs (with SAN DNS+IP entries for all 3 nodes) for node1/node2/node3 and a CA-signed client cert for connection testing; verified full chain of trust with openssl verify",
+    "Distributed CA cert plus per-node server cert/key to /etc/rabbitmq/tls on each node (via a temporary SSH unlock of root, then relocked root accounts afterward) with rabbitmq:rabbitmq ownership and restrictive file permissions",
+    "Generated one shared Erlang cookie on node1 and distributed it identically (md5-verified) to node2/node3",
+    "Wrote rabbitmq.conf on all nodes: listeners.tcp = none (disables plaintext AMQP), listeners.ssl.default = 5671, ssl_options with cacertfile/certfile/keyfile, verify = verify_peer, fail_if_no_peer_cert = true, classic_config peer discovery listing all three nodes, cluster_partition_handling = pause_minority",
+    "Created and persisted (iptables-save + rc-update add iptables default) an RMQ_MGMT iptables chain on every node restricting TCP/15672 to the three cluster node IPs and dropping all other sources",
+    "Started rabbitmq-server on all three nodes and confirmed automatic cluster formation (Running Nodes: rabbit@node1/2/3, no partitions)",
+    "Enabled rabbitmq_management plugin on all nodes; created an administrator user (rmqadmin, generated password) and deleted the default guest account",
+    "Enabled rabbitmq-server and iptables in the default OpenRC runlevel on all nodes so both survive reboot",
+    "Verified TLS enforcement: openssl s_client and a Python/pika AMQP publish+consume test succeed only when a CA-issued client cert is presented; both fail with 'certificate required' TLS alert otherwise",
+    "Verified management firewall: curl to the management API succeeds (200 OK, authenticated) from a cluster node IP and is dropped/times out from a non-listed source (127.0.0.1)",
+    "Discovered /etc/hostname was 'localhost' on all nodes (runtime hostname set out-of-band); after node3's first reboot it rejoined as rabbit@vm-rhel8-... instead of rabbit@node3 \u2014 fixed /etc/hostname on all three nodes, forgot the stray cluster member, and cleaned up its mnesia state",
+    "Executed the mandatory one-node-at-a-time restart protocol on node3, node2, then node1: captured pre-restart boot_id via /proc/sys/kernel/random/boot_id, issued a background 'reboot' whose acknowledgement returned before disconnect, polled until reachable, confirmed boot_id changed, and confirmed RabbitMQ cluster membership, TLS listener, and management firewall all recovered before proceeding to the next node",
+    "Final full-cluster verification after all three restarts: cluster_status shows all three nodes running with no partitions, TLS client-cert enforcement still works end-to-end (publish/consume succeeds with cert, fails without), management API reachable/authenticated from cluster IP and blocked from a non-cluster source, and no plaintext 5672 listener exists on any node"
+  ],
+  "evidence": [
+    {
+      "requirement": "RabbitMQ cluster running across node1, node2, node3",
+      "command_ids": [
+        "cmd-3175d4d5bcc54380",
+        "cmd-31bcf76145f14c87",
+        "cmd-ca881700da604891"
+      ],
+      "summary": "rabbitmqctl cluster_status on node1 shows Running Nodes rabbit@node1/rabbit@node2/rabbit@node3 with no network partitions, both mid-task and after all restarts"
+    },
+    {
+      "requirement": "AMQP served over TLS using a CA created for this cluster; only clients presenting a cert issued by that CA are accepted",
+      "command_ids": [
+        "cmd-d277741d14cd4ad6",
+        "cmd-7e3a753c591e4de0",
+        "cmd-09dfa44aae9f4f46",
+        "cmd-b42c58431ccc4963",
+        "cmd-b3d0ad00f0ec4a8d",
+        "cmd-951c29d4baad4df6"
+      ],
+      "summary": "CA generated on node1 (ca_cert.pem/ca_key.pem); server and client certs issued and openssl-verified against it; openssl s_client and a Python/pika end-to-end AMQP publish+consume test show TLS connections succeed only with the CA-issued client cert and fail with a 'certificate required' alert otherwise, confirmed on node1 initially and node3 post-restart"
+    },
+    {
+      "requirement": "Plaintext (non-TLS) AMQP is not exposed, only TLS",
+      "command_ids": [
+        "cmd-c3bbf2453398461d",
+        "cmd-8fedb56429e541b3",
+        "cmd-951c29d4baad4df6"
+      ],
+      "summary": "netstat shows no listener on 5672 on node1 and confirms 0 plaintext AMQP listeners on node2/node3 after restarts; only 5671 (TLS) is listening"
+    },
+    {
+      "requirement": "Management interface reachable only from within the cluster",
+      "command_ids": [
+        "cmd-bc471648c37042ac",
+        "cmd-6a05089afb5d4e81",
+        "cmd-0280a0b5a2de4bc3",
+        "cmd-734f6f040a3c46c7",
+        "cmd-881e709e38df4fc2",
+        "cmd-ca881700da604891"
+      ],
+      "summary": "RMQ_MGMT iptables chain allowing only the three cluster node IPs and dropping all else is installed and persisted on every node; curl from an allowed cluster IP reaches the API (200/401 depending on auth) while curl from a non-listed source (127.0.0.1) times out/drops, verified both mid-task and after final node1 restart; cross-node access (node2 -> node1 management) also confirmed reachable"
+    },
+    {
+      "requirement": "Mandatory node-restart evidence: healthy baseline, restart ack, changed boot identity, recovered state per node",
+      "command_ids": [
+        "cmd-427a910ba2e548ba",
+        "cmd-2e4ce4c0ca1a4d1c",
+        "cmd-6da85dc4019c4af4",
+        "cmd-bf6770a312b94db8",
+        "cmd-fb7fdd426bb2494c",
+        "cmd-2c748191709e4db3",
+        "cmd-ed0044db40124cd2",
+        "cmd-324e543506614d6a",
+        "cmd-df0dda30a0584811",
+        "cmd-dc896d1141864ded",
+        "cmd-6502e454150540a7",
+        "cmd-9db816323de64b29"
+      ],
+      "summary": "For each node: baseline boot_id/status captured, background 'reboot' acknowledged before disconnect, subsequent poll shows a changed /proc/sys/kernel/random/boot_id (node3: dcc72341->ef4c99a3->set correctly as rabbit@node3 after hostname fix; node2: c171b954->31ad0668, rejoined as rabbit@node2; node1: f4dd55b3->742964db, rejoined as rabbit@node1), with rabbitmqctl status confirming the RabbitMQ app back up under the correct node identity after each restart"
+    },
+    {
+      "requirement": "Cluster quorum/health maintained through the restart sequence, one node at a time",
+      "command_ids": [
+        "cmd-aa16556fc7db4ee8",
+        "cmd-18054e8427c14334",
+        "cmd-9e7e0b00a613451a",
+        "cmd-31bcf76145f14c87",
+        "cmd-ca881700da604891"
+      ],
+      "summary": "cluster_status polled after each individual node restart shows all three nodes back in Running Nodes with no partitions before the next node was restarted"
+    }
+  ]
+}

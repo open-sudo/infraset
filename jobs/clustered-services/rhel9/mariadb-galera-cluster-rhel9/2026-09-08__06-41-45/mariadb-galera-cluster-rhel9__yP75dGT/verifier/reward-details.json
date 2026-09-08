@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Configure node1, node2, node3 as a three-member MariaDB Galera cluster",
+      "status": "satisfied",
+      "summary": "All three nodes report wsrep_cluster_size=3, wsrep_local_state_comment=Synced, and wsrep_cluster_status=Primary after node1 was bootstrapped with galera_new_cluster and node2/node3 joined via mariabackup SST (after diagnosing and fixing an SST-blocking SELinux AVC denial).",
+      "evidence_ids": [
+        "cmd-3430671c3a3e45b9",
+        "cmd-eca430f62445458f",
+        "cmd-997be6ec91ad45bb",
+        "cmd-163cff9d865f4314",
+        "cmd-c1d911ebd749463c",
+        "cmd-e00edca706ab4ca0"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Writes through any member should be available/visible from the other members",
+      "status": "satisfied",
+      "summary": "A table was created and rows inserted from node1, node2, and node3 in sequence, with each node's SELECT before its own insert already showing the prior nodes' rows, and a final SELECT from node1 showing all three rows present.",
+      "evidence_ids": [
+        "cmd-9ffde058f9fb4e98",
+        "cmd-fab0234b1e3a4968",
+        "cmd-1e7b2269deeb4598",
+        "cmd-92eeffac2c7d4bb9"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Keep the database available when one member is unavailable",
+      "status": "satisfied",
+      "summary": "Healthy 3-node baseline was directly observed (req-1/req-2 evidence), node3's mariadb service was stopped (bounded disruption), and with only 2/3 nodes remaining, node1 still reported cluster_status=Primary and wsrep_ready=ON and accepted a live INSERT that immediately replicated to node2 \u2014 a full before/during/after transition was captured, not just static configuration.",
+      "evidence_ids": [
+        "cmd-4f09a4136011471f",
+        "cmd-f80f181e6454488a",
+        "cmd-b75656ca534d4efc"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Resynchronize the unavailable member automatically when it returns",
+      "status": "satisfied",
+      "summary": "node3's mariadb service was restarted after the outage; without any manual SST/resync command, wsrep_cluster_size returned to 3 with local_state_comment=Synced, and the row written on node1 while node3 was down (id=5) was present on node3 \u2014 confirming automatic IST-based resynchronization.",
+      "evidence_ids": [
+        "cmd-51152e41062b4565",
+        "cmd-48cc0ce733a54890"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a working 3-node MariaDB Galera cluster on RHEL 9 (mariadb-server-galera 10.5.29 / galera 26.4.22), correctly diagnosed and fixed an SELinux AVC denial blocking the mariabackup SST socket connection, and directly demonstrated all material outcomes with observed state transitions rather than configuration alone: cross-node write replication, continued availability and write acceptance during a bounded single-node outage (2/3 quorum, Primary status), and automatic IST resynchronization on node3's return with the outage-period write intact. The independent full-cluster reboot evidence protocol was also executed cleanly for all three nodes \u2014 pre-restart boot_id/health/data baseline, reboot acknowledgement, distinct post-restart boot_id, and recovered Synced/Primary state with data intact \u2014 and is fully consistent with the fixed before-prepare/after-executor boot-identity snapshots. Hygiene is generally good; the main blemishes are a broad `rm -rf /var/lib/mysql/*` used to recover a stuck join on node2 (justified but risky) and an uncleaned diagnostic backup directory left on node1.",
+  "limitations": [
+    "Root/SST credentials were generated and distributed but not included in the report; the SST password did surface once in a debug `cat` command's captured tool output (cmd-6ef8529def4c4467 context), a minor secret-hygiene note rather than a functional gap.",
+    "No independent client-side (non-localhost) connectivity test was captured; all write/read verification used local `mysql` CLI on each node via /root/.my.cnf rather than a remote client connecting through the network, though this does not affect the cluster/replication verdict.",
+    "The diagnostic artifact /tmp/backuptest on node1 and the small residual temp files across all nodes were not cleaned up by the executor; this is noted in hygiene rather than affecting task functionality."
+  ],
+  "command_stats": {
+    "total": 112,
+    "successful": 95,
+    "failed": 17,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most state-changing commands map clearly to task outcomes: package installs, firewall port opens, galera.cnf writes, cluster bootstrap/join, and the SELinux local policy module (mysqld_sst.pp, loaded on all 3 nodes) were all necessary to get SST working under enforcing SELinux. One broader/riskier mutation stands out: on node2, cmd-c044b37e74aa4ab2 ran `rm -rf /var/lib/mysql/*` to clear a stuck failed-join datadir; this was a reasonable corrective action (node2 held no synced cluster data yet) and the node subsequently joined cleanly via cmd-eca430f62445458f, but a destructive recursive rm is inherently higher-risk. A manual SST diagnostic on node1 (cmd-6ef8529def4c4467, sudo -u mysql mariadb-backup --target-dir=/tmp/backuptest) was not cleaned up \u2014 /tmp/backuptest is still present in the after-executor snapshot, an abandoned diagnostic artifact. Various small temp/log files (/tmp/install.log, /tmp/install.pid, /tmp/mysqld_sst.te, /tmp/mysqld_sst.mod, /tmp/reboot.log) also remain on all nodes post-task but are low-risk bounded residue. No failed/conflicting services, unsafe port exposure beyond the required Galera ports, or damaged package state were observed in the after-executor snapshot (failed-services empty on all nodes; package-health checks pass).",
+    "evidence_ids": [
+      "cmd-c044b37e74aa4ab2",
+      "cmd-eca430f62445458f",
+      "cmd-6ef8529def4c4467",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

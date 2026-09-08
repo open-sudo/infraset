@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Configure PostgreSQL streaming replication with node1 as writable primary and node2/node3 as standbys",
+      "status": "not_satisfied",
+      "summary": "PostgreSQL 16 was installed on all three nodes (cmd-ba441ab113c54b75, cmd-afe687b6decb48b0, cmd-e456c1fd8fe74577, confirmed active via cmd-881437705cf94359, cmd-6646ca59846940ac, cmd-4474b5fb40f240a1), but no replication was ever configured. postgresql.conf still shows the default commented-out listen_addresses and pg_hba.conf on node2 shows only localhost/loopback entries for both normal and replication connections (cmd-310d112c8f41420a, cmd-489f6bada4bb45b3) \u2014 no listen_addresses change, no replication user, no primary_conninfo, and no standby.signal on any node. The timeline ends with the executor rebooting node1 and then repeatedly failing to reconnect until the cluster lease expired, with no further configuration commands captured.",
+      "evidence_ids": [
+        "cmd-ba441ab113c54b75",
+        "cmd-afe687b6decb48b0",
+        "cmd-e456c1fd8fe74577",
+        "cmd-881437705cf94359",
+        "cmd-6646ca59846940ac",
+        "cmd-4474b5fb40f240a1",
+        "cmd-310d112c8f41420a",
+        "cmd-489f6bada4bb45b3"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "On loss of the primary, a standby must be promoted to writable primary without losing committed data, and the recovered former primary must rejoin as a standby of the new primary",
+      "status": "not_satisfied",
+      "summary": "Because streaming replication was never configured (see req-1), there is no replica topology to fail over. The executor issued a reboot of node1 (cmd-cfa32b95ba1341d3), simulating a primary loss, but the captured timeline shows only repeated failed reconnection polls (cmd-639c5ff8453f4a58 through cmd-15baeef69c2b481c) and periodic sleeps on node2/node3 with no promotion command (e.g. pg_ctl promote / pg_promote), no re-pointing of a standby's primary_conninfo, and no confirmation that node1 ever returned or rejoined as a standby before the managed cluster lease expired (after_executor snapshot shows lease expiry for all nodes). No committed-data or recovery verification exists.",
+      "evidence_ids": [
+        "cmd-cfa32b95ba1341d3",
+        "cmd-639c5ff8453f4a58",
+        "cmd-33c311df9e3b4338",
+        "cmd-e7bd86c80e864aa3",
+        "cmd-15baeef69c2b481c"
+      ]
+    }
+  ],
+  "overall_summary": "The executor got as far as installing stock PostgreSQL 16 packages on all three Ubuntu 24.04 nodes and establishing /etc/hosts name resolution between them, but never configured streaming replication (no listen_addresses change, no replication role/user, no primary_conninfo, no standby.signal observed anywhere in the captured evidence). It then rebooted node1 \u2014 seemingly to test failover \u2014 before replication existed, and spent the remainder of the session unable to reconnect to node1 until the managed cluster lease expired. No failover, promotion, or recovery behavior was ever observed, and the executor's final report was unavailable ('blocked' status). Both material task outcomes are not satisfied.",
+  "limitations": [
+    "The executor's final report was unavailable, so any undocumented rationale for the node1 reboot or later configuration steps beyond the captured timeline cannot be verified.",
+    "The after_executor lifecycle snapshot is entirely unavailable due to cluster lease expiry, preventing any independent cross-check of final boot identity, service state, or package health on any node.",
+    "No provider-wide node-restart evidence protocol (pre-restart healthy baseline, acknowledgement, differing post-restart boot identity, recovered service/data/cluster state) was completed for any node \u2014 node1's reboot never showed a recovered state, and node2/node3 were never restarted at all within the captured window.",
+    "The command timeline is described as possibly bounded/truncated, so some configuration attempts might have occurred outside the captured window, though none are reflected in the final observed pg_hba.conf/postgresql.conf state."
+  ],
+  "command_stats": {
+    "total": 82,
+    "successful": 53,
+    "failed": 18,
+    "indeterminate": 11,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.0,
+  "operational_hygiene": {
+    "score": 0.3,
+    "summary": "Most mutating actions (appending /etc/hosts entries on all nodes, installing postgresql/postgresql-contrib packages) were reasonable, low-risk prerequisites for the task and are supported by follow-on evidence of successful installation. The kill -9 of stray apt/sudo background processes (cmd-3ad76ec805574be0) was a corrective cleanup of a previous backgrounded command and is not penalized. However, the executor issued `nohup reboot` on node1 (cmd-cfa32b95ba1341d3) before any replication configuration existed on any node \u2014 there is no evidence this reboot served a task requirement (replication was never set up, so it could not have been a failover test) or a diagnostic/discovery purpose beyond generic troubleshooting. This broad, irreversible-in-window action left node1 unreachable for the remainder of the session; the executor then spent roughly 15 minutes (cmd-639c5ff8453f4a58 through cmd-15baeef69c2b481c and interleaved sleeps) polling without success, consuming the remaining managed-cluster lease and directly contributing to the task ending in a blocked state with no final report. This is treated as an unnecessary, high-impact mutation that was never restored within the observed window.",
+    "evidence_ids": [
+      "cmd-cfa32b95ba1341d3",
+      "cmd-3ad76ec805574be0",
+      "cmd-15baeef69c2b481c"
+    ]
+  },
+  "reward": 0.0,
+  "provisional_reward": 0.0
+}

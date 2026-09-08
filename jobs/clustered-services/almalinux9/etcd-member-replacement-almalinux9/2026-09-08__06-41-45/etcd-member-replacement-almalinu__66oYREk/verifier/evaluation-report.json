@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-baseline",
+      "requirement": "Three-member etcd cluster running on node1/node2/node3 holding application keys (task's starting premise)",
+      "status": "satisfied",
+      "summary": "No prior etcd was present (cmd-141c9560336b4c80/cmd-0cfa7467f06f4e7c/cmd-aac6eeb65fe246c1 confirm no etcd on any node), so the executor stood up the 3-member cluster itself and loaded 5 application keys under /app/. Member list and endpoint health confirmed 3/3 healthy, and keys were confirmed replicated to node2 and node3.",
+      "evidence_ids": [
+        "cmd-d53aca104b354643",
+        "cmd-dfebde5c3e024b6c",
+        "cmd-64965819510e4f73",
+        "cmd-aa8df2a38dcd4f7f"
+      ]
+    },
+    {
+      "id": "node3-loss-simulated",
+      "requirement": "node3 member is permanently lost (data unrecoverable) as the disruption to be handled",
+      "status": "satisfied",
+      "summary": "etcd stopped/disabled on node3 and its data directory wiped; endpoint health from node1 subsequently showed node3 unreachable (connection refused) while node1/node2 remained healthy, directly demonstrating quorum preserved through the loss.",
+      "evidence_ids": [
+        "cmd-a5e9df516c334955",
+        "cmd-e050b90dd08943cb"
+      ]
+    },
+    {
+      "id": "member-replacement",
+      "requirement": "Dead node3 member removed and replaced with a new working member on the same node",
+      "status": "satisfied",
+      "summary": "member remove of the old node3 member ID succeeded from a 2-member quorum, member add registered a new node3 member, and the new etcd process was started with initial-cluster-state=existing and joined, catching up to the same raft term/index as node1 and node2.",
+      "evidence_ids": [
+        "cmd-e5172ae135314b1a",
+        "cmd-40825808ba3e4c82",
+        "cmd-0183d5d2554443c9",
+        "cmd-59c5447c37eb49fa"
+      ]
+    },
+    {
+      "id": "cluster-restored",
+      "requirement": "Cluster back to three healthy members after replacement",
+      "status": "satisfied",
+      "summary": "Post-replacement endpoint health and member-list output show all three endpoints healthy and started, with endpoint status showing raft term/index synchronized (25/25) across all three members.",
+      "evidence_ids": [
+        "cmd-59c5447c37eb49fa"
+      ]
+    },
+    {
+      "id": "keys-intact",
+      "requirement": "Existing application keys intact on the rebuilt cluster, including on the replaced node3",
+      "status": "satisfied",
+      "summary": "All 5 /app/ keys were read directly from the rebuilt node3 member and matched the original values written earlier.",
+      "evidence_ids": [
+        "cmd-2edbe0120fd5443d"
+      ]
+    },
+    {
+      "id": "restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (independent of public task contract)",
+      "status": "satisfied",
+      "summary": "For each of node1, node2, node3: a pre-restart boot_id was captured, a reboot was issued, the node became unreachable during the transition, a differing post-restart boot_id was confirmed, and cluster health/member-list/raft-index/key-data were re-verified after each restart. The fixed after_executor snapshot's boot-identity values for all three nodes match the executor's captured post-restart boot_ids exactly, cross-confirming the restarts occurred.",
+      "evidence_ids": [
+        "cmd-97231c6cfc8246a3",
+        "cmd-e79642a170a14d3e",
+        "cmd-91b7770bef3c414d",
+        "cmd-77c9e869a8184da7",
+        "cmd-ae753e71bdb94f1a",
+        "cmd-68de8e2ebd2042dd",
+        "cmd-0a9480b61a1a4f0f",
+        "cmd-5491ff71eafd4f41",
+        "cmd-74e3a72fc88f401f",
+        "cmd-eb7e7e47eaec4de4",
+        "cmd-5e741b3a5e8540b9",
+        "cmd-36fe7868c5d64f46",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor bootstrapped the three-member etcd cluster (none pre-existed), loaded five application keys, simulated permanent loss of the node3 member via stop+data wipe (directly showing quorum preserved with node1/node2 healthy while node3 was unreachable), removed the dead member, added and started a fresh node3 member with initial-cluster-state=existing, and confirmed it fully synced (matching raft term/index) with all keys intact. The mandatory node-restart evidence protocol was completed for all three nodes with coherent pre/post boot_id evidence cross-checked against the fixed global snapshots, and cluster health/keys were reverified after each restart. All material outcomes are satisfied with direct evidence.",
+  "limitations": [
+    "Unremoved etcd installer artifacts (tarball and extracted directory) remain in /tmp on all three nodes; low-risk but not cleaned up.",
+    "One transient service-start failure on node1 during initial bootstrap (cmd-7a6d3f701b314891) was corrected in the next command; captured stdout for the retry does not include full journalctl detail on why the first attempt timed out, though this does not affect confidence in the final state."
+  ],
+  "command_stats": {
+    "total": 56,
+    "successful": 48,
+    "failed": 8,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Executor commands mutating state were all purposeful: package install, user/dir/firewall setup, systemd unit creation, service starts, key writes, the node3 stop/wipe (the task's own disruption), member remove/add, and the three reboots. One state-changing action failed transiently: `systemctl enable --now etcd` on node1 (cmd-7a6d3f701b314891) timed out (rc=1) because etcd was waiting on peer quorum during initial bootstrap; the executor's immediate follow-up `systemctl start etcd` (cmd-fac92fdbf9384429) succeeded and brought the service to a healthy running state, so this is a corrective retry rather than an unnecessary mutation, and it left no residue. The one hygiene gap is unremoved build artifacts: the downloaded etcd.tar.gz and extracted etcd-v3.5.17-linux-amd64/ directory were left in /tmp on all three nodes (visible in after_executor temporary-files diffs for node1, node2, node3) instead of being cleaned up after installing the binaries to /usr/local/bin. This is low-risk, bounded residue with no functional impact but was not restored.",
+    "evidence_ids": [
+      "cmd-7a6d3f701b314891",
+      "cmd-fac92fdbf9384429",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

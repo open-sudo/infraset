@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "replication-topology",
+      "requirement": "Configure PostgreSQL streaming replication across node1, node2, node3 with node1 as the writable primary",
+      "status": "satisfied",
+      "summary": "node1 was configured as primary (wal_level=replica, max_wal_senders, replicator role) and node2/node3 were built as standbys via pg_basebackup -R producing standby.signal. pg_stat_replication on the primary showed both peers in state=streaming, and a write on the primary (repl_test row, then post_restart_check row) appeared on both standbys with pg_is_in_recovery()=t, directly confirming a working writable-primary/standby topology both before and after the mandatory restarts.",
+      "evidence_ids": [
+        "cmd-b2341aa4ca834137",
+        "cmd-4a6f3f60d7db4064",
+        "cmd-43c67e89c56a429c",
+        "cmd-4c969601434e47e1",
+        "cmd-b8abcc0f248c4883",
+        "cmd-2216190f87e445bd",
+        "cmd-7bc4b31d7a6e48f9",
+        "cmd-ddb2c47a151c44e2",
+        "cmd-21202d9d279644df",
+        "cmd-06009e1c034b4f42",
+        "cmd-0b5c76da3b3241d3",
+        "cmd-d4666737dd344f97",
+        "cmd-183ee48cde94412d"
+      ]
+    },
+    {
+      "id": "tls-with-cluster-ca",
+      "requirement": "Carry replication traffic over TLS using a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A dedicated 4096-bit RSA CA (/etc/pg-ca/ca.key, ca.crt, CN=postgres-cluster-ca, 10yr) was generated on node1. Server certs (CN=nodeX, SAN=DNS+IP) for all three nodes and a client cert (CN=replicator) were issued by this CA and distributed with correct ownership/permissions. pg_basebackup used sslmode=verify-full against this CA, primary_conninfo on both standbys persisted sslmode=verify-full with the CA/cert paths, and pg_stat_ssl on the primary confirmed ssl=t with cipher TLS_AES_256_GCM_SHA384 for both replication connections, both pre- and post-restart.",
+      "evidence_ids": [
+        "cmd-4986f8c2d95346db",
+        "cmd-dda9dc299d114976",
+        "cmd-b5b9979357b9454e",
+        "cmd-61d9efcda3104313",
+        "cmd-4a6f3f60d7db4064",
+        "cmd-4c969601434e47e1",
+        "cmd-b8abcc0f248c4883",
+        "cmd-2216190f87e445bd",
+        "cmd-7bc4b31d7a6e48f9",
+        "cmd-0b5c76da3b3241d3"
+      ]
+    },
+    {
+      "id": "cert-restricted-replication-access",
+      "requirement": "Primary accepts replication connections only from peers presenting a certificate issued by that CA",
+      "status": "satisfied",
+      "summary": "pg_hba.conf on node1 restricts replication to hostssl entries requiring 'cert clientcert=verify-full' for the replicator role from node2/node3 IPs only. A connection attempt with no client cert was rejected with 'no pg_hba.conf entry', and a connection attempt using a self-signed (non-CA) cert bearing the correct CN was rejected with 'SSL error: tlsv1 alert unknown ca', directly demonstrating enforcement of CA-issued-certificate-only access alongside the earlier evidence of successful CA-issued-cert connections.",
+      "evidence_ids": [
+        "cmd-70e04779751d4f03",
+        "cmd-7ae0e3e83e4c4706",
+        "cmd-423383bae3294969"
+      ]
+    },
+    {
+      "id": "node-restart-evidence",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart boot identity/health, restart acknowledgement, changed post-restart boot identity, recovered service/data/cluster state on every managed node",
+      "status": "satisfied",
+      "summary": "For each node, a pre-restart boot_id and healthy state (streaming replication or pg_is_in_recovery=t) was captured, systemctl reboot was issued and acknowledged, the node became briefly unreachable, and a different post-restart boot_id was observed. Post-restart, postgresql was active, wal_receiver status=streaming on both standbys, and pg_stat_replication on the primary showed both peers streaming again. A final write on the primary after all three restarts replicated to both standbys. These executor-reported boot IDs match exactly the independent global before_prepare/after_executor boot-identity snapshots for all three nodes (node1 c2ffc729\u219241c88c5c, node2 a0d04bc6\u2192dc5f8f49, node3 a4139d3b\u2192ea688f31), corroborating the transition.",
+      "evidence_ids": [
+        "cmd-feb3ebff718348bb",
+        "cmd-2cd2301650464409",
+        "cmd-19c7f118f3054a86",
+        "cmd-5d53634b85004d51",
+        "cmd-0b5c76da3b3241d3",
+        "cmd-d4666737dd344f97",
+        "cmd-183ee48cde94412d",
+        "cmd-8aa4f92becde4912",
+        "cmd-296f015130ad480d",
+        "cmd-2738cc1041834b76",
+        "cmd-70de3da0b72e470e",
+        "cmd-6aad80bb6adc4c56",
+        "cmd-d13b275b52c44f1e",
+        "cmd-fb03fc483bb34360",
+        "cmd-019716d2fa114226",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor delivered a fully evidenced PostgreSQL 13 streaming replication cluster (node1 primary, node2/node3 async standbys) with TLS carried over a dedicated cluster CA, and demonstrated enforcement of CA-issued-certificate-only replication access via two concrete negative tests (no cert, non-CA cert) alongside successful CA-issued-cert replication. The mandatory node-restart protocol was executed on all three nodes with pre/post boot-identity changes and full recovery of streaming replication and data consistency, independently corroborated by the fixed global boot-identity snapshots. Hygiene is good overall, with only a minor leftover verification table (post_restart_check) left on the primary as residue.",
+  "limitations": [
+    "Evidence for TLS enforcement relies on stdout of psql/openssl commands rather than independent packet capture; content is consistent and directly observed but not independently re-verified.",
+    "The post_restart_check table created during final verification was not dropped, leaving minor test residue in the primary database that was not addressed in the executor's cleanup pass.",
+    "No test was shown for a connection presenting a CA-issued certificate assigned to the wrong CN (e.g., a node cert instead of the replicator client cert) attempting replication, though this is a narrower edge case beyond the stated contract."
+  ],
+  "command_stats": {
+    "total": 69,
+    "successful": 61,
+    "failed": 8,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most state-changing executor commands map clearly to task or restart-protocol needs: wiping /var/lib/pgsql/data on node2/node3 before pg_basebackup (cmd-def5ecfdad164b13, cmd-033d6cb43780439f) was a necessary prerequisite; the rogue self-signed cert created for negative TLS testing (cmd-7ae0e3e83e4c4706/cmd-207cb122c6214def) was fully cleaned up (rm -f in cmd-423383bae3294969); intermediate CSR/ext files were removed (cmd-0b5c76da3b3241d3); the repl_test table used for early replication verification was dropped (cmd-745f1d6cb0b94297). One minor unnecessary residue: the post_restart_check table created on the primary during final post-restart verification (cmd-0b5c76da3b3241d3) was never dropped and remains in the database \u2014 a bounded, low-risk leftover rather than a broad or destructive one. Firewalld changes opening the postgresql service on all three nodes are a required, scoped mutation for enabling replication traffic, not excessive.",
+    "evidence_ids": [
+      "cmd-def5ecfdad164b13",
+      "cmd-033d6cb43780439f",
+      "cmd-7ae0e3e83e4c4706",
+      "cmd-207cb122c6214def",
+      "cmd-423383bae3294969",
+      "cmd-0b5c76da3b3241d3",
+      "cmd-745f1d6cb0b94297",
+      "cmd-f65c498a11854c61",
+      "cmd-20361b2c823548be",
+      "cmd-745bc1bf1bb34cbd"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

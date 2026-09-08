@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Deploy a three-member MariaDB Galera cluster across node1, node2, and node3 holding application data.",
+      "status": "satisfied",
+      "summary": "After extensive troubleshooting (the Ubuntu-repo mariadb-server-10.0/galera-3 combo lacked working WSREP support in the shipped mysqld binary), the executor built a working stack from the MariaDB 10.1.48 i686 binary tarball with the apt galera-3 provider library, installed it identically on all three nodes, and bootstrapped/joined them. Final status checks on node1 after all three nodes were online show wsrep_cluster_size=3, wsrep_local_state_comment=Synced, and wsrep_incoming_addresses listing all three node IPs. An appdb.orders table with three rows was created and confirmed via SELECT on node1 while the cluster reported all three members synced.",
+      "evidence_ids": [
+        "cmd-e16d6317e664458f",
+        "cmd-3539fe7a19d44ada",
+        "cmd-8c5bdc31d5dd430c",
+        "cmd-7e04e4c511a24738"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Bring the cluster down completely for a maintenance window and bring it back afterward with every committed write still present and all three members serving again.",
+      "status": "partially_satisfied",
+      "summary": "The only full three-node simultaneous stop observed in the trace (cmd-f9f5ae7953a14963, cmd-eab0f1bb9d5d46d2, cmd-3881fd31d32d46d7) occurred against the original, non-wsrep-capable mariadb-server-10.0 install before the working Galera stack existed, so it does not demonstrate the required maintenance-window transition for the final system. On the working 10.1.48 stack, the executor only performed sequential single-node stop/start cycles (node2 stop+restart, then node1 mysqladmin shutdown+systemctl restart) while the other two nodes stayed up, each time rejoining via SST/IST back to cluster_size=3. No evidence shows all three Galera nodes stopped together and cold-started together, and the only application data insert occurred as the final command in the trace with no subsequent restart to confirm the write survived a restart cycle.",
+      "evidence_ids": [
+        "cmd-f9f5ae7953a14963",
+        "cmd-eab0f1bb9d5d46d2",
+        "cmd-3881fd31d32d46d7",
+        "cmd-e91f35db555f422e",
+        "cmd-6446f1119f5e44ce",
+        "cmd-9ef0ef557a734da6",
+        "cmd-8b30c853b2a54e45",
+        "cmd-3539fe7a19d44ada"
+      ]
+    }
+  ],
+  "overall_summary": "The executor eventually stood up a functioning three-member MariaDB Galera cluster on node1-3 after discovering that the Ubuntu 16.04 apt-repo mariadb-server-10.0/galera-3 combination lacked a working WSREP-enabled mysqld, and instead deployed a MariaDB 10.1.48 i686 binary tarball with a custom systemd unit, datadir, and config. Final checks confirm cluster_size=3, all three synced, and application data (appdb.orders) present and queryable. However, the trace never demonstrates the specific contract requirement of bringing the entire cluster down together for a maintenance window and restoring it with prior committed writes intact \u2014 the only simultaneous three-node stop happened against the pre-Galera, broken install, and later restart testing was limited to rolling single-node stop/start cycles, with the sample data insert as the final command and no subsequent restart to confirm persistence. The build-out also left several uncleaned troubleshooting artifacts (added amd64 multiarch, a 3GB swapfile, a large build toolchain, and multi-hundred-MB leftover tarballs) that were not needed by the final solution.",
+  "limitations": [
+    "The executor final report was unavailable (\"status\":\"blocked\"), so no first-party account of what was validated exists beyond the raw command trace.",
+    "The after_executor lifecycle snapshot is entirely unavailable on all three nodes because the managed cluster lease expired at 2026-09-08T12:33:33Z, immediately after the trace ends, so no independent boot-identity, failed-services, listening-socket, or package-health comparison could be performed to cross-check restart or final system health.",
+    "No command in the trace demonstrates a simultaneous full-cluster shutdown and cold restart of the working Galera 10.1.48 stack with pre-existing committed data verified afterward; only rolling single-node restarts were exercised.",
+    "The final application data insert is the last command in the entire trace, so there is no evidence of its durability across any subsequent restart or cluster event."
+  ],
+  "command_stats": {
+    "total": 157,
+    "successful": 129,
+    "failed": 23,
+    "indeterminate": 5,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.45,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.75,
+  "operational_hygiene": {
+    "score": 0.5,
+    "summary": "Several state-changing detours were left unreverted after the executor pivoted away from them: `dpkg --add-architecture amd64` was enabled on node1 (cmd-b66b2433a6fa4fb7) to chase an amd64 package path that was ultimately abandoned in favor of a precompiled i686 tarball, and was never disabled; a 3GB swapfile was created on node1 (cmd-7e981cef545e41a5) and never removed; a full build toolchain (build-essential, cmake, bison, libssl-dev, etc., cmd-f2a3fec905c14421) was installed to attempt a from-source WSREP build that was abandoned once no wsrep code was found in the 10.0.38 source tree, and these packages were left installed; large downloaded artifacts (~280-395MB mariadb-10.1.48-linux-i686.tar.gz tarballs) were left in /tmp/src on all three nodes instead of being cleaned up once /opt/mariadb101 was populated. On the positive side, the executor did clean up several dead-end artifacts: the amd64 dpkg -x extraction at /opt/mdb64 (cmd-8c8f2138212440c5), the earlier failed /opt/mariadb 10.0.38 build directory (cmd-3dda4aed878f4a8f), and stale source directories/tarballs. The purge of the original broken mariadb-server-10.0/galera-3 packages and datadir (cmd-62c60c55c5ea45a8 and peers) was a necessary corrective step, not unwanted residue. None of the leftovers are destructive or security-weakening, but they represent real, uncleaned disk/package residue from troubleshooting paths that did not contribute to the final solution.",
+    "evidence_ids": [
+      "cmd-b66b2433a6fa4fb7",
+      "cmd-7e981cef545e41a5",
+      "cmd-f2a3fec905c14421",
+      "cmd-84666e583ccf4ff1",
+      "cmd-e7d7c44fb8a94872",
+      "cmd-8c8f2138212440c5",
+      "cmd-3dda4aed878f4a8f",
+      "cmd-62c60c55c5ea45a8"
+    ]
+  },
+  "reward": 0.75,
+  "provisional_reward": 0.75
+}

@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Join node1, node2, node3 into a single RabbitMQ cluster",
+      "status": "satisfied",
+      "summary": "node2 and node3 successfully ran join_cluster against rabbit@node1 (cmd-2eb1437c54bb432c, cmd-01d60eac8d2340d9) and the resulting cluster_status on node1 shows all three as Disk Nodes and Running Nodes with no partitions (cmd-3b701fddcca34b79). One earlier join attempt failed because node1's app wasn't yet started (cmd-ea8994a6eeb9481b), which was a corrected precondition failure, not a lasting problem.",
+      "evidence_ids": [
+        "cmd-2eb1437c54bb432c",
+        "cmd-01d60eac8d2340d9",
+        "cmd-3b701fddcca34b79",
+        "cmd-ea8994a6eeb9481b"
+      ]
+    },
+    {
+      "id": "payments-vhost",
+      "requirement": "Create a payments virtual host",
+      "status": "satisfied",
+      "summary": "add_vhost payments succeeded and list_vhosts confirms it exists alongside the default vhost.",
+      "evidence_ids": [
+        "cmd-baa854e17b174ac2"
+      ]
+    },
+    {
+      "id": "app-account",
+      "requirement": "Create an application account that can publish and consume in the payments vhost",
+      "status": "satisfied",
+      "summary": "app_user was created with configure/write/read=.* permissions scoped to the payments vhost (cmd-c618d8224fbc4660), confirmed persisted after restarts (cmd-0ee78e3713c24b6d). Because no AMQP client library was available on the nodes (python3/pika missing, cmd-7f91b4eabea2404d), the executor validated publish/consume via the management HTTP API instead of a native AMQP client, temporarily elevating app_user's tag to 'management' for that API call and reverting it to 'none' afterward (cmd-56886e0bfc674b65, cmd-131b3b1efb9a4f42). The underlying AMQP authorization (vhost permissions) that a real client would use was never altered, so the account's actual AMQP publish/consume capability is directly supported by the permission records plus the successful message operations.",
+      "evidence_ids": [
+        "cmd-c618d8224fbc4660",
+        "cmd-0ee78e3713c24b6d",
+        "cmd-7f91b4eabea2404d",
+        "cmd-56886e0bfc674b65",
+        "cmd-131b3b1efb9a4f42"
+      ]
+    },
+    {
+      "id": "durable-queue",
+      "requirement": "Durable queue replicated so it can survive node loss",
+      "status": "satisfied",
+      "summary": "A durable quorum queue 'orders' was declared with members [rabbit@node1, rabbit@node3, rabbit@node2] (cmd-624f5ee240614da6), which is RabbitMQ's supported mechanism for surviving individual node loss.",
+      "evidence_ids": [
+        "cmd-624f5ee240614da6"
+      ]
+    },
+    {
+      "id": "message-survival",
+      "requirement": "Messages published to the durable queue survive the loss of any one node and stay consumable from the remaining nodes",
+      "status": "satisfied",
+      "summary": "A persistent message was published while node1 was leader (cmd-c9138fddd86648d1, confirmed messages=1 in cmd-812c5602c7c049a8). node1's rabbitmq-server was then stopped (cmd-20d9c0b1e5524dca); cluster_status and list_queues on node2 directly show the remaining two nodes running, leadership having failed over to node2, and the message still present (cmd-acd15db6fe834090). The message was then successfully consumed from node2 while node1 was down (cmd-45b1ec0e1e174897), and node1 was restarted and rejoined afterward (cmd-4d06fbe7fbd64185). This is a directly observed disruption-and-recovery transition, not just configuration.",
+      "evidence_ids": [
+        "cmd-c9138fddd86648d1",
+        "cmd-812c5602c7c049a8",
+        "cmd-20d9c0b1e5524dca",
+        "cmd-acd15db6fe834090",
+        "cmd-45b1ec0e1e174897",
+        "cmd-4d06fbe7fbd64185"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (independent of the public task contract)",
+      "status": "satisfied",
+      "summary": "For each node, a pre-restart boot_id and healthy-service baseline was captured (cmd-d4249ffb113747c9, cmd-f9cf73ba32ae4498, cmd-d9bf5780cd444b81), a reboot was explicitly issued (cmd-8794987b25034fe8, cmd-623c71d1baaa4cfb, cmd-11ecce5b98ab4bb1), a changed post-reboot boot_id was observed after the SSH connection dropped and recovered (cmd-690f61338638439c, cmd-20038ebd22e142cc, cmd-5a614eaf06634a9e), and recovered cluster/queue state was confirmed on each (cmd-4cda93235d5c4cb0, cmd-d15eb0112d63484f, cmd-fc73bea278c24579). These boot_id values match the fixed before-prepare/after-executor lifecycle snapshots exactly, corroborating the transition independently. A final end-to-end publish/consume test after all three restarts succeeded (cmd-28324aa5b0044848, cmd-240bd07e65e143c1).",
+      "evidence_ids": [
+        "cmd-d4249ffb113747c9",
+        "cmd-8794987b25034fe8",
+        "cmd-690f61338638439c",
+        "cmd-4cda93235d5c4cb0",
+        "cmd-f9cf73ba32ae4498",
+        "cmd-623c71d1baaa4cfb",
+        "cmd-20038ebd22e142cc",
+        "cmd-d15eb0112d63484f",
+        "cmd-d9bf5780cd444b81",
+        "cmd-11ecce5b98ab4bb1",
+        "cmd-5a614eaf06634a9e",
+        "cmd-fc73bea278c24579",
+        "cmd-28324aa5b0044848",
+        "cmd-240bd07e65e143c1"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes in the task contract are directly and coherently supported by evidence: a 3-node RabbitMQ cluster was formed, the payments vhost and app_user (with correct AMQP-level permissions) were created, a durable quorum queue was declared and replicated, and a genuine node-loss transition (stop node1, observe failover and continued consumability on node2, restore node1) was directly observed rather than only configured. The separately-mandated node-restart evidence protocol was also completed for all three nodes with matching boot-identity changes cross-checked against the fixed lifecycle snapshots, plus a successful post-restart end-to-end publish/consume test.",
+  "limitations": [
+    "Publish/consume verification used the RabbitMQ management HTTP API rather than a native AMQP client, because no AMQP client library (pika/python3) was available on the RHEL7 nodes; this required temporarily elevating app_user's tags to 'management', which was reverted afterward. The AMQP-level authorization (vhost permissions) that a real application client would use was never altered, so this is treated as an evidence-collection substitution rather than a gap in the account's actual capability, but it is not a byte-for-byte confirmation of AMQP protocol behavior.",
+    "The rabbitmq_management plugin was left enabled on all three nodes after the task, which was necessary for the chosen verification method but does add a persistent management HTTP interface not explicitly required by the task.",
+    "Minor /tmp log file residue (erlang_repo.log, rmq_install.log, rmq_repo.log) was left on all three nodes without cleanup."
+  ],
+  "command_stats": {
+    "total": 118,
+    "successful": 93,
+    "failed": 25,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewing the executor's state-changing commands in order: package/repo installation, firewall port openings, cookie sync, and cluster join/vhost/user/queue creation all map directly to material task outcomes. Two bounded, low-risk mutations were made purely to work around the absence of an AMQP client library: app_user's tag was temporarily elevated to 'management' to exercise the HTTP management API (cmd-56886e0bfc674b65, cmd-28324aa5b0044848), and in both cases it was reverted to 'none' immediately after (cmd-131b3b1efb9a4f42, cmd-ec5d84e567414284) \u2014 fully restored, not retained. The rabbitmq_management plugin was enabled on all three nodes (cmd-71c98ceabc184326, cmd-ec35a8979c1f4fd8, cmd-240bd07e65e143c1) and left enabled/listening on port 15672 after the task; this is a modest, undischarged residual attack-surface increase adopted as the evidence-collection mechanism given tooling constraints, rather than an unrelated experiment. The lifecycle diff also shows leftover /tmp log files (erlang_repo.log, rmq_install.log, rmq_repo.log) on all three nodes that were never cleaned up \u2014 minor, low-risk residue. One early attempt to write the yum repo file without sudo failed with 'Permission denied' (cmd-b06c20122a734b61) and was immediately corrected by re-running with sudo; no lasting effect. No destructive, broad, or security-weakening actions were observed, and no failed/conflicting services remained (after_executor failed-services lists are empty on all nodes).",
+    "evidence_ids": [
+      "cmd-56886e0bfc674b65",
+      "cmd-131b3b1efb9a4f42",
+      "cmd-28324aa5b0044848",
+      "cmd-ec5d84e567414284",
+      "cmd-71c98ceabc184326",
+      "cmd-ec35a8979c1f4fd8",
+      "cmd-b06c20122a734b61",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

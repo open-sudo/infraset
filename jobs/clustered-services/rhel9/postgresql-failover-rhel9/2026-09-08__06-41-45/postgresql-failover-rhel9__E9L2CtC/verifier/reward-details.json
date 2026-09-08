@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "initial-topology",
+      "requirement": "PostgreSQL streaming replication running across node1 (primary), node2 and node3 (standbys), in a healthy state",
+      "status": "satisfied",
+      "summary": "node1 initialized as primary with wal_level=replica and a scram-sha-256 replicator role; node2 and node3 built via pg_basebackup -R and started as standbys. pg_stat_replication on node1 shows both standbys 'streaming' async, and both standbys report pg_is_in_recovery=t with the baseline row replicated.",
+      "evidence_ids": [
+        "cmd-b51940d4b50b47fe",
+        "cmd-bdf5e625abab49f7",
+        "cmd-ea38e07b08b34a87",
+        "cmd-793897a92d624543",
+        "cmd-c0cc3ccfe57242c7",
+        "cmd-a6ca4b2c329a4fbf",
+        "cmd-491cb4e3cd0c496b",
+        "cmd-47d3743946e04b07",
+        "cmd-8bba739a6ca24bd1",
+        "cmd-a4679722684b4cee"
+      ]
+    },
+    {
+      "id": "primary-loss-and-promotion",
+      "requirement": "When the primary is lost, a standby takes over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "A row was inserted and confirmed replicated to both standbys via matching WAL replay LSN before node1's postgresql service was stopped (simulated primary loss). node2 was then promoted with pg_ctl promote (pg_is_in_recovery=f), and the pre-failover committed row was confirmed intact plus a new write was accepted post-promotion, demonstrating zero data loss and writability.",
+      "evidence_ids": [
+        "cmd-c2011ad05de94277",
+        "cmd-a84c54712c7440b8",
+        "cmd-b8146a542f30485f",
+        "cmd-6299ac1dbdae4f65",
+        "cmd-73954323e27c4976",
+        "cmd-536c337300e6435a"
+      ]
+    },
+    {
+      "id": "third-node-repoint-and-rejoin",
+      "requirement": "The recovered former primary comes back as a standby of whichever system is primary at that point (and remaining standby is repointed as needed)",
+      "status": "satisfied",
+      "summary": "node3's primary_conninfo was repointed to node2 and confirmed streaming with full post-failover data. node1 was rebuilt via pg_basebackup from node2, confirmed pg_is_in_recovery=t with all data (including the post-failover write), and node2's pg_stat_replication shows both node1 and node3 reconnected as streaming standbys.",
+      "evidence_ids": [
+        "cmd-33a6f23c314a4b2a",
+        "cmd-7c8ac3200ba04ea0",
+        "cmd-864ba84d7bcd44f8",
+        "cmd-5b547006e770409d",
+        "cmd-47ec40c2f8784249",
+        "cmd-169db1cb905e41fc",
+        "cmd-625c78b6672e4449"
+      ]
+    },
+    {
+      "id": "post-recovery-replication-continuity",
+      "requirement": "Replication continues correctly end-to-end after the topology change (new primary's writes reach both standbys)",
+      "status": "satisfied",
+      "summary": "A new write on node2 (now primary) was confirmed present on both node1 and node3 after the topology change, and again after each node's restart in the node-restart protocol, showing durable ongoing replication in the new topology.",
+      "evidence_ids": [
+        "cmd-4c0357f086f24db9",
+        "cmd-0ae94536d2334789",
+        "cmd-49c04529d83c46a9",
+        "cmd-fbc59b81569348fb",
+        "cmd-c931d247950543aa",
+        "cmd-57edef48593649f4"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established healthy three-node PostgreSQL streaming replication (node1 primary, node2/node3 standbys), then directly demonstrated the required failover behavior end-to-end: pre-failover committed data confirmed on standbys, node1 stopped, node2 promoted to writable primary with zero data loss and new writes accepted, node3 repointed to node2, and node1 rebuilt and rejoined as a standby of node2 \u2014 with replication continuity verified afterward. The independent node-restart protocol was also completed on all three nodes with matching pre/post boot-identity changes cross-checked against the fixed lifecycle snapshots, and each node recovered its service, replication link, and data after reboot. Command history shows a small number of failed troubleshooting attempts (firewall, password encryption, a duplicated config line), all promptly diagnosed and corrected with no lasting residue.",
+  "limitations": [
+    "Evidence is limited to captured command outputs; no independent access to live systems to re-verify current state.",
+    "The replicator password appears in plaintext in a few captured outputs, which is a minor evidentiary/security hygiene note though scoped to an internal replication role on a private network.",
+    "Package-health checks for node2/node3 were unavailable at before_prepare (timeout) but observed successfully at after_executor, so a true pre/post package-integrity comparison for those two nodes is not fully established, though no failed services or broken package state was observed post-task."
+  ],
+  "command_stats": {
+    "total": 87,
+    "successful": 75,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Command trace shows a coherent, purposeful sequence: install, configure, build standbys, verify, simulate failure, promote, repoint, rejoin, and finally run the mandatory node-restart protocol on all three nodes. Several early pg_basebackup attempts failed (cmd-71d534ee971847c9, cmd-75b06c6053184281 due to firewall not yet open; cmd-56e3da81df5847f5, cmd-254f24d29c2b4629 due to md5 vs scram password mismatch) \u2014 these are legitimate discovery/troubleshooting of real environmental blockers, immediately diagnosed and corrected (firewall opened, password_encryption fixed), with no lasting residue since the data directories were subsequently wiped and rebuilt cleanly. Similarly, cmd-ce6e56745dca4fad produced a duplicated primary_conninfo line in postgresql.auto.conf on node1, which was promptly corrected by overwriting the file cleanly in cmd-47ec40c2f8784249 before starting postgresql \u2014 a bounded, fully-resolved corrective action. The after_executor snapshot shows no failed services and no unaccounted mutations; new listening sockets (5432) and /tmp entries (pg_install.log, reboot.log, boot-scoped systemd-private dirs) are all expected residue of the required install and reboot actions. One minor concern: the replicator password appears in plaintext in a few command outputs (e.g., cmd-4d93844b1a794792) and embedded in postgresql.auto.conf dumps \u2014 acceptable for an internal, single-purpose replication user scoped to a private /24, but noted for completeness.",
+    "evidence_ids": [
+      "cmd-71d534ee971847c9",
+      "cmd-75b06c6053184281",
+      "cmd-56e3da81df5847f5",
+      "cmd-254f24d29c2b4629",
+      "cmd-8c3fdf1b97f345c2",
+      "cmd-ce6e56745dca4fad",
+      "cmd-47ec40c2f8784249",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "3-node RabbitMQ cluster formed across node1, node2, node3",
+      "status": "satisfied",
+      "summary": "join_cluster executed for node2 and node3 against node1; subsequent cluster_status on node1 shows 3 disk nodes and 3 running nodes (rabbit@node1/2/3), confirmed again after the restart sequence.",
+      "evidence_ids": [
+        "cmd-09cbf47e63504464",
+        "cmd-b4ce203aa91d4a75",
+        "cmd-a2afe8b305cf46e1",
+        "cmd-2cd25373feb9455a",
+        "cmd-1b5efeac30db4b1e",
+        "cmd-820945623dfd4323"
+      ]
+    },
+    {
+      "id": "amqp-tls-only",
+      "requirement": "Cluster serves AMQP over TLS (no plaintext AMQP)",
+      "status": "satisfied",
+      "summary": "rabbitmq.conf sets listeners.tcp=none and listeners.ssl.default=5671; rabbitmqctl status and ss -tlnp confirm only amqp/ssl on 5671 with no 5672 listener on node1. The after_executor listening-sockets snapshot for all three nodes independently confirms only port 5671 (and management/cluster ports), no 5672.",
+      "evidence_ids": [
+        "cmd-a6d96df2e6d4467e",
+        "cmd-3c307dc8365045a9",
+        "global:after_executor:node1:listening-sockets",
+        "global:after_executor:node2:listening-sockets",
+        "global:after_executor:node3:listening-sockets"
+      ]
+    },
+    {
+      "id": "dedicated-ca",
+      "requirement": "A certificate authority created specifically for this cluster is used to issue node certificates",
+      "status": "satisfied",
+      "summary": "A self-signed CA (CN=RabbitMQ Cluster CA) was generated on node1, and per-node server certs plus a client cert were issued by that CA with correct CN/SAN values, then distributed to all three nodes.",
+      "evidence_ids": [
+        "cmd-b459c7589c574318",
+        "cmd-70d0a2b72dc84050",
+        "cmd-6bb17fd119a34330",
+        "cmd-2b14177122a54142"
+      ]
+    },
+    {
+      "id": "mtls-enforced",
+      "requirement": "Only clients presenting a certificate issued by the cluster CA are accepted (mutual TLS)",
+      "status": "satisfied",
+      "summary": "rabbitmq.conf sets ssl_options.verify=verify_peer and fail_if_no_peer_cert=true. Direct openssl s_client tests show a CA-signed client cert handshake succeeds (Verification: OK), a self-signed/untrusted cert is rejected with a bad-certificate TLS alert, and no client cert is rejected with a handshake-failure alert. End-to-end AMQPS publish/consume with the CA-issued client cert succeeded against all three nodes both before and after the restart sequence.",
+      "evidence_ids": [
+        "cmd-b7f6522d80874e9b",
+        "cmd-1809a7c4363143f2",
+        "cmd-1face63d4a7c4fe8",
+        "cmd-0999f5316b5b4ef4",
+        "cmd-a96a23a9aa1042ff"
+      ]
+    },
+    {
+      "id": "mgmt-cluster-only",
+      "requirement": "Management interface (15672) reachable only from within the cluster",
+      "status": "partially_satisfied",
+      "summary": "A firewalld zone 'rabbitcluster' scoped to source 10.100.114.0/24 opens 15672 on all three nodes, while the node-facing public/default zone exposes only 5671/tcp (no 15672). Cross-node requests to the management API succeed (return 401/200-class depending on credentials), demonstrating reachability from cluster peers. However, the restriction is implemented as a subnet-wide allow (the whole /24), not scoped specifically to the three cluster node addresses, and no negative test was captured showing the management port is actually blocked from a host outside that subnet/cluster.",
+      "evidence_ids": [
+        "cmd-06d13637b0d64e29",
+        "cmd-9413113a1ca24f35",
+        "cmd-29f25c464d27473f",
+        "cmd-10b6446fed984277",
+        "cmd-03e9b1b4e1c348e8",
+        "cmd-ca7a0f29d68a4ebe"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a 3-node RabbitMQ cluster on CentOS Stream 10 with AMQP served only over TLS on 5671 (plaintext 5672 disabled), using a self-generated CA to issue node and client certificates, and enforced mutual TLS (verify_peer, fail_if_no_peer_cert) so only CA-issued client certs are accepted \u2014 all directly demonstrated via openssl s_client handshakes and end-to-end pika AMQPS publish/consume tests, including after a full sequential reboot of all three nodes with confirmed boot-id changes and restored 3/3 cluster quorum. The management interface was moved off the public firewalld zone and restricted to a dedicated zone scoped to the cluster's /24 subnet, with cross-node reachability shown, but there is no captured evidence of a request from a genuinely external host being blocked, so the 'only within the cluster' boundary is only partially demonstrated. Operational hygiene is good: no failed services, no orphaned residue beyond expected test tooling, and one failed cluster-join attempt was cleanly corrected on retry.",
+  "limitations": [
+    "No negative test was captured showing management port 15672 is blocked from a host outside the cluster's subnet \u2014 the firewall restriction is scoped to the whole /24 rather than to the three cluster node addresses specifically.",
+    "The independent node-restart evidence protocol (baseline, restart, changed boot identity, recovered state) was executed for all three nodes and is well-supported, but restart/persistence is not part of the public task contract, so this evidence informs confidence rather than the material outcome scoring.",
+    "Post-restart AMQPS+mTLS functional verification for node2 and node3 individually was folded into a single combined post-all-reboots check (cmd-a96a23a9aa1042ff) rather than tested immediately after each respective node's own reboot."
+  ],
+  "command_stats": {
+    "total": 102,
+    "successful": 82,
+    "failed": 19,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.82,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.9,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "The command trace shows a coherent, mostly linear deployment: repo discovery/troubleshooting (read-only curl probes against multiple candidate package mirrors), package installation, CA/cert generation and distribution, cluster join, firewalld zone creation, admin user creation with guest deletion, and a full pre/restart/post verification cycle on all three nodes. Installs of python3-pip and pika (cmd-815115ece675423c, cmd-7fa8323991ab47d7) were retained rather than cleaned up, but they are low-risk, bounded, and directly support the required end-to-end AMQPS verification, so this is not treated as unwanted residue. The admin password was written in plaintext to /root/tls-ca/admin_password.txt on node1 (cmd-55f44f98d3e04931), a minor hygiene concern but a reasonable operational choice for a freshly created admin account, not a broad or destructive mutation. No failed services, no orphaned processes, and no unexplained firewall/network state were observed in the after_executor snapshot (failed-services empty on all nodes). One rabbitmqctl join_cluster attempt on node2 failed on a first pass with a feature-flags/erpc error (cmd-8f123bbb163a4ec8) before a corrected retry succeeded (cmd-09cbf47e63504464); this is a corrective retry, not an unnecessary mutation.",
+    "evidence_ids": [
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "cmd-815115ece675423c",
+      "cmd-7fa8323991ab47d7",
+      "cmd-55f44f98d3e04931",
+      "cmd-8f123bbb163a4ec8"
+    ]
+  },
+  "reward": 0.9,
+  "provisional_reward": 0.9
+}

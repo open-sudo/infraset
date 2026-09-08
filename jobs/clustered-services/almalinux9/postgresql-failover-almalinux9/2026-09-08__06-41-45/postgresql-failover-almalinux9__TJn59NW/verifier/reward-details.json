@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "replication-setup",
+      "requirement": "Establish PostgreSQL streaming replication across node1 (primary), node2 and node3 (standbys)",
+      "status": "satisfied",
+      "summary": "node1 postgres started and configured for replication (cmd-e17894d0af494103); node2 and node3 populated via pg_basebackup -R and came up with pg_is_in_recovery=t (cmd-a5cbc5343eab4a20, cmd-fa08d92a491446b2, cmd-58bf0b058380488d, cmd-e3389754b2a54a58); pg_stat_replication on node1 shows both standbys in 'streaming' state (cmd-fb9f8336131b4973).",
+      "evidence_ids": [
+        "cmd-e17894d0af494103",
+        "cmd-a5cbc5343eab4a20",
+        "cmd-fa08d92a491446b2",
+        "cmd-58bf0b058380488d",
+        "cmd-e3389754b2a54a58",
+        "cmd-fb9f8336131b4973"
+      ]
+    },
+    {
+      "id": "data-replication",
+      "requirement": "Writes on the primary replicate correctly to both standbys",
+      "status": "satisfied",
+      "summary": "A row inserted on node1 (cmd-102d63f25a644813) is immediately and identically visible on node2 and node3 (cmd-b9908189547a4f5b, cmd-d7dd8f5f5b7b4f45).",
+      "evidence_ids": [
+        "cmd-102d63f25a644813",
+        "cmd-b9908189547a4f5b",
+        "cmd-d7dd8f5f5b7b4f45"
+      ]
+    },
+    {
+      "id": "failover-no-data-loss",
+      "requirement": "When the primary is lost, a standby takes over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "A committed row and its LSN are confirmed fully replicated to both standbys (cmd-1a7940967fcd4e12, cmd-1c3344f0f5a241fa) before node1's postgres is stopped to simulate primary loss (cmd-cc2615bc1a614e8e). node2 is then promoted, flipping pg_is_in_recovery to false (cmd-d608359d290f4c2e), and all 5 pre-failover rows plus a new post-promotion write are present (cmd-3e2a5f58647747da). This is a direct, bounded before/during/after demonstration, not just configuration.",
+      "evidence_ids": [
+        "cmd-1a7940967fcd4e12",
+        "cmd-1c3344f0f5a241fa",
+        "cmd-cc2615bc1a614e8e",
+        "cmd-d608359d290f4c2e",
+        "cmd-3e2a5f58647747da"
+      ]
+    },
+    {
+      "id": "surviving-standby-repoint",
+      "requirement": "Surviving standby (node3) re-points to the new primary without data loss",
+      "status": "satisfied",
+      "summary": "node3 is stopped, its primary_conninfo/slot reconfigured to point at node2 (cmd-c742b0ec748e488c, cmd-2f96a4f0cd7649f1), then restarted and shown to be in recovery with the full row set including the post-failover write (cmd-083b71c136714fa6).",
+      "evidence_ids": [
+        "cmd-a458fefc09284e03",
+        "cmd-c742b0ec748e488c",
+        "cmd-2f96a4f0cd7649f1",
+        "cmd-083b71c136714fa6"
+      ]
+    },
+    {
+      "id": "former-primary-rejoins",
+      "requirement": "Recovered former primary (node1) rejoins as a standby of the new primary without data loss",
+      "status": "satisfied",
+      "summary": "pg_rewind was attempted and failed twice for legitimate reasons (permission on first attempt, then missing checksums/wal_log_hints: cmd-bae5cc62bed1496e, cmd-59c17cf52d984deb) and was abandoned in favor of a fresh pg_basebackup from node2 (cmd-3718274844404e9c), reconfigured as a standby (cmd-44cda17feddf40f1, cmd-f92df7bcd70c436e) and started, showing pg_is_in_recovery=t with all 6 rows including the post-failover write (cmd-f2958ee0a4144437).",
+      "evidence_ids": [
+        "cmd-bae5cc62bed1496e",
+        "cmd-59c17cf52d984deb",
+        "cmd-3718274844404e9c",
+        "cmd-44cda17feddf40f1",
+        "cmd-f92df7bcd70c436e",
+        "cmd-f2958ee0a4144437"
+      ]
+    },
+    {
+      "id": "post-failover-cluster-health",
+      "requirement": "Full 3-node cluster is healthy post-failover (node2 primary, node1+node3 standbys, both caught up)",
+      "status": "satisfied",
+      "summary": "pg_stat_replication on node2 shows both node1 and node3 streaming, and after a new write both reach the same replay_lsn (cmd-166128ed608c4ee9); the temporary superuser grant used for pg_rewind troubleshooting is reverted (cmd-35ccefb5019e47a7).",
+      "evidence_ids": [
+        "cmd-166128ed608c4ee9",
+        "cmd-35ccefb5019e47a7"
+      ]
+    },
+    {
+      "id": "restart-protocol-node1",
+      "requirement": "Provider-wide restart protocol on node1 (standby): baseline, restart ack, changed boot id, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 4a743885 with pg_is_in_recovery=t and 7 rows (cmd-2af2bbae20904357); reboot acknowledged (cmd-0ad294bed91e4a01), node unreachable mid-boot (cmd-716f8534c3d245ee), returns with new boot_id b02b89fb (cmd-4f8bcd8e792f4f79); postgresql active, still in recovery, 7 rows intact (cmd-fb9507bcd52440a0), and node2 confirms node1 reconnected as a streaming standby (cmd-022c4c8b1c82420a). Cross-checked against the fixed global boot-identity snapshots.",
+      "evidence_ids": [
+        "cmd-2af2bbae20904357",
+        "cmd-0ad294bed91e4a01",
+        "cmd-716f8534c3d245ee",
+        "cmd-4f8bcd8e792f4f79",
+        "cmd-fb9507bcd52440a0",
+        "cmd-022c4c8b1c82420a",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-protocol-node3",
+      "requirement": "Provider-wide restart protocol on node3 (standby): baseline, restart ack, changed boot id, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 18d6ac04 with pg_is_in_recovery=t and 7 rows (cmd-a68c7710699b4c09); reboot acknowledged (cmd-2b36c249c3b2455e), connection reset mid-boot (cmd-60c188e642284e4c), returns with new boot_id e5f6b449 (cmd-c21b45d1b5f74254); postgresql active, still in recovery, 7 rows intact (cmd-db4d9f314e374535), and node2 confirms node3 reconnected as streaming (cmd-043c17a52f0b4fee). Cross-checked against fixed global boot-identity snapshots.",
+      "evidence_ids": [
+        "cmd-a68c7710699b4c09",
+        "cmd-2b36c249c3b2455e",
+        "cmd-60c188e642284e4c",
+        "cmd-c21b45d1b5f74254",
+        "cmd-db4d9f314e374535",
+        "cmd-043c17a52f0b4fee",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-protocol-node2",
+      "requirement": "Provider-wide restart protocol on node2 (primary): baseline, restart ack, changed boot id, recovered primary state with quorum/replication restored",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 54bd1c3e with pg_is_in_recovery=f and both standbys streaming (cmd-35bfa400ca00444b); reboot acknowledged (cmd-07cd649652274672), timeout mid-boot (cmd-718d82e36e50480d), returns with new boot_id 4369b7b1 (cmd-9d46946f11874441); postgresql active, still primary (in_recovery=f), both standbys reconnected streaming (cmd-bceeb27e3b474e5c), and a final write is confirmed replicated identically to node1 and node3 (cmd-76e6fccf172c4a35, cmd-45674d3d1abe407c, cmd-aa5a1995a8504b2f). Cross-checked against fixed global boot-identity snapshots.",
+      "evidence_ids": [
+        "cmd-35bfa400ca00444b",
+        "cmd-07cd649652274672",
+        "cmd-718d82e36e50480d",
+        "cmd-9d46946f11874441",
+        "cmd-bceeb27e3b474e5c",
+        "cmd-76e6fccf172c4a35",
+        "cmd-45674d3d1abe407c",
+        "cmd-aa5a1995a8504b2f",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established genuine PostgreSQL 16 streaming replication (node1 primary, node2/node3 standbys) and directly demonstrated, with row counts and LSN comparisons rather than just configuration, a full failover cycle: primary loss, promotion of node2 with zero committed-data loss, node3 re-pointing to the new primary, and node1's rebuild as a standby of node2 \u2014 including a sensible fallback from a failed pg_rewind attempt to pg_basebackup. The independent provider-wide restart protocol was then completed cleanly on all three nodes with baseline, acknowledgement, changed boot identity, and full replication/data recovery, corroborated by the fixed global boot-identity snapshots. Hygiene is good overall, with two minor, low-severity, non-security-weakening items: a reverted temporary SUPERUSER grant used during an abandoned pg_rewind attempt, and one small unused leftover file on node3.",
+  "limitations": [
+    "No after_prepare-specific delta exists (prepare was disabled and after_prepare is aliased to before_prepare), so preparer- vs executor-caused state could only be separated using the executor comparison against before_prepare.",
+    "Evidence for data integrity relies on row counts/max(id) and LSN matching rather than full checksums; this is standard but not an exhaustive data-integrity proof."
+  ],
+  "command_stats": {
+    "total": 76,
+    "successful": 72,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Chronological review of state-changing commands shows the deployment was well-scoped: package installs, firewall openings, replication role/slot creation, and topology reconfigurations all map directly to the replication/failover/restart outcomes. Two items stand out as unnecessary or unresolved mutations: (1) cmd-11db70ca125f40bd granted the 'replicator' role SUPERUSER to work around a pg_rewind permission error; this was a bounded troubleshooting mutation for a path (pg_rewind) that was ultimately abandoned in favor of pg_basebackup, and it was properly reverted later (cmd-35ccefb5019e47a7 ALTER ROLE NOSUPERUSER) \u2014 lower severity since it was fully restored, but still an unnecessary mutation on the causal chain. (2) cmd-c742b0ec748e488c created an empty scratch file /tmp/set_primary.sql on node3 while probing connectivity during the node3 repoint; the file was never used and was left behind (visible in the after_executor temporary-files inventory for node3), a minor abandoned-file residue. Other /tmp additions (dnf1.log, reboot.log, postgres unix sockets) are benign expected byproducts of installation and reboot commands. No failed services, no damaged package state, and firewall/socket changes are all required and intentional.",
+    "evidence_ids": [
+      "cmd-11db70ca125f40bd",
+      "cmd-35ccefb5019e47a7",
+      "cmd-c742b0ec748e488c",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

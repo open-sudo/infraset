@@ -1,0 +1,98 @@
+{
+  "status": "completed",
+  "summary": "Deployed a 3-member MariaDB 11.4/Galera 26.4 cluster from scratch on bare Alpine nodes (node1/node2/node3), loaded application data, took the entire cluster down for a full maintenance-window outage, and brought it back up with every committed write intact and all three members serving. Also completed the mandatory one-at-a-time OS reboot protocol on each node, proving changed boot identity and full cluster recovery after each restart.",
+  "actions_performed": [
+    "Installed mariadb, mariadb-client, galera, mariadb-backup, rsync, procps-ng via apk on node1, node2, node3 (no prior DB software existed)",
+    "Initialized datadirs with mysql_install_db on all three nodes",
+    "Wrote /etc/my.cnf.d/galera.cnf on each node with wsrep_cluster_address=gcomm://node1,node2,node3, per-node wsrep_node_address/name, wsrep_sst_method=mariabackup, and wsrep_sst_auth",
+    "Diagnosed and fixed two Alpine-specific SST blockers: default skip-networking in mariadb-server.cnf (disabled it) and BusyBox ps lacking -p support which broke wsrep_sst_mariabackup's parent-liveness check (fixed by installing procps-ng)",
+    "Created dedicated sst MariaDB user for mariabackup SST auth (password generated on-node, propagated via secret_env)",
+    "Bootstrapped node1 as first cluster member (--wsrep-new-cluster), then joined node2 and node3 via mariabackup SST; verified wsrep_cluster_size=3 and Synced on all nodes",
+    "Enabled mariadb in the default OpenRC runlevel on all three nodes so the service auto-starts after any reboot",
+    "Created appdb.orders table and inserted rows from node1 and node3, confirming multi-master replication across all three nodes",
+    "Performed the full maintenance-window shutdown: stopped node2, then node3, then node1 last, confirming node1 ended with grastate.dat safe_to_bootstrap:1 and the highest seqno (18)",
+    "Verified all three nodes had zero mariadbd processes running (complete cluster outage)",
+    "Brought the cluster back: bootstrapped node1 from its saved state (row count still 4), then rc-service start on node2 and node3 which rejoined via IST/SST; verified wsrep_cluster_size=3, Synced, and all 4 rows present on every node",
+    "Captured pre-restart baseline (boot_id, wsrep_cluster_size=3, wsrep_cluster_status=Primary, Synced, row count) on all three nodes",
+    "Restarted node1 via native `reboot`, polled until exec was available again, confirmed boot_id changed, confirmed mariadb auto-started via OpenRC and rejoined the cluster (size 3, Synced, 4 rows) before proceeding",
+    "Restarted node2 via native `reboot`, confirmed boot_id changed, confirmed rejoin to a healthy 3-member Synced cluster with 4 rows before proceeding",
+    "Restarted node3 via native `reboot`, confirmed boot_id changed, confirmed rejoin to a healthy 3-member Synced cluster with 4 rows",
+    "Final verification pass on all three nodes simultaneously: wsrep_cluster_size=3, wsrep_cluster_status=Primary, wsrep_local_state_comment=Synced, identical 4-row appdb.orders table on every node"
+  ],
+  "evidence": [
+    {
+      "requirement": "3-member Galera cluster built and holding application data",
+      "command_ids": [
+        "cmd-f29dd0190900401d",
+        "cmd-657b9ae608334a5e",
+        "cmd-5712929bbf4047fd",
+        "cmd-fdfc74ffffc24215",
+        "cmd-6415dc486be94f5b",
+        "cmd-cf48c1b8a98e4c8f",
+        "cmd-f96b4af53d6f42b3",
+        "cmd-e7640c3e0b5a41f5",
+        "cmd-f5d870ad13aa46fe",
+        "cmd-95654afd9dae407b"
+      ],
+      "summary": "MariaDB+Galera installed and bootstrapped on node1, joined by node2 and node3 via mariabackup SST reaching cluster_size=3/Synced; appdb.orders table created with rows written from both node1 and node3 and confirmed identical on all three nodes"
+    },
+    {
+      "requirement": "Full cluster shutdown for maintenance window",
+      "command_ids": [
+        "cmd-708f154ddfe8460f",
+        "cmd-d50ef03e9cff4d4c",
+        "cmd-d35046041f21432f",
+        "cmd-578ad3a60d1d427d",
+        "cmd-51ee453519cf439d",
+        "cmd-36a920ca9ba64be9",
+        "cmd-a36da770629b4ff1"
+      ],
+      "summary": "All three nodes stopped in sequence (node2, node3, node1) via rc-service mariadb stop; node1 (last to stop) shows grastate.dat safe_to_bootstrap:1 with highest seqno 18; process list confirms zero mariadbd processes on any node -- complete outage"
+    },
+    {
+      "requirement": "Cluster brought back with every committed write present and all three members serving",
+      "command_ids": [
+        "cmd-c0d3c34664eb4f13",
+        "cmd-c757856e53464ce9",
+        "cmd-aec0cef133f74608",
+        "cmd-8a341a40b4824a2e",
+        "cmd-cf48c1b8a98e4c8f",
+        "cmd-ca70b0170a7c4e51",
+        "cmd-734abe3ccc9b4bb7",
+        "cmd-0f8019c9486643be"
+      ],
+      "summary": "node1 bootstrapped from saved state showed COUNT(*)=4 immediately after restart; node2 and node3 rejoined via IST reaching cluster_size=3/Synced; final cross-node check shows wsrep_cluster_status=Primary and identical 4-row orders table (including the node3-originated 'dave' row) on all three nodes"
+    },
+    {
+      "requirement": "Mandatory restart evidence -- node1",
+      "command_ids": [
+        "cmd-4ff0c44ccf5f47ab",
+        "cmd-ed0dae54e9a64317",
+        "cmd-5332c45939194e5d",
+        "cmd-4d442b3320114d22",
+        "cmd-c677b419549a45e8"
+      ],
+      "summary": "Baseline boot_id 1c28ca5a...; reboot acknowledged (stream closed before disconnect); post-reboot boot_id 3074cd1e... (changed); mariadb auto-started via OpenRC as SST joiner and reached cluster_size=3/Synced with 4 rows"
+    },
+    {
+      "requirement": "Mandatory restart evidence -- node2",
+      "command_ids": [
+        "cmd-1237b29334c04212",
+        "cmd-04fb43ea91b94ad2",
+        "cmd-4a1b710f15524bb9",
+        "cmd-348a6f47bfee4e15"
+      ],
+      "summary": "Baseline boot_id 98cd4d6f...; reboot acknowledged; post-reboot boot_id 4dfa5767... (changed); rejoined cluster reaching size=3/Synced with 4 rows intact"
+    },
+    {
+      "requirement": "Mandatory restart evidence -- node3",
+      "command_ids": [
+        "cmd-b67d613ac5b2456b",
+        "cmd-30bf36e685684e98",
+        "cmd-8d442006089848d7",
+        "cmd-ad682beca3604e11"
+      ],
+      "summary": "Baseline boot_id ace08295...; reboot acknowledged; post-reboot boot_id 0fc3b84c... (changed); rejoined cluster reaching size=3/Synced with 4 rows intact"
+    }
+  ]
+}

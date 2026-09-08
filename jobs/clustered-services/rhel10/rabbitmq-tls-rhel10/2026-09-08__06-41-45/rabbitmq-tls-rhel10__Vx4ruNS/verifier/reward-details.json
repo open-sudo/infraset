@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Run a RabbitMQ cluster across node1, node2, node3",
+      "status": "satisfied",
+      "summary": "All three nodes installed RabbitMQ 4.3.5/Erlang 27, formed a cluster via classic_config peer discovery with a shared erlang cookie. cluster_status on node1 shows all three as Running Nodes and Disk Nodes. Cluster membership was re-verified after each node was individually rebooted, confirming the cluster reforms and stays healthy across a real disruption/recovery cycle.",
+      "evidence_ids": [
+        "cmd-0bf8e81eaa1c4b83",
+        "cmd-a03896cc2dfb49da",
+        "cmd-f62544c532d24e29",
+        "cmd-10cbb32cf54b4884",
+        "cmd-2d8c9eca988e4c67"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Serve AMQP over TLS",
+      "status": "satisfied",
+      "summary": "rabbitmq.conf disables plain TCP (listeners.tcp = none) and enables TLS on 5671 with cacertfile/certfile/keyfile set. ss confirms 5671 listening on all three nodes. A TLS handshake with server-certificate verification succeeded via openssl s_client, and an actual AMQPS publish/consume round-trip over port 5671 succeeded using the pika client library.",
+      "evidence_ids": [
+        "cmd-90de7a27aa69424b",
+        "cmd-e392f1b19ed64f0f",
+        "cmd-1ab91188829c4574",
+        "cmd-e029f19a225644a3"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Use a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A self-signed CA (CN=RabbitMQ Cluster CA) was generated on node1 with its own key/cert, then used to sign each node's server certificate and a client certificate, distributed to node2/node3, and referenced as ssl_options.cacertfile on all nodes.",
+      "evidence_ids": [
+        "cmd-994d5ab0984e4417",
+        "cmd-c7820ed102fc4640",
+        "cmd-59dc3e44c8a74f7a",
+        "cmd-1bf0f34a43e14ed7",
+        "cmd-cdd761d1ca264670"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Accept only client connections presenting a certificate issued by the cluster CA",
+      "status": "satisfied",
+      "summary": "ssl_options.verify=verify_peer and fail_if_no_peer_cert=true were confirmed live via rabbitmqctl eval. A connection attempt without a client certificate was rejected with a TLS 'certificate required' alert both before and after a full node reboot cycle, while a connection presenting the CA-issued client certificate succeeded and completed a publish/consume test.",
+      "evidence_ids": [
+        "cmd-cdd761d1ca264670",
+        "cmd-9411139fe5eb4425",
+        "cmd-d9c24438f0194a9e",
+        "cmd-f2b4cd19e79f4c21",
+        "cmd-e029f19a225644a3"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Keep the management interface reachable only from within the cluster",
+      "status": "satisfied",
+      "summary": "management.tcp.ip is bound to each node's own cluster IP (not 0.0.0.0), and firewalld/nftables rich rules restrict TCP 15672 (and 4369/25672) to source addresses limited to the three cluster node IPs only. A request from a cluster peer node succeeded (HTTP 200). No negative test from a non-cluster IP was captured, so this rests on configuration plus one positive intra-cluster access check rather than a demonstrated external-access denial.",
+      "evidence_ids": [
+        "cmd-90de7a27aa69424b",
+        "cmd-e5e1c4facc4e4b69",
+        "cmd-8e81dd636b9c43ed",
+        "cmd-b3b15549484446b0",
+        "cmd-e392f1b19ed64f0f"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a working 3-node RabbitMQ cluster with AMQP over TLS on port 5671, backed by a self-created CA, and directly demonstrated mutual-TLS enforcement (rejecting connections without a CA-issued client cert, accepting ones with it) both before and after rebooting every node. The management UI (15672) is bound per-node and firewall-restricted to the three cluster IPs, verified with a successful intra-cluster request, though no explicit external-denial test was captured. The provider-wide restart protocol was executed and cross-checks cleanly against the fixed before/after boot-identity snapshots, showing full recovery of cluster membership, TLS listeners, and durable queue data across reboots. The main shortfall is operational hygiene: the CA private key, node private keys, and the cluster erlang cookie were left as plaintext files under /tmp instead of being cleaned up, along with two harmless abandoned troubleshooting artifacts.",
+  "limitations": [
+    "No negative test was captured showing the management interface is actually blocked from a non-cluster-member address; the exclusivity claim rests on firewall/bind configuration plus one successful positive request from a cluster peer.",
+    "Sensitive key material (CA private key, server/client private keys, erlang cookie) was left under /tmp on the managed nodes without cleanup; exposure risk is reduced since these were root-owned but this was not verified via explicit permission checks on every copy."
+  ],
+  "command_stats": {
+    "total": 102,
+    "successful": 87,
+    "failed": 15,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "No failed services, conflicting units, or damaged package state were observed on any node after the executor's work (after_executor failed-services empty on all nodes; package-health checks clean). However, several sensitive artifacts were left behind rather than cleaned up: the CA private key and all node server private keys remain under /tmp/ca on node1 (cmd-994d5ab0984e4417, cmd-c7820ed102fc4640), the erlang cluster cookie was left as /tmp/erlang.cookie on all three nodes (cmd-f9b70222a8fc41f4, cmd-a2455b0eb63847d2, cmd-4fbf4f35b2164fed), and copied client/server private keys remain in /tmp on node2/node3 (cmd-30a189a4463843e8, cmd-1bf0f34a43e14ed7). These files were owned by root (created via sudo/scp as root), which limits exposure, but they were never removed, which is unwanted residue of key material. Separately, two abandoned troubleshooting artifacts from a failed repo-setup investigation (/tmp/setup.sh, a 404 error page; /tmp/install.html, a scraped docs page) were left on node1 (cmd-0388acf49a2d4664, cmd-6f2a22b97abb4301) with no evidence of cleanup, though they are low-risk/non-sensitive. No destructive or broad mutations were observed, and firewall/security controls were only tightened, not weakened.",
+    "evidence_ids": [
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "cmd-994d5ab0984e4417",
+      "cmd-f9b70222a8fc41f4",
+      "cmd-0388acf49a2d4664",
+      "cmd-6f2a22b97abb4301"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

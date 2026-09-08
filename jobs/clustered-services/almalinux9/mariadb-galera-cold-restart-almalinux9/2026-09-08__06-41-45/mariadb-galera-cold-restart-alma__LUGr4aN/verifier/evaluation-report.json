@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-baseline-cluster",
+      "requirement": "Run a healthy three-member MariaDB Galera cluster across node1/node2/node3 holding application data",
+      "status": "satisfied",
+      "summary": "After building the cluster from bare hosts, direct queries show wsrep_cluster_size=3, wsrep_cluster_status=Primary, and all three nodes Synced. The appdb.orders table with 5 rows is confirmed present identically on node1, node2, and node3.",
+      "evidence_ids": [
+        "cmd-8792587ed3a246ae",
+        "cmd-e49b637178b64796",
+        "cmd-012f38c52af544fa",
+        "cmd-2df9e017a507422e",
+        "cmd-aff5951d73ca42d6"
+      ]
+    },
+    {
+      "id": "req-2-full-shutdown",
+      "requirement": "Bring the entire cluster down completely for a maintenance window",
+      "status": "satisfied",
+      "summary": "A durability-proving write (6th row, sum 2093.39) was committed before shutdown. mariadb was stopped cleanly on node3, then node2, then node1, with grastate.dat seqno captured on each (13/14/15, node1 highest with safe_to_bootstrap=1). Subsequent systemctl is-active checks on all three nodes simultaneously returned inactive (exit 3), directly confirming the whole cluster was down.",
+      "evidence_ids": [
+        "cmd-4341385217314ede",
+        "cmd-cd04d1ad217543de",
+        "cmd-2b4e42ca3002463a",
+        "cmd-1c20eb6a98be46b2",
+        "cmd-51925ac12d0b4d92",
+        "cmd-643cfabd9f414227",
+        "cmd-c8ad42235e8441e1"
+      ]
+    },
+    {
+      "id": "req-3-restore-with-data",
+      "requirement": "Bring the cluster back up after the maintenance window with every committed write still present",
+      "status": "satisfied",
+      "summary": "node1 (highest seqno) was bootstrapped via galera_new_cluster and immediately showed all 6 rows / sum 2093.39. After node2 and node3 rejoined via IST, the same 6 rows and sum were independently confirmed on node2 and node3, matching the pre-shutdown state exactly.",
+      "evidence_ids": [
+        "cmd-814504f0ab2b4872",
+        "cmd-99d698fa83154580",
+        "cmd-a20c3ace0f274636",
+        "cmd-df2049510c0b4f85"
+      ]
+    },
+    {
+      "id": "req-4-all-members-serving",
+      "requirement": "All three members serving again after the maintenance window",
+      "status": "satisfied",
+      "summary": "Post-recovery check on node1 shows wsrep_cluster_size=3 and wsrep_cluster_status=Primary; node2 and node3 both individually report wsrep_local_state_comment=Synced alongside identical data, directly confirming all three members were serving.",
+      "evidence_ids": [
+        "cmd-0ac5974af8594784",
+        "cmd-a20c3ace0f274636",
+        "cmd-df2049510c0b4f85"
+      ]
+    },
+    {
+      "id": "req-5-node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (independent of public contract)",
+      "status": "satisfied",
+      "summary": "Each node had a pre-restart boot_id baseline, a systemctl reboot acknowledgement, a connection drop/timeout during the transition, a distinct post-restart boot_id, and a recovered cluster/data check (size 3, Synced/Primary, 6 rows sum 2093.39) \u2014 done one at a time so the other two nodes preserved quorum. Boot-id values in the command timeline match the fixed after-prepare/after-executor snapshots exactly for all three nodes, providing a coherent independent cross-check.",
+      "evidence_ids": [
+        "cmd-ddbf20547420433d",
+        "cmd-9bce2f2ba9074a56",
+        "cmd-0d247c644e6b4525",
+        "cmd-51c45d84a91747c3",
+        "cmd-f8b3b5b7a22a4f2f",
+        "cmd-8ed36c4cdf1e4ca6",
+        "cmd-1c86d3a22f0c4949",
+        "cmd-57a3fbd3a4314437",
+        "cmd-c5eab74030f34c8a",
+        "cmd-010d7d246a90484e",
+        "cmd-a3e2531cfa034170",
+        "cmd-7a1c5e8fb73a471b",
+        "cmd-4ccf39cc05f2458d",
+        "cmd-c783f40c7146454e",
+        "cmd-e5c877923e7a4e50",
+        "cmd-2112549933cd4c69"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a 3-node MariaDB Galera cluster from bare AlmaLinux hosts, loaded application data, and directly demonstrated the required lifecycle: a healthy 3/3 Synced baseline, a committed write made just before shutdown, a fully verified complete stop of all three members (grastate seqno-based bootstrap selection), and a full restore with all 6 rows (sum 2093.39) present and all three nodes serving and Synced again. The independent provider-wide restart protocol was also completed on all three nodes one at a time with quorum preserved, showing changed boot identities and full data/cluster recovery, consistent with the fixed after-executor boot-identity snapshot. Troubleshooting detours (an SST failure requiring a datadir wipe on node2, and iterative SELinux policy fixes for mariadb-backup) were bounded, corrective, and left no damaging residue; only minor leftover temp files remain.",
+  "limitations": [
+    "Command outputs are potentially bounded/truncated by the collector, so some intermediate detail (e.g., full journalctl/audit content) was not fully visible.",
+    "No public-contract requirement to clean up temp files, but /tmp residue (install.log, pp.b64, start.log/pid, etc.) was left in place on all three nodes per the after-executor snapshot."
+  ],
+  "command_stats": {
+    "total": 103,
+    "successful": 88,
+    "failed": 15,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewed the full chronological command trace. All package installs, firewall port openings (3306/4567/4568/4444 tcp + 4567 udp), bind-address=0.0.0.0, and galera.cnf writes are necessary prerequisites for a Galera cluster on bare hosts with no prior MariaDB and were confirmed present at final state without conflicting services. Two troubleshooting sequences occurred: (1) an SST failure on node2 led to `rm -rf /var/lib/mysql/*` (cmd-eaaee1314dbd4de0) to clear a corrupted datadir before retrying start \u2014 a bounded, necessary corrective action directly tied to fixing a failed prior attempt, not residue since the directory was cleanly repopulated by the successful SST. (2) An SELinux AVC block on mariadb-backup was resolved via audit2allow; an initial attempt to reuse a single exported galera_sst.pp policy package on node2/node3 (cmd-1ed0950b3aab453e, cmd-bb06cf797a234deb) failed to install (corrupted module), so a corrected per-node policy was generated and successfully applied (cmd-e964854c80014d97, cmd-30d836dc7bd54755) \u2014 a legitimate corrective step with no functional residue since the failed .pp files were never activated. The final after-executor snapshot shows no failed systemd units on any node and no unexpected listening sockets beyond ssh, chronyd, and mariadbd (3306/4567), so no unsafe exposure was introduced. The main hygiene deduction is leftover low-risk temp files (/tmp/install.log, install.pid, pp.b64, galera_sst.pp.b64, start.log, start.pid) not cleaned up on the managed nodes, visible in the after-executor temporary-files diff; these are bounded, non-sensitive artifacts of legitimate install/start operations rather than unnecessary mutations.",
+    "evidence_ids": [
+      "cmd-eaaee1314dbd4de0",
+      "cmd-1ed0950b3aab453e",
+      "cmd-bb06cf797a234deb",
+      "cmd-e964854c80014d97",
+      "cmd-30d836dc7bd54755",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

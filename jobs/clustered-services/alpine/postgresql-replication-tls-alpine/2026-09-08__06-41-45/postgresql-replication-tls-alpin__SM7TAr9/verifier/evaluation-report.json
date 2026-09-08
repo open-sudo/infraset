@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-replication",
+      "requirement": "Configure PostgreSQL streaming replication across node1, node2, and node3 with node1 as the writable primary",
+      "status": "satisfied",
+      "summary": "node1 was initdb'd and started as primary (ssl=on, wal_level=replica). node2 and node3 were cloned via pg_basebackup -R against node1 and started as standbys with standby.signal present. pg_stat_replication on node1 showed both in 'streaming' state, and pg_is_in_recovery() returned true on node2/node3 and false on node1. A row inserted on node1 (repl_test) was observed on both standbys, and after all three nodes were restarted a second write also propagated, confirming node1 remained the sole writable primary.",
+      "evidence_ids": [
+        "cmd-21851f3c28a34937",
+        "cmd-91ea5be5ed164167",
+        "cmd-02ac7ddc70f940f4",
+        "cmd-07abfec66750460a",
+        "cmd-8699ee6050fc4065",
+        "cmd-3fea63c849e74bce",
+        "cmd-aeb82ba7aa2640a6",
+        "cmd-bde04a7f749f4079",
+        "cmd-ced46438e0984646",
+        "cmd-19fdfecb3c5a4bac",
+        "cmd-ed5df108fd484e4f",
+        "cmd-74d8507f0da94cd6",
+        "cmd-fb107b3894cf47cf"
+      ]
+    },
+    {
+      "id": "req-2-tls-ca",
+      "requirement": "Carry replication traffic over TLS using a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A dedicated CA (CN=postgres-cluster-ca) was generated on node1, and server certs (node1/node2/node3, CN=hostname, SAN=DNS+IP) plus a client cert (CN=replicator) were issued from it. Each node's postgresql.conf sets ssl=on with ssl_cert_file/ssl_key_file/ssl_ca_file pointing at the CA-issued material. pg_stat_replication joined with pg_stat_ssl on node1 directly shows both standby connections with ssl=t, version=TLSv1.3, confirming replication traffic is actually encrypted over the CA-rooted certs, not just configured.",
+      "evidence_ids": [
+        "cmd-7ffe7640b05d4c54",
+        "cmd-3099bc59ce46451b",
+        "cmd-5155a69bb78f4b91",
+        "cmd-0ec709d9d1ee4b95"
+      ]
+    },
+    {
+      "id": "req-3-mtls-restriction",
+      "requirement": "Accept replication connections only from peers presenting a certificate issued by that authority",
+      "status": "satisfied",
+      "summary": "pg_hba.conf on node1 restricts replication to hostssl entries for the two standby IPs with 'cert clientcert=verify-full', plus a catch-all reject for hostnossl replication. The executor directly demonstrated enforcement: a connection attempt without a client cert was rejected, a plaintext (no-SSL) attempt was rejected, an attempt from an address not listed in pg_hba.conf was rejected, and an attempt using a rogue self-signed (non-CA) cert with the correct CN was rejected. Only the CA-issued replicator cert succeeded, confirmed by client_dn=/CN=replicator in pg_stat_ssl on the live streaming connections.",
+      "evidence_ids": [
+        "cmd-0f525b5b228d457d",
+        "cmd-18a1b221f66f49bc",
+        "cmd-ae7feff10f304dfc",
+        "cmd-3b0ffa328a8d4a58",
+        "cmd-05027de80c01466f",
+        "cmd-5155a69bb78f4b91"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task contract are satisfied with direct evidence: streaming replication is live between node1 (writable primary) and node2/node3 (standbys), traffic is encrypted with TLSv1.3 certificates issued by a cluster-dedicated CA, and pg_hba.conf plus live rejection tests confirm only CA-issued client certs are accepted for replication. The independent node-restart evidence protocol was also completed for all three nodes with matching pre/post boot-identity, service, and replication-state evidence, and its boot IDs are corroborated by the fixed lifecycle snapshots. The main blemishes are hygiene-related: root login was permanently unlocked on node2/node3 as a workaround and never re-locked, and a temporary file containing several cluster private keys (/tmp/certbundle.b64) was left behind on node1.",
+  "limitations": [
+    "Restart/failover behavior is not part of the public task contract, so it was scored only under operational hygiene/confidence per instructions, not as a material requirement, even though full pre/post evidence for all three nodes was captured.",
+    "Root-account unlock on node2/node3 (passwd -u root) is a persisted security-relevant change not required by the task contract and was not reverted after cert distribution completed.",
+    "/tmp/certbundle.b64 on node1, containing base64-encoded private keys for node2, node3, and the replicator client, was left in place through the end of the run."
+  ],
+  "command_stats": {
+    "total": 100,
+    "successful": 72,
+    "failed": 28,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.6,
+    "summary": "Most executor actions were necessary and appropriately scoped (package install, CA/cert generation, config edits, pg_basebackup, service enablement). Two issues stand out. First, cmd-c615ba11a17d46c3 and cmd-3637208c5e8c465b permanently unlocked the root account (passwd -u root) on node2 and node3 to enable pubkey SSH for scp'ing certs \u2014 a security-relevant, unreverted change; it was a reasonable workaround for a locked-account blocker but was never rolled back once cert distribution was complete, and root login capability remains part of final state. Second, cmd-ef1d34f2457f464e base64-encoded the CA cert plus node2/node3/replicator private keys into /tmp/certbundle.b64 on node1 as a transfer workaround before the direct scp path was fixed; this file was never removed (still present in the after_executor temporary-files snapshot for node1), leaving cluster private key material sitting in a world-discoverable temp path. A rogue-cert test artifact under /tmp/rogue on node2 was correctly cleaned up (cmd-fbc928b16ea3419a). Numerous nonzero-exit commands (SSH hostname resolution before /etc/hosts was populated, permission-denied before root unlock, connection timeouts while polling reboots) are expected transitional/discovery steps, not mutations of concern.",
+    "evidence_ids": [
+      "cmd-c615ba11a17d46c3",
+      "cmd-3637208c5e8c465b",
+      "cmd-ef1d34f2457f464e",
+      "cmd-fbc928b16ea3419a",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}
