@@ -12,7 +12,7 @@ The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging 
 
 ## Seven findings
 
-### 01. LLMs almost always complete the job successfully
+### 1. LLMs almost always complete the job successfully
 
 In the table below, 759 of 804 scored runs came back with a perfect score: every requirement met and checked against captured evidence. While the perfect-score rate varies from 100% to 86%, the functional success rate across the same 804 runs is 99%. A run counts as successful if it met 80% of the task's functional requirements.
 
@@ -20,7 +20,7 @@ In the table below, 759 of 804 scored runs came back with a perfect score: every
 
 <table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Category</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Runs</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Perfect</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Rate</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">multi-node-os-comparison</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">78</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">78</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">100%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">single-node-os-comparison</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">235</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">231</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">98%</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">vyos-networking</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">79</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">77</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">97%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">opnsense-networking</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">78</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">74</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">95%</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">sonic-networking</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">80</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">73</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">91%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">clustered-services</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">104</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">94</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">90%</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">vyos-opnsense (cross-vendor)</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">79</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">71</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">90%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">openwrt-networking</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">71</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">61</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">86%</td></tr></tbody></table>
 
-### 02. LLM-friendliness varies by release
+### 2. LLM-friendliness varies by release
 
 The fail rate is the ratio of failed commands to all commands run on that release. This is a command-level measure; task success is measured separately. A release can therefore have a high command fail rate alongside a high task success rate.
 
@@ -32,7 +32,7 @@ I suspect that an important factor in this failure rate is how much material abo
 
 *These numbers exclude `file-integrity-baseline`, where one run distorted a column; the open question below covers it.*
 
-### 03. The leftovers: 98.8% of runs leave residue
+### 3. The leftovers: 98.8% of runs leave residue
 
 In this experiment, every run carries an operational-hygiene score. It asks whether the run mutated things the task never called for, left residue behind, or broke something unrelated. When the model leaves absolutely no residue behind, the run scores a perfect 1.000.
 
@@ -48,7 +48,7 @@ The table shows that ten of 804 scored runs left the machine in a clean state. T
 
 <div style="background:#fdf4f2;border-left:4px solid #a33a2a;border-radius:3px;padding:16px 20px;margin:24px 0"><div style="font-size:0.75em;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#a33a2a;margin-bottom:10px">Residue is a security problem</div><p style="margin:0 0 12px;color:#131820;line-height:1.6">Residue is attack surface. The debugging packages the agent installed are now unpatched software on your host. The service it stopped may be auditd or a log shipper.</p><p style="margin:0 0 12px;color:#131820;line-height:1.6">Many tasks left private key material in <code>/tmp</code> when the run ended, including <code>/tmp/pgca/ca.key</code>, the signing key of the certificate authority the model had just created for the cluster (<a href="https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel9/postgresql-replication-tls-rhel9/2026-09-04__20-11-34/postgresql-replication-tls-rhel9__oskDi9n/collector/attempts/01/snapshots/after-executor.json#L44">post-run snapshot, line 44</a>). WireGuard private keys and client keys turn up the same way.</p><p style="margin:0 0 12px;color:#131820;line-height:1.6">Whether that is a breach depends on where the box sits. On a throwaway lab VM it is untidy. Anywhere else, that key is now outside the store it belongs in, sitting in a scratch directory, and it is the key that signs certificates for every node in the cluster. Anyone who can read it can mint a certificate the whole cluster trusts. Backups and snapshots pick the file up as well, which moves the key somewhere with a different and usually longer retention. Under a compliance boundary, such as payment processing, medical devices or plant control, key material outside its intended store is an audit finding on its own, before anyone has to show it was read.</p><p style="margin:0;color:#131820;line-height:1.6">The model has no concept of your data classification. It writes where the shell put it, and it does not come back for it.</p></div>
 
-### 04. Configuration is cheap. Coordination is expensive.
+### 4. Configuration is cheap. Coordination is expensive.
 
 As I suspected, cost climbs wherever two or more nodes have to agree on replication, quorum, state transfer or failover, because the result has to be demonstrated through a real state transition instead of being read from a config file. The table shows the observed completion-time ranges across three scenarios.
 
@@ -58,7 +58,7 @@ As I suspected, cost climbs wherever two or more nodes have to agree on replicat
 
 A PostgreSQL failover on Ubuntu 24.04 ran for 36 minutes and hit the wall. Same model, same fleet, same day as three-minute single-host tasks that scored clean.
 
-### 05. The model reaches for force as a first resort
+### 5. The model reaches for force as a first resort
 
 An engineer who is stuck usually knows it. They slow down as the system gets harder to read, they get careful around the parts they do not understand, and past a certain point they stop and ask someone. The model has none of those habits. It resorts to forceful options, and it does so even on runs that are otherwise going fine.
 
@@ -70,7 +70,7 @@ An engineer who is stuck usually knows it. They slow down as the system gets har
 
 The linked PostgreSQL failover run contains examples of destructive state-directory removal: [node2 and node3 at lines 83–86](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel7/postgresql-failover-rhel7/2026-09-04__20-11-34/postgresql-failover-rhel7__cofwkf3/agent/executor-commands.jsonl#L83-L86) and [node1 at lines 127–128](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel7/postgresql-failover-rhel7/2026-09-04__20-11-34/postgresql-failover-rhel7__cofwkf3/agent/executor-commands.jsonl#L127-L128). The dataset aggregate reports 177 such commands across 55 runs.
 
-### 06. Unclear provenance for repository URLs
+### 6. Unclear provenance for repository URLs
 
 Installing software outside the distribution repositories often requires the agent to configure a vendor repository or download a repository definition. Across the command logs, agents sometimes use URLs that are obsolete, invalid, or incorrect. The logs frequently show the URL and the resulting failure without showing how the agent derived the address.
 
@@ -82,7 +82,7 @@ The RabbitMQ runs provide several examples. On AlmaLinux, the agent tried `el9.r
 
 <div style="background:#fdf4f2;border-left:4px solid #a33a2a;border-radius:3px;padding:16px 20px;margin:24px 0"><div style="font-size:0.75em;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#a33a2a;margin-bottom:10px">The provenance gap creates operational and security risk</div><p style="margin:0;color:#131820;line-height:1.6">Incorrect URLs cause DNS failures, repository errors, retries, long waits, and fallback to distribution packages. Those fallbacks can change the software version and alter the result of the task. An address that resolves later to an unrelated service could direct repository configuration toward an unintended source. Repository and package signature checks provide an important control, while the URL's provenance remains unverified. Since the logs rarely reveal where the agent obtained the address, the same error is difficult to predict, prevent, or reproduce. These runs document installation and reproducibility risk.</p></div>
 
-### 07. Failure persisting kernel-facing changes
+### 7. Failure persisting kernel-facing changes
 
 Some Linux tools allow agents to create transient configurations that disappear after a reboot. This applies to both `firewall-cmd` and `iptables`.
 
@@ -98,7 +98,7 @@ The consequence is a delayed operational failure. A service may be reachable whe
 
 ## Open questions
 
-### 01. Ubuntu runs triggers more waiting
+### 1. Ubuntu runs triggers more waiting
 
 Every task in `clustered-services` installs and configures software, so a polling loop has plenty of chances to kick in. The Red Hat images finish in about five minutes. The Ubuntu ones take three to four times longer, and a third of that time is spent in agent-requested waits.
 
@@ -108,13 +108,13 @@ The extreme case was [`file-integrity-baseline`, executor lines 25–131](https:
 
 These waits often appeared while polling background package installs. The data shows more and longer explicit waiting on the Ubuntu runs, but it does not yet distinguish operating-system behavior from APT or repository latency, network conditions, task-specific installation behavior, or the model's polling strategy. Sleeping explains about half the gap; take it away and Ubuntu is still twice as slow, and I have not worked out why yet.
 
-### 02. An LLM analyzed the work of an LLM
+### 2. An LLM analyzed the work of an LLM
 
 Every run here was scored by an LLM verifier, and the findings on this page come from an LLM reading the command logs. That is not a rigorous method, and it is fair to hold the conclusions loosely because of it.
 
 Some of it does not depend on that judgment. This is precisely why I am publishing the dataset: to invite the community to mine it.
 
-### 03. One model, one setting
+### 3. One model, one setting
 
 Every run here was executed by Claude Sonnet 5 at medium reasoning effort. Nothing in the dataset says whether a different model, or the same model at a different effort, behaves the same way.
 

@@ -302,7 +302,9 @@ def convert(source: Path, image_url: str) -> str:
             pending_number = text_of(group["fnum"])
         elif group["h3"]:
             heading = text_of(group["h3"])
-            prefix = f"{pending_number}. " if pending_number.isdigit() else ""
+            # the artifact pads these to align a monospace column; plain
+            # prose has no such column, so drop the leading zero
+            prefix = f"{int(pending_number)}. " if pending_number.isdigit() else ""
             out.append(f"### {prefix}{heading}")
             pending_number = ""
         elif group["fig"]:
