@@ -1,10 +1,10 @@
 # What I learned running 52,027 sysadmin commands across 2,104 VMs using LLMs
 
-Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded traces across 804 tasks and started mining the data.
+Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded traces across 804 scored runs and started mining the data.
 
-Each task execution (aka run) got a disposable cluster and a plain-language objective. 839 clusters, 2,104 full virtual machines, 52,027 recorded commands. The harness, built on [Harbor](https://github.com/harbor-framework/harbor), kept the whole timeline: what was issued, what came back, and what state was left behind. Tasks cover single-host, multi-node services, stateful clusters, and four network operating systems: VyOS, OpenWrt, SONiC and OPNsense. In another category, VyOS and OPNSense are combined in more complex networking scenario such as IPsec tunnel between a VyOS LAN and an OPNsense LAN. Clusters and network devices are provisioned through [Antrieb](https://antrieb.sh), a testbed creator I built to faclitate my experiments around LLM and Infra.
+Each task execution (aka run) got a disposable cluster and a plain-language objective. 839 clusters, 2,104 full virtual machines, 52,027 recorded commands. The harness, built on [Harbor](https://github.com/harbor-framework/harbor), kept the whole timeline: what was issued, what came back, and what state was left behind. Tasks cover single-host, multi-node services, stateful clusters, and four network operating systems: VyOS, OpenWrt, SONiC and OPNsense. In another category, VyOS and OPNsense are combined in more complex networking scenarios, such as an IPsec tunnel between a VyOS LAN and an OPNsense LAN. Clusters and network devices are provisioned through [Antrieb](https://antrieb.sh), a testbed creator I built to facilitate my experiments with LLMs and infrastructure.
 
-The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging Face](https://huggingface.co/datasets/infraset/infraset). We welcome new tasks, runs, or mining of traces. Here's what I found, including a couple of things I had wrong going in.
+The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging Face](https://huggingface.co/datasets/infraset/infraset). I welcome new tasks, runs, or mining of traces. Here's what I found, including a couple of things I had wrong going in.
 
 *The 2,104 VMs were never running at the same time. Clusters are provisioned in small batches, on the order of 50 machines at once, and torn down when the run finishes.*
 
@@ -14,7 +14,7 @@ The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging 
 
 ### 01. LLMs almost always complete the job successfully
 
-In the table below, 759 of 804 runs came back with a perfect score: every requirement met and checked against captured evidence. While the perfect-score rate varies from 100% to 86%, the success rate is 99%. A run counts as successful if it met 80% of the task's functional requirements.
+In the table below, 759 of 804 scored runs came back with a perfect score: every requirement met and checked against captured evidence. While the perfect-score rate varies from 100% to 86%, the functional success rate across the same 804 runs is 99%. A run counts as successful if it met 80% of the task's functional requirements.
 
 **Perfect-score rate by category**
 
@@ -22,21 +22,21 @@ In the table below, 759 of 804 runs came back with a perfect score: every requir
 
 ### 02. LLM-friendliness varies by release
 
-Fail rate is the ratio of failed commands to all commands run on that release. Note that the fail rate here refers to command fail rate as opposed to task fail rate. It is not uncommon to see high command fail rate with equally high task success rate.
+The fail rate is the ratio of failed commands to all commands run on that release. This is a command-level measure; task success is measured separately. A release can therefore have a high command fail rate alongside a high task success rate.
 
 ![Command fail rate by release](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/fail-rate-by-release.png)
 
-We observe three times as many commands fail on RHEL 7.9 as on RHEL 9.8, running the same 29 tasks with the same wording. Ubuntu shows the same pattern across its two releases.
+I observe three times as many commands fail on RHEL 7.9 as on RHEL 9.8, running the same 29 tasks with the same wording. Ubuntu follows the same direction, with a weaker effect.
 
-We suspect that an important factor of this fail rate is how much material about a release exists publicly, and how long that material has stood before a newer version supersedes it. RHEL 9 superseded RHEL 7, so most of what the model has read about RHEL describes 9 rather than 7. RHEL 10 is newer than RHEL 9, but it has not superseded RHEL 9 in the written record yet, which would explain why it fails more often than the release it replaces.
+I suspect that an important factor in this failure rate is how much material about a release exists publicly, and how long that material has stood before a newer version supersedes it. RHEL 9 superseded RHEL 7, so most of what the model has read about RHEL describes 9 rather than 7. RHEL 10 is newer than RHEL 9, but it has not superseded RHEL 9 in the written record yet, which would explain why it fails more often than the release it replaces.
 
 *These numbers exclude `file-integrity-baseline`, where one run distorted a column; the open question below covers it.*
 
-### 03. The Leftovers: 98.8% of Runs Leave Residue
+### 03. The leftovers: 98.8% of runs leave residue
 
 In this experiment, every run carries an operational-hygiene score. It asks whether the run mutated things the task never called for, left residue behind, or broke something unrelated. When the model leaves absolutely no residue behind, the run scores a perfect 1.000.
 
-**Operational hygiene across 804 runs**
+**Operational hygiene across 804 scored runs**
 
 | | |
 |---|---:|
@@ -44,13 +44,13 @@ In this experiment, every run carries an operational-hygiene score. It asks whet
 | Runs that achieved a perfect score | 10 (1.2%) |
 | Mean hygiene across all runs | 0.829 |
 
-The table shows that ten runs out of 804 left the machine in a clean state. The other 98.8% left something behind: a package pulled in to test a theory, a service stopped and never restarted, scratch files in `/tmp`, a config edited and not reverted.
+The table shows that ten of 804 scored runs left the machine in a clean state. The other 98.8% left something behind: a package pulled in to test a theory, a service stopped and never restarted, scratch files in `/tmp`, a config edited and not reverted.
 
 > **Residue is a security problem**
 >
 > Residue is attack surface. The debugging packages the agent installed are now unpatched software on your host. The service it stopped may be auditd or a log shipper.
 >
-> Many tasks left private key material in `/tmp` when the run ended, including `/tmp/pgca/ca.key`, the signing key of the certificate authority the model had just created for the cluster ([post-run snapshot](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel9/postgresql-replication-tls-rhel9/2026-09-04__20-11-34/postgresql-replication-tls-rhel9__oskDi9n/collector/attempts/01/snapshots/after-executor.json)). WireGuard private keys and client keys turn up the same way.
+> Many tasks left private key material in `/tmp` when the run ended, including `/tmp/pgca/ca.key`, the signing key of the certificate authority the model had just created for the cluster ([post-run snapshot, line 44](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel9/postgresql-replication-tls-rhel9/2026-09-04__20-11-34/postgresql-replication-tls-rhel9__oskDi9n/collector/attempts/01/snapshots/after-executor.json#L44)). WireGuard private keys and client keys turn up the same way.
 >
 > Whether that is a breach depends on where the box sits. On a throwaway lab VM it is untidy. Anywhere else, that key is now outside the store it belongs in, sitting in a scratch directory, and it is the key that signs certificates for every node in the cluster. Anyone who can read it can mint a certificate the whole cluster trusts. Backups and snapshots pick the file up as well, which moves the key somewhere with a different and usually longer retention. Under a compliance boundary, such as payment processing, medical devices or plant control, key material outside its intended store is an audit finding on its own, before anyone has to show it was read.
 >
@@ -58,11 +58,11 @@ The table shows that ten runs out of 804 left the machine in a clean state. The 
 
 ### 04. Configuration is cheap. Coordination is expensive.
 
-As we suspected, cost climbs wherever two or more nodes have to agree on replication, quorum, state transfer or failover, because the result has to be demonstrated through a real state transition instead of read out of a config file. The table shows the mean completion time in 3 different scenarios.
+As I suspected, cost climbs wherever two or more nodes have to agree on replication, quorum, state transfer or failover, because the result has to be demonstrated through a real state transition instead of being read from a config file. The table shows the observed completion-time ranges across three scenarios.
 
-**Mean completion by task shape**
+**Observed completion-time range by task shape**
 
-<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Shape</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Typical run</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Single-host administration</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">3–4 min</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Routed / firewalled networks</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">6–13 min</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Stateful clusters (replication, quorum)</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">10–25 min</td></tr></tbody></table>
+<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Shape</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Observed run range</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Single-host administration</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">3–4 min</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Routed / firewalled networks</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">6–13 min</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Stateful clusters (replication, quorum)</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">10–25 min</td></tr></tbody></table>
 
 A PostgreSQL failover on Ubuntu 24.04 ran for 36 minutes and hit the wall. Same model, same fleet, same day as three-minute single-host tasks that scored clean.
 
@@ -70,64 +70,65 @@ A PostgreSQL failover on Ubuntu 24.04 ran for 36 minutes and hit the wall. Same 
 
 An engineer who is stuck usually knows it. They slow down as the system gets harder to read, they get careful around the parts they do not understand, and past a certain point they stop and ask someone. The model has none of those habits. It resorts to forceful options, and it does so even on runs that are otherwise going fine.
 
-865 commands in the dataset stop a service, kill a process, delete a directory or flush a network configuration. 254 of the 804 runs contain at least one of them, so roughly one run in three used force somewhere.
+865 commands in the dataset stop a service, kill a process, delete a directory or flush a network configuration. 254 of the 804 scored runs contain at least one of them, so roughly one run in three used force somewhere.
 
 **Forceful commands by kind**
 
 <table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Kind</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Commands</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Runs</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Flush network state (`iptables -F`, `ip addr flush`)</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">327</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">100</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">`rm -rf`</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">241</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">75</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Stop or kill a service</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">201</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">117</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">`kill -9` / SIGKILL</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">91</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">37</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Truncate or zero a file</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">5</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">4</td></tr></tbody></table>
 
-[177 of those commands](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel7/postgresql-failover-rhel7/2026-09-04__20-11-34/postgresql-failover-rhel7__cofwkf3/agent/executor-commands.jsonl) remove a live database or cluster state directory, such as `/var/lib/pgsql/14/data`, `/var/lib/etcd` or `/var/lib/postgresql/16/main`. They are spread across 55 runs.
+The linked PostgreSQL failover run contains examples of destructive state-directory removal: [node2 and node3 at lines 83–86](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel7/postgresql-failover-rhel7/2026-09-04__20-11-34/postgresql-failover-rhel7__cofwkf3/agent/executor-commands.jsonl#L83-L86) and [node1 at lines 127–128](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel7/postgresql-failover-rhel7/2026-09-04__20-11-34/postgresql-failover-rhel7__cofwkf3/agent/executor-commands.jsonl#L127-L128). The dataset aggregate reports 177 such commands across 55 runs.
 
-### 06. LLMs hallucinate download URLs
+### 06. Unclear provenance for repository URLs
 
-Installing packages sometimes requires the agent to download binaries. Such is the case for instance when the package is 
-located outside of the distro repos. We have observed that the LLM proceeds to stich together a URL with hallucinated hostnames.
+Installing software outside the distribution repositories often requires the agent to configure a vendor repository or download a repository definition. Across the command logs, agents sometimes use URLs that are obsolete, invalid, or incorrect. The logs frequently show the URL and the resulting failure without showing how the agent derived the address.
 
-I pulled every hostname the model tried to reach out of the command logs and looked each one up in DNS. There were 71 of them. Four do not resolve at all, so the model made them up. In every one of those cases it was setting up a third-party package repository ([one such run](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/almalinux9/rabbitmq-cluster-almalinux9/2026-09-04__20-11-34/rabbitmq-cluster-almalinux9__EWg7s4d/agent/executor-commands.jsonl)).
+The RabbitMQ runs provide several examples. On AlmaLinux, the agent tried `el9.rabbitmq.com` and received DNS resolution failures while writing RPM repository files ([lines 7–14](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/almalinux9/rabbitmq-cluster-almalinux9/2026-09-04__20-11-34/rabbitmq-cluster-almalinux9__EWg7s4d/agent/executor-commands.jsonl#L7-L14)). On Ubuntu, it placed the retired `ppa1.rabbitmq.com` repository in `/etc/apt/sources.list.d/rabbitmq.list` ([lines 99–104](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/ubuntu24/rabbitmq-tls-ubuntu24/2026-09-04__20-11-34/rabbitmq-tls-ubuntu24__HmEevtG/agent/executor-commands.jsonl#L99-L104)); the subsequent APT update reported that the hostname could not be resolved ([lines 117–120](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/ubuntu24/rabbitmq-tls-ubuntu24/2026-09-04__20-11-34/rabbitmq-tls-ubuntu24__HmEevtG/agent/executor-commands.jsonl#L117-L120)). RabbitMQ later moved its Debian repositories to `deb1.rabbitmq.com` and `deb2.rabbitmq.com`. The evidence supports obsolete or incorrect repository selection, while the agent's reasoning or source for the URLs remains unknown.
 
-**Invented hostnames and the real ones**
+**Examples of repository URLs used by agents**
 
-<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Hostname the model used</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Commands</th><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Real hostname for that content</th></tr></thead><tbody><tr style=""><td style="color:#a33a2a;font-weight:700;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">el9.rabbitmq.com</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">14</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">ppa1.novemberain.com</td></tr><tr style="background:#fafbfc;"><td style="color:#a33a2a;font-weight:700;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">ppa1.rabbitmq.com</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">12</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">ppa1.novemberain.com</td></tr><tr style=""><td style="color:#a33a2a;font-weight:700;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">dl.almalinux.org</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">2</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">repo.almalinux.org</td></tr><tr style="background:#fafbfc;"><td style="color:#a33a2a;font-weight:700;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">yum-eu-west.packagecloud.io</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">1</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">packagecloud.io</td></tr></tbody></table>
+<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">URL used</th><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Observed result</th><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Evidence</th></tr></thead><tbody><tr style=""><td style="color:#a33a2a;font-weight:700;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">el9.rabbitmq.com</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">DNS resolution failed</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">[L7–L14](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/almalinux9/rabbitmq-cluster-almalinux9/2026-09-04__20-11-34/rabbitmq-cluster-almalinux9__EWg7s4d/agent/executor-commands.jsonl#L7-L14)</td></tr><tr style="background:#fafbfc;"><td style="color:#a33a2a;font-weight:700;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">ppa1.rabbitmq.com</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">APT could not resolve host</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">[L99–L120](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/ubuntu24/rabbitmq-tls-ubuntu24/2026-09-04__20-11-34/rabbitmq-tls-ubuntu24__HmEevtG/agent/executor-commands.jsonl#L99-L120)</td></tr><tr style=""><td style="color:#a33a2a;font-weight:700;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">dl.almalinux.org</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Diagnostic probe returned DNS failure</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">[L5–L8](https://github.com/open-sudo/infraset/blob/main/jobs/single-node-os-comparison/almalinux9/mandatory-access-control-port-almalinux9/2026-09-04__22-51-06/mandatory-access-control-port-al__VSVLSng/agent/executor-commands.jsonl#L5-L8)</td></tr><tr style="background:#fafbfc;"><td style="color:#a33a2a;font-weight:700;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">yum-eu-west.packagecloud.io</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">HTTP result 000</td><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">[L11–L14](https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel7/rabbitmq-cluster-rhel7/2026-09-04__20-11-34/rabbitmq-cluster-rhel7__3SiMg36/agent/executor-commands.jsonl#L11-L14)</td></tr></tbody></table>
 
-> **A supply-chain problem**
+> **The provenance gap creates operational and security risk**
 >
-> The model reaches these hostnames with a `curl` that fetches an unauthenticated file and writes it straight into `/etc/yum.repos.d/`. Nothing answered at the four above, so the fetch failed quietly. If something *had* answered, the package manager would treat whatever came back as a trusted source, gpgcheck and all, and the next `dnf install` would pull binaries from it. One silent curl converts a guessed hostname into a package source with root reach.
+> Incorrect URLs cause DNS failures, repository errors, retries, long waits, and fallback to distribution packages. Those fallbacks can change the software version and alter the result of the task. An address that resolves later to an unrelated service could direct repository configuration toward an unintended source. Repository and package signature checks provide an important control, while the URL's provenance remains unverified. Since the logs rarely reveal where the agent obtained the address, the same error is difficult to predict, prevent, or reproduce. These runs document installation and reproducibility risk.
 
-### 07. One kernel config change in eight is transient
+### 07. Failure persisting kernel-facing changes
 
-In [one run out of eight](https://github.com/open-sudo/infraset/blob/main/jobs/multi-node-os-comparison/rhel10/ssh-controller-access-rhel10/2026-09-03__13-11-25/ssh-controller-access-rhel10__T6tZ2cd/agent/executor-commands.jsonl) the model leaves a change that dies at the next reboot. It reports success, the port answers when you test it, and the failure re-appears weeks later during an unrelated reboot with nothing connecting the two.
+Some Linux tools allow agents to create transient configurations that disappear after a reboot. This applies to both `firewall-cmd` and `iptables`.
+
+I wanted to simulate how an administrator would actually use an LLM, so I left persistence implicit. The tasks asked the agent to reboot the machine after making its changes.
 
 **firewall-cmd runs that never used --permanent**
 
 <table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Image</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Runs</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Left transient</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Rate</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">RHEL 10.0</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">39</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">5</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">13%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">CentOS Stream 10</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">53</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">7</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">13%</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">AlmaLinux 9</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">57</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">7</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">12%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">RHEL 9.8</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">44</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">5</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">11%</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">RHEL 7.9</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">44</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">3</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">7%</td></tr></tbody></table>
 
-It is important to note that our prompt asks the model to reboot the machine and prove the services came back. It is possible that including this guides the model towards persistence, and that a request with no mention of a reboot would do worse.
+Across the 237 firewalld cases in the table, 210 runs—88.6%—left the firewall configuration working after reboot. In the remaining 27 runs—11.4%—the changes disappeared. The agent made the service work during the run, then reported success before the reboot exposed the missing persistence.
 
-We suspect models are trained in sandboxes that are inherently transient. As a result, making changes persistent is not a first-class behavior.
+The consequence is a delayed operational failure. A service may be reachable when the agent finishes, then lose its required access after a routine restart. Cluster communication, remote administration, or firewall protection can fail later, when the original change is no longer in anyone’s immediate view.
 
-## Open Questions
+## Open questions
 
-### 01. Ubuntu puts the LLM to sleep
+### 01. Ubuntu runs triggers more waiting
 
-Every task in `clustered-services` installs and configures software, so a polling loop has plenty of chances to kick in. The Red Hat images finish in about five minutes. The Ubuntu ones take three to four times longer, and a third of that time is spent asleep.
+Every task in `clustered-services` installs and configures software, so a polling loop has plenty of chances to kick in. The Red Hat images finish in about five minutes. The Ubuntu ones take three to four times longer, and a third of that time is spent in agent-requested waits.
 
 ![Time spent working versus asleep, clustered-services](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/clustered-sleep.png)
 
-The extreme case was [`file-integrity-baseline`](https://github.com/open-sudo/infraset/blob/main/jobs/single-node-os-comparison/ubuntu24/file-integrity-baseline-ubuntu24/2026-09-04__22-51-06/file-integrity-baseline-ubuntu24__BauFueK/agent/executor-commands.jsonl), which ran 32 minutes on Ubuntu 24.04 against 9 minutes on Ubuntu 16.04, with 24 of those minutes spent in 19 separate sleep commands.
+The extreme case was [`file-integrity-baseline`, executor lines 25–131](https://github.com/open-sudo/infraset/blob/main/jobs/single-node-os-comparison/ubuntu24/file-integrity-baseline-ubuntu24/2026-09-04__22-51-06/file-integrity-baseline-ubuntu24__BauFueK/agent/executor-commands.jsonl#L25-L131), which ran 32 minutes on Ubuntu 24.04 against 9 minutes on Ubuntu 16.04, with 24 of those minutes spent in 19 separate agent-issued sleep commands.
 
-Sleeping explains about half the gap. Take it away and Ubuntu is still twice as slow, and we have not worked out why. It may yet turn out to be something in our own platform rather than the model, which is why this sits here rather than among the findings. It was a surprise either way, because Ubuntu and Debian are the distributions the big AI labs run in their own sandboxes.
+These waits often appeared while polling background package installs. The data shows more and longer explicit waiting on the Ubuntu runs, but it does not yet distinguish operating-system behavior from APT or repository latency, network conditions, task-specific installation behavior, or the model's polling strategy. Sleeping explains about half the gap; take it away and Ubuntu is still twice as slow, and I have not worked out why yet.
 
 ### 02. An LLM analyzed the work of an LLM
 
 Every run here was scored by an LLM verifier, and the findings on this page come from an LLM reading the command logs. That is not a rigorous method, and it is fair to hold the conclusions loosely because of it.
 
-Some of it does not depend on that judgment. This is precisely why we are publishing the dataset: to invite the community to mine it.
+Some of it does not depend on that judgment. This is precisely why I am publishing the dataset: to invite the community to mine it.
 
 ### 03. One model, one setting
 
 Every run here was executed by Claude Sonnet 5 at medium reasoning effort. Nothing in the dataset says whether a different model, or the same model at a different effort, behaves the same way.
 
-We believe most of these observations apply to current models generally. That is a belief, and it needs validating.
+I believe most of these observations apply to current models generally. That is a belief, and it needs validating.
 
 ## The lab
 
@@ -143,8 +144,8 @@ All of it ran in a basement on five machines. The ProLiant is `server1`, which h
 
 ## What I take from this
 
-Using the traditional definition of completing a system administration task, the LLM succeeds 99% of the time. We tested on eight releases across five distributions, spanning ten years, on jobs ranging from a one-line sysctl change to a three-node quorum. This level of success was surprising.
+Using the traditional definition of completing a system administration task, the LLM succeeds 99% of the time. I tested on eight releases across five distributions, spanning ten years, on jobs ranging from a one-line sysctl change to a three-node quorum. This level of success was surprising.
 
-More surprises were waiting past that definition, starting with how much gets left behind. Almost every run leaves something on the box, and in many tasks that something was a private key left in `/tmp`, once the signing key of the cluster's own certificate authority. About a third of runs reach for force somewhere, and nine times out of ten it happens on a run that goes on to score perfectly. Four hostnames in the whole dataset were invented, and all four were package repositories going into the package manager's configuration.
+More surprises were waiting past that definition, starting with how much gets left behind. Almost every run leaves something on the box, and in many tasks that something was a private key left in `/tmp`, including the signing key of the cluster's own certificate authority. About a third of runs reach for force somewhere, and nine times out of ten it happens on a run that goes on to score perfectly. Several runs used repository URLs that were obsolete, invalid, or incorrect, and the logs often do not show how the agent derived them.
 
 I suspect even more surprises are lurking in the data. Please join the mining, and reach out if you have any questions. Everything is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging Face](https://huggingface.co/datasets/infraset/infraset): every task, every command timeline, every score.
