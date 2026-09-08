@@ -98,7 +98,7 @@ The consequence is a delayed operational failure. A service may be reachable whe
 
 ## Open questions
 
-### 1. Ubuntu runs triggers more waiting
+### 1. Ubuntu runs trigger more waiting
 
 Every task in `clustered-services` installs and configures software, so a polling loop has plenty of chances to kick in. The Red Hat images finish in about five minutes. The Ubuntu ones take three to four times longer, and a third of that time is spent in agent-requested waits.
 
