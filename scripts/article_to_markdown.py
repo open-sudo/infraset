@@ -39,6 +39,7 @@ PALETTE = {
     "good": "#2f6f5e",
     "warn": "#a33a2a",
     "mid": "#b26a00",
+    "risk_bg": "#fdf4f2",
 }
 
 
@@ -189,17 +190,35 @@ def as_readout(body: str) -> str:
 
 
 def convert_risk(block: str) -> str:
+    """Render a risk callout as a styled panel.
+
+    A blockquote with a bold first line reads as an aside. These sections carry
+    the security argument, so they get the same treatment as in the artifact: a
+    warning rule down the left, a tinted ground, and a small uppercase label.
+    """
     label = re.search(r'<p class="risk-label">(.*?)</p>', block, re.S)
-    paragraphs = re.findall(r"<p(?! class=\"risk-label\")[^>]*>(.*?)</p>", block, re.S)
-    lines = []
+    paragraphs = re.findall(r'<p(?! class="risk-label")[^>]*>(.*?)</p>', block, re.S)
+
+    panel = (
+        f"background:{PALETTE['risk_bg']};"
+        f"border-left:4px solid {PALETTE['warn']};"
+        "border-radius:3px;padding:16px 20px;margin:24px 0"
+    )
+    out = [f'<div style="{panel}">']
     if label:
-        lines.append(f"> **{text_of(label.group(1))}**")
-        lines.append(">")
+        out.append(
+            f'<div style="font-size:0.75em;font-weight:700;letter-spacing:0.08em;'
+            f'text-transform:uppercase;color:{PALETTE["warn"]};margin-bottom:10px">'
+            f"{inline_html(label.group(1))}</div>"
+        )
     for index, paragraph in enumerate(paragraphs):
-        if index:
-            lines.append(">")
-        lines.append("> " + text_of(paragraph).replace("\n", "\n> "))
-    return "\n".join(lines)
+        margin = "0" if index == len(paragraphs) - 1 else "0 0 12px"
+        out.append(
+            f'<p style="margin:{margin};color:{PALETTE["ink"]};line-height:1.6">'
+            f"{inline_html(paragraph)}</p>"
+        )
+    out.append("</div>")
+    return "".join(out)
 
 
 def balanced_div(text: str, start: int) -> int:
