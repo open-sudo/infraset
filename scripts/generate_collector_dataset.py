@@ -230,6 +230,7 @@ def collector_rows(
 def legacy_rows(
     trial_dir: Path, *, task: str, job: str, trial: str
 ) -> Iterable[dict[str, Any]]:
+    found = False
     legacy = (
         ("after_prepare", trial_dir / "environment-baseline.json"),
         ("after_executor", trial_dir / "verifier" / "environment-post.json"),
@@ -238,6 +239,7 @@ def legacy_rows(
         snapshot = read_json(path)
         if snapshot is None:
             continue
+        found = True
         row = base_row(
             task=task,
             job=job,
@@ -256,6 +258,26 @@ def legacy_rows(
             source_path=display_path(path),
         )
         yield from snapshot_rows(row, snapshot)
+    if not found:
+        yield {
+            **base_row(
+                task=task,
+                job=job,
+                trial=trial,
+                attempt=0,
+                cluster_number=0,
+                prepare_enabled="unknown",
+                phase="after_executor",
+                phase_status="unavailable",
+                lifecycle_outcome="unknown",
+                captured_at="",
+                source_path=display_path(trial_dir),
+            ),
+            "observation_id": "collector:after_executor",
+            "observation_description": "Lifecycle snapshot availability.",
+            "observation_status": "unavailable",
+            "error": "No lifecycle snapshot was captured for this trial.",
+        }
 
 
 def rows(jobs_dir: Path) -> Iterable[dict[str, Any]]:
