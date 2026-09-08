@@ -24,13 +24,6 @@ REPLACEMENTS = [
             re.S,
         ),
     ),
-    (
-        "clustered-sleep.png",
-        "Time spent working versus asleep, clustered-services",
-        re.compile(
-            r"\*\*clustered-services, by image\*\*\n\n<table.*?</table>", re.S
-        ),
-    ),
 ]
 
 # (chart file, alt text, anchor the chart is placed above and which stays)

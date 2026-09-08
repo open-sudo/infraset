@@ -1,8 +1,8 @@
 # What I learned running 52,027 sysadmin commands across 2,104 VMs using LLMs
 
-Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded traces across 804 scored runs and started mining the data.
+Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded traces from 839 runs and started mining the data.
 
-Each task execution (aka run) got a disposable cluster and a plain-language objective. 839 clusters, 2,104 full virtual machines, 52,027 recorded commands. The harness, built on [Harbor](https://github.com/harbor-framework/harbor), kept the whole timeline: what was issued, what came back, and what state was left behind. Tasks cover single-host, multi-node services, stateful clusters, and four network operating systems: VyOS, OpenWrt, SONiC and OPNsense. In another category, VyOS and OPNsense are combined in more complex networking scenarios, such as an IPsec tunnel between a VyOS LAN and an OPNsense LAN. Clusters and network devices are provisioned through [Antrieb](https://antrieb.sh), a testbed creator I built to facilitate my experiments with LLMs and infrastructure.
+Each task execution (aka run) got a disposable cluster and a plain-language objective. 839 clusters, 2,104 full virtual machines, 52,027 recorded commands. The harness, built on [Harbor](https://github.com/harbor-framework/harbor), kept the whole timeline: what was issued, what came back, and what state was left behind. Of the 839 executions, 804 produced usable verifier scores. The other 35 ended without a score, often because the agent timed out and the cluster was terminated. Tasks cover single-host, multi-node services, stateful clusters, and four network operating systems: VyOS, OpenWrt, SONiC and OPNsense. In another category, VyOS and OPNsense are combined in more complex networking scenarios, such as an IPsec tunnel between a VyOS LAN and an OPNsense LAN. Clusters and network devices are provisioned through [Antrieb](https://antrieb.sh), a testbed creator I built to facilitate my experiments with LLMs and infrastructure.
 
 The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging Face](https://huggingface.co/datasets/infraset/infraset). I welcome new tasks, runs, or mining of traces. Here's what I found, including a couple of things I had wrong going in.
 
@@ -10,11 +10,11 @@ The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging 
 
 **Commands** 52,027 · **Runs scored** 804 · **VMs booted** 2,104 · **Left residue** 98.8% · **Linux distros** 8 · **Network OSes** 4 · **Cluster size** 1–4 · **VM launch** 848 ms
 
-## Seven findings
+## Eight findings
 
 ### 1. LLMs almost always complete the job successfully
 
-In the table below, 759 of 804 scored runs came back with a perfect score: every requirement met and checked against captured evidence. While the perfect-score rate varies from 100% to 86%, the functional success rate across the same 804 runs is 99%. A run counts as successful if it met 80% of the task's functional requirements.
+In the table below, 759 of 804 scored runs came back with a perfect score: every requirement met and checked against captured evidence. While the perfect-score rate varies from 100% to 86%, the functional success rate among the 804 runs that produced usable scores is 99%. The remaining 35 executions count as failed or unscorable runs. A run counts as successful if it met 80% of the task's functional requirements.
 
 **Perfect-score rate by category**
 
@@ -96,25 +96,29 @@ Across the 237 firewalld cases in the table, 210 runs—88.6%—left the firewal
 
 The consequence is a delayed operational failure. A service may be reachable when the agent finishes, then lose its required access after a routine restart. Cluster communication, remote administration, or firewall protection can fail later, when the original change is no longer in anyone’s immediate view.
 
+### 8. The simple-task trap
+
+A task that looks simple can produce a surprisingly complicated execution path when an LLM performs it. In the `file-integrity-baseline` task, the instruction was straightforward: establish an integrity baseline for `/etc` so later changes can be identified and reported.
+
+**Ubuntu 24.04 AIDE check**
+
+<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Event</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Evidence</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Synchronous check timed out</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7"><a href="https://github.com/open-sudo/infraset/blob/main/jobs/single-node-os-comparison/ubuntu24/file-integrity-baseline-ubuntu24/2026-09-07__23-51-46/file-integrity-baseline-ubuntu24__Au4zKey/agent/executor-commands.jsonl#L21-L22">L21–L22</a></td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Background check launched</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7"><a href="https://github.com/open-sudo/infraset/blob/main/jobs/single-node-os-comparison/ubuntu24/file-integrity-baseline-ubuntu24/2026-09-07__23-51-46/file-integrity-baseline-ubuntu24__Au4zKey/agent/executor-commands.jsonl#L23-L24">L23–L24</a></td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">AIDE still running after 120 seconds</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7"><a href="https://github.com/open-sudo/infraset/blob/main/jobs/single-node-os-comparison/ubuntu24/file-integrity-baseline-ubuntu24/2026-09-07__23-51-46/file-integrity-baseline-ubuntu24__Au4zKey/agent/executor-commands.jsonl#L25-L28">L25–L28</a></td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">AIDE completed during the next poll</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7"><a href="https://github.com/open-sudo/infraset/blob/main/jobs/single-node-os-comparison/ubuntu24/file-integrity-baseline-ubuntu24/2026-09-07__23-51-46/file-integrity-baseline-ubuntu24__Au4zKey/agent/executor-commands.jsonl#L29-L30">L29–L30</a></td></tr></tbody></table>
+
+On most other releases, the task completed in about four minutes on average. Ubuntu 16.04 took about 12 minutes, while Ubuntu 24.04 took 32 minutes.
+
+The difference follows the size of the AIDE scan. Ubuntu 24.04 covered nearly 90,000 filesystem entries, Ubuntu 16.04 covered about 70,000, and the other releases generally covered 30,000 to 40,000. Ubuntu 24 crossed the synchronous request timeout, causing the agent to relaunch AIDE with `nohup` and poll it with fixed sleep intervals. The scan often finished before the polling sleep ended, so the agent waited until the end of the interval before it could observe the result. The same pattern repeated across the later AIDE operations, adding substantial delay to the total.
+
+The visible task may be simple while the model's execution strategy introduces retries, detached processes, polling, and timeout effects.
+
 ## Open questions
 
-### 1. Ubuntu runs trigger more waiting
-
-Every task in `clustered-services` installs and configures software, so a polling loop has plenty of chances to kick in. The Red Hat images finish in about five minutes. The Ubuntu ones take three to four times longer, and a third of that time is spent in agent-requested waits.
-
-![Time spent working versus asleep, clustered-services](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/clustered-sleep.png)
-
-The extreme case was [`file-integrity-baseline`, executor lines 25–131](https://github.com/open-sudo/infraset/blob/main/jobs/single-node-os-comparison/ubuntu24/file-integrity-baseline-ubuntu24/2026-09-04__22-51-06/file-integrity-baseline-ubuntu24__BauFueK/agent/executor-commands.jsonl#L25-L131), which ran 32 minutes on Ubuntu 24.04 against 9 minutes on Ubuntu 16.04, with 24 of those minutes spent in 19 separate agent-issued sleep commands.
-
-These waits often appeared while polling background package installs. The data shows more and longer explicit waiting on the Ubuntu runs, but it does not yet distinguish operating-system behavior from APT or repository latency, network conditions, task-specific installation behavior, or the model's polling strategy. Sleeping explains about half the gap; take it away and Ubuntu is still twice as slow, and I have not worked out why yet.
-
-### 2. An LLM analyzed the work of an LLM
+### 1. An LLM analyzed the work of an LLM
 
 Every run here was scored by an LLM verifier, and the findings on this page come from an LLM reading the command logs. That is not a rigorous method, and it is fair to hold the conclusions loosely because of it.
 
-Some of it does not depend on that judgment. This is precisely why I am publishing the dataset: to invite the community to mine it.
+This is precisely why I am publishing the dataset: to invite the community to mine it.
 
-### 3. One model, one setting
+### 2. One model, one setting
 
 Every run here was executed by Claude Sonnet 5 at medium reasoning effort. Nothing in the dataset says whether a different model, or the same model at a different effort, behaves the same way.
 
@@ -126,7 +130,7 @@ I believe most of these observations apply to current models generally. That is 
 
 *The Antrieb testbed cluster running in my basement. USB fans keep the mini PCs from melting while spinning up disposable VM chains.*
 
-All of it ran in a basement on five machines. The ProLiant is `server1`, which hosts the MCP server; the four mini PCs carry the virtual machines. An HPE OfficeConnect 1620 switch ties them together, and a UPS keeps the fleet up through the short outages that would otherwise kill a campaign halfway through.
+All of it runs in my basement on five machines. The ProLiant is `server1`, which hosts the MCP server; the four mini PCs carry the virtual machines. An HPE OfficeConnect 1620 switch ties them together, and a UPS keeps the fleet up through the short outages that would otherwise kill an experiment halfway through.
 
 **The fleet**
 
@@ -136,6 +140,6 @@ All of it ran in a basement on five machines. The ProLiant is `server1`, which h
 
 Using the traditional definition of completing a system administration task, the LLM succeeds 99% of the time. I tested on eight releases across five distributions, spanning ten years, on jobs ranging from a one-line sysctl change to a three-node quorum. This level of success was surprising.
 
-More surprises were waiting past that definition, starting with how much gets left behind. Almost every run leaves something on the box, and in many tasks that something was a private key left in `/tmp`, including the signing key of the cluster's own certificate authority. About a third of runs reach for force somewhere, and nine times out of ten it happens on a run that goes on to score perfectly. Several runs used repository URLs that were obsolete, invalid, or incorrect, and the logs often do not show how the agent derived them.
+More surprises were waiting past that definition, starting with how much gets left behind. Almost every run leaves something on the box, and in many tasks that something was a private key left in `/tmp`, including the signing key of the cluster's own certificate authority. About a third of runs reach for force somewhere, while 11.4% of kernel-facing changes are not persisted. Several runs used repository URLs that were obsolete, invalid, or incorrect, and the logs often do not show how the agent derived them.
 
 I suspect even more surprises are lurking in the data. Please join the mining, and reach out if you have any questions. Everything is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging Face](https://huggingface.co/datasets/infraset/infraset): every task, every command timeline, every score.
