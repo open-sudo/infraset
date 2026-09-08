@@ -74,7 +74,7 @@ produce more of it. Only the last two need an account anywhere.
 ### Mode 1: mine the traces
 
 Download the dataset and analyse it with whatever you like: pandas, DuckDB, your
-own agent, Claude Code. The 52,027 commands ship as Parquet alongside the raw job
+own agent, Claude Code. The command records ship as Parquet alongside the raw job
 tree, so you can start from a table or from the original artifacts.
 
 ```python

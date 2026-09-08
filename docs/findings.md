@@ -1,20 +1,22 @@
-# What I learned running 52,027 sysadmin commands across 2,104 VMs using LLMs
+# What I learned running 59,349 sysadmin commands across 2,316 VMs using LLMs
 
-Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded traces from 839 runs and started mining the data.
+Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded traces from 905 runs and started mining the data.
 
-Each task execution (aka run) got a disposable cluster and a plain-language objective. 839 clusters, 2,104 full virtual machines, 52,027 recorded commands. The harness, built on [Harbor](https://github.com/harbor-framework/harbor), kept the whole timeline: what was issued, what came back, and what state was left behind. Of the 839 executions, 804 produced usable verifier scores. The other 35 ended without a score, often because the agent timed out and the cluster was terminated. Tasks cover single-host, multi-node services, stateful clusters, and four network operating systems: VyOS, OpenWrt, SONiC and OPNsense. In another category, VyOS and OPNsense are combined in more complex networking scenarios, such as an IPsec tunnel between a VyOS LAN and an OPNsense LAN. Clusters and network devices are provisioned through [Antrieb](https://antrieb.sh), a testbed creator I built to facilitate my experiments with LLMs and infrastructure.
+Each task execution (aka run) got a disposable cluster and a plain-language objective. 905 clusters, 2,316 full virtual machines, 59,349 recorded commands. The harness, built on [Harbor](https://github.com/harbor-framework/harbor), kept the whole timeline: what was issued, what came back, and what state was left behind. Of the 905 executions, 886 produced usable verifier scores. The other 19 ended without a score, often because the agent timed out and the cluster was terminated. Tasks cover single-host, multi-node services, stateful clusters, and four network operating systems: VyOS, OpenWrt, SONiC and OPNsense. In another category, VyOS and OPNsense are combined in more complex networking scenarios, such as an IPsec tunnel between a VyOS LAN and an OPNsense LAN. Clusters and network devices are provisioned through [Antrieb](https://antrieb.sh), a testbed creator I built to facilitate my experiments with LLMs and infrastructure.
+
+*The headline counts cover the current published corpus. Several finding sections below use the earlier 804-run analysis set and retain its task-level measurements.*
 
 The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging Face](https://huggingface.co/datasets/infraset/infraset). I welcome new tasks, runs, or mining of traces. Here's what I found, including a couple of things I had wrong going in.
 
-*The 2,104 VMs were never running at the same time. Clusters are provisioned in small batches, on the order of 50 machines at once, and torn down when the run finishes.*
+*The 2,316 VMs were never running at the same time. Clusters are provisioned in small batches, on the order of 50 machines at once, and torn down when the run finishes.*
 
-**Commands** 52,027 · **Runs scored** 804 · **VMs booted** 2,104 · **Left residue** 98.8% · **Linux distros** 8 · **Network OSes** 4 · **Cluster size** 1–4 · **VM launch** 848 ms
+**Commands** 59,349 · **Runs scored** 886 · **VMs booted** 2,316 · **Left residue** 98.8% · **Linux distros** 8 · **Network OSes** 4 · **Cluster size** 1–4 · **VM launch** 848 ms
 
 ## Eight findings
 
 ### 1. LLMs almost always complete the job successfully
 
-In the table below, 759 of 804 scored runs came back with a perfect score: every requirement met and checked against captured evidence. While the perfect-score rate varies from 100% to 86%, the functional success rate among the 804 runs that produced usable scores is 99%. The remaining 35 executions count as failed or unscorable runs. A run counts as successful if it met 80% of the task's functional requirements.
+Across the current corpus, 886 of 905 runs produced usable verifier scores. Nineteen runs ended without a score, often because the agent timed out and the cluster was terminated. The category table below retains the earlier 804-run analysis set: 759 of those scored runs came back with a perfect score, with every requirement met and checked against captured evidence. A run counts as successful if it met 80% of the task's functional requirements.
 
 **Perfect-score rate by category**
 
@@ -24,7 +26,13 @@ In the table below, 759 of 804 scored runs came back with a perfect score: every
 
 The fail rate is the ratio of failed commands to all commands run on that release. This is a command-level measure; task success is measured separately. A release can therefore have a high command fail rate alongside a high task success rate.
 
-![Command fail rate by release](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/fail-rate-by-release.png)
+**RHEL**
+
+<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Release</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Fail rate</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">RHEL 7.9</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">11.7%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">RHEL 9.8</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">3.8%</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">RHEL 10.0</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">6.9%</td></tr></tbody></table>
+
+**Ubuntu**
+
+<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Release</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Fail rate</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Ubuntu 16.04</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">11.8%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Ubuntu 24.04</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">8.0%</td></tr></tbody></table>
 
 I observe three times as many commands fail on RHEL 7.9 as on RHEL 9.8, running the same 29 tasks with the same wording. Ubuntu follows the same direction, with a weaker effect.
 

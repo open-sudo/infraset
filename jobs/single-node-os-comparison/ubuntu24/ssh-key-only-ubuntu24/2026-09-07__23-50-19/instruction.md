@@ -1,0 +1,1 @@
+On `node1`, configure `opsadmin` for SSH access with the public key `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINMKA2+oNHxgmpABaV61Sar8lVW2YxSL8Aw9d7b5yLh1 os-comparison@example.invalid`, and require key-based SSH authentication.

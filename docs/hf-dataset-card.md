@@ -28,9 +28,8 @@ An open dataset of LLM-executed infrastructure tasks. Every task ran on a
 disposable cluster of full virtual machines, and every command the model issued
 was recorded, along with what came back and what state was left behind.
 
-- **823 runs** (804 of them scored), **52,027 commands**, **2,104 virtual machines**
-- **841 authored tasks** across single-host administration, multi-node services,
-  stateful clusters, and four network operating systems
+- Recorded runs, commands, virtual machines, and authored tasks across single-host
+  administration, multi-node services, stateful clusters, and four network operating systems
 - **8 releases across 5 distributions**: Alpine, AlmaLinux 9, CentOS Stream 10,
   RHEL 7.9 / 9.8 / 10.0, Ubuntu 16.04 / 24.04
 - **4 network platforms**: VyOS, OpenWrt, SONiC, OPNsense
@@ -63,14 +62,14 @@ The remaining categories are summarised the same way.
 
 ## Tables
 
-Three flat views over the job tree, for querying without walking 31k files.
+Three flat views over the job tree, for querying without walking the raw artifacts.
 
 ```python
 from datasets import load_dataset
 
-runs     = load_dataset("infraset/infraset", "runs")      #    823 rows
-commands = load_dataset("infraset/infraset", "commands")  # 52,027 rows
-tasks    = load_dataset("infraset/infraset", "tasks")     #    841 rows
+runs     = load_dataset("infraset/infraset", "runs")
+commands = load_dataset("infraset/infraset", "commands")
+tasks    = load_dataset("infraset/infraset", "tasks")
 ```
 
 ### `runs`
