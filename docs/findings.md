@@ -8,7 +8,7 @@ The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging 
 
 *The 2,316 VMs were never running at the same time. Clusters are provisioned in small batches, on the order of 50 machines at once, and torn down when the run finishes.*
 
-**Commands** 59,349 · **Runs scored** 886 · **VMs booted** 2,316 · **Left residue** 98.8% · **Linux distros** 8 · **Network OSes** 4 · **Cluster size** 1–4 · **VM launch** 848 ms
+**Commands** 59,349 · **Runs scored** 886 · **VMs booted** 2,316 · **Left residue** 98.9% · **Linux distros** 8 · **Network OSes** 4 · **Cluster size** 1–4 · **VM launch** 848 ms
 
 ## Eight findings
 
