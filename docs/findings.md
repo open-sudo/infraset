@@ -26,13 +26,7 @@ Across the current corpus, 886 of 905 runs produced usable verifier scores. Nine
 
 The fail rate is the ratio of failed commands to all commands run on that release. This is a command-level measure; task success is measured separately. A release can therefore have a high command fail rate alongside a high task success rate.
 
-**RHEL**
-
-<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Release</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Fail rate</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">RHEL 7.9</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">11.7%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">RHEL 9.8</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">3.8%</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">RHEL 10.0</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">6.9%</td></tr></tbody></table>
-
-**Ubuntu**
-
-<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Release</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Fail rate</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Ubuntu 16.04</td><td style="color:#a33a2a;font-weight:700;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">11.8%</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Ubuntu 24.04</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">8.0%</td></tr></tbody></table>
+![Command fail rate by release](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/fail-rate-by-release.png)
 
 I observe three times as many commands fail on RHEL 7.9 as on RHEL 9.8, running the same 29 tasks with the same wording. Ubuntu follows the same direction, with a weaker effect.
 
