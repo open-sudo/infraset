@@ -38,11 +38,7 @@ In this experiment, every run carries an operational-hygiene score. It asks whet
 
 **Operational hygiene across 897 recorded runs**
 
-| | |
-|---|---:|
-| Total number of runs | 897 |
-| Runs that achieved a perfect score | 10 (1.1%) |
-| Mean hygiene across all runs | 0.821 |
+<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Measure</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Value</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Recorded runs</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">897</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Perfect hygiene score</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">10 (1.1%)</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Mean hygiene score</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">0.821</td></tr></tbody></table>
 
 The table shows that ten of 897 recorded runs left the machine in a clean state. The other 98.9% left something behind: a package pulled in to test a theory, a service stopped and never restarted, scratch files in `/tmp`, a config edited and not reverted.
 
