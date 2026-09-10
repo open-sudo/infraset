@@ -88,7 +88,12 @@ One row per execution, with the verifier's metrics.
 | `command_count`, `node_count` | Size of the run |
 | `first_command_at`, `last_command_at`, `wall_seconds` | Timing |
 
-Runs with a null `reward` were executed but not scored.
+Performance accounting begins when the executor records a command trace. In
+aggregate performance reporting, a run succeeds only when `reward` is 1.0,
+meaning every functional requirement was met. A run with a null `reward` counts
+as a failed test case. Provisioning attempts that fail before the LLM issues a
+command are classified as platform failures and excluded from the LLM performance
+denominator.
 
 ### `commands`
 

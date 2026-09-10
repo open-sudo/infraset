@@ -56,6 +56,12 @@ execution time. The `collector` configuration exposes lifecycle observations as 
 JSONL records suitable for filtering and analysis. Jobs recorded before lifecycle
 collection are retained as `legacy` after-prepare and after-executor observations.
 
+Performance accounting begins when the executor records a command trace. A run
+succeeds only when the verifier confirms that every functional requirement was
+met. A command-bearing run without a usable overall score counts as a failed test
+case. An attempt that fails before the LLM issues a command is classified as a
+platform failure and excluded from the LLM performance denominator.
+
 Dataset maintainers regenerate the summary, structured records, collector split,
 and Hugging Face card after changing recorded jobs with:
 
