@@ -95,6 +95,10 @@ as a failed test case. Provisioning attempts that fail before the LLM issues a
 command are classified as platform failures and excluded from the LLM performance
 denominator.
 
+Article-level operational-hygiene aggregates include all command-bearing runs.
+Missing `operational_hygiene` values are counted as 1.0; the raw dataset preserves
+those values as null.
+
 ### `commands`
 
 One row per command the executor issued, joined to `runs` on `run_id`. The

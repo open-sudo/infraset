@@ -1,20 +1,22 @@
 # What I learned running 59,349 sysadmin commands across 2,316 VMs using LLMs
 
-Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded traces from 905 runs and started mining the data.
+Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded every run and started mining the data.
 
-The experiment provisioned 922 clusters. Seventeen attempts failed before the LLM issued a command, so I classify them as platform failures. The remaining 905 runs form the LLM performance corpus: 2,316 full virtual machines and 59,349 recorded commands. The harness, built on [Harbor](https://github.com/harbor-framework/harbor), kept the whole timeline: what was issued, what came back, and what state was left behind. Of those 905 runs, 886 produced usable verifier scores. I count the other 19 as failed test cases. Tasks cover single-host, multi-node services, stateful clusters, and four network operating systems: VyOS, OpenWrt, SONiC and OPNsense. In another category, VyOS and OPNsense are combined in more complex networking scenarios, such as an IPsec tunnel between a VyOS LAN and an OPNsense LAN. Clusters and network devices are provisioned through [Antrieb](https://antrieb.sh), a testbed creator I built to facilitate my experiments with LLMs and infrastructure.
+The experiment provisioned 922 clusters. Seventeen attempts failed before the LLM issued a command, so I classify them as platform failures. The remaining 905 runs form the LLM performance corpus: 2,316 full virtual machines and 59,349 recorded commands. The harness, built on [Harbor](https://github.com/harbor-framework/harbor), kept the whole timeline: what was issued, what came back, and what state was left behind. Tasks cover single-host, multi-node services, stateful clusters, and four network operating systems: VyOS, OpenWrt, SONiC and OPNsense. In another category, VyOS and OPNsense are combined in more complex networking scenarios, such as an IPsec tunnel between a VyOS LAN and an OPNsense LAN. Clusters and network devices are provisioned through [Antrieb](https://antrieb.sh), a testbed creator I built to facilitate my experiments with LLMs and infrastructure.
 
 The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging Face](https://huggingface.co/datasets/infraset/infraset). I welcome new tasks, runs, or mining of traces. Here's what I found, including a couple of things I had wrong going in.
 
 *The 2,316 VMs were never running at the same time. Clusters are provisioned in small batches, on the order of 50 machines at once, and torn down when the run finishes.*
 
-**Commands** 59,349 · **LLM runs** 905 · **VMs booted** 2,316 · **Success rate** 92.5% · **Left residue** 98.9% · **Linux releases** 8 · **Network OSes** 4 · **Cluster size** 1–4
+**Commands** 59,349 · **LLM runs** 905 · **VMs booted** 2,316 · **Success rate** 92.5% · **Left residue** 98.0% · **Linux releases** 8 · **Network OSes** 4 · **Cluster size** 1–4
 
 ## Eight findings
 
 ### 1. LLMs almost always complete the job successfully
 
-Across the current corpus, 886 of 905 runs produced usable verifier scores. I count the remaining 19 as failed test cases. A run is successful only when every requirement was met. By that definition, 837 of 905 runs succeeded, giving a success rate of 92.5%.
+A run is successful only when every requirement was met. By that definition, 837 of 905 runs succeeded, giving a success rate of 92.5%.
+
+*Nineteen runs had no usable overall score and count as failed test cases.*
 
 **Success rate by category**
 
@@ -32,15 +34,17 @@ I suspect that an important factor in this failure rate is how much material abo
 
 *These numbers exclude `file-integrity-baseline`, where one run distorted a column; the simple-task trap below describes it.*
 
-### 3. The leftovers: 98.9% leave residue
+### 3. The leftovers: 98.0% leave residue
 
-In this experiment, every run carries an operational-hygiene score. It asks whether the run mutated things the task never called for, left residue behind, or broke something unrelated. When the model leaves absolutely no residue behind, the run scores a perfect 1.000.
+Operational hygiene records whether a run mutated things the task never called for, left residue behind, or broke something unrelated. A score of 1.000 means the verifier found none of these problems. The aggregate below includes all 905 runs.
 
-**Operational hygiene across 897 recorded runs**
+**Operational hygiene across all 905 runs**
 
-<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Measure</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Value</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Recorded runs</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">897</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Perfect hygiene score</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">10 (1.1%)</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Mean hygiene score</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">0.821</td></tr></tbody></table>
+<table style="border-collapse:collapse;width:100%;font-size:0.95em;border:1px solid #dde1e7"><thead><tr><th style="background:#b26a00;color:#ffffff;text-align:left;padding:9px 12px;font-weight:600">Measure</th><th style="background:#b26a00;color:#ffffff;text-align:right;padding:9px 12px;font-weight:600">Value</th></tr></thead><tbody><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Runs</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">905</td></tr><tr style="background:#fafbfc;"><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Clean or assumed clean</td><td style="color:#2f6f5e;font-weight:600;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">18 (2.0%)</td></tr><tr style=""><td style="color:#131820;text-align:left;padding:8px 12px;border-top:1px solid #dde1e7">Mean hygiene score</td><td style="color:#131820;text-align:right;padding:8px 12px;border-top:1px solid #dde1e7">0.823</td></tr></tbody></table>
 
-The table shows that ten of 897 recorded runs left the machine in a clean state. The other 98.9% left something behind: a package pulled in to test a theory, a service stopped and never restarted, scratch files in `/tmp`, a config edited and not reverted.
+Under this calculation, 18 of 905 runs are clean and 887, or 98.0%, left something behind: a package pulled in to test a theory, a service stopped and never restarted, scratch files in `/tmp`, a config edited and not reverted.
+
+*Eight runs had no operational-hygiene score, so I count them as perfect in this aggregate. Five were cancelled before verification. One ended when the executor process failed before the verifier ran. Two completed execution; the verifier could not start because its command exceeded the operating system's argument-length limit.*
 
 <div style="background:#fdf4f2;border-left:4px solid #a33a2a;border-radius:3px;padding:16px 20px;margin:24px 0"><div style="font-size:0.75em;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#a33a2a;margin-bottom:10px">Residue is a security problem</div><p style="margin:0 0 12px;color:#131820;line-height:1.6">Residue is attack surface. The debugging packages the agent installed are now unpatched software on your host. The service it stopped may be auditd or a log shipper.</p><p style="margin:0 0 12px;color:#131820;line-height:1.6">Many tasks left private key material in <code>/tmp</code> when the run ended, including <code>/tmp/pgca/ca.key</code>, the signing key of the certificate authority the model had just created for the cluster (<a href="https://github.com/open-sudo/infraset/blob/main/jobs/clustered-services/rhel9/postgresql-replication-tls-rhel9/2026-09-04__20-11-34/postgresql-replication-tls-rhel9__oskDi9n/collector/attempts/01/snapshots/after-executor.json#L44">post-run snapshot, line 44</a>). WireGuard private keys and client keys turn up the same way.</p><p style="margin:0 0 12px;color:#131820;line-height:1.6">That key signs certificates for every node in the cluster. Anyone who can read it can mint a certificate the whole cluster trusts.</p><p style="margin:0;color:#131820;line-height:1.6">The model has no concept of your data classification. It writes where the shell put it, and it does not come back for it.</p></div>
 
