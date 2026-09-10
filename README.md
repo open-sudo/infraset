@@ -16,7 +16,7 @@ community to join us and help expand it. Results can also be explored on
 - **A rich testbed.** It includes multiple operating systems,
   full-system VMs, multi-node clusters, and networked infrastructure.
 - **Rich execution data.** It publishes traces of what the LLM attempted, what
-  happened, whether it recovered, and whether the result worked—not just scores.
+  happened, whether it recovered, and whether the result worked.
 
 ## Testbed
 
@@ -57,10 +57,10 @@ JSONL records suitable for filtering and analysis. Jobs recorded before lifecycl
 collection are retained as `legacy` after-prepare and after-executor observations.
 
 Performance accounting begins when the executor records a command trace. A run
-succeeds only when the verifier confirms that every functional requirement was
-met. A command-bearing run without a usable overall score counts as a failed test
-case. An attempt that fails before the LLM issues a command is classified as a
-platform failure and excluded from the LLM performance denominator.
+passes only when every functional requirement was met. Every other
+command-bearing run fails. An attempt that fails before the LLM issues a command
+is classified as a platform failure and excluded from the LLM performance
+denominator.
 
 Dataset maintainers regenerate the summary, structured records, collector split,
 and Hugging Face card after changing recorded jobs with:
@@ -217,7 +217,7 @@ InfraSet combines three components:
   first two boundaries are represented by one snapshot.
 - The **executor** coordinates Harbor, Antrieb, and the AI agent while recording
   commands and final evidence.
-- The **verifier** scores the captured evidence and fixed before-and-after system
+- The **verifier** evaluates the captured evidence and fixed before-and-after system
   observations. It has no live system access.
 
 ### Workflow

@@ -80,7 +80,7 @@ One row per execution, with the verifier's metrics.
 |---|---|
 | `run_id` | `category/image/task/timestamp/cluster` |
 | `category`, `image`, `task` | e.g. `clustered-services`, `rhel9`, `etcd-cluster-rhel9` |
-| `reward` | Overall score, 0 to 1 |
+| `reward` | Pass when 1.0; fail otherwise |
 | `functionality` | Fraction of the task's material outcomes satisfied |
 | `operational_hygiene` | Penalises residue, unrelated mutation and collateral damage |
 | `evaluation_coverage`, `evaluation_complete` | How much of the task the verifier could assess |
@@ -89,11 +89,10 @@ One row per execution, with the verifier's metrics.
 | `first_command_at`, `last_command_at`, `wall_seconds` | Timing |
 
 Performance accounting begins when the executor records a command trace. In
-aggregate performance reporting, a run succeeds only when `reward` is 1.0,
-meaning every functional requirement was met. A run with a null `reward` counts
-as a failed test case. Provisioning attempts that fail before the LLM issues a
-command are classified as platform failures and excluded from the LLM performance
-denominator.
+aggregate performance reporting, a run passes only when every functional
+requirement was met. Every other command-bearing run fails. Provisioning attempts
+that fail before the LLM issues a command are classified as platform failures and
+excluded from the LLM performance denominator.
 
 Article-level operational-hygiene aggregates include all command-bearing runs.
 Missing `operational_hygiene` values are counted as 1.0; the raw dataset preserves
@@ -133,14 +132,14 @@ chose its own approach; nothing prescribed the commands. After finishing, it ran
 provider-wide restart protocol, rebooting each node and demonstrating that
 services and data recovered.
 
-An independent verifier then scored the run from captured evidence alone, with no
+An independent verifier then evaluated the run from captured evidence alone, with no
 access to the live systems. It derives the task's material outcomes from the
 public instruction and classifies each one, citing evidence.
 
 **The executor and the verifier are both LLMs.** Every run here was executed by
-Claude Sonnet 5 at medium reasoning effort, and scored by an LLM verifier. Command
-counts, timings and return codes are direct observations; the scores are
-judgments. Treat them accordingly.
+Claude Sonnet 5 at medium reasoning effort, and evaluated by an LLM verifier.
+Command counts, timings and return codes are direct observations; the verifier's
+conclusions are judgments. Treat them accordingly.
 
 ## What is in the traces
 
