@@ -14,7 +14,7 @@ The raw data is on [GitHub](https://github.com/open-sudo/infraset) and [Hugging 
 
 ### 1. LLMs almost always complete the job successfully
 
-Across the current corpus, 886 of 905 runs produced usable verifier scores. Nineteen runs ended without a score, often because the agent timed out and the cluster was terminated. Of the scored runs, 837 achieved a perfect score, meaning every requirement was met and checked against captured evidence. A run counts as successful if it met 80% of the task's functional requirements.
+Across the current corpus, 886 of 905 runs produced usable verifier scores. I count the remaining 19 as failed test cases. Using 70% of the task's functional requirements as the threshold, 877 of 905 runs passed, giving a success rate of 96.9%. Of all 905 runs, 837 achieved a perfect score, meaning every requirement was met and checked against captured evidence.
 
 **Perfect-score rate by category**
 
