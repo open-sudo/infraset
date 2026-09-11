@@ -8,6 +8,7 @@ python3 scripts/findings/corpus_totals.py
 python3 scripts/findings/command_fail_rates.py
 python3 scripts/findings/network_outcomes.py
 python3 scripts/findings/forceful_commands.py
+python3 scripts/findings/repository_urls.py
 ```
 
 - `corpus_totals.py` counts provisioning attempts, created VMs, LLM runs,
@@ -19,6 +20,8 @@ python3 scripts/findings/forceful_commands.py
 - `network_outcomes.py` compares network-device command failures with final
   task outcomes.
 - `forceful_commands.py` produces the command-class table in finding 5.
+- `repository_urls.py` counts runs that attempted explicit external repository
+  configuration and records configured hostnames that later failed DNS.
 
 All scripts use Python's standard library. A run is identified by its canonical
 `agent/executor-commands.jsonl`; a provisioning attempt is identified by its
