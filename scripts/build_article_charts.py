@@ -50,13 +50,22 @@ CLUSTERED = [
     ("Ubuntu 16.04", 21.4, 8.6),
 ]
 
-# Command fail rate by release, the two distributions with more than one version.
+# Command fail rate by operating-system component. Linux values compare the
+# same single-node tasks across releases. Network values count commands sent to
+# the network devices in each vendor's own networking category.
 RELEASES = [
     ("RHEL 7.9", 11.7, "RHEL"),
     ("RHEL 9.8", 3.8, "RHEL"),
     ("RHEL 10.0", 6.9, "RHEL"),
     ("Ubuntu 16.04", 11.8, "Ubuntu"),
     ("Ubuntu 24.04", 8.0, "Ubuntu"),
+]
+
+NETWORK_OSES = [
+    ("SONiC", 7.1),       # 187 failed of 2,636 terminal commands
+    ("OpenWrt", 7.7),     # 166 failed of 2,169 terminal commands
+    ("OPNsense", 7.9),    # 274 failed of 3,480 terminal commands
+    ("VyOS", 8.0),        # 139 failed of 1,740 terminal commands
 ]
 
 
@@ -103,28 +112,65 @@ def chart_sleep(destination: Path) -> None:
     plt.close(fig)
 
 
-def chart_releases(destination: Path) -> None:
-    names = [row[0] for row in RELEASES]
-    rates = [row[1] for row in RELEASES]
-    colors = [WARN if rate >= 10 else OK if rate < 5 else ACCENT for rate in rates]
-
-    fig, ax = plt.subplots(figsize=(9, 3.6), dpi=170)
+def chart_components(destination: Path) -> None:
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(11, 4.1),
+        dpi=170,
+        sharey=True,
+        gridspec_kw={"width_ratios": [1.25, 1]},
+    )
     fig.patch.set_facecolor(PAPER)
-    bars = ax.bar(names, rates, color=colors, width=0.58)
-    for bar, rate in zip(bars, rates):
-        ax.text(bar.get_x() + bar.get_width() / 2, rate + 0.28, f"{rate}%",
-                ha="center", color=INK, fontsize=9.5, fontname=SANS,
-                fontweight="bold")
 
-    ax.axvline(2.5, color=RULE, linewidth=1)
-    style(ax)
-    ax.set_ylim(0, max(rates) * 1.25)
-    ax.set_yticks([])
-    ax.set_ylabel("")
-    ax.set_title("Command fail rate by release",
-                 color=INK, fontsize=11.5, fontname=SANS, fontweight="bold",
-                 loc="left", pad=14)
-    fig.tight_layout()
+    groups = [
+        (axes[0], "Linux releases", [(name, rate) for name, rate, _ in RELEASES]),
+        (axes[1], "Network operating systems", NETWORK_OSES),
+    ]
+    maximum = max(
+        [row[1] for row in RELEASES] + [row[1] for row in NETWORK_OSES]
+    )
+
+    for ax, subtitle, values in groups:
+        names = [row[0] for row in values]
+        rates = [row[1] for row in values]
+        colors = [WARN if rate >= 10 else OK if rate < 5 else ACCENT for rate in rates]
+        bars = ax.bar(names, rates, color=colors, width=0.58)
+        for bar, rate in zip(bars, rates):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                rate + 0.28,
+                f"{rate}%",
+                ha="center",
+                color=INK,
+                fontsize=9.5,
+                fontname=SANS,
+                fontweight="bold",
+            )
+        style(ax)
+        ax.set_ylim(0, maximum * 1.25)
+        ax.set_yticks([])
+        ax.set_ylabel("")
+        ax.set_title(
+            subtitle,
+            color=MUTED,
+            fontsize=10,
+            fontname=SANS,
+            fontweight="bold",
+            loc="left",
+            pad=10,
+        )
+
+    fig.suptitle(
+        "Command fail rate by operating-system component",
+        color=INK,
+        fontsize=12,
+        fontname=SANS,
+        fontweight="bold",
+        x=0.055,
+        ha="left",
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     fig.savefig(destination, facecolor=PAPER)
     plt.close(fig)
 
@@ -133,8 +179,8 @@ def main() -> int:
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "docs/images")
     out.mkdir(parents=True, exist_ok=True)
     chart_sleep(out / "clustered-sleep.png")
-    chart_releases(out / "fail-rate-by-release.png")
-    for name in ("clustered-sleep.png", "fail-rate-by-release.png"):
+    chart_components(out / "fail-rate-by-component.png")
+    for name in ("clustered-sleep.png", "fail-rate-by-component.png"):
         size = (out / name).stat().st_size / 1024
         print(f"  {name:28} {size:6.0f} KB")
     return 0

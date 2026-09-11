@@ -17,10 +17,10 @@ from pathlib import Path
 # (chart file, alt text, regex spanning the block the chart replaces)
 REPLACEMENTS = [
     (
-        "fail-rate-by-release.png",
-        "Command fail rate by release",
+        "fail-rate-by-component.png",
+        "Command fail rate by operating-system component",
         re.compile(
-            r"\*\*RHEL\*\*\n\n<table.*?</table>\n\n\*\*Ubuntu\*\*\n\n<table.*?</table>",
+            r"\*\*RHEL\*\*\n\n<table.*?</table>\n\n\*\*Ubuntu\*\*\n\n<table.*?</table>\n\n\*\*Network operating systems\*\*\n\n<table.*?</table>",
             re.S,
         ),
     ),

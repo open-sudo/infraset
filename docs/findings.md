@@ -22,15 +22,17 @@ A run passes only when every requirement was met. By that definition, 837 of 905
 
 ### 2. LLM-friendliness varies by component
 
-The fail rate is the ratio of failed commands to all commands run on that release. This is a command-level measure; task pass or failure is determined separately. A release can therefore have a high command fail rate alongside a high task pass rate.
+The fail rate is the ratio of failed commands to all commands run on that operating-system component. This is a command-level measure; task pass or failure is determined separately. A component can therefore have a high command fail rate alongside a high task pass rate.
 
-![Command fail rate by release](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/fail-rate-by-release.png)
+![Command fail rate by operating-system component](https://raw.githubusercontent.com/open-sudo/infraset/main/docs/images/fail-rate-by-component.png)
 
 I observe three times as many commands fail on RHEL 7.9 as on RHEL 9.8, running the same 29 tasks with the same wording. Ubuntu follows the same direction, with a weaker effect.
 
+The network operating systems cluster more tightly, with command fail rates on their devices ranging from 7.1% on SONiC to 8.0% on VyOS.
+
 I suspect that an important factor in this failure rate is how much material about a release exists publicly, and how long that material has stood before a newer version supersedes it. RHEL 9 superseded RHEL 7, so most of what the model has read about RHEL describes 9 rather than 7. RHEL 10 is newer than RHEL 9, but it has not superseded RHEL 9 in the written record yet, which would explain why it fails more often than the release it replaces.
 
-*These numbers exclude `file-integrity-baseline`, where one run distorted a column; the simple-task trap below describes it.*
+*The Linux release numbers exclude `file-integrity-baseline`, where one run distorted a column; the simple-task trap below describes it. The network rates count commands sent to each vendor's devices in its own networking category.*
 
 ### 3. The leftovers: 98.0% leave residue
 
