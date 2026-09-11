@@ -4,10 +4,12 @@
 import json
 import re
 from collections import defaultdict
-from pathlib import Path
 
+try:
+    from .common import ROOT
+except ImportError:
+    from common import ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
 
 CLASSES = {
     "Service stop": (

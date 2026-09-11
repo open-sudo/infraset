@@ -20,6 +20,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 
+from findings.command_fail_rates import rates as command_fail_rates
+
 PAPER = "#f5f6f8"
 INK = "#131820"
 MUTED = "#5c6672"
@@ -48,24 +50,6 @@ CLUSTERED = [
     ("RHEL 7.9", 12.0, 2.5),
     ("Ubuntu 24.04", 17.2, 7.0),
     ("Ubuntu 16.04", 21.4, 8.6),
-]
-
-# Command fail rate by operating-system component. Linux values compare the
-# same single-node tasks across releases. Network values count commands sent to
-# the network devices in each vendor's own networking category.
-RELEASES = [
-    ("RHEL 7.9", 11.7, "RHEL"),
-    ("RHEL 9.8", 3.8, "RHEL"),
-    ("RHEL 10.0", 6.9, "RHEL"),
-    ("Ubuntu 16.04", 11.8, "Ubuntu"),
-    ("Ubuntu 24.04", 8.0, "Ubuntu"),
-]
-
-NETWORK_OSES = [
-    ("SONiC", 7.1),       # 187 failed of 2,636 terminal commands
-    ("OpenWrt", 7.7),     # 166 failed of 2,169 terminal commands
-    ("OPNsense", 7.9),    # 274 failed of 3,480 terminal commands
-    ("VyOS", 8.0),        # 139 failed of 1,740 terminal commands
 ]
 
 
@@ -113,6 +97,9 @@ def chart_sleep(destination: Path) -> None:
 
 
 def chart_components(destination: Path) -> None:
+    linux_rates, network_rates = command_fail_rates()
+    linux = [(label, rate) for label, _, _, _, rate in linux_rates]
+    network = [(label, rate) for label, _, _, _, rate in network_rates]
     fig, axes = plt.subplots(
         1,
         2,
@@ -124,12 +111,10 @@ def chart_components(destination: Path) -> None:
     fig.patch.set_facecolor(PAPER)
 
     groups = [
-        (axes[0], "Linux releases", [(name, rate) for name, rate, _ in RELEASES]),
-        (axes[1], "Network operating systems", NETWORK_OSES),
+        (axes[0], "Linux releases", linux),
+        (axes[1], "Network operating systems", network),
     ]
-    maximum = max(
-        [row[1] for row in RELEASES] + [row[1] for row in NETWORK_OSES]
-    )
+    maximum = max([row[1] for row in linux] + [row[1] for row in network])
 
     for ax, subtitle, values in groups:
         names = [row[0] for row in values]
@@ -140,7 +125,7 @@ def chart_components(destination: Path) -> None:
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
                 rate + 0.28,
-                f"{rate}%",
+                f"{rate:.1f}%",
                 ha="center",
                 color=INK,
                 fontsize=9.5,
