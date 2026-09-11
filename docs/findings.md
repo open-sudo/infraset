@@ -30,6 +30,8 @@ I observe three times as many commands fail on RHEL 7.9 as on RHEL 9.8, running 
 
 The network operating systems cluster more tightly, with command fail rates on their devices ranging from 7.1% on SONiC to 8.0% on VyOS.
 
+The network tasks still fail more often: a command can succeed while configuring the wrong interface, route or destination.
+
 I suspect that an important factor in this failure rate is how much material about a release exists publicly, and how long that material has stood before a newer version supersedes it. RHEL 9 superseded RHEL 7, so most of what the model has read about RHEL describes 9 rather than 7. RHEL 10 is newer than RHEL 9, but it has not superseded RHEL 9 in the written record yet, which would explain why it fails more often than the release it replaces.
 
 *The Linux release numbers exclude `file-integrity-baseline`, where one run distorted a column; the simple-task trap below describes it. The network rates count commands sent to each vendor's devices in its own networking category.*
