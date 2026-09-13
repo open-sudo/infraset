@@ -1,4 +1,4 @@
-# What I learned running 59,349 sysadmin commands across 2,355 VMs using LLMs
+# LLM as sysadmin: 59,349 commands, 2,355 VMs. The good, the bad, the /tmp
 
 Teams are already using LLMs to operate systems, with or without a human in the loop. Yet there's very little public data on the full impact of these agents on infrastructure. So I recorded every run and started mining the data.
 
