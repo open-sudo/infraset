@@ -9,6 +9,7 @@ python3 scripts/findings/command_fail_rates.py
 python3 scripts/findings/network_outcomes.py
 python3 scripts/findings/forceful_commands.py
 python3 scripts/findings/repository_urls.py
+python3 scripts/findings/residue_classification.py
 ```
 
 - `corpus_totals.py` counts provisioning attempts, created VMs, LLM runs,
@@ -22,6 +23,10 @@ python3 scripts/findings/repository_urls.py
 - `forceful_commands.py` produces the command-class table in finding 5.
 - `repository_urls.py` counts runs that attempted explicit external repository
   configuration and records configured hostnames that later failed DNS.
+- `residue_classification.py` classifies retained executor state as confirmed
+  residue, confirmed clean, or indeterminate and counts affected runs by
+  residue type. It excludes artifacts created by the mandatory restart-evidence
+  protocol. Use `--format tsv` to inspect every decision and its source report.
 
 All scripts use Python's standard library. A run is identified by its canonical
 `agent/executor-commands.jsonl`; a provisioning attempt is identified by its
