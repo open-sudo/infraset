@@ -37,7 +37,7 @@ Environments can include:
 
 ## Execution traces
 
-Published runs include the observable, redacted agent trajectory:
+Published runs include the recorded agent trajectory:
 
 - Agent messages and tool calls
 - Commands, output, and errors
@@ -50,26 +50,24 @@ command trace and outputs, preparation baselines, and fixed system snapshots
 taken before preparation, after preparation, and after execution. The LLM's
 final response is not evidence by itself. Browse and download the published traces from the
 [InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset).
-The `execution-summary` dataset configuration provides one row per task with its
-outcome, coverage, hygiene, commands, provisioning time, and
-execution time. The `collector` configuration exposes lifecycle observations as flat
-JSONL records suitable for filtering and analysis. Jobs recorded before lifecycle
-collection are retained as `legacy` after-prepare and after-executor observations.
+The `runs` dataset configuration provides one row per LLM run, the `commands`
+configuration provides one row per command the LLM issued, and the `tasks`
+configuration provides the task definitions and instructions.
 
-Performance accounting begins when the executor records a command trace. A run
-passes only when every functional requirement was met. Every other
-command-bearing run fails. An attempt that fails before the LLM issues a command
-is classified as a platform failure and excluded from the LLM performance
-denominator.
+Performance accounting begins once the LLM is started for a task. A run passes
+only when every functional requirement was met. Every other LLM run fails,
+including a run in which the LLM started but issued no command. Attempts that end
+because of failures in the surrounding test system are classified as platform
+failures and excluded from LLM performance.
 
-Dataset maintainers regenerate the summary, structured records, collector split,
-and Hugging Face card after changing recorded jobs with:
+Dataset maintainers regenerate the queryable tables and Hugging Face card after
+changing recorded jobs with:
 
 ```bash
-python3 scripts/generate_results_summary.py
-python3 scripts/generate_collector_dataset.py
+uv run --with pyarrow python3 scripts/build_hf_dataset.py
 python3 scripts/generate_hf_card.py
-python3 scripts/validate_hf_dataset.py
+uv run --with pyarrow python3 scripts/validate_hf_dataset.py \
+  --card docs/hf-dataset-card.md
 ```
 
 ## Usage modes

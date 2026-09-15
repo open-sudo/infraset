@@ -24,11 +24,13 @@ configs:
 
 # InfraSet
 
-An open dataset of LLM-executed infrastructure tasks. Every task ran on a
-disposable cluster of full virtual machines, and every command the model issued
-was recorded, along with what came back and what state was left behind.
+An open dataset of LLM-executed infrastructure tasks. The experiment created 922
+isolated test environments containing 2,355 full virtual machines. Seventeen
+attempts ended because of failures in the surrounding test system. The remaining
+905 are counted as LLM runs: 837 passed and 68 failed. Together, they produced
+59,349 commands. The three queryable Parquet tables occupy 6.7 MB compressed.
 
-- Recorded runs, commands, virtual machines, and authored tasks across single-host
+- **905 LLM runs, 59,349 commands, and 842 task definitions** across single-host
   administration, multi-node services, stateful clusters, and four network operating systems
 - **8 releases across 5 distributions**: Alpine, AlmaLinux 9, CentOS Stream 10,
   RHEL 7.9 / 9.8 / 10.0, Ubuntu 16.04 / 24.04
@@ -80,7 +82,7 @@ One row per execution, with the verifier's metrics.
 |---|---|
 | `run_id` | `category/image/task/timestamp/cluster` |
 | `category`, `image`, `task` | e.g. `clustered-services`, `rhel9`, `etcd-cluster-rhel9` |
-| `reward` | Pass when 1.0; fail otherwise |
+| `reward` | Pass when 1.0; fail otherwise; null when no verifier result was produced |
 | `functionality` | Fraction of the task's material outcomes satisfied |
 | `operational_hygiene` | Penalises residue, unrelated mutation and collateral damage |
 | `evaluation_coverage`, `evaluation_complete` | How much of the task the verifier could assess |
@@ -88,15 +90,12 @@ One row per execution, with the verifier's metrics.
 | `command_count`, `node_count` | Size of the run |
 | `first_command_at`, `last_command_at`, `wall_seconds` | Timing |
 
-Performance accounting begins when the executor records a command trace. In
-aggregate performance reporting, a run passes only when every functional
-requirement was met. Every other command-bearing run fails. Provisioning attempts
-that fail before the LLM issues a command are classified as platform failures and
-excluded from the LLM performance denominator.
-
-Article-level operational-hygiene aggregates include all command-bearing runs.
-Missing `operational_hygiene` values are counted as 1.0; the raw dataset preserves
-those values as null.
+Performance accounting begins once the LLM is started for a task. A run passes
+only when every functional requirement was met. Every other LLM run fails,
+including a run in which the LLM started but issued no command. Attempts that end
+because of failures in the surrounding test system are classified as platform
+failures and excluded from LLM performance. A null `reward` means that no verifier
+result was produced and counts as a failure in the aggregate results.
 
 ### `commands`
 
@@ -128,9 +127,9 @@ One row per authored task, including the instruction the model was given.
 ## How runs were produced
 
 Each run received a disposable cluster and a plain-language objective. The model
-chose its own approach; nothing prescribed the commands. After finishing, it ran a
-provider-wide restart protocol, rebooting each node and demonstrating that
-services and data recovered.
+chose its own approach; nothing prescribed the commands. After the model finished
+its changes, the executor restarted every node so the verifier could determine
+whether the result survived a reboot.
 
 An independent verifier then evaluated the run from captured evidence alone, with no
 access to the live systems. It derives the task's material outcomes from the

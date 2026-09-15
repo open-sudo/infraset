@@ -5,7 +5,7 @@ The published tree keeps every artifact a run produced, which is what makes the
 dataset auditable but not queryable. This script derives three flat tables from
 it so the traces can be mined without walking 31k files:
 
-  runs      one row per scored run, with the verifier's six metrics
+  runs      one row per LLM run, with the verifier's six metrics when available
   commands  one row per command the executor issued, with output
   tasks     one row per authored task definition
 
@@ -42,6 +42,15 @@ METRICS = (
     "evaluation_complete",
 )
 
+# This run reached the LLM, which failed before issuing a command. It therefore
+# counts as an LLM failure even though no executor command log was created.
+NO_COMMAND_LLM_RUNS = (
+    Path(
+        "single-node-os-comparison/ubuntu24/account-resource-limits-ubuntu24/"
+        "2026-09-07__23-50-19/account-resource-limits-ubuntu24__QyQkzn4"
+    ),
+)
+
 
 def parse_timestamp(value: str) -> datetime | None:
     if not value:
@@ -52,13 +61,19 @@ def parse_timestamp(value: str) -> datetime | None:
         return None
 
 
-def run_identity(command_log: Path) -> dict[str, str]:
-    """Derive category, image, task family and run id from the job path.
+def run_identity(trial_dir: Path) -> dict[str, str]:
+    """Derive category, image, task family and run id from a trial directory.
 
-    Job paths are <jobs>/<category>/<image>/<task>/<timestamp>/<cluster>/agent/…
+    Trial paths are <jobs>/<category>/<image>/<task>/<timestamp>/<cluster>.
     """
-    parts = command_log.relative_to(JOBS_ROOT).parts
-    category, image, task, stamp, cluster = parts[0], parts[1], parts[2], parts[3], parts[4]
+    parts = trial_dir.relative_to(JOBS_ROOT).parts
+    category, image, task, stamp, cluster = (
+        parts[0],
+        parts[1],
+        parts[2],
+        parts[3],
+        parts[4],
+    )
     return {
         "run_id": f"{category}/{image}/{task}/{stamp}/{cluster}",
         "category": category,
@@ -66,6 +81,24 @@ def run_identity(command_log: Path) -> dict[str, str]:
         "task": task,
         "started_at_dir": stamp,
     }
+
+
+def provisioned_node_count(trial_dir: Path) -> int:
+    """Return the number of VMs listed in the saved provisioning response."""
+    response = trial_dir / "provision-response.json"
+    try:
+        outer = json.loads(response.read_text())
+        text = next(
+            item["text"]
+            for item in outer["content"]
+            if item.get("type") == "text" and isinstance(item.get("text"), str)
+        )
+        nodes = json.loads(text)["nodes"]
+    except (OSError, json.JSONDecodeError, KeyError, StopIteration, TypeError) as exc:
+        raise ValueError(f"cannot read provisioned nodes from {response}") from exc
+    if not isinstance(nodes, list) or not nodes:
+        raise ValueError(f"invalid provisioned node list in {response}")
+    return len(nodes)
 
 
 def read_rewards(job_dir: Path) -> dict[str, float | None]:
@@ -133,19 +166,23 @@ def build_runs_and_commands() -> tuple[list[dict], list[dict]]:
     for command_log in sorted(JOBS_ROOT.rglob("agent/executor-commands.jsonl")):
         if "/attempts/" in str(command_log):
             continue
-        identity = run_identity(command_log)
-        job_dir = command_log.parents[1]
+        trial_dir = command_log.parents[1]
         rows = load_commands(command_log)
+        if not rows:
+            continue
+        identity = run_identity(trial_dir)
 
         stamps = [row["issued_at"] for row in rows if row["issued_at"]]
-        duration = (max(stamps) - min(stamps)).total_seconds() if len(stamps) > 1 else None
+        duration = (
+            (max(stamps) - min(stamps)).total_seconds() if len(stamps) > 1 else None
+        )
 
         runs.append(
             {
                 **identity,
-                **read_rewards(job_dir),
+                **read_rewards(trial_dir),
                 "command_count": len(rows),
-                "node_count": len({row["node"] for row in rows if row["node"]}),
+                "node_count": provisioned_node_count(trial_dir),
                 "first_command_at": min(stamps) if stamps else None,
                 "last_command_at": max(stamps) if stamps else None,
                 "wall_seconds": duration,
@@ -153,6 +190,23 @@ def build_runs_and_commands() -> tuple[list[dict], list[dict]]:
         )
         for row in rows:
             commands.append({"run_id": identity["run_id"], **row})
+
+    for relative in NO_COMMAND_LLM_RUNS:
+        trial_dir = JOBS_ROOT / relative
+        identity = run_identity(trial_dir)
+        runs.append(
+            {
+                **identity,
+                **read_rewards(trial_dir),
+                "command_count": 0,
+                "node_count": provisioned_node_count(trial_dir),
+                "first_command_at": None,
+                "last_command_at": None,
+                "wall_seconds": None,
+            }
+        )
+
+    runs.sort(key=lambda row: row["run_id"])
     return runs, commands
 
 
@@ -183,7 +237,9 @@ def build_tasks() -> list[dict]:
                 "slug": task_dir.name,
                 "difficulty": (config.get("metadata") or {}).get("difficulty"),
                 "agent_timeout_sec": (config.get("agent") or {}).get("timeout_sec"),
-                "verifier_timeout_sec": (config.get("verifier") or {}).get("timeout_sec"),
+                "verifier_timeout_sec": (config.get("verifier") or {}).get(
+                    "timeout_sec"
+                ),
                 "instruction": instruction.read_text(errors="replace"),
                 "cluster": cluster.group(1).strip() if cluster else None,
                 "control_node": control.group(1) if control else None,
@@ -199,7 +255,9 @@ def write_table(rows: list[dict], name: str) -> None:
     destination = OUTPUT_ROOT / f"{name}.parquet"
     pq.write_table(table, destination, compression="zstd")
     size_mb = destination.stat().st_size / 1024 / 1024
-    print(f"  {name:9} {len(rows):7} rows  {size_mb:6.1f} MB  {destination.relative_to(REPOSITORY)}")
+    print(
+        f"  {name:9} {len(rows):7} rows  {size_mb:6.1f} MB  {destination.relative_to(REPOSITORY)}"
+    )
 
 
 def main() -> int:
@@ -209,8 +267,12 @@ def main() -> int:
     write_table(runs, "runs")
     write_table(commands, "commands")
     write_table(tasks, "tasks")
-    scored = sum(1 for run in runs if run["reward"] is not None)
-    print(f"\n{len(runs)} runs ({scored} scored), {len(commands)} commands, {len(tasks)} tasks")
+    passed = sum(run["reward"] == 1.0 for run in runs)
+    failed = len(runs) - passed
+    print(
+        f"\n{len(runs)} runs ({passed} passed, {failed} failed), "
+        f"{len(commands)} commands, {len(tasks)} tasks"
+    )
     return 0
 
 

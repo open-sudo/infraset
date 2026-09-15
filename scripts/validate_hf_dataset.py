@@ -1,85 +1,80 @@
 #!/usr/bin/env python3
-"""Validate InfraSet's Hugging Face card and fixed-schema JSONL files."""
+"""Validate the queryable Hugging Face tables and dataset card."""
 
 from __future__ import annotations
 
 import argparse
-import json
-import re
+from collections import Counter
 from pathlib import Path
-from typing import Any
+
+import pyarrow.parquet as pq
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SUMMARY = ROOT / "data" / "execution-summary.jsonl"
-COLLECTOR = ROOT / "data" / "collector-observations.jsonl"
-DEFAULT_CARD = Path("/tmp/infraset-hf-card.md")
+DATA = ROOT / "data"
+DEFAULT_CARD = ROOT / "docs" / "hf-dataset-card.md"
 
-SUMMARY_KEYS = {
-    "task",
-    "environment",
-    "commands",
-    "reward",
-    "evaluation_coverage",
-    "functionality",
-    "operational_hygiene",
-    "provisioning_seconds",
-    "execution_seconds",
-}
-COLLECTOR_KEYS = {
-    "task",
-    "job",
-    "trial",
-    "collector_attempt",
-    "cluster_number",
-    "prepare_enabled",
-    "phase",
-    "phase_status",
-    "lifecycle_outcome",
-    "captured_at",
-    "node",
+RUN_COLUMNS = {
+    "run_id",
+    "category",
     "image",
-    "observation_id",
-    "observation_description",
-    "observation_status",
+    "task",
+    "started_at_dir",
+    "reward",
+    "functionality",
+    "evaluation_coverage",
+    "operational_hygiene",
+    "confidence",
+    "evaluation_complete",
+    "command_count",
+    "node_count",
+    "first_command_at",
+    "last_command_at",
+    "wall_seconds",
+}
+COMMAND_COLUMNS = {
+    "run_id",
+    "command_id",
+    "sequence",
+    "node",
+    "command",
+    "issued_at",
     "return_code",
     "duration_ms",
     "stdout",
     "stderr",
-    "error",
-    "source_path",
+    "executor_attempt",
+    "completed",
+}
+TASK_COLUMNS = {
+    "task_path",
+    "category",
+    "image_dir",
+    "slug",
+    "difficulty",
+    "agent_timeout_sec",
+    "verifier_timeout_sec",
+    "instruction",
+    "cluster",
+    "control_node",
+    "environment_toml",
 }
 
 
-def rows(path: Path, expected_keys: set[str]) -> list[dict[str, Any]]:
-    result = []
-    with path.open() as stream:
-        for line_number, line in enumerate(stream, start=1):
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path}:{line_number}: invalid JSON") from exc
-            if not isinstance(value, dict):
-                raise TypeError(f"{path}:{line_number}: row is not an object")
-            if set(value) != expected_keys:
-                missing = sorted(expected_keys - set(value))
-                extra = sorted(set(value) - expected_keys)
-                raise ValueError(
-                    f"{path}:{line_number}: schema mismatch; "
-                    f"missing={missing}, extra={extra}"
-                )
-            result.append(value)
-    if not result:
-        raise ValueError(f"{path}: dataset is empty")
-    return result
+def read_table(name: str, expected_columns: set[str]) -> list[dict]:
+    path = DATA / f"{name}.parquet"
+    table = pq.read_table(path)
+    columns = set(table.column_names)
+    if columns != expected_columns:
+        missing = sorted(expected_columns - columns)
+        extra = sorted(columns - expected_columns)
+        raise ValueError(f"{path}: missing={missing}, extra={extra}")
+    return table.to_pylist()
 
 
-def validate_column_types(path: Path, values: list[dict[str, Any]]) -> None:
-    for key in values[0]:
-        types = {type(row[key]) for row in values if row[key] is not None}
-        if len(types) > 1 and not types <= {int, float}:
-            names = sorted(item.__name__ for item in types)
-            raise TypeError(f"{path}: column {key!r} mixes types {names}")
+def unique(values: list[object], label: str) -> None:
+    if len(values) != len(set(values)):
+        raise ValueError(f"duplicate {label}")
 
 
 def main() -> int:
@@ -87,61 +82,62 @@ def main() -> int:
     parser.add_argument("--card", type=Path, default=DEFAULT_CARD)
     args = parser.parse_args()
 
-    summary = rows(SUMMARY, SUMMARY_KEYS)
-    collector = rows(COLLECTOR, COLLECTOR_KEYS)
-    validate_column_types(SUMMARY, summary)
-    validate_column_types(COLLECTOR, collector)
+    runs = read_table("runs", RUN_COLUMNS)
+    commands = read_table("commands", COMMAND_COLUMNS)
+    tasks = read_table("tasks", TASK_COLUMNS)
 
-    invalid_commands = [
-        row["commands"]
-        for row in summary
-        if not isinstance(row["commands"], str)
-        or re.fullmatch(
-            r"(?:\d+/\d+(?: \((?:none issued|no terminal result)\))?"
-            r"(?:; \d+ audit unavailable)?|audit unavailable)",
-            row["commands"],
-        )
-        is None
+    run_ids = [row["run_id"] for row in runs]
+    unique(run_ids, "run ID")
+    unique([row["task_path"] for row in tasks], "task path")
+    unique(
+        [(row["run_id"], row["command_id"]) for row in commands],
+        "command ID within a run",
+    )
+
+    unknown_runs = sorted({row["run_id"] for row in commands} - set(run_ids))
+    if unknown_runs:
+        raise ValueError(f"commands refer to unknown runs: {unknown_runs}")
+
+    commands_by_run = Counter(row["run_id"] for row in commands)
+    mismatches = [
+        row["run_id"]
+        for row in runs
+        if row["command_count"] != commands_by_run[row["run_id"]]
     ]
-    if invalid_commands:
-        raise ValueError(
-            "execution-summary commands must contain successful/failed counts or "
-            "an explicit audit-availability state"
-        )
+    if mismatches:
+        raise ValueError(f"run command counts disagree: {mismatches}")
+    if any(row["node_count"] < 1 for row in runs):
+        raise ValueError("every run must contain at least one provisioned VM")
 
-    summary_tasks = [str(row["task"]) for row in summary]
-    if len(summary_tasks) != len(set(summary_tasks)):
-        raise ValueError("execution summary contains duplicate task rows")
-    collector_tasks = {str(row["task"]) for row in collector}
-    if set(summary_tasks) != collector_tasks:
-        raise ValueError(
-            "collector and execution-summary task sets differ: "
-            f"summary_only={sorted(set(summary_tasks) - collector_tasks)}, "
-            f"collector_only={sorted(collector_tasks - set(summary_tasks))}"
-        )
-
-    phases = {str(row["phase"]) for row in collector}
-    unexpected_phases = phases - {
-        "before_prepare",
-        "after_prepare",
-        "after_executor",
-    }
-    if unexpected_phases:
-        raise ValueError(f"collector contains unknown phases: {unexpected_phases}")
+    passed = sum(row["reward"] == 1.0 for row in runs)
+    failed = len(runs) - passed
+    table_names = ("runs", "commands", "tasks")
+    size_mb = (
+        sum((DATA / f"{name}.parquet").stat().st_size for name in table_names)
+        / 1_000_000
+    )
 
     card = args.card.read_text()
-    for required in (
-        "config_name: execution-summary",
-        "path: data/execution-summary.jsonl",
-        "config_name: collector",
-        "path: data/collector-observations.jsonl",
-    ):
-        if required not in card:
-            raise ValueError(f"dataset card is missing {required!r}")
+    required_text = (
+        "config_name: runs",
+        "config_name: commands",
+        "config_name: tasks",
+        f"{len(runs):,} are counted as LLM runs: "
+        f"{passed:,} passed and {failed:,} failed",
+        f"{len(commands):,} commands",
+        f"{len(tasks):,} task definitions",
+        f"{size_mb:.1f} MB compressed",
+    )
+    missing = [text for text in required_text if text not in card]
+    if missing:
+        raise ValueError(f"dataset card is missing: {missing}")
 
+    vm_count = sum(row["node_count"] for row in runs)
     print(
-        f"HF dataset valid: {len(summary)} task summaries, "
-        f"{len(collector)} collector observations"
+        f"HF dataset valid: {len(runs):,} runs "
+        f"({passed:,} passed, {failed:,} failed), "
+        f"{len(commands):,} commands, {len(tasks):,} tasks, "
+        f"{vm_count:,} VMs in LLM runs"
     )
     return 0
 
