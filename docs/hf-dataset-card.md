@@ -171,7 +171,8 @@ answered from a redacted log.
 ```bibtex
 @misc{infraset2026,
   title  = {InfraSet: An Open Dataset of LLM-Executed Infrastructure Tasks},
-  author = {InfraSet},
+  author = {Fenkam, Pascal},
+  email  = {pascal@fenkam.name},
   year   = {2026},
   url    = {https://huggingface.co/datasets/infraset/infraset}
 }
