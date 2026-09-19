@@ -31,15 +31,19 @@ def text_of(fragment: str) -> str:
 
 
 PALETTE = {
+    # The publishing platform strips <style>, so inline styles cannot carry a
+    # prefers-color-scheme rule. Nothing may assume a light ground: body text
+    # inherits the theme, separators and stripes use alpha so they tint either
+    # ground, and the emphasis colours are mid-tone enough to read on both.
     "head_bg": "#b26a00",
     "head_fg": "#ffffff",
-    "rule": "#dde1e7",
-    "stripe": "#fafbfc",
-    "ink": "#131820",
-    "good": "#2f6f5e",
-    "warn": "#a33a2a",
+    "rule": "rgba(128,128,128,0.30)",
+    "stripe": "rgba(128,128,128,0.07)",
+    "ink": "inherit",
+    "good": "#2f9e7e",
+    "warn": "#e0574a",
     "mid": "#b26a00",
-    "risk_bg": "#fdf4f2",
+    "risk_bg": "rgba(224,87,71,0.10)",
 }
 
 
