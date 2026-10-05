@@ -252,20 +252,9 @@ boundary, and the verifier evaluates those snapshots and the executor evidence
 before the resulting job is recorded, validated, and published in the
 [InfraSet dataset on Hugging Face](https://huggingface.co/datasets/infraset/infraset).
 
-## Contributing
+## Trentina Transport
 
-We warmly welcome contributions, including new operating systems, network
-topologies, clustered environments, brownfield scenarios, troubleshooting
-tasks, evaluation improvements, execution traces, result artifacts, and
-accompanying analysis.
-
-InfraSet reviews the task and evidence, validates submitted traces, reproduces
-executions when necessary, and calculates published metrics from the validated
-artifacts.
-
-## Optional: Trentina gateway
-
-Trentina is optional. The commands above work directly with Antrieb and require
+[Trentina](https://github.com/crunchtools/mcp-trentina) is optional. The commands above work directly with Antrieb and require
 no gateway. Configure Trentina only if you want to route executor commands
 through it.
 
@@ -307,3 +296,14 @@ Only executor commands take this route. Provisioning, preparation, evidence
 collection, and teardown still connect directly to Antrieb using the
 `ANTRIEB_TOKEN` in `credentials.env`. Selecting `--transport direct` clears the
 executor gateway overrides and bypasses Trentina.
+
+## Contributing
+
+We warmly welcome contributions, including new operating systems, network
+topologies, clustered environments, brownfield scenarios, troubleshooting
+tasks, evaluation improvements, execution traces, result artifacts, and
+accompanying analysis.
+
+InfraSet reviews the task and evidence, validates submitted traces, reproduces
+executions when necessary, and calculates published metrics from the validated
+artifacts.
