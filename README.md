@@ -164,6 +164,46 @@ Harbor and `harbor-antrieb` automatically. New results are stored under
 Existing jobs use this same layout. Each timestamp folder contains the jobs for
 that scenario and run; scenario IDs are also recorded in each `variant.toml`.
 
+### Configuring the Trentina connection
+
+Harbor connects to Trentina using environment variables set by `run-task.sh`;
+Antrieb does not discover or configure the gateway. With `--transport trentina`
+(the runner's default), executor commands follow this route:
+
+```text
+Harbor executor → Trentina profile endpoint → Antrieb MCP → managed node
+```
+
+Start Trentina separately, then export its connection settings in the shell
+where you launch InfraSet:
+
+```bash
+export ANTRIEB_EXECUTOR_MCP_URL="http://localhost:8019/gateway/infraset/mcp"
+export ANTRIEB_EXECUTOR_TOKEN="your-trentina-profile-token"
+export ANTRIEB_EXECUTOR_TOOL_PREFIX="antrieb__"
+./run-task.sh --transport trentina ./tasks/5782
+```
+
+The URL above is the runner's default: `infraset` is the Trentina profile name.
+For a gateway on another host, replace the host, port, and profile as needed;
+`localhost` means the host running Harbor. The token must match that profile's
+bearer token, not the Antrieb API key. Set it explicitly rather than relying on
+the runner's placeholder token. These overrides are read from the environment,
+not from `credentials.env`.
+
+In Trentina's [profile configuration](https://github.com/crunchtools/mcp-trentina/blob/main/docs/profiles.md),
+configure a backend named `antrieb` with URL `https://antrieb.sh/mcp` and an
+`Authorization: Bearer ${ANTRIEB_TOKEN}` header; provide `ANTRIEB_TOKEN` to the
+gateway process. Expose the required Antrieb tools and set `short_names: false`
+on the profile so their names match the runner's `antrieb__` prefix. For the
+gateway's installation and startup settings, see the
+[Trentina setup guide](https://github.com/crunchtools/mcp-trentina#quick-start).
+
+Only executor commands take this route. Provisioning, preparation, evidence
+collection, and teardown still connect directly to Antrieb using the
+`ANTRIEB_TOKEN` in `credentials.env`. Selecting `--transport direct` clears the
+executor gateway overrides and bypasses Trentina.
+
 ## Creating a task
 
 InfraSet includes a task-builder skill that allows a coding agent to turn a task
