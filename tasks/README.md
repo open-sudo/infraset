@@ -25,7 +25,7 @@ direct and Trentina executions; former scenario 7292 is consolidated into it.
 | [8220](8220/) | bash-ubuntu7 | 100 |
 | [5469](5469/) | vanilla | 842 |
 | [7778](7778/) | vanilla-ansible | 842 |
-| [5782](5782/) | vanilla-luna / trentina | 362 |
+| [5782](5782/) | vanilla / trentina | 362 |
 
 Run a scenario with `./run-task.sh tasks/<id>`. The runner inherits its ID.
 See [metadata documentation](../docs/variant-metadata.md) for the task schema.

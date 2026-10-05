@@ -7,4 +7,4 @@ Each timestamp identifies a separate execution batch.
 
 ## Comparisons
 
-- [trentina-vs-vanilla-luna-report](trentina-vs-vanilla-luna-report.md)
+- [trentina-vs-vanilla-report](trentina-vs-vanilla-report.md)

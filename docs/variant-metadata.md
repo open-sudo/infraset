@@ -3,7 +3,7 @@
 A scenario is a collection of tasks. Its persistent four-digit ID belongs to the
 collection, not to an execution. Transport, model, and other execution parameters
 belong to a timestamped job batch. The identical task sets previously named
-vanilla-luna (5782) and trentina (7292) now share scenario 5782. Other collections
+vanilla (5782) and trentina (7292) now share scenario 5782. Other collections
 remain separate.
 
 ```text
