@@ -141,8 +141,8 @@ chmod 600 "$HOME/credentials.env"
 Run a task or a whole scenario from the repository root:
 
 ```bash
-./run-task.sh --transport direct ./tasks/5469/centralized-log-collector-bash-rhel7-5469
-./run-task.sh --transport trentina ./tasks/5782
+./run-task.sh ./tasks/5469/centralized-log-collector-bash-rhel7-5469
+./run-task.sh ./tasks/5782
 ```
 
 Each collection has its own persistent scenario ID; see the
@@ -150,12 +150,11 @@ Each collection has its own persistent scenario ID; see the
 `tasks/<id>/<usecase>-<language>-<os>-<id>/`. The runner inherits the ID from the
 scenario folder. There is no `--id` option or per-execution ID generation.
 
-Use `--transport trentina` for the local Trentina gateway or `--transport direct`
-for direct Antrieb execution. Executor mode defaults to interactive; use
-`--mode batch` to group compatible changes into non-interactive Bash scripts:
+The runner connects directly to Antrieb by default. Executor mode defaults to
+interactive; use `--mode batch` to group compatible changes into non-interactive Bash scripts:
 
 ```bash
-./run-task.sh --transport direct --mode batch ./tasks/5469
+./run-task.sh --mode batch ./tasks/5469
 ```
 
 Set `CREDENTIALS_FILE` to use a different credential-file path. The runner fetches
@@ -163,46 +162,6 @@ Harbor and `harbor-antrieb` automatically. New results are stored under
 `jobs/<id>/<timestamp>/<usecase>-<language>-<os>-<id>/`; timestamps preserve rerun history.
 Existing jobs use this same layout. Each timestamp folder contains the jobs for
 that scenario and run; scenario IDs are also recorded in each `variant.toml`.
-
-### Configuring the Trentina connection
-
-Harbor connects to Trentina using environment variables set by `run-task.sh`;
-Antrieb does not discover or configure the gateway. With `--transport trentina`
-(the runner's default), executor commands follow this route:
-
-```text
-Harbor executor → Trentina profile endpoint → Antrieb MCP → managed node
-```
-
-Start Trentina separately, then export its connection settings in the shell
-where you launch InfraSet:
-
-```bash
-export ANTRIEB_EXECUTOR_MCP_URL="http://localhost:8019/gateway/infraset/mcp"
-export ANTRIEB_EXECUTOR_TOKEN="your-trentina-profile-token"
-export ANTRIEB_EXECUTOR_TOOL_PREFIX="antrieb__"
-./run-task.sh --transport trentina ./tasks/5782
-```
-
-The URL above is the runner's default: `infraset` is the Trentina profile name.
-For a gateway on another host, replace the host, port, and profile as needed;
-`localhost` means the host running Harbor. The token must match that profile's
-bearer token, not the Antrieb API key. Set it explicitly rather than relying on
-the runner's placeholder token. These overrides are read from the environment,
-not from `credentials.env`.
-
-In Trentina's [profile configuration](https://github.com/crunchtools/mcp-trentina/blob/main/docs/profiles.md),
-configure a backend named `antrieb` with URL `https://antrieb.sh/mcp` and an
-`Authorization: Bearer ${ANTRIEB_TOKEN}` header; provide `ANTRIEB_TOKEN` to the
-gateway process. Expose the required Antrieb tools and set `short_names: false`
-on the profile so their names match the runner's `antrieb__` prefix. For the
-gateway's installation and startup settings, see the
-[Trentina setup guide](https://github.com/crunchtools/mcp-trentina#quick-start).
-
-Only executor commands take this route. Provisioning, preparation, evidence
-collection, and teardown still connect directly to Antrieb using the
-`ANTRIEB_TOKEN` in `credentials.env`. Selecting `--transport direct` clears the
-executor gateway overrides and bypasses Trentina.
 
 ## Creating a task
 
@@ -303,3 +262,48 @@ accompanying analysis.
 InfraSet reviews the task and evidence, validates submitted traces, reproduces
 executions when necessary, and calculates published metrics from the validated
 artifacts.
+
+## Optional: Trentina gateway
+
+Trentina is optional. The commands above work directly with Antrieb and require
+no gateway. Configure Trentina only if you want to route executor commands
+through it.
+
+Harbor connects to Trentina using environment variables set by `run-task.sh`;
+Antrieb does not discover or configure the gateway. When you explicitly select
+`--transport trentina` or set `INFRASET_TRANSPORT=trentina`, executor commands
+follow this route:
+
+```text
+Harbor executor → Trentina profile endpoint → Antrieb MCP → managed node
+```
+
+Start Trentina separately, then export its connection settings in the shell
+where you launch InfraSet:
+
+```bash
+export ANTRIEB_EXECUTOR_MCP_URL="http://localhost:8019/gateway/infraset/mcp"
+export ANTRIEB_EXECUTOR_TOKEN="your-trentina-profile-token"
+export ANTRIEB_EXECUTOR_TOOL_PREFIX="antrieb__"
+./run-task.sh --transport trentina ./tasks/5782
+```
+
+The URL above is the runner's default: `infraset` is the Trentina profile name.
+For a gateway on another host, replace the host, port, and profile as needed;
+`localhost` means the host running Harbor. The token must match that profile's
+bearer token, not the Antrieb API key. Set it explicitly rather than relying on
+the runner's placeholder token. These overrides are read from the environment,
+not from `credentials.env`.
+
+In Trentina's [profile configuration](https://github.com/crunchtools/mcp-trentina/blob/main/docs/profiles.md),
+configure a backend named `antrieb` with URL `https://antrieb.sh/mcp` and an
+`Authorization: Bearer ${ANTRIEB_TOKEN}` header; provide `ANTRIEB_TOKEN` to the
+gateway process. Expose the required Antrieb tools and set `short_names: false`
+on the profile so their names match the runner's `antrieb__` prefix. For the
+gateway's installation and startup settings, see the
+[Trentina setup guide](https://github.com/crunchtools/mcp-trentina#quick-start).
+
+Only executor commands take this route. Provisioning, preparation, evidence
+collection, and teardown still connect directly to Antrieb using the
+`ANTRIEB_TOKEN` in `credentials.env`. Selecting `--transport direct` clears the
+executor gateway overrides and bypasses Trentina.

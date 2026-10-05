@@ -34,6 +34,7 @@ job = Path(args[args.index('--jobs-dir') + 1]) / args[args.index('--job-name') +
             env = {**os.environ, 'PATH': str(root) + ':' + os.environ['PATH'],
                    'CREDENTIALS_FILE': str(credentials), 'INFRASET_JOBS_DIR': str(root / 'jobs'),
                    'INFRASET_JOB_NAME': 'check', 'INFRASET_ID': '9999'}
+            env.pop('INFRASET_TRANSPORT', None)
             paths = []
             for scenario, usecase in (('4523', 'nginx'), ('4523', 'dns'), ('7812', 'nginx')):
                 task = root / 'tasks' / scenario / f'{usecase}-bash-ubuntu7-{scenario}'
@@ -51,7 +52,7 @@ job = Path(args[args.index('--jobs-dir') + 1]) / args[args.index('--job-name') +
                                         env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, code, result.stdout + result.stderr)
                 return result.stdout + result.stderr
-            run('--transport', 'direct', '--mode', 'batch', *paths)
+            run('--mode', 'batch', *paths)
             for task in paths:
                 snapshot = tomllib.loads((root / 'jobs' / task.parent.name / 'check' / task.name / 'variant.toml').read_text())
                 received = root / 'jobs' / task.parent.name / 'check' / task.name / 'received-prompt'
