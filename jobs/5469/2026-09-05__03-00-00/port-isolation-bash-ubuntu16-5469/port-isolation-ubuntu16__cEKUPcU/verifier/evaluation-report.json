@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "baseline-reachability",
+      "requirement": "Before isolation, node2 and node3 can directly reach each other (establishes the disruption being fixed is real)",
+      "status": "satisfied",
+      "summary": "Pre-change pings from node2->node3 and node3->node2 succeed with ttl=64 and ARP resolves, confirming direct L2/L3 reachability existed prior to any change.",
+      "evidence_ids": [
+        "cmd-9d81e86741164aaf",
+        "cmd-d503f979f831409e"
+      ]
+    },
+    {
+      "id": "node1-reachable-prereq",
+      "requirement": "node1 is reachable on the shared 10.100.151.0/24 segment (prerequisite for verifying selective isolation)",
+      "status": "satisfied",
+      "summary": "After correcting an initial misidentification of the data-plane NIC (mistakenly configured eth1, then reverted), node1's eth0 was confirmed as the correct interface with DHCP-assigned 10.100.151.10, and both node2 and node3 successfully pinged it.",
+      "evidence_ids": [
+        "cmd-a60e078a558e43a4",
+        "cmd-0308fd1cbf41461a",
+        "cmd-b438711b45bf4808",
+        "cmd-8bdeb7c9ccfe4bd0"
+      ]
+    },
+    {
+      "id": "isolation-applied",
+      "requirement": "node2 and node3 cannot exchange traffic directly with each other",
+      "status": "satisfied",
+      "summary": "iptables INPUT/OUTPUT DROP rules targeting the peer IP were installed on both node2 and node3; verification pings in both directions show 100% loss / permission-denied sendmsg errors, confirming the block is effective and symmetric.",
+      "evidence_ids": [
+        "cmd-4d61998a8a15429c",
+        "cmd-87f776d88a9344a0",
+        "cmd-aaf6dead87c2461a",
+        "cmd-e728721ca00f431f"
+      ]
+    },
+    {
+      "id": "node1-still-reachable-post-isolation",
+      "requirement": "Both node2 and node3 continue to reach node1 while isolated from each other",
+      "status": "satisfied",
+      "summary": "The same verification commands that show blocked peer traffic also show successful ping replies from node1 (10.100.151.10) from both node2 and node3, confirming selective (not blanket) isolation.",
+      "evidence_ids": [
+        "cmd-aaf6dead87c2461a",
+        "cmd-e728721ca00f431f"
+      ]
+    },
+    {
+      "id": "isolation-persists-reboot",
+      "requirement": "Isolation configuration is durable / survives a reboot of node2 and node3 (reasonable durability expectation for a network policy)",
+      "status": "satisfied",
+      "summary": "Since iptables-persistent was unavailable, rules were re-applied idempotently via /etc/rc.local (rc-local.service, confirmed loaded/static). After actually rebooting both node2 and node3, the DROP rules were confirmed present again and node2<->node3 pings still failed while node1 pings succeeded, directly demonstrating the durability transition (healthy baseline -> reboot -> recovered isolated state).",
+      "evidence_ids": [
+        "cmd-5b0bded815aa4475",
+        "cmd-d99371782d824fc2",
+        "cmd-40ad3495f2334e07",
+        "cmd-f186e1745f7f4069",
+        "cmd-74ffe45dc6964cbd",
+        "cmd-c64b0365a6ff4c98",
+        "cmd-075ed250e2684f22",
+        "cmd-08710ab4370744fc",
+        "cmd-d507f20efb514f1c"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Independent provider-wide node-restart evidence protocol executed on every managed node (pre-restart baseline, restart, changed boot identity, recovered state)",
+      "status": "satisfied",
+      "summary": "All three nodes show pre-restart boot_id, an explicit reboot command, a new distinct boot_id after reconnection, and recovered state: node1's SONiC docker containers all reported Up and eth0 re-acquired its DHCP address; node2/node3 had their iptables DROP rules reapplied from rc.local and connectivity to node1 restored while peer isolation remained intact. This is cross-checked by the fixed after-prepare vs after-executor boot-identity snapshots, which show matching boot_id transitions for all three nodes.",
+      "evidence_ids": [
+        "cmd-beb6a19e50064c87",
+        "cmd-89c201bd1cd5454e",
+        "cmd-517f6e95e110428a",
+        "cmd-2a52518d48654a3b",
+        "cmd-984d360111a64805",
+        "cmd-7c47011add7249ca",
+        "cmd-693af8de09014f2c",
+        "cmd-16d0c6bf63024252",
+        "cmd-81f1e2ee91004448",
+        "cmd-075ed250e2684f22",
+        "cmd-4b824ffbb0fc42b1",
+        "cmd-15d498a8784044b4",
+        "cmd-08710ab4370744fc",
+        "cmd-d507f20efb514f1c"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly diagnosed node1's actual data-plane NIC (eth0), applied symmetric iptables DROP rules on node2 and node3 targeting each other's IPs, and verified bidirectional isolation while node1 remained reachable from both. Persistence was achieved via idempotent /etc/rc.local entries (no iptables-persistent package available) and directly validated by rebooting node2 and node3 and re-observing the isolation and node1-reachability post-reboot. The mandatory node-restart evidence protocol was completed for all three nodes with clear pre/post boot_id changes and recovered service state, cross-checked against the fixed lifecycle snapshots. Minor troubleshooting residue (a mistaken eth1 static address, reverted; a docker0 address deletion with unconfirmed but plausible self-correction via reboot) slightly lowers hygiene but does not affect task correctness.",
+  "limitations": [
+    "The docker0 address removed by cmd-42e5866b681048eb ('ip addr del 240.127.1.1/24 dev docker0') is not explicitly shown being restored in the trace; it is plausible this is regenerated automatically by the container runtime or was restored by node1's subsequent reboot, but this cannot be directly confirmed from the captured evidence.",
+    "Isolation was demonstrated only via ICMP ping; no evidence of testing with other protocols (TCP/UDP) was captured, though the iptables rules as written would block all IP traffic between the two peer addresses regardless of protocol."
+  ],
+  "command_stats": {
+    "total": 68,
+    "successful": 49,
+    "failed": 19,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Two bounded, low-risk mutations occurred during the diagnostic phase on node1 that were not clearly required by the final solution. First, a static IP (10.100.151.10/24) was mistakenly added to eth1 (cmd-42e5866b681048eb) based on an incorrect assumption about the data-plane NIC; this was explicitly reverted a few minutes later once eth0 was identified as correct (cmd-0308fd1cbf41461a removes the address). Second, that same command also deleted docker0's address (240.127.1.1/24 via 'ip addr del ... dev docker0'); no explicit re-add of this address is shown in the trace, though this address is normally assigned by the container network manager rather than persisted config, so it likely self-corrected when node1 was rebooted shortly after (cmd-89c201bd1cd5454e) \u2014 this is a limitation, not a confirmed residue. Several other diagnostic attempts (blackhole routes, tc qdisc, extra route add/del) failed with permission errors and caused no state change. No unnecessary mutations were retained on node2 or node3; the final iptables/rc.local configuration is bounded and directly tied to the isolation requirement.",
+    "evidence_ids": [
+      "cmd-42e5866b681048eb",
+      "cmd-0308fd1cbf41461a",
+      "cmd-dfae8d1ef9e642e4",
+      "cmd-23c21a50bfcf4a3f",
+      "cmd-7b2bf7c02ddb4a45",
+      "cmd-ec16196ae04844fb"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

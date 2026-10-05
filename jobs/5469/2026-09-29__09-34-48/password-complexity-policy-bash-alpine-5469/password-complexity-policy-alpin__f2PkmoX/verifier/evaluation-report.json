@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "On node1, enforce a minimum new-user password length of 12 characters",
+      "status": "satisfied",
+      "summary": "PAM pwquality configured with minlen=12 in /etc/pam.d/base-password (cmd-ee8fa147964347c1, cmd-3c9140ea92cf47d7). Directly demonstrated: a 6-char password was rejected with 'password is shorter than 12 characters' across retries and left the password unchanged (cmd-faf8b1d0a52541cc), while 12/13-char passwords were accepted (cmd-cdf85bd5f4934748, cmd-245d6f6669a34a60).",
+      "evidence_ids": [
+        "cmd-ee8fa147964347c1",
+        "cmd-3c9140ea92cf47d7",
+        "cmd-faf8b1d0a52541cc",
+        "cmd-cdf85bd5f4934748",
+        "cmd-245d6f6669a34a60"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "On node1, require new-user passwords to use at least three different character classes",
+      "status": "satisfied",
+      "summary": "minclass=3 configured in pam_pwquality (cmd-ee8fa147964347c1). Directly demonstrated: a 12-char all-lowercase (single-class) password was rejected with 'password contains less than 3 character classes' (cmd-e68160cbae674525), while multi-class passwords were accepted (cmd-cdf85bd5f4934748, cmd-245d6f6669a34a60).",
+      "evidence_ids": [
+        "cmd-ee8fa147964347c1",
+        "cmd-e68160cbae674525",
+        "cmd-cdf85bd5f4934748",
+        "cmd-245d6f6669a34a60"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Policy applies to new-user/self-service password changes, not just root-invoked ones",
+      "status": "satisfied",
+      "summary": "Enforcement verified both via root-run passwd (cmd-faf8b1d0a52541cc, cmd-e68160cbae674525, cmd-cdf85bd5f4934748) and via self-service su+passwd as the target user (cmd-dcc5e48c3c6844a5 rejected a dictionary-weak candidate, cmd-245d6f6669a34a60 accepted a compliant one), and enforce_for_root was added so root is not silently exempted (cmd-3c9140ea92cf47d7).",
+      "evidence_ids": [
+        "cmd-3c9140ea92cf47d7",
+        "cmd-dcc5e48c3c6844a5",
+        "cmd-245d6f6669a34a60"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Policy persists across a node restart (relevant to durability of the configuration, cross-checked via the fixed restart-evidence protocol)",
+      "status": "satisfied",
+      "summary": "Pre-restart healthy state captured with boot_id b8eef4ef-... and PAM files present (cmd-766699657d054dd5), a backgrounded reboot was acknowledged (cmd-f4fbe3c51a0645b3), the node came back with a new boot_id e5b1ab96-... confirmed independently by the global before/after-executor snapshots, and post-reboot the PAM config/modules were intact and both rejection and acceptance functional tests were re-run successfully (cmd-dbb65660a13b493e, cmd-26823183e78e4cc4, cmd-12c44246bddc49ff).",
+      "evidence_ids": [
+        "cmd-766699657d054dd5",
+        "cmd-f4fbe3c51a0645b3",
+        "cmd-05d74a2a6fea4ded",
+        "cmd-dbb65660a13b493e",
+        "cmd-26823183e78e4cc4",
+        "cmd-12c44246bddc49ff",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly identified that node1's passwd was the non-PAM busybox applet, installed shadow/linux-pam/libpwquality to get a PAM-linked passwd and pam_pwquality.so, and configured minlen=12 minclass=3 (with enforce_for_root) in /etc/pam.d/base-password included from /etc/pam.d/passwd. It directly demonstrated rejection of a too-short password, rejection of a single-class password, and acceptance of compliant multi-class passwords, via both root-invoked and self-service passwd changes. It further ran the provider-wide restart-evidence protocol on node1: captured a healthy pre-restart boot identity, triggered and acknowledged a reboot, observed a new boot identity, and re-verified the policy and its enforcement post-reboot \u2014 corroborated by the fixed global boot-identity snapshots. Test users were created and cleanly removed; the only residue is a small /tmp/reboot.log tied to the sanctioned reboot mechanism.",
+  "limitations": [
+    "Password-policy enforcement was validated functionally (passwd/su rejecting and accepting test passwords) rather than by directly reading pwquality library return codes or PAM audit logs, so extremely subtle misconfigurations in edge-case class counting are not ruled out.",
+    "The listening-sockets diff between before-prepare and after-executor reflects DHCP-assigned IP/PID changes from the reboot rather than any policy-related exposure change, but this was inferred rather than separately confirmed."
+  ],
+  "command_stats": {
+    "total": 40,
+    "successful": 22,
+    "failed": 18,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.88,
+    "summary": "Test users pwtestuser and pwtestuser2 were both created for functional testing and successfully removed afterward (cmd-0a89feeaf37949e3, cmd-5da52514a6dd4260 \u2014 the 'deluser: can't find ... in /etc/group' messages are benign since 'id' subsequently reports the users as unknown, confirming removal). One diagnostic step (cmd-2d06d5a14a7b403f) set pwtestuser's password to a non-compliant value before enforce_for_root was added, revealing that root-run passwd bypassed the not-yet-complete policy; this was a legitimate discovery step that directly led to the enforce_for_root fix (cmd-3c9140ea92cf47d7) and the password was subsequently overwritten by compliant test values, so it left no residue. The only unreverted residue is /tmp/reboot.log, a small log file created to background the sanctioned reboot command so the acknowledgement could return before disconnect (cmd-f4fbe3c51a0645b3) \u2014 a bounded, low-risk artifact directly tied to collecting required restart evidence, visible in the after-executor temporary-files diff. No failed services, package damage, or exposure changes were introduced; apk package-health and listening-socket baselines are unchanged in substance (socket diff is just IP/PID renumbering from the reboot).",
+    "evidence_ids": [
+      "cmd-0a89feeaf37949e3",
+      "cmd-5da52514a6dd4260",
+      "cmd-2d06d5a14a7b403f",
+      "cmd-3c9140ea92cf47d7",
+      "cmd-f4fbe3c51a0645b3",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

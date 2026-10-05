@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Deliver a copy of the traffic node1 exchanges with node2 to node3 (mirroring mechanism in place)",
+      "status": "satisfied",
+      "summary": "A GRETAP tunnel (mirr0) was built between node1 and node3, with tc clsact/flower filters on node1's eth1 matching ingress traffic from node2's IP, egress traffic to node2's IP, and ARP, mirroring matched frames into the tunnel toward node3. Link and filter state were directly observed as created and active on both ends.",
+      "evidence_ids": [
+        "cmd-025649c386a04540",
+        "cmd-0ba6e29ef93d4107",
+        "cmd-3d6d624bed624c9c"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "A capture running on node3 shows the node1<->node2 packets even though addressed elsewhere",
+      "status": "satisfied",
+      "summary": "Before mirroring was configured, a tcpdump on node3's physical seg interface captured 0 packets during a node1->node2 ping, confirming the segment is switched and traffic isn't naturally visible. After mirroring was configured, tcpdump on node3's mirr0 interface captured all 8 ICMP packets, addressed between node1 (192.168.50.1) and node2 (192.168.50.2), not to node3. This was re-demonstrated identically after all three node restarts.",
+      "evidence_ids": [
+        "cmd-a80111e7d5ba4f4e",
+        "cmd-f9a2a640f90b469f",
+        "cmd-fb653567d6ad486e",
+        "cmd-b9036d21e8d1489a",
+        "cmd-0125e7f84da94391",
+        "cmd-4e2808297cef4f6b",
+        "cmd-7cb3a5bfad294844",
+        "cmd-0ee89a53fef64871"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node1<->node2 traffic keeps flowing as before, unaffected by mirroring",
+      "status": "satisfied",
+      "summary": "Ping from node1 to node2 over the seg interfaces showed 0% packet loss both before mirroring was configured and repeatedly after mirroring was active, including after each of the three node restarts.",
+      "evidence_ids": [
+        "cmd-d701f5625a7e466a",
+        "cmd-21cf728561e8451d",
+        "cmd-eb46e101c9984fef",
+        "cmd-225d5793c5ea4deb",
+        "cmd-8f54087a5c4142b3",
+        "cmd-cbf13745ba7c4ce1"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol on all three managed nodes (independent of public contract)",
+      "status": "satisfied",
+      "summary": "For each node, a pre-restart boot identity and healthy state was captured, systemd reboot was acknowledged, a distinct post-restart boot identity was observed, and recovered state was directly verified: node1's boot id changed 8e8823ec->a22699da (mirror service initially failed due to an idempotency bug, was diagnosed via journalctl, fixed, and end-to-end mirroring re-verified via ping+tcpdump); node2's boot id changed 6bb7e004->43a4b008 with seg IP and ping to node1 recovered; node3's boot id changed bf4e9cbb->0ee30735 with the mirror service and mirr0 automatically recreated and a final tcpdump confirming mirrored traffic. All three boot-id transitions match the fixed after-prepare/after-executor lifecycle snapshots.",
+      "evidence_ids": [
+        "cmd-8183a57819254bb6",
+        "cmd-825f4e382b8b4784",
+        "cmd-afe129f6f0034649",
+        "cmd-4139dd542b2c42a0",
+        "cmd-76e8a86ea89e40a2",
+        "cmd-5c763875f8d94f91",
+        "cmd-4b5c1c51ae5d4399",
+        "cmd-8e46fed05b274879",
+        "cmd-225d5793c5ea4deb",
+        "cmd-4e2808297cef4f6b",
+        "cmd-dd49447f88f84f68",
+        "cmd-c52cfe6b17cb4ec1",
+        "cmd-8f54087a5c4142b3",
+        "cmd-4967982a3df2426d",
+        "cmd-629b3d9789234ee7",
+        "cmd-93a0c352838740c2",
+        "cmd-7cb3a5bfad294844",
+        "cmd-0ee89a53fef64871",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully mirrored node1<->node2 traffic to node3 using a GRETAP tunnel plus tc flower filters, directly demonstrated via tcpdump that node3 sees the mirrored packets (addressed between node1 and node2, not to node3) both before and after mirroring was configured, and confirmed node1<->node2 connectivity remained unaffected (0% ping loss) throughout, including after all three nodes were restarted per the mandatory node-restart protocol. Restart evidence is coherent and consistent with the fixed lifecycle snapshots for all three nodes, including a legitimately diagnosed-and-fixed persistence bug on node1. Minor troubleshooting mutations (failed ERSPAN attempts) were bounded and fully reverted before the working GRETAP solution was implemented.",
+  "limitations": [
+    "The public task instruction does not explicitly require persistence across reboot; the executor added persistence and exercised the restart protocol as a separate, non-contractual verification exercise, so restart evidence is scored for hygiene/confidence rather than being required for core task satisfaction.",
+    "Evidence is based on ICMP/ping traffic only; no non-ICMP protocol traffic between node1 and node2 was captured to confirm the mirror filters generalize beyond ICMP and ARP, though the flower filters shown (src_ip/dst_ip match, not protocol-specific beyond eth_type ip) appear to cover general IP traffic."
+  ],
+  "command_stats": {
+    "total": 63,
+    "successful": 55,
+    "failed": 8,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most state-changing commands map directly to the task: static IP assignment on the seg segment, tcpdump installation (needed since the task literally requires a capture on node3), GRETAP tunnel and tc flower filter creation, persistence via systemd oneshot units, and the mandatory restart cycle with a legitimate bug-fix to the idempotency check. Before settling on GRETAP, the executor made roughly a dozen failed attempts to create a native ERSPAN interface (cmd-e12a64569df04078, cmd-97e14bfe776e4fca, cmd-52d5dcd8aaf74bfc, cmd-56609b5a6d2d4f30, cmd-3ad7d86692404a78, cmd-fef1f3c8252d4735, cmd-b447ed6fb9c245f6, cmd-77cda3d6bc914089, cmd-612f2b64a66b4dcc); these were bounded, low-risk (interfaces stayed DOWN/nonfunctional) and were cleanly deleted (cmd-bd22436ab6744ed1, cmd-53d434aa790f40a1) once GRETAP was chosen, leaving no residue. No abandoned files, conflicting services, unsafe exposure, or damaged package state were observed in the after-executor snapshot versus after-prepare baseline (only expected boot-id-tied ephemeral changes: new boot id, new systemd-private tmp dirs, new sshd/chronyd PIDs, and log/pid files from the executor's own tcpdump/reboot activity).",
+    "evidence_ids": [
+      "cmd-e12a64569df04078",
+      "cmd-97e14bfe776e4fca",
+      "cmd-52d5dcd8aaf74bfc",
+      "cmd-56609b5a6d2d4f30",
+      "cmd-bd22436ab6744ed1",
+      "cmd-53d434aa790f40a1",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,337 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 24,
+    "successful": 13,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Baseline healthy state before any changes",
+      "command_ids": [
+        "cmd-e45c7f01f5c747c7",
+        "cmd-0fc82a15169547a2"
+      ],
+      "summary": "Confirmed no existing LVM/snapshot capability, then built /srv/data on LVM and populated+checksummed baseline app data"
+    },
+    {
+      "requirement": "Snapshot captures state prior to modification",
+      "command_ids": [
+        "cmd-0fc82a15169547a2"
+      ],
+      "summary": "lvcreate -s created datalv_snap immediately after baseline checksums were recorded, before any modification"
+    },
+    {
+      "requirement": "Directory is modified after snapshot",
+      "command_ids": [
+        "cmd-0fc82a15169547a2"
+      ],
+      "summary": "Post-snapshot modification (delete/overwrite/corrupt/add file) shown via diff against baseline checksums, proving divergence"
+    },
+    {
+      "requirement": "Exact restoration of earlier snapshot content",
+      "command_ids": [
+        "cmd-cc5d3d1542664bd9"
+      ],
+      "summary": "lvconvert --merge restored datalv from datalv_snap; post-restore checksums diffed against baseline with zero differences"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline and boot identity for node1",
+      "command_ids": [
+        "cmd-93a42478fb634e40"
+      ],
+      "summary": "Captured boot_id f455a75c-ec12-49a8-a647-c2be3f67c08c and confirmed /srv/data checksums matched baseline immediately before reboot"
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-7a3ba9f3bc75453d"
+      ],
+      "summary": "systemctl reboot issued via backgrounded nohup; exec stream closed as node went down, confirming the restart was triggered"
+    },
+    {
+      "requirement": "Changed boot identity proves an actual restart occurred",
+      "command_ids": [
+        "cmd-c4410ce6302b4601"
+      ],
+      "summary": "After polling through connection timeouts/resets, boot_id read as 660dca51-3ccd-4408-a026-7b978e389d05, differing from the pre-restart value"
+    },
+    {
+      "requirement": "Post-restart recovery of required services/data",
+      "command_ids": [
+        "cmd-1955de2fd2474f6c"
+      ],
+      "summary": "Post-reboot: srvdata-loop-attach.service active, loop device reattached, VG/LV active, /srv/data mounted, and checksums matched the snapshot-restored baseline exactly with zero diff"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-e45c7f01f5c747c7",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:21:02.252331+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 417,
+      "command": "set -Eeuo pipefail\necho \"== os ==\"; cat /etc/os-release | head -5\necho \"== df ==\"; df -hT /srv 2>/dev/null || df -hT /\necho \"== lsblk ==\"; lsblk -f\necho \"== mounts ==\"; mount | grep -E 'srv|/ '\necho \"== lvs ==\"; command -v lvs >/dev/null 2>&1 && sudo -n lvs -a -o+seg_monitor || echo \"no lvm tools\"\necho \"== vgs ==\"; command -v vgs >/dev/null 2>&1 && sudo -n vgs || true\necho \"== srv exists ==\"; ls -la /srv 2>/dev/null || echo \"no /srv\"\n",
+      "stdout": "== os ==\nNAME=\"Red Hat Enterprise Linux\"\nVERSION=\"10.0 (Coughlan)\"\nID=\"rhel\"\nID_LIKE=\"centos fedora\"\nVERSION_ID=\"10.0\"\n== df ==\nFilesystem     Type  Size  Used Avail Use% Mounted on\n/dev/vda4      xfs    17G  1.6G   16G  10% /\n== lsblk ==\nNAME   FSTYPE FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS\nvda                                                                           \n\u251c\u2500vda1                                                                        \n\u251c\u2500vda2 xfs                d70886a6-5dc8-49ff-9de0-d9284b66f7d4  778.5M    19% /boot\n\u251c\u2500vda3 swap   1           5257b282-5ad4-42fd-a145-776254217de1                [SWAP]\n\u2514\u2500vda4 xfs                a01b784a-baf6-4ed0-8aed-bea43a0ec62c   15.4G     9% /\n== mounts ==\n/dev/vda4 on / type xfs (rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota)\n== lvs ==\n== vgs ==\n== srv exists ==\ntotal 0\ndrwxr-xr-x.  2 root root   6 Oct 28  2024 .\ndr-xr-xr-x. 19 root root 247 Sep 29 08:20 .."
+    },
+    {
+      "command_id": "cmd-3caa21e9305c41b4",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:21:37.791068+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 32,
+      "duration_ms": 636,
+      "command": "set -Eeuo pipefail\n\necho \"== STEP 1: backing store for a dedicated data volume ==\"\nsudo -n mkdir -p /var/lib/srvdata-snap\nsudo -n fallocate -l 2G /var/lib/srvdata-snap/backing.img\nLOOPDEV=$(sudo -n losetup --show -f /var/lib/srvdata-snap/backing.img)\necho \"loop device: $LOOPDEV\"\necho \"$LOOPDEV\" | sudo -n tee /var/lib/srvdata-snap/loopdev.txt >/dev/null\n\necho \"== STEP 2: LVM setup (pv/vg/lv) ==\"\nsudo -n pvcreate -f \"$LOOPDEV\"\nsudo -n vgcreate datavg \"$LOOPDEV\"\nsudo -n lvcreate -L 1500M -n datalv datavg\nsudo -n mkfs.xfs -f /dev/datavg/datalv >/dev/null\n\necho \"== STEP 3: mount at /srv/data ==\"\nsudo -n mount /dev/datavg/datalv /srv/data\nmount | grep 'srv/data'\n\necho \"== STEP 4: populate baseline application data ==\"\nsudo -n mkdir -p /srv/data/app/config /srv/data/app/logs\nsudo -n sh -c 'echo \"version=1.0\" > /srv/data/app/config/settings.conf'\nsudo -n sh -c 'echo \"baseline log entry\" > /srv/data/app/logs/app.log'\nsudo -n dd if=/dev/urandom of=/srv/data/app/payload.bin bs=1M count=5 status=none\necho \"baseline listing:\"\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort > /tmp/baseline_checksums.txt'\necho \"baseline checksums:\"\ncat /tmp/baseline_checksums.txt\n\necho \"== STEP 5: take LVM snapshot capturing this baseline state ==\"\nsudo -n lvcreate -s -L 500M -n datalv_snap /dev/datavg/datalv\nsudo -n lvs datavg -o+lv_attr,origin,snap_percent\n\necho \"== STEP 6: modify /srv/data AFTER the snapshot was taken ==\"\nsudo -n sh -c 'echo \"version=2.0-BROKEN\" > /srv/data/app/config/settings.conf'\nsudo -n rm -f /srv/data/app/logs/app.log\nsudo -n sh -c 'echo \"unexpected content\" > /srv/data/app/newfile_unexpected.txt'\nsudo -n dd if=/dev/zero of=/srv/data/app/payload.bin bs=1M count=1 conv=notrunc status=none\necho \"post-modification listing:\"\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort > /tmp/modified_checksums.txt'\necho \"diff vs baseline (expected to show changes):\"\ndiff /tmp/baseline_checksums.txt /tmp/modified_checksums.txt || true\n",
+      "stdout": "== STEP 1: backing store for a dedicated data volume ==\nloop device: /dev/loop0\n== STEP 2: LVM setup (pv/vg/lv) ==\n  Physical volume \"/dev/loop0\" successfully created.\n  Creating devices file /etc/lvm/devices/system.devices\n  Volume group \"datavg\" successfully created\n  Logical volume \"datalv\" created.\n== STEP 3: mount at /srv/data ==\nmount: /srv/data: mount point does not exist.\n       dmesg(1) may have more information after failed mount system call."
+    },
+    {
+      "command_id": "cmd-0fc82a15169547a2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:21:44.634535+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 873,
+      "command": "set -Eeuo pipefail\n\nsudo -n mkdir -p /srv/data\n\necho \"== STEP 3: mount at /srv/data ==\"\nsudo -n mount /dev/datavg/datalv /srv/data\nmount | grep 'srv/data'\n\necho \"== STEP 4: populate baseline application data ==\"\nsudo -n mkdir -p /srv/data/app/config /srv/data/app/logs\nsudo -n sh -c 'echo \"version=1.0\" > /srv/data/app/config/settings.conf'\nsudo -n sh -c 'echo \"baseline log entry\" > /srv/data/app/logs/app.log'\nsudo -n dd if=/dev/urandom of=/srv/data/app/payload.bin bs=1M count=5 status=none\necho \"baseline listing:\"\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort > /tmp/baseline_checksums.txt'\necho \"baseline checksums:\"\ncat /tmp/baseline_checksums.txt\n\necho \"== STEP 5: take LVM snapshot capturing this baseline state ==\"\nsudo -n lvcreate -s -L 500M -n datalv_snap /dev/datavg/datalv\nsudo -n lvs datavg -o+lv_attr,origin,snap_percent\n\necho \"== STEP 6: modify /srv/data AFTER the snapshot was taken ==\"\nsudo -n sh -c 'echo \"version=2.0-BROKEN\" > /srv/data/app/config/settings.conf'\nsudo -n rm -f /srv/data/app/logs/app.log\nsudo -n sh -c 'echo \"unexpected content\" > /srv/data/app/newfile_unexpected.txt'\nsudo -n dd if=/dev/zero of=/srv/data/app/payload.bin bs=1M count=1 conv=notrunc status=none\necho \"post-modification listing:\"\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort > /tmp/modified_checksums.txt'\necho \"diff vs baseline (expected to show changes):\"\ndiff /tmp/baseline_checksums.txt /tmp/modified_checksums.txt || true\n",
+      "stdout": "== STEP 3: mount at /srv/data ==\n/dev/mapper/datavg-datalv on /srv/data type xfs (rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota)\n== STEP 4: populate baseline application data ==\nbaseline listing:\n/srv/data/app/config/settings.conf\n/srv/data/app/logs/app.log\n/srv/data/app/payload.bin\nbaseline checksums:\nb3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./app/logs/app.log\nd35c8c6001f3bdc2d566abe393c15dea6c02c9a50e25bcf3bf2160fd93d29f04  ./app/config/settings.conf\nf707baa8e6dfb4689dbb243f6212e05841a2e66ee3d363a1d8a0ea4509ff3131  ./app/payload.bin\n== STEP 5: take LVM snapshot capturing this baseline state ==\n  Logical volume \"datalv_snap\" created.\n  LV          VG     Attr       LSize   Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert Attr       Origin Snap% \n  datalv      datavg owi-aos---   1.46g                                                     owi-aos---              \n  datalv_snap datavg swi-a-s--- 500.00m      datalv 0.00                                    swi-a-s--- datalv 0.00  \n== STEP 6: modify /srv/data AFTER the snapshot was taken ==\npost-modification listing:\n/srv/data/app/config/settings.conf\n/srv/data/app/newfile_unexpected.txt\n/srv/data/app/payload.bin\ndiff vs baseline (expected to show changes):\n1,3c1,3\n< b3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./app/logs/app.log\n< d35c8c6001f3bdc2d566abe393c15dea6c02c9a50e25bcf3bf2160fd93d29f04  ./app/config/settings.conf\n< f707baa8e6dfb4689dbb243f6212e05841a2e66ee3d363a1d8a0ea4509ff3131  ./app/payload.bin\n---\n> 30164a5bceb45c6553c3c51afa9b16253951839feeffb282571dced6d0426a1a  ./app/newfile_unexpected.txt\n> bc1f4b04f5fdc2896b2a774804b3068690e79d79a87f2c820a9a7beb2404474c  ./app/config/settings.conf\n> c9e15ab60d02e1353f3c911fa04956990bbc6790a2906b1c62667dd5745a0703  ./app/payload.bin"
+    },
+    {
+      "command_id": "cmd-cc5d3d1542664bd9",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:20.615131+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 30503,
+      "command": "set -Eeuo pipefail\n\necho \"== STEP 7: restore via LVM snapshot merge ==\"\nsudo -n umount /srv/data\nsudo -n lvconvert --merge -y datavg/datalv_snap\necho \"waiting for merge to complete / reactivating origin...\"\nfor i in 1 2 3 4 5 6 7 8 9 10; do\n  if ! sudo -n lvs datavg/datalv_snap >/dev/null 2>&1; then\n    echo \"snapshot LV gone -> merge completed\"\n    break\n  fi\n  sleep 1\ndone\nsudo -n lvs datavg -o+lv_attr,origin,snap_percent || true\nsudo -n lvchange -ay datavg/datalv\n\necho \"== STEP 8: remount and verify restored content ==\"\nsudo -n mount /dev/datavg/datalv /srv/data\nmount | grep 'srv/data'\necho \"post-restore listing:\"\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort > /tmp/restored_checksums.txt'\necho \"restored checksums:\"\ncat /tmp/restored_checksums.txt\necho \"== diff restored vs baseline (must be empty) ==\"\ndiff /tmp/baseline_checksums.txt /tmp/restored_checksums.txt && echo \"RESTORE VERIFIED: /srv/data content is byte-identical to the pre-modification snapshot\"\n",
+      "stdout": "== STEP 7: restore via LVM snapshot merge ==\n  Merging of volume datavg/datalv_snap started.\n  datavg/datalv: Merged: 99.79%\n  datavg/datalv: Merged: 100.00%\nwaiting for merge to complete / reactivating origin...\nsnapshot LV gone -> merge completed\n  LV     VG     Attr       LSize Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert Attr       Origin Snap% \n  datalv datavg -wi-a----- 1.46g                                                     -wi-a-----              \n== STEP 8: remount and verify restored content ==\n/dev/mapper/datavg-datalv on /srv/data type xfs (rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota)\npost-restore listing:\n/srv/data/app/config/settings.conf\n/srv/data/app/logs/app.log\n/srv/data/app/payload.bin\nrestored checksums:\nb3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./app/logs/app.log\nd35c8c6001f3bdc2d566abe393c15dea6c02c9a50e25bcf3bf2160fd93d29f04  ./app/config/settings.conf\nf707baa8e6dfb4689dbb243f6212e05841a2e66ee3d363a1d8a0ea4509ff3131  ./app/payload.bin\n== diff restored vs baseline (must be empty) ==\nRESTORE VERIFIED: /srv/data content is byte-identical to the pre-modification snapshot"
+    },
+    {
+      "command_id": "cmd-9d497a8ab70b479b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:24.324144+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 160,
+      "command": "set -Eeuo pipefail\necho \"== boot id (pre-restart) ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"\nuptime -s\necho \"== /srv/data health (pre-restart) ==\"\nmount | grep 'srv/data'\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort' > /tmp/pre_restart_checksums.txt\ncat /tmp/pre_restart_checksums.txt\ndiff /tmp/baseline_checksums.txt /tmp/pre_restart_checksums.txt && echo \"PRE-RESTART: content matches baseline\"\necho \"== LVM state (pre-restart) ==\"\nsudo -n lvs datavg -o+lv_attr,origin\n",
+      "stdout": "== boot id (pre-restart) ==\nf455a75c-ec12-49a8-a647-c2be3f67c08c\n== uptime ==\n2026-09-29 08:20:24\n== /srv/data health (pre-restart) ==\n/dev/mapper/datavg-datalv on /srv/data type xfs (rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota)\n/srv/data/app/config/settings.conf\n/srv/data/app/logs/app.log\n/srv/data/app/payload.bin\nb3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./app/logs/app.log\nd35c8c6001f3bdc2d566abe393c15dea6c02c9a50e25bcf3bf2160fd93d29f04  ./app/config/settings.conf\nf707baa8e6dfb4689dbb243f6212e05841a2e66ee3d363a1d8a0ea4509ff3131  ./app/payload.bin\nPRE-RESTART: content matches baseline\n== LVM state (pre-restart) ==\n  LV     VG     Attr       LSize Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert Attr       Origin\n  datalv datavg -wi-ao---- 1.46g                                                     -wi-ao----       "
+    },
+    {
+      "command_id": "cmd-d5a791766173458b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:32.509219+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 32,
+      "duration_ms": 232,
+      "command": "set -Eeuo pipefail\necho \"== add fstab entry for persistent loop mount ==\"\ngrep -q '/srv/data' /etc/fstab && echo \"entry already present\" || \\\n  echo '/var/lib/srvdata-snap/backing.img /srv/data xfs loop,defaults,nofail 0 0' | sudo -n tee -a /etc/fstab\ncat /etc/fstab | grep srv\n\necho \"== test fstab entry works (umount, detach loop, remount via fstab) ==\"\nsudo -n umount /srv/data\nsudo -n losetup -d /dev/loop0 2>/dev/null || true\nsudo -n losetup -a\nsudo -n mount /srv/data\nmount | grep 'srv/data'\nsudo -n find /srv/data -type f | sort\n",
+      "stdout": "== add fstab entry for persistent loop mount ==\n/var/lib/srvdata-snap/backing.img /srv/data xfs loop,defaults,nofail 0 0\n/var/lib/srvdata-snap/backing.img /srv/data xfs loop,defaults,nofail 0 0\n== test fstab entry works (umount, detach loop, remount via fstab) ==\n/dev/loop0: [64772]:290754 (/var/lib/srvdata-snap/backing.img)\nmount: /srv/data: fsconfig system call failed: /dev/loop0: Can't open blockdev.\n       dmesg(1) may have more information after failed mount system call."
+    },
+    {
+      "command_id": "cmd-8c421fda2510457c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:51.187387+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 356,
+      "command": "set -Eeuo pipefail\necho \"== fix current state: reattach loop, reactivate LVM, mount properly ==\"\nsudo -n losetup -a\nsudo -n losetup -d /dev/loop0 2>/dev/null || true\nsudo -n losetup /dev/loop0 /var/lib/srvdata-snap/backing.img\nsudo -n vgchange -ay datavg\nsudo -n lvs datavg\nsudo -n sed -i '\\#/srv/data#d' /etc/fstab\necho '/dev/mapper/datavg-datalv /srv/data xfs defaults,nofail 0 0' | sudo -n tee -a /etc/fstab\ncat /etc/fstab | grep srv\nsudo -n mount /srv/data\nmount | grep 'srv/data'\nsudo -n find /srv/data -type f | sort\n\necho \"== systemd units available for lvm activation ==\"\nsystemctl list-unit-files | grep -i lvm || true\n\necho \"== create oneshot unit to reattach loop device before lvm activation at boot ==\"\ncat <<'EOF' | sudo -n tee /etc/systemd/system/srvdata-loop-attach.service >/dev/null\n[Unit]\nDescription=Attach loop device for /srv/data backing image\nDefaultDependencies=no\nBefore=lvm2-activation-early.service lvm2-activation.service local-fs-pre.target\nAfter=systemd-udevd.service local-fs-pre.target\nWants=local-fs-pre.target\nConditionPathExists=/var/lib/srvdata-snap/backing.img\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/sbin/losetup /dev/loop0 /var/lib/srvdata-snap/backing.img\nExecStop=/sbin/losetup -d /dev/loop0\n\n[Install]\nWantedBy=sysinit.target\nEOF\nsudo -n systemctl daemon-reload\nsudo -n systemctl enable srvdata-loop-attach.service\nsystemctl is-enabled srvdata-loop-attach.service\n",
+      "stdout": "== fix current state: reattach loop, reactivate LVM, mount properly ==\n/dev/loop0: [64772]:290754 (/var/lib/srvdata-snap/backing.img)\nlosetup: /var/lib/srvdata-snap/backing.img: failed to set up loop device: Device or resource busy"
+    },
+    {
+      "command_id": "cmd-d4a5f7a070494ddc",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:54.309677+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 244,
+      "command": "set -Eeuo pipefail\nsudo -n dmsetup ls\nsudo -n vgchange -an datavg || true\nsudo -n dmsetup ls\nsudo -n losetup -d /dev/loop0\nsudo -n losetup -a\n",
+      "stdout": "datavg-datalv\t(252:0)\n  0 logical volume(s) in volume group \"datavg\" now active\nNo devices found\nlosetup: /dev/loop0: detach failed: No such device or address"
+    },
+    {
+      "command_id": "cmd-c65f61912eb04c22",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:57.865158+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 32,
+      "duration_ms": 338,
+      "command": "set -Eeuo pipefail\nsudo -n losetup -a\nLOOPDEV=$(sudo -n losetup --show -f /var/lib/srvdata-snap/backing.img)\necho \"reattached: $LOOPDEV\"\nsudo -n vgchange -ay datavg\nsudo -n lvs datavg\nsudo -n mount /srv/data\nmount | grep 'srv/data'\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort' > /tmp/check2.txt\ndiff /tmp/baseline_checksums.txt /tmp/check2.txt && echo \"content intact\"\n",
+      "stdout": "reattached: /dev/loop0\n  1 logical volume(s) in volume group \"datavg\" now active\n  LV     VG     Attr       LSize Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert\n  datalv datavg -wi-a----- 1.46g                                                    \nmount: /srv/data: fsconfig system call failed: /dev/loop0: Can't open blockdev.\n       dmesg(1) may have more information after failed mount system call."
+    },
+    {
+      "command_id": "cmd-f0410cb4d5c44a78",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:04.910561+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 279,
+      "command": "set -Eeuo pipefail\necho \"== current fstab srv entries ==\"\ngrep srv /etc/fstab || true\nsudo -n sed -i '\\#/srv/data#d' /etc/fstab\necho '/dev/mapper/datavg-datalv /srv/data xfs defaults,nofail 0 0' | sudo -n tee -a /etc/fstab\necho \"== fixed fstab ==\"\ngrep srv /etc/fstab\n\nsudo -n mount /srv/data\nmount | grep 'srv/data'\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort' > /tmp/check2.txt\ndiff /tmp/baseline_checksums.txt /tmp/check2.txt && echo \"content intact\"\n",
+      "stdout": "== current fstab srv entries ==\n/var/lib/srvdata-snap/backing.img /srv/data xfs loop,defaults,nofail 0 0\n/dev/mapper/datavg-datalv /srv/data xfs defaults,nofail 0 0\n== fixed fstab ==\n/dev/mapper/datavg-datalv /srv/data xfs defaults,nofail 0 0\n/dev/mapper/datavg-datalv on /srv/data type xfs (rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota)\n/srv/data/app/config/settings.conf\n/srv/data/app/logs/app.log\n/srv/data/app/payload.bin\ncontent intact"
+    },
+    {
+      "command_id": "cmd-03ce716ae9964c40",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:09.524680+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 462,
+      "command": "set -Eeuo pipefail\necho \"== check lvm-related units ==\"\nsystemctl list-unit-files | grep -i lvm || true\n\necho \"== create oneshot unit to attach loop device before lvm activation ==\"\ncat <<'EOF' | sudo -n tee /etc/systemd/system/srvdata-loop-attach.service >/dev/null\n[Unit]\nDescription=Attach loop device for /srv/data backing image\nDefaultDependencies=no\nBefore=lvm2-activation-early.service lvm2-activation.service local-fs-pre.target\nAfter=systemd-udevd.service\nConflicts=umount.target\nConditionPathExists=/var/lib/srvdata-snap/backing.img\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/sbin/losetup /dev/loop0 /var/lib/srvdata-snap/backing.img\nExecStop=/sbin/losetup -d /dev/loop0\n\n[Install]\nWantedBy=sysinit.target\nEOF\nsudo -n systemctl daemon-reload\nsudo -n systemctl enable srvdata-loop-attach.service\nsystemctl is-enabled srvdata-loop-attach.service\n",
+      "stdout": "== check lvm-related units ==\nlvm-devices-import.path                                                   disabled        disabled\nlvm-devices-import.service                                                disabled        disabled\nlvm2-lvmpolld.service                                                     static          -\nlvm2-monitor.service                                                      enabled         enabled\nlvm2-lvmpolld.socket                                                      enabled         enabled\n== create oneshot unit to attach loop device before lvm activation ==\nCreated symlink '/etc/systemd/system/sysinit.target.wants/srvdata-loop-attach.service' \u2192 '/etc/systemd/system/srvdata-loop-attach.service'.\nenabled"
+    },
+    {
+      "command_id": "cmd-0adcefdca6e44ad9",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:16.554659+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 124,
+      "command": "set -Eeuo pipefail\necho \"== lvm devices file ==\"\ncat /etc/lvm/devices/system.devices 2>/dev/null || echo \"none\"\necho \"== pvscan/lvm autoactivation units ==\"\nsystemctl list-units --all | grep -i lvm2-pvscan || true\nls /usr/lib/systemd/system/ | grep -i lvm || true\necho \"== check dracut/lvm auto activation config ==\"\ngrep -R \"^\\s*auto_activation_volume_list\\|^\\s*use_devicesfile\" /etc/lvm/lvm.conf | grep -v '^#' || true\n",
+      "stdout": "== lvm devices file ==\n# LVM uses devices listed in this file.\n# Created by LVM command vgcreate pid 1617 at Tue Sep 29 08:21:37 2026\n# HASH=2693367998\nPRODUCT_UUID=b27adee4-ccf0-45e2-974d-90804cb0f910\nVERSION=1.1.2\nIDTYPE=loop_file IDNAME=/var/lib/srvdata-snap/backing.img DEVNAME=/dev/loop0 PVID=JXRa0yaPo0wJxtuIkJk6Pd8BbIbNKi8M\n== pvscan/lvm autoactivation units ==\nlvm2-lvmpolld.service\nlvm2-lvmpolld.socket\nlvm2-monitor.service\nlvm-devices-import.path\nlvm-devices-import.service\n== check dracut/lvm auto activation config =="
+    },
+    {
+      "command_id": "cmd-ed658cceabc84730",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:29.781530+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 428,
+      "command": "set -Eeuo pipefail\necho \"== simulate boot sequence: unmount, deactivate vg, stop+detach loop ==\"\nsudo -n umount /srv/data\nsudo -n vgchange -an datavg\nsudo -n systemctl stop srvdata-loop-attach.service\nsudo -n losetup -a\n\necho \"== start service (as boot would) and check autoactivation ==\"\nsudo -n systemctl start srvdata-loop-attach.service\nsudo -n losetup -a\nsleep 2\nsudo -n lvs datavg -o+lv_attr || true\necho \"== if not auto-active, activate manually as fallback ==\"\nsudo -n vgchange -ay datavg\nsudo -n mount -a\nmount | grep 'srv/data'\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort' > /tmp/check3.txt\ndiff /tmp/baseline_checksums.txt /tmp/check3.txt && echo \"content intact after simulated re-attach\"\n",
+      "stdout": "== simulate boot sequence: unmount, deactivate vg, stop+detach loop ==\n  0 logical volume(s) in volume group \"datavg\" now active\n/dev/loop0: [64772]:290754 (/var/lib/srvdata-snap/backing.img)\n== start service (as boot would) and check autoactivation ==\nJob for srvdata-loop-attach.service failed because the control process exited with error code.\nSee \"systemctl status srvdata-loop-attach.service\" and \"journalctl -xeu srvdata-loop-attach.service\" for details."
+    },
+    {
+      "command_id": "cmd-cd5357c0a3364be5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:33.921889+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 115,
+      "command": "set -Eeuo pipefail\nsudo -n journalctl -xeu srvdata-loop-attach.service --no-pager | tail -20\nsudo -n losetup -a\n",
+      "stdout": "\u2591\u2591 Defined-By: systemd\n\u2591\u2591 Support: https://access.redhat.com/support\n\u2591\u2591 \n\u2591\u2591 An ExecStart= process belonging to unit srvdata-loop-attach.service has exited.\n\u2591\u2591 \n\u2591\u2591 The process' exit code is 'exited' and its exit status is 1.\nSep 29 08:23:29 node1 systemd[1]: srvdata-loop-attach.service: Failed with result 'exit-code'.\n\u2591\u2591 Subject: Unit failed\n\u2591\u2591 Defined-By: systemd\n\u2591\u2591 Support: https://access.redhat.com/support\n\u2591\u2591 \n\u2591\u2591 The unit srvdata-loop-attach.service has entered the 'failed' state with result 'exit-code'.\nSep 29 08:23:29 node1 systemd[1]: Failed to start srvdata-loop-attach.service - Attach loop device for /srv/data backing image.\n\u2591\u2591 Subject: A start job for unit srvdata-loop-attach.service has failed\n\u2591\u2591 Defined-By: systemd\n\u2591\u2591 Support: https://access.redhat.com/support\n\u2591\u2591 \n\u2591\u2591 A start job for unit srvdata-loop-attach.service has finished with a failure.\n\u2591\u2591 \n\u2591\u2591 The job identifier is 10081 and the job result is failed.\n/dev/loop0: [64772]:290754 (/var/lib/srvdata-snap/backing.img)"
+    },
+    {
+      "command_id": "cmd-43604b0691574995",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:42.531123+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 677,
+      "command": "set -Eeuo pipefail\nsudo -n systemctl reset-failed srvdata-loop-attach.service || true\n\ncat <<'EOF' | sudo -n tee /usr/local/sbin/srvdata-loop-attach.sh >/dev/null\n#!/bin/sh\nset -e\nIMG=/var/lib/srvdata-snap/backing.img\nif losetup -j \"$IMG\" | grep -q \"$IMG\"; then\n  exit 0\nfi\nlosetup -f \"$IMG\"\nEOF\nsudo -n chmod +x /usr/local/sbin/srvdata-loop-attach.sh\n\ncat <<'EOF' | sudo -n tee /usr/local/sbin/srvdata-loop-detach.sh >/dev/null\n#!/bin/sh\nDEV=$(losetup -j /var/lib/srvdata-snap/backing.img | cut -d: -f1)\n[ -n \"$DEV\" ] && losetup -d \"$DEV\" || true\nEOF\nsudo -n chmod +x /usr/local/sbin/srvdata-loop-detach.sh\n\ncat <<'EOF' | sudo -n tee /etc/systemd/system/srvdata-loop-attach.service >/dev/null\n[Unit]\nDescription=Attach loop device for /srv/data backing image\nDefaultDependencies=no\nBefore=lvm2-activation-early.service lvm2-activation.service local-fs-pre.target\nAfter=systemd-udevd.service\nConditionPathExists=/var/lib/srvdata-snap/backing.img\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/local/sbin/srvdata-loop-attach.sh\nExecStop=/usr/local/sbin/srvdata-loop-detach.sh\n\n[Install]\nWantedBy=sysinit.target\nEOF\nsudo -n systemctl daemon-reload\nsudo -n systemctl enable srvdata-loop-attach.service\n\necho \"== test idempotent start (loop already attached) ==\"\nsudo -n systemctl start srvdata-loop-attach.service\nsystemctl is-active srvdata-loop-attach.service\nsudo -n losetup -a\n\necho \"== bring VG up and mount ==\"\nsudo -n vgchange -ay datavg\nsudo -n mount -a\nmount | grep 'srv/data'\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort' > /tmp/check4.txt\ndiff /tmp/baseline_checksums.txt /tmp/check4.txt && echo \"content intact\"\n",
+      "stdout": "== test idempotent start (loop already attached) ==\nactive\n/dev/loop0: [64772]:290754 (/var/lib/srvdata-snap/backing.img)\n== bring VG up and mount ==\n  1 logical volume(s) in volume group \"datavg\" now active\n/dev/mapper/datavg-datalv on /srv/data type xfs (rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota)\ncontent intact"
+    },
+    {
+      "command_id": "cmd-79e96064828e4686",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:50.311916+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 305,
+      "command": "set -Eeuo pipefail\ncat <<'EOF' | sudo -n tee /usr/local/sbin/srvdata-loop-attach.sh >/dev/null\n#!/bin/sh\nset -e\nIMG=/var/lib/srvdata-snap/backing.img\nif ! losetup -j \"$IMG\" | grep -q \"$IMG\"; then\n  losetup -f \"$IMG\"\nfi\nvgchange -ay datavg || true\nEOF\nsudo -n chmod +x /usr/local/sbin/srvdata-loop-attach.sh\n\necho \"== full simulated boot cycle: umount, deactivate vg, detach loop, restart service, mount -a ==\"\nsudo -n umount /srv/data\nsudo -n vgchange -an datavg\nsudo -n systemctl stop srvdata-loop-attach.service\nsudo -n losetup -d /dev/loop0\nsudo -n losetup -a || true\nsudo -n systemctl start srvdata-loop-attach.service\nsystemctl is-active srvdata-loop-attach.service\nsudo -n losetup -a\nsudo -n lvs datavg\nsudo -n mount -a\nmount | grep 'srv/data'\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort' > /tmp/check5.txt\ndiff /tmp/baseline_checksums.txt /tmp/check5.txt && echo \"content intact after full simulated cold-start cycle\"\n",
+      "stdout": "== full simulated boot cycle: umount, deactivate vg, detach loop, restart service, mount -a ==\n  0 logical volume(s) in volume group \"datavg\" now active\nlosetup: /dev/loop0: detach failed: No such device or address"
+    },
+    {
+      "command_id": "cmd-55a7782a8c904ae5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:55.080617+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 321,
+      "command": "set -Eeuo pipefail\nsudo -n losetup -a || echo \"no loop devices\"\nsudo -n systemctl stop srvdata-loop-attach.service\nsudo -n losetup -a || echo \"no loop devices\"\nsudo -n systemctl start srvdata-loop-attach.service\nsystemctl is-active srvdata-loop-attach.service\nsudo -n losetup -a\nsudo -n lvs datavg\nsudo -n mount -a\nmount | grep 'srv/data'\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort' > /tmp/check5.txt\ndiff /tmp/baseline_checksums.txt /tmp/check5.txt && echo \"content intact after full simulated cold-start cycle\"\n",
+      "stdout": "active\n/dev/loop0: [64772]:290754 (/var/lib/srvdata-snap/backing.img)\n  LV     VG     Attr       LSize Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert\n  datalv datavg -wi-a----- 1.46g                                                    \n/dev/mapper/datavg-datalv on /srv/data type xfs (rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota)\ncontent intact after full simulated cold-start cycle"
+    },
+    {
+      "command_id": "cmd-93a42478fb634e40",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:24:02.096809+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 161,
+      "command": "set -Eeuo pipefail\necho \"== pre-restart boot id ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== pre-restart /srv/data health ==\"\nmount | grep 'srv/data'\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort' > /tmp/pre_reboot_checksums.txt\ncat /tmp/pre_reboot_checksums.txt\ndiff /tmp/baseline_checksums.txt /tmp/pre_reboot_checksums.txt && echo \"PRE-REBOOT: matches baseline\"\nsystemctl is-enabled srvdata-loop-attach.service\n",
+      "stdout": "== pre-restart boot id ==\nf455a75c-ec12-49a8-a647-c2be3f67c08c\n== pre-restart /srv/data health ==\n/dev/mapper/datavg-datalv on /srv/data type xfs (rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota)\n/srv/data/app/config/settings.conf\n/srv/data/app/logs/app.log\n/srv/data/app/payload.bin\nb3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./app/logs/app.log\nd35c8c6001f3bdc2d566abe393c15dea6c02c9a50e25bcf3bf2160fd93d29f04  ./app/config/settings.conf\nf707baa8e6dfb4689dbb243f6212e05841a2e66ee3d363a1d8a0ea4509ff3131  ./app/payload.bin\nPRE-REBOOT: matches baseline\nenabled"
+    },
+    {
+      "command_id": "cmd-7a3ba9f3bc75453d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:24:03.883765+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 122,
+      "command": "sudo -n sh -c 'nohup systemctl reboot >/tmp/reboot.log 2>&1 &'; sleep 1; echo \"reboot issued\"",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-95656490b4774dd5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:24:07.704610+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2066,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-d784fed4041e4722",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:24:11.223437+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2114,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-acaa1eb6f9104585",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:24:13.521465+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 1037,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-c4410ce6302b4601",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:24:14.966465+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 79,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stdout": "660dca51-3ccd-4408-a026-7b978e389d05\n2026-09-29 08:24:11"
+    },
+    {
+      "command_id": "cmd-1955de2fd2474f6c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:24:18.798837+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 294,
+      "command": "set -Eeuo pipefail\necho \"== post-reboot service/mount status ==\"\nsystemctl is-active srvdata-loop-attach.service\nsudo -n losetup -a\nsudo -n lvs datavg -o+lv_attr\nmount | grep 'srv/data'\necho \"== post-reboot /srv/data content ==\"\nsudo -n find /srv/data -type f | sort\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\; | sort' > /tmp/post_reboot_checksums.txt\ncat /tmp/post_reboot_checksums.txt\necho \"== diff vs baseline (must be empty) ==\"\ndiff /tmp/baseline_checksums.txt /tmp/post_reboot_checksums.txt && echo \"POST-REBOOT: /srv/data content survived restart and matches the restored snapshot baseline exactly\"\n",
+      "stdout": "== post-reboot service/mount status ==\nactive\n/dev/loop0: [64772]:290754 (/var/lib/srvdata-snap/backing.img)\n  LV     VG     Attr       LSize Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert Attr      \n  datalv datavg -wi-ao---- 1.46g                                                     -wi-ao----\n/dev/mapper/datavg-datalv on /srv/data type xfs (rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,noquota)\n== post-reboot /srv/data content ==\n/srv/data/app/config/settings.conf\n/srv/data/app/logs/app.log\n/srv/data/app/payload.bin\nb3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./app/logs/app.log\nd35c8c6001f3bdc2d566abe393c15dea6c02c9a50e25bcf3bf2160fd93d29f04  ./app/config/settings.conf\nf707baa8e6dfb4689dbb243f6212e05841a2e66ee3d363a1d8a0ea4509ff3131  ./app/payload.bin\n== diff vs baseline (must be empty) ==\nPOST-REBOOT: /srv/data content survived restart and matches the restored snapshot baseline exactly"
+    }
+  ]
+}

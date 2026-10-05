@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 13,
+    "successful": 10,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Integrity baseline established and protected",
+      "command_ids": [
+        "cmd-857c9785324d476b",
+        "cmd-dd87c71268e641b9"
+      ],
+      "summary": "Created 1,493-entry /etc baseline; database is root-owned mode 0600 inside a mode 0700 directory, with a clean integrity result."
+    },
+    {
+      "requirement": "Later changes can be identified and reported",
+      "command_ids": [
+        "cmd-e086d83b589f48bd",
+        "cmd-9dc7a6fcf18d4856"
+      ],
+      "summary": "Proved ADDED and CHANGED reporting with SHA-256 and metadata; probes were restored and the final result was INTEGRITY_OK."
+    },
+    {
+      "requirement": "Legacy OS release and kernel retained",
+      "command_ids": [
+        "cmd-e53f38deb2084a12",
+        "cmd-dd87c71268e641b9",
+        "cmd-ec054089ae484cee"
+      ],
+      "summary": "Ubuntu 16.04 and kernel 4.4.0-210-generic were unchanged before and after implementation and restart."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-f5b6a302fa8e4455",
+        "cmd-52b3821cdf9b4791",
+        "cmd-0f8d640b76b34f80",
+        "cmd-ec054089ae484cee"
+      ],
+      "summary": "Captured healthy pre-restart state; acknowledged native shutdown reboot; boot ID changed from 35c87ec9-1707-4fb3-ab1d-f264d3618caa to bcdce21d-623f-4e4b-a12a-d68660dc1381; post-restart checker succeeded, timer recovered enabled/active, baseline hash remained 81535acb625115671e37f1004d6e415a0ae657c65d06d044a7e57da6e099122b, and no units were failed."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-e53f38deb2084a12",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:52:46.690903+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1943,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'os='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nuname -r\nprintf 'integrity_tools\\n'\ncommand -v aide || true\ncommand -v tripwire || true\ncommand -v debsums || true\nprintf 'packages\\n'\ndpkg-query -W -f='${Package}\\t${Status}\\t${Version}\\n' aide aide-common tripwire debsums 2>/dev/null || true\nprintf 'etc_stats\\n'\nfind /etc -xdev -type f | wc -l\ndf -P / /var",
+      "stdout": "node=node1 ip=10.100.34.10\nboot_id=35c87ec9-1707-4fb3-ab1d-f264d3618caa\nos=ubuntu 16.04\n4.4.0-210-generic\nintegrity_tools\npackages\naide\tunknown ok not-installed\t\netc_stats\n738\nFilesystem     1024-blocks   Used Available Capacity Mounted on\n/dev/vda1         20258004 950748  19290872       5% /\n/dev/vda1         20258004 950748  19290872       5% /\n",
+      "stderr": "find: '/etc/polkit-1/localauthority': Permission denied\nfind: '/etc/ssl/private': Permission denied\n"
+    },
+    {
+      "command_id": "cmd-4162f18c22054d31",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:52:59.204888+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1625,
+      "command": "set -eu\nsudo -n true\nprintf 'sha256sum='; sha256sum --version | sed -n '1p'\nprintf 'find='; find --version | sed -n '1p'\nprintf 'stat='; stat --version | sed -n '1p'\nprintf 'sort_z='; printf 'b\\000a\\000' | sort -z | od -An -tx1",
+      "stdout": "sha256sum=sha256sum (GNU coreutils) 8.25\nfind=find (GNU findutils) 4.7.0-git\nstat=stat (GNU coreutils) 8.25\nsort_z= 61 00 62 00\n"
+    },
+    {
+      "command_id": "cmd-857c9785324d476b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:54:12.779498+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3831,
+      "command": "set -eu\nsudo tee /usr/local/sbin/etc-integrity >/dev/null <<'ANTRIEB_SCRIPT'\n#!/bin/bash\nset -euo pipefail\n\nreadonly STATE_DIR=/var/lib/etc-integrity\nreadonly BASELINE=\"${STATE_DIR}/etc.baseline\"\nreadonly CREATED=\"${STATE_DIR}/created_at\"\n\numask 077\n\nusage() {\n    printf 'Usage: %s {init|check|status}\\n' \"${0##*/}\" >&2\n    exit 2\n}\n\nrequire_root() {\n    if [ \"${EUID}\" -ne 0 ]; then\n        printf 'ERROR: must be run as root\\n' >&2\n        exit 2\n    fi\n}\n\nsnapshot() {\n    local path type digest mode uid gid size\n    while IFS= read -r -d '' path; do\n        if [ -L \"${path}\" ]; then\n            type=l\n            digest=$(readlink -- \"${path}\" | sha256sum | awk '{print $1}')\n        elif [ -f \"${path}\" ]; then\n            type=f\n            digest=$(sha256sum -- \"${path}\" | awk '{print $1}')\n        else\n            continue\n        fi\n        read -r mode uid gid size < <(stat -c '%a %u %g %s' -- \"${path}\")\n        printf '%q\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n'             \"${path}\" \"${type}\" \"${mode}\" \"${uid}\" \"${gid}\" \"${size}\" \"${digest}\"\n    done < <(find /etc -xdev \\( -type f -o -type l \\) -print0 | sort -z)\n}\n\ninit_baseline() {\n    local tmp count\n    require_root\n    install -d -m 0700 -o root -g root \"${STATE_DIR}\"\n    tmp=$(mktemp \"${STATE_DIR}/.baseline.XXXXXX\")\n    trap 'rm -f -- \"${tmp}\"' EXIT\n    snapshot > \"${tmp}\"\n    chmod 0600 \"${tmp}\"\n    chown root:root \"${tmp}\"\n    mv -f -- \"${tmp}\" \"${BASELINE}\"\n    date -u '+%Y-%m-%dT%H:%M:%SZ' > \"${CREATED}\"\n    chmod 0600 \"${CREATED}\"\n    chown root:root \"${CREATED}\"\n    count=$(wc -l < \"${BASELINE}\")\n    printf 'BASELINE_CREATED path=/etc entries=%s created=%s database=%s\\n'         \"${count}\" \"$(cat \"${CREATED}\")\" \"${BASELINE}\"\n    trap - EXIT\n}\n\ncheck_baseline() {\n    local tmp line key record changed added removed\n    require_root\n    if [ ! -r \"${BASELINE}\" ]; then\n        printf 'ERROR: baseline not found: %s (run init first)\\n' \"${BASELINE}\" >&2\n        exit 2\n    fi\n    tmp=$(mktemp \"${STATE_DIR}/.check.XXXXXX\")\n    trap 'rm -f -- \"${tmp}\"' EXIT\n    snapshot > \"${tmp}\"\n\n    declare -A old=()\n    declare -A new=()\n    while IFS= read -r line; do\n        key=${line%%$'\\t'*}\n        record=${line#*$'\\t'}\n        old[\"${key}\"]=\"${record}\"\n    done < \"${BASELINE}\"\n    while IFS= read -r line; do\n        key=${line%%$'\\t'*}\n        record=${line#*$'\\t'}\n        new[\"${key}\"]=\"${record}\"\n    done < \"${tmp}\"\n\n    changed=0\n    added=0\n    removed=0\n    for key in \"${!new[@]}\"; do\n        if [ -z \"${old[${key}]+present}\" ]; then\n            printf 'ADDED %s new=%s\\n' \"${key}\" \"${new[${key}]}\"\n            added=$((added + 1))\n        elif [ \"${old[${key}]}\" != \"${new[${key}]}\" ]; then\n            printf 'CHANGED %s old=%s new=%s\\n'                 \"${key}\" \"${old[${key}]}\" \"${new[${key}]}\"\n            changed=$((changed + 1))\n        fi\n    done\n    for key in \"${!old[@]}\"; do\n        if [ -z \"${new[${key}]+present}\" ]; then\n            printf 'REMOVED %s old=%s\\n' \"${key}\" \"${old[${key}]}\"\n            removed=$((removed + 1))\n        fi\n    done\n\n    if [ \"${added}\" -eq 0 ] && [ \"${changed}\" -eq 0 ] && [ \"${removed}\" -eq 0 ]; then\n        printf 'INTEGRITY_OK path=/etc entries=%s baseline_created=%s\\n'             \"$(wc -l < \"${BASELINE}\")\" \"$(cat \"${CREATED}\" 2>/dev/null || printf unknown)\"\n        exit 0\n    fi\n    printf 'INTEGRITY_ALERT path=/etc added=%s changed=%s removed=%s\\n'         \"${added}\" \"${changed}\" \"${removed}\"\n    exit 1\n}\n\nshow_status() {\n    if [ ! -r \"${BASELINE}\" ]; then\n        printf 'NO_BASELINE path=/etc database=%s\\n' \"${BASELINE}\"\n        exit 1\n    fi\n    printf 'BASELINE_PRESENT path=/etc entries=%s created=%s database=%s\\n'         \"$(wc -l < \"${BASELINE}\")\" \"$(cat \"${CREATED}\" 2>/dev/null || printf unknown)\" \"${BASELINE}\"\n}\n\ncase \"${1:-}\" in\n    init) init_baseline ;;\n    check) check_baseline ;;\n    status) show_status ;;\n    *) usage ;;\nesac\nANTRIEB_SCRIPT\nsudo tee /etc/systemd/system/etc-integrity.service >/dev/null <<'ANTRIEB_SERVICE'\n[Unit]\nDescription=Check integrity of /etc against the local baseline\nDocumentation=file:/usr/local/sbin/etc-integrity\nConditionPathExists=/var/lib/etc-integrity/etc.baseline\n\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/etc-integrity check\nNice=10\nIOSchedulingClass=idle\nANTRIEB_SERVICE\nsudo tee /etc/systemd/system/etc-integrity.timer >/dev/null <<'ANTRIEB_TIMER'\n[Unit]\nDescription=Daily integrity check for /etc\n\n[Timer]\nOnBootSec=5min\nOnUnitActiveSec=1d\nPersistent=true\nRandomizedDelaySec=10min\nUnit=etc-integrity.service\n\n[Install]\nWantedBy=timers.target\nANTRIEB_TIMER\nsudo chmod 0750 /usr/local/sbin/etc-integrity\nsudo chown root:root /usr/local/sbin/etc-integrity /etc/systemd/system/etc-integrity.service /etc/systemd/system/etc-integrity.timer\nsudo systemctl daemon-reload\nsudo systemctl enable --now etc-integrity.timer\nsudo /usr/local/sbin/etc-integrity init",
+      "stdout": "BASELINE_CREATED path=/etc entries=1493 created=2026-10-04T14:54:11Z database=/var/lib/etc-integrity/etc.baseline\n",
+      "stderr": "Created symlink from /etc/systemd/system/timers.target.wants/etc-integrity.timer to /etc/systemd/system/etc-integrity.timer.\n"
+    },
+    {
+      "command_id": "cmd-73e0553ba04a49af",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:54:21.760067+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 4136,
+      "command": "set -eu\nsudo /usr/local/sbin/etc-integrity status\nsudo /usr/local/sbin/etc-integrity check\nprintf 'timer_enabled='; systemctl is-enabled etc-integrity.timer\nprintf 'timer_active='; systemctl is-active etc-integrity.timer\nsystemctl list-timers etc-integrity.timer --no-pager\nstat -c '%n mode=%a owner=%U:%G size=%s' /usr/local/sbin/etc-integrity /var/lib/etc-integrity /var/lib/etc-integrity/etc.baseline /var/lib/etc-integrity/created_at\nprintf 'os='; . /etc/os-release; printf '%s %s kernel=' \"$ID\" \"$VERSION_ID\"; uname -r",
+      "stdout": "BASELINE_PRESENT path=/etc entries=1493 created=2026-10-04T14:54:11Z database=/var/lib/etc-integrity/etc.baseline\nINTEGRITY_OK path=/etc entries=1493 baseline_created=2026-10-04T14:54:11Z\ntimer_enabled=enabled\ntimer_active=active\nNEXT                         LEFT      LAST PASSED UNIT                ACTIVATES\nSun 2026-10-04 10:59:46 EDT  5min left n/a  n/a    etc-integrity.timer etc-integrity.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too.\n/usr/local/sbin/etc-integrity mode=750 owner=root:root size=3818\n/var/lib/etc-integrity mode=700 owner=root:root size=4096\n",
+      "stderr": "stat: cannot stat '/var/lib/etc-integrity/etc.baseline': Permission denied\nstat: cannot stat '/var/lib/etc-integrity/created_at': Permission denied\n"
+    },
+    {
+      "command_id": "cmd-e086d83b589f48bd",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:54:34.261803+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 4242,
+      "command": "set -eu\nsudo sh -c 'printf \"%s\\n\" integrity-probe > /etc/.integrity-baseline-probe'\nset +e\nprobe_output=$(sudo /usr/local/sbin/etc-integrity check 2>&1)\nprobe_rc=$?\nset -e\nprintf '%s\\n' \"$probe_output\"\nprintf 'check_exit=%s\\n' \"$probe_rc\"\n[ \"$probe_rc\" -eq 1 ]\nprintf '%s\\n' \"$probe_output\" | grep -F 'ADDED /etc/.integrity-baseline-probe'\nprintf '%s\\n' \"$probe_output\" | grep -F 'INTEGRITY_ALERT path=/etc added=1 changed=0 removed=0'",
+      "stdout": "ADDED /etc/.integrity-baseline-probe new=f\t644\t0\t0\t16\t15aba79eb951b7f4a4f09c2625641797a8b30a7ab5b3316c4bbb16bd10bf8656\nINTEGRITY_ALERT path=/etc added=1 changed=0 removed=0\ncheck_exit=1\nADDED /etc/.integrity-baseline-probe new=f\t644\t0\t0\t16\t15aba79eb951b7f4a4f09c2625641797a8b30a7ab5b3316c4bbb16bd10bf8656\nINTEGRITY_ALERT path=/etc added=1 changed=0 removed=0\n"
+    },
+    {
+      "command_id": "cmd-dd87c71268e641b9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:54:43.220967+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3654,
+      "command": "set -eu\nsudo rm -f -- /etc/.integrity-baseline-probe\nsudo /usr/local/sbin/etc-integrity check\nsudo stat -c '%n mode=%a owner=%U:%G size=%s' /var/lib/etc-integrity /var/lib/etc-integrity/etc.baseline /var/lib/etc-integrity/created_at\nprintf 'baseline_sha256='; sudo sha256sum /var/lib/etc-integrity/etc.baseline | awk '{print $1}'\nprintf 'os='; . /etc/os-release; printf '%s %s kernel=' \"$ID\" \"$VERSION_ID\"; uname -r",
+      "stdout": "INTEGRITY_OK path=/etc entries=1493 baseline_created=2026-10-04T14:54:11Z\n/var/lib/etc-integrity mode=700 owner=root:root size=4096\n/var/lib/etc-integrity/etc.baseline mode=600 owner=root:root size=164533\n/var/lib/etc-integrity/created_at mode=600 owner=root:root size=21\nbaseline_sha256=81535acb625115671e37f1004d6e415a0ae657c65d06d044a7e57da6e099122b\nos=ubuntu 16.04 kernel=4.4.0-210-generic\n"
+    },
+    {
+      "command_id": "cmd-9dc7a6fcf18d4856",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:54:57.631741+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 6993,
+      "command": "set -eu\nsudo cp -p -- /etc/systemd/system/etc-integrity.service /tmp/etc-integrity.service.probe\nsudo sh -c 'printf \"\\n# temporary integrity probe\\n\" >> /etc/systemd/system/etc-integrity.service'\nset +e\nprobe_output=$(sudo /usr/local/sbin/etc-integrity check 2>&1)\nprobe_rc=$?\nset -e\nsudo cp -p -- /tmp/etc-integrity.service.probe /etc/systemd/system/etc-integrity.service\nsudo rm -f -- /tmp/etc-integrity.service.probe\nsudo systemctl daemon-reload\nprintf '%s\\n' \"$probe_output\"\nprintf 'check_exit=%s\\n' \"$probe_rc\"\n[ \"$probe_rc\" -eq 1 ]\nprintf '%s\\n' \"$probe_output\" | grep -F 'CHANGED /etc/systemd/system/etc-integrity.service'\nprintf '%s\\n' \"$probe_output\" | grep -F 'INTEGRITY_ALERT path=/etc added=0 changed=1 removed=0'\nsudo /usr/local/sbin/etc-integrity check",
+      "stdout": "CHANGED /etc/systemd/system/etc-integrity.service old=f\t644\t0\t0\t276\te49e8a80ce8f8193207a9516d3694e02f3a5429626256ae07dd402c0fc799d0e new=f\t644\t0\t0\t305\t3c3ebb295717b7b21473bea361b1d55a4c2e5d5a8cfc08ecfbd47d0b57839192\nINTEGRITY_ALERT path=/etc added=0 changed=1 removed=0\ncheck_exit=1\nCHANGED /etc/systemd/system/etc-integrity.service old=f\t644\t0\t0\t276\te49e8a80ce8f8193207a9516d3694e02f3a5429626256ae07dd402c0fc799d0e new=f\t644\t0\t0\t305\t3c3ebb295717b7b21473bea361b1d55a4c2e5d5a8cfc08ecfbd47d0b57839192\nINTEGRITY_ALERT path=/etc added=0 changed=1 removed=0\nINTEGRITY_OK path=/etc entries=1493 baseline_created=2026-10-04T14:54:11Z\n"
+    },
+    {
+      "command_id": "cmd-bc75234126ce4eee",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:55:12.293990+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 4186,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nsudo /usr/local/sbin/etc-integrity check\nprintf 'timer_enabled='; systemctl is-enabled etc-integrity.timer\nprintf 'timer_active='; systemctl is-active etc-integrity.timer\nprintf 'baseline_sha256='; sudo sha256sum /var/lib/etc-integrity/etc.baseline | awk '{print $1}'\nprintf 'baseline_entries='; sudo wc -l < /var/lib/etc-integrity/etc.baseline\nprintf 'failed_units='; systemctl --failed --no-legend | wc -l",
+      "stdout": "boot_id=35c87ec9-1707-4fb3-ab1d-f264d3618caa\nINTEGRITY_OK path=/etc entries=1493 baseline_created=2026-10-04T14:54:11Z\ntimer_enabled=enabled\ntimer_active=active\nbaseline_sha256=81535acb625115671e37f1004d6e415a0ae657c65d06d044a7e57da6e099122b\nbaseline_entries=",
+      "stderr": "bash: line 6: /var/lib/etc-integrity/etc.baseline: Permission denied\n"
+    },
+    {
+      "command_id": "cmd-f5b6a302fa8e4455",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:55:20.968928+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 4329,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nsudo /usr/local/sbin/etc-integrity check\nprintf 'timer_enabled='; systemctl is-enabled etc-integrity.timer\nprintf 'timer_active='; systemctl is-active etc-integrity.timer\nprintf 'baseline_sha256='; sudo sha256sum /var/lib/etc-integrity/etc.baseline | awk '{print $1}'\nsudo wc -l /var/lib/etc-integrity/etc.baseline\nsystemctl --failed --no-pager || true",
+      "stdout": "boot_id=35c87ec9-1707-4fb3-ab1d-f264d3618caa\nINTEGRITY_OK path=/etc entries=1493 baseline_created=2026-10-04T14:54:11Z\ntimer_enabled=enabled\ntimer_active=active\nbaseline_sha256=81535acb625115671e37f1004d6e415a0ae657c65d06d044a7e57da6e099122b\n1493 /var/lib/etc-integrity/etc.baseline\n0 loaded units listed. Pass --all to see loaded but inactive units, too.\nTo show all installed unit files use 'systemctl list-unit-files'.\n"
+    },
+    {
+      "command_id": "cmd-52b3821cdf9b4791",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:55:26.470609+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1742,
+      "command": "set -eu\nprintf 'restart_request_boot_id='; cat /proc/sys/kernel/random/boot_id\nsudo /bin/sh -c 'nohup /bin/sh -c \"sleep 3; /sbin/shutdown -r now\" >/tmp/mandatory-restart.log 2>&1 &'\nprintf 'restart_acknowledged node=%s mechanism=shutdown\\n' \"$NODE_NAME\"",
+      "stdout": "restart_request_boot_id=35c87ec9-1707-4fb3-ab1d-f264d3618caa\nrestart_acknowledged node=node1 mechanism=shutdown\n"
+    },
+    {
+      "command_id": "cmd-e85cc8d7a53e4e0e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:55:33.782035+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 4363,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime -s",
+      "stderr": "ssh: connect to host 10.100.34.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-0f8d640b76b34f80",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:55:37.733188+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1616,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'boot_time='; uptime -s\nsystemctl is-system-running || true",
+      "stdout": "boot_id=bcdce21d-623f-4e4b-a12a-d68660dc1381\nboot_time=2026-10-04 10:55:29\nrunning\n"
+    },
+    {
+      "command_id": "cmd-ec054089ae484cee",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:55:55.534479+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 6630,
+      "command": "set -eu\nold_boot_id=35c87ec9-1707-4fb3-ab1d-f264d3618caa\nnew_boot_id=$(cat /proc/sys/kernel/random/boot_id)\nprintf 'old_boot_id=%s\\nnew_boot_id=%s\\n' \"$old_boot_id\" \"$new_boot_id\"\n[ \"$new_boot_id\" != \"$old_boot_id\" ]\nprintf 'boot_identity_changed=yes\\n'\nsudo /usr/local/sbin/etc-integrity check\nsudo systemctl start etc-integrity.service\nsystemctl show etc-integrity.service -p Result -p ExecMainStatus --no-pager\nprintf 'timer_enabled='; systemctl is-enabled etc-integrity.timer\nprintf 'timer_active='; systemctl is-active etc-integrity.timer\nsystemctl list-timers etc-integrity.timer --no-pager\nprintf 'baseline_sha256='; sudo sha256sum /var/lib/etc-integrity/etc.baseline | awk '{print $1}'\nsudo wc -l /var/lib/etc-integrity/etc.baseline\nprintf 'os='; . /etc/os-release; printf '%s %s kernel=' \"$ID\" \"$VERSION_ID\"; uname -r\nsystemctl --failed --no-pager || true",
+      "stdout": "old_boot_id=35c87ec9-1707-4fb3-ab1d-f264d3618caa\nnew_boot_id=bcdce21d-623f-4e4b-a12a-d68660dc1381\nboot_identity_changed=yes\nINTEGRITY_OK path=/etc entries=1493 baseline_created=2026-10-04T14:54:11Z\nResult=success\nExecMainStatus=0\ntimer_enabled=enabled\ntimer_active=active\nNEXT                         LEFT       LAST                         PASSED       UNIT                ACTIVATES\nSun 2026-10-04 11:07:45 EDT  11min left Sun 2026-10-04 10:54:09 EDT  1min 44s ago etc-integrity.timer etc-integrity.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too.\nbaseline_sha256=81535acb625115671e37f1004d6e415a0ae657c65d06d044a7e57da6e099122b\n1493 /var/lib/etc-integrity/etc.baseline\nos=ubuntu 16.04 kernel=4.4.0-210-generic\n0 loaded units listed. Pass --all to see loaded but inactive units, too.\nTo show all installed unit files use 'systemctl list-unit-files'.\n"
+    }
+  ]
+}

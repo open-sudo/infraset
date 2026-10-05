@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 acts as router with tagged 802.1Q sub-interfaces for VLAN 10 and VLAN 20, each in its own subnet",
+      "status": "satisfied",
+      "summary": "UCI created 8021q devices eth0.10 (vlan10, 10.10.10.1/24) and eth0.20 (vlan20, 10.10.20.1/24) on top of shared eth0, committed and reloaded; ip addr confirms both UP with correct addresses. Post full-cluster restart, same interfaces and IPs persist with zero uncommitted UCI changes.",
+      "evidence_ids": [
+        "cmd-9349fee226b24d33",
+        "cmd-3534cfdb283c41c6",
+        "cmd-adf6d8154c064fcb"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node2 placed in VLAN 10, own subnet, with node1 as gateway",
+      "status": "satisfied",
+      "summary": "node2's /etc/network/interfaces defines eth0.10 (vlan-raw-device eth0) static 10.10.10.2/24, gateway 10.10.10.1; brought up successfully with default route via 10.10.10.1 and 0% packet loss ping to node1, confirmed again after networking restart and after full node reboot.",
+      "evidence_ids": [
+        "cmd-5672ba9ced4649cc",
+        "cmd-02280e58a926404c",
+        "cmd-6d6955b0b1a34970",
+        "cmd-96a8d0ca96094f45"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node3 placed in VLAN 20, own subnet, with node1 as gateway",
+      "status": "satisfied",
+      "summary": "node3's /etc/network/interfaces defines eth0.20 static 10.10.20.2/24, gateway 10.10.20.1; brought up with default route via 10.10.20.1 and 0% packet loss ping to node1, confirmed again after networking restart and after full node reboot.",
+      "evidence_ids": [
+        "cmd-af9401a07fe74c70",
+        "cmd-f46566eb8cfe4b93",
+        "cmd-26147dce26824ec1",
+        "cmd-bd5fb59d1be44b1d"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "VLANs kept isolated: node2 and node3 cannot reach each other, while each reaches node1 on its own VLAN",
+      "status": "satisfied",
+      "summary": "Cross-VLAN pings (node2->10.10.20.2 and node3->10.10.10.2) show 100% packet loss both before and after full-cluster restart, while same-VLAN pings to node1 succeed at 0% loss throughout. fw4 nftables ruleset shows explicit forward_vlan10/forward_vlan20 chains jumping to reject_to_vlan10/reject_to_vlan20 -> handle_reject, giving an explicit REJECT rather than a silent drop, matching the 'refused' wording in the instruction.",
+      "evidence_ids": [
+        "cmd-6d6955b0b1a34970",
+        "cmd-26147dce26824ec1",
+        "cmd-f6737e563e4c4d6a",
+        "cmd-e29da5a77642429f",
+        "cmd-56e4a8a15de048e7",
+        "cmd-1eb7d1623fbb43c0",
+        "cmd-6e64f1647e664c51"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Both VLANs 10 and 20 are carried tagged over the single shared physical link (not separate wires)",
+      "status": "satisfied",
+      "summary": "eth0.10 and eth0.20 are both 802.1q sub-interfaces of the same physical eth0 on node1, and live non-zero rx/tx packet counters on both confirm traffic for both VLANs traversed the one shared uplink.",
+      "evidence_ids": [
+        "cmd-cbd14cfefe984b97",
+        "cmd-3534cfdb283c41c6"
+      ]
+    },
+    {
+      "id": "req-6",
+      "requirement": "Configuration and connectivity/isolation behavior persist across reboot of all three nodes",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id/health baseline captured on all 3 nodes; each node was individually rebooted (node2, node3, then node1) with confirmed distinct post-restart boot_id and reset uptime; VLAN interfaces, gateway routes, and firewall/nft forward chain configuration were re-verified as intact after each reboot and again in a full connectivity matrix after all three nodes were back up, showing same-VLAN reachability and cross-VLAN refusal preserved.",
+      "evidence_ids": [
+        "cmd-815adc8ee09840a3",
+        "cmd-a962488956b54594",
+        "cmd-4e9c53a775ae44ac",
+        "cmd-222dc88963684d71",
+        "cmd-dfb2a1c89d0745b7",
+        "cmd-96a8d0ca96094f45",
+        "cmd-55b1b3dd7f784bfb",
+        "cmd-fd342d9dff5c403f",
+        "cmd-bd5fb59d1be44b1d",
+        "cmd-46035fcd8ed94542",
+        "cmd-2a016829cb6845e0",
+        "cmd-80085ea9d3e44c32",
+        "cmd-adf6d8154c064fcb",
+        "cmd-1eb7d1623fbb43c0",
+        "cmd-6e64f1647e664c51"
+      ]
+    }
+  ],
+  "overall_summary": "The executor implemented tagged 802.1Q VLANs 10 and 20 across node1/node2/node3 over the shared eth0 link, with node1 routing between two isolated subnets, node2 in VLAN 10 and node3 in VLAN 20, each reaching node1 but not each other. Isolation is enforced via explicit fw4 REJECT rules (not just a default drop), matching the instruction's 'refused' language. The mandatory node-restart evidence protocol was executed thoroughly for all three nodes, with distinct pre/post boot IDs and a full connectivity/isolation re-verification after all reboots, directly demonstrating persistence rather than relying on configuration alone.",
+  "limitations": [
+    "Isolation evidence relies on ping loss plus a static nft ruleset dump; no packet capture (tcpdump was unavailable on node1) directly shows ICMP reject responses versus silent drops, though the explicit REJECT target in the firewall config and forward chain jump to reject_to_vlanX/handle_reject strongly supports 'refused' rather than merely 'dropped'.",
+    "Two bounded, fully-reverted diagnostic VLAN-link tests on node2 (cmd-531709cfccfe432b, cmd-5bb1a9060ce84615) had no lasting effect but are noted as unnecessary mutations per hygiene review criteria.",
+    "Minor leftover log files (/tmp/apkup.log, /tmp/reboot.log) remain on node2 and node3; these are low-risk artifacts of apk update and the reboot trigger, not configuration residue."
+  ],
+  "command_stats": {
+    "total": 53,
+    "successful": 35,
+    "failed": 18,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most state-changing commands map directly to the task: UCI network/firewall config on node1, /etc/network/interfaces rewrites plus iproute2 installs on node2/node3, service restarts to apply config, and the mandatory restart-evidence reboots. Two commands (cmd-531709cfccfe432b and cmd-5bb1a9060ce84615) created a throwaway eth0.10 VLAN link on node2 purely to test that the vlan kernel module/tooling worked, then immediately deleted it \u2014 a bounded, low-risk, fully-reverted diagnostic experiment with no lasting residue, but not itself required to reach the final configuration. Minor residue was left in /tmp (apkup.log, reboot.log on node2/node3) from apk update and the reboot invocation; these are low-risk log artifacts, not configuration drift. No unsafe exposure, failed services, or damaged package state was observed; node1's package-health check post-restart lists uci-defaults scripts as 'X' but this reflects normal OpenWrt first-boot script bookkeeping, not executor-caused breakage.",
+    "evidence_ids": [
+      "cmd-531709cfccfe432b",
+      "cmd-5bb1a9060ce84615",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

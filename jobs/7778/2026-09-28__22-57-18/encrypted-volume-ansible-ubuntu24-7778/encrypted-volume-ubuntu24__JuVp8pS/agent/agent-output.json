@@ -1,0 +1,70 @@
+{
+  "status": "completed",
+  "summary": "Implemented an Ansible playbook (run from node2, the only node with Ansible installed, targeting node1) that provisions a file-backed LUKS2 encrypted volume that auto-unlocks via a root-only keyfile at boot and auto-mounts at /srv/secure via crypttab + fstab. Verified auto-unlock/mount across a real reboot of node1, then completed the mandatory restart-evidence protocol on both node1 and node2, confirming boot-identity changes and full recovery of required services/data on each.",
+  "actions_performed": [
+    "Surveyed node1 and node2: both Ubuntu 24.04; only node2 had ansible/ansible-playbook installed, so it was used as the Ansible control node targeting node1 over SSH",
+    "Set up passwordless SSH from node2 to node1 using the cluster-provided CLUSTER_SSH_PRIVKEY/CLUSTER_SSH_PUBKEY",
+    "Diagnosed and fixed node1's sshd failing to start (missing host keys) via ssh-keygen -A and systemctl enable --now ssh",
+    "Verified Ansible connectivity from node2 to node1 with an ansible ping",
+    "Wrote /root/ansible/encrypted-volume.yml on node2: generates a random keyfile at /etc/luks-keys/secure.key (mode 0400), creates a 512M backing file at /var/lib/secure-volume/secure.img, LUKS2-formats it with cryptsetup luksFormat, registers it in /etc/crypttab with the keyfile for automatic unlock, creates an ext4 filesystem on the mapped device, and registers /srv/secure in /etc/fstab (mount module, state=mounted) for automatic mounting",
+    "Ran the playbook against node1 (ansible-playbook -i inventory.ini encrypted-volume.yml); verified the LUKS2 volume mounted at /srv/secure and wrote a test file to it",
+    "Captured pre-restart baseline (boot_id, mount state, service state) for both node1 and node2",
+    "Restarted node1 via a backgrounded systemctl reboot so the exec call could return before disconnection; polled until reachable again; confirmed boot_id changed (f9bf293d... -> ed87dad6...); confirmed via journalctl that systemd-cryptsetup@secure.service auto-unlocked the volume at boot and /srv/secure auto-mounted with the test file intact",
+    "Restarted node2 the same way; polled until reachable; confirmed boot_id changed (489b0bb4... -> d323cb67...); confirmed ansible-playbook and the inventory/playbook files were intact and Ansible could still reach node1 (ping success) after the restart",
+    "Re-verified node1's encrypted volume remained mounted with data intact after node2's restart, confirming end-to-end health of both nodes"
+  ],
+  "evidence": [
+    {
+      "requirement": "Encrypted volume mounted at /srv/secure on node1 (LUKS2, file-backed via loop device)",
+      "command_ids": [
+        "cmd-b1383ee293304527",
+        "cmd-3ea5655500b84096"
+      ],
+      "summary": "Ansible playbook run succeeded (17 tasks, 12 changed); post-run check shows /dev/mapper/secure LUKS2-active, loop-backed by /var/lib/secure-volume/secure.img, mounted ext4 at /srv/secure and writable"
+    },
+    {
+      "requirement": "Volume unlocks and mounts on its own at boot (no manual intervention)",
+      "command_ids": [
+        "cmd-f9bf293d... N/A",
+        "cmd-f3d60620425a4d8d"
+      ],
+      "summary": "After a real reboot of node1, journalctl shows systemd-cryptsetup@secure.service automatically started and finished cryptsetup for 'secure' at boot, and /srv/secure was mounted with the previously written testfile.txt intact, with no manual cryptsetup/mount commands issued post-boot"
+    },
+    {
+      "requirement": "Implemented using Ansible, from the correct control node",
+      "command_ids": [
+        "cmd-2a250d3c202442e7",
+        "cmd-f2d910a6a3ec4cde",
+        "cmd-5fdb34789d8c4f77",
+        "cmd-b1383ee293304527"
+      ],
+      "summary": "node2 was identified as the only node with ansible/ansible-playbook installed; inventory and playbook were authored on node2 and ansible-playbook was executed from node2 against node1 over SSH"
+    },
+    {
+      "requirement": "node1 mandatory restart evidence: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-d38a8b7fd3a341fb",
+        "cmd-b6858d45de5b4d2a",
+        "cmd-3ea5655500b84096",
+        "cmd-5954bce34ef84668",
+        "cmd-44803738f03c4612",
+        "cmd-139752e56b3a434f",
+        "cmd-cf19d1ec62194ac7",
+        "cmd-f3d60620425a4d8d"
+      ],
+      "summary": "Pre-restart baseline captured (boot_id f9bf293d..., mount/cryptsetup status, test file present); reboot acknowledged via backgrounded systemctl reboot; node became unreachable then responded again with boot_id ed87dad6... (changed); post-restart check confirmed cryptsetup auto-unlock service ran at boot and /srv/secure was remounted with data intact"
+    },
+    {
+      "requirement": "node2 mandatory restart evidence: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-c384cacea5f943c5",
+        "cmd-468765d7835c40ac",
+        "cmd-ee12aeaf284d4253",
+        "cmd-d6571f4db0a24723",
+        "cmd-9daeaee6158641d5",
+        "cmd-05365d95a0774dea"
+      ],
+      "summary": "Pre-restart baseline captured (boot_id 489b0bb4..., ansible tooling present, ssh service state); reboot acknowledged via backgrounded systemctl reboot; node became unreachable then responded again with boot_id d323cb67... (changed); post-restart check confirmed ansible-playbook and playbook/inventory files intact and Ansible could still successfully ping/manage node1, and node1's encrypted volume remained healthy"
+    }
+  ]
+}

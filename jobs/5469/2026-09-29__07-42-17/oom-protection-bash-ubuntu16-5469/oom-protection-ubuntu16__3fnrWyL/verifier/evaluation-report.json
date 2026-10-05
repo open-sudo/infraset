@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "inventory-api deployed and running as a managed systemd service on node1",
+      "status": "satisfied",
+      "summary": "A systemd unit /etc/systemd/system/inventory-api.service was created (ExecStart, Restart=always) and enabled/started; systemctl is-active reported 'active', and the process's PID responded 200 OK to a /health check.",
+      "evidence_ids": [
+        "cmd-90d10fd71688430d",
+        "cmd-829bb2e9d48644b6"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Service configured so the kernel OOM-killer prefers to kill other processes before it",
+      "status": "satisfied",
+      "summary": "Unit file sets OOMScoreAdjust=-1000; live verification via /proc/<PID>/oom_score_adj confirmed the value was applied to the running process, while a separately launched memory-hog process retained the default oom_score_adj=0.",
+      "evidence_ids": [
+        "cmd-829bb2e9d48644b6",
+        "cmd-42d806b883034dcb"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Pre-disruption baseline: service healthy and serving before inducing memory pressure",
+      "status": "satisfied",
+      "summary": "curl to /health returned {\"status\":\"ok\"} both immediately after service start and again immediately before the memory hog was launched; free -h showed 670M free with 0 swap at that point.",
+      "evidence_ids": [
+        "cmd-829bb2e9d48644b6",
+        "cmd-42d806b883034dcb"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Under an actual out-of-memory event, the kernel kills the memory-hog (not inventory-api), and inventory-api keeps serving throughout and after the event",
+      "status": "indeterminate",
+      "summary": "The memory-hog was launched and confirmed unprotected (oom_score_adj=0), but immediately afterward node1 became totally unreachable via the exec/SSH channel ('exec request failed on channel 0', later 'Connection reset by peer'). No dmesg/oom log, no post-event /health check, no confirmation that inventory-api's process survived, and no confirmation the hog was actually reaped were captured over ~36 minutes of retries and into the final lifecycle snapshot. The required behavioral transition (baseline -> disruption -> recovery) could not be observed, so the central task outcome cannot be confirmed or refuted from the evidence.",
+      "evidence_ids": [
+        "cmd-42d806b883034dcb",
+        "cmd-7645fcf06bba41d2",
+        "cmd-999ecc0d776e4d2d",
+        "cmd-e8c81327f4804a9c",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly built and configured inventory-api as a systemd-managed service with strong negative OOM-score protection (-1000), and verified it was healthy and serving before disruption, with the memory-hog process confirmed as the unprotected default-score target. However, the actual test \u2014 inducing OOM pressure and observing that the kernel kills the hog while inventory-api keeps serving \u2014 could not be completed: node1 became completely unresponsive to the exec channel almost immediately after the hog was launched and never recovered within ~36 minutes of retries or by the final lifecycle snapshot (which still shows 'Connection reset by peer' / exec failures). No dmesg OOM evidence, no post-event health check, and no per-node restart/recovery evidence protocol (mandatory but independent of the task contract) were obtained. The core deliverable \u2014 demonstrated survival of inventory-api through a real OOM event \u2014 is unverified.",
+  "limitations": [
+    "The defining outcome of the task (service survives OOM while the hog is killed) has no direct supporting or contradicting evidence; node1 was unreachable from immediately after the hog launch through the final captured snapshot.",
+    "The mandatory provider-wide node-restart evidence protocol was not performed for node1 because the node was unreachable via the only available exec/SSH interface; no pre/post boot-identity, restart acknowledgement, or recovery evidence exists for this node.",
+    "It cannot be determined from the evidence whether the memory hog is still running, was killed by the OOM-killer, or whether inventory-api itself was also killed or the whole node is still thrashing/deadlocked.",
+    "The after_executor lifecycle snapshot shows only connection failures for node1, consistent with either transient memory pressure or a persistent hang; it does not by itself confirm which occurred."
+  ],
+  "command_stats": {
+    "total": 19,
+    "successful": 3,
+    "failed": 16,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 0.75,
+  "confidence": 0.3,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.45,
+    "summary": "Setup mutations (writing /opt/inventory-api/app.py, the systemd unit, and /opt/memory-hog.py) were all necessary prerequisites for the task and are not penalized. Launching the memory hog (cmd-42d806b883034dcb) was the required disruption trigger, not an unnecessary mutation in itself, but it drove node1 into a state of total unresponsiveness (SSH channel failures, then connection reset) that persisted through the end of the observation window with no confirmation that the hog process was ever reaped or that the node returned to a serviceable state. The executor could not confirm the hog was killed, could not clean it up, and could not verify or restore system health, leaving node1 in an unrecovered, unverified condition at task end. This is a foreseeable consequence of a task-mandated action rather than a gratuitous mutation, so it is treated less severely than an unrelated destructive change, but the lack of any recovery or even confirmation of final state is a real hygiene gap.",
+    "evidence_ids": [
+      "cmd-42d806b883034dcb",
+      "global:after_executor:node1:boot-identity",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": null,
+  "provisional_reward": 1.0
+}

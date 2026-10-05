@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Publish node2's TCP/8080 application through node1 so node3 (outside the private network) can reach it on port 8080",
+      "status": "satisfied",
+      "summary": "Executor configured VyOS DNAT (nat destination rule 10: eth0 tcp/8080 -> 10.50.50.11:8080) and a matching forward-filter accept rule on node1. node3->node1:8080 failed before the fix (cmd-50d7f479e847413c, exit 7) and succeeded with app content after the fix (cmd-6ed76d4e10fd4c05, HTTP 200 with 'Hello from node2 app on port 8080'). The result held up across restarts of all three nodes (cmd-9d00b63b4da948a0, cmd-de99803010e346f4, cmd-dd6b36a656b14218, all HTTP 200), and node1's saved VyOS config (nat + firewall rules) was confirmed intact post-reboot (cmd-ccf3260d48cf4e79).",
+      "evidence_ids": [
+        "cmd-50d7f479e847413c",
+        "cmd-6c1a11e7c959477e",
+        "cmd-f92231d7a1434452",
+        "cmd-6ed76d4e10fd4c05",
+        "cmd-9d00b63b4da948a0",
+        "cmd-de99803010e346f4",
+        "cmd-dd6b36a656b14218",
+        "cmd-ccf3260d48cf4e79"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Do not open the rest of the private (node1<->node2) network to node3 \u2014 only the forwarded 8080 path should work",
+      "status": "satisfied",
+      "summary": "The forward filter is default-drop with only an established/related allow and a scoped allow (tcp/8080, eth0->eth1, destination 10.50.50.11 only). node3's direct attempts to reach node2's private IP (10.50.50.11:8080) and other paths (node1 SSH via eth0, an arbitrary other port) all failed both before and after node3's restart (cmd-74e41d83d3e547a8: exit 28/1; cmd-49b47113e2a741f4: exit 28/7; cmd-dd6b36a656b14218 post-restart: exit 7), while the forwarded 8080 path continued to succeed.",
+      "evidence_ids": [
+        "cmd-74e41d83d3e547a8",
+        "cmd-49b47113e2a741f4",
+        "cmd-dd6b36a656b14218",
+        "cmd-f92231d7a1434452"
+      ]
+    }
+  ],
+  "overall_summary": "Both material outcomes of the task \u2014 publishing node2's 8080 app through node1 to node3, and keeping the rest of the private network closed to node3 \u2014 are directly and repeatedly demonstrated, including before/after evidence around the fix and stability across full restarts of all three nodes. The executor also ran the provider-wide restart-evidence protocol on every node: pre-restart boot-identity/healthy-state capture, a reboot acknowledgement, a changed post-restart boot identity, and recovered service/config/connectivity state were all captured for node1, node2, and node3, and these are consistent with the fixed before/after-executor lifecycle boot-identity snapshots. This restart activity is not part of the public task contract (which does not mention restart/persistence), so it is treated as supporting evidence for confidence rather than a scored material outcome, but its quality is good. No abandoned or unsafely retained mutations were found; a couple of bounded troubleshooting mutations (a scratch IP assignment and a temporary policy route) were cleanly superseded or reverted.",
+  "limitations": [
+    "The public task instruction does not itself require restart/persistence, so while restart evidence was captured to a high standard, it is not scored as a material task outcome \u2014 only as supporting confidence.",
+    "The 'application' on node2 did not pre-exist in the environment (no listener on 8080 in the before_prepare snapshot); the executor had to create a systemd-managed HTTP server to have something to forward. This was a reasonable and necessary step to fulfill the task's premise, not a deviation, but it means the app itself was executor-created rather than pre-existing.",
+    "Only a single non-8080 TCP port (22 on node1) and one arbitrary port (2222) were tested for over-exposure to node3; broader port-scanning was not performed, though the default-drop forward-filter design makes this a low-risk gap."
+  ],
+  "command_stats": {
+    "total": 61,
+    "successful": 48,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.88,
+    "summary": "Trace review found no retained unnecessary mutations. A temporary non-persistent `ip addr add` on node2 (cmd-c764ca8614f04bc8) was superseded by a persistent nmcli-managed address (cmd-7e4666e1f4fc4c4c) without leaving conflicting config. A misconfigured firewall attempt on node1 (cmd-6cb170914baf49e2, invalid 'state enable' syntax) left a partial rule 5 that was deleted (cmd-8d3b6e285f284b34) and correctly recreated (cmd-39d3f804fc324715, cmd-648178cdc5474078) \u2014 a normal corrective iteration, not penalized. A temporary, non-persistent policy route/rule added directly on node2 to diagnose asymmetric routing (cmd-c01ba0ceeef24dcd) was a bounded, low-risk troubleshooting mutation; it was explicitly reverted (cmd-c16bb72dc15d4ce4: `ip rule del`) once the equivalent config was made persistent via nmcli (cmd-3a9051e3e20842f5), so it left no residue. The three end-of-task reboots (cmd-8e06a8f8a3b84f35, cmd-d08c9daaa09746c1, cmd-f1377269236144cd) are state-changing but map directly to the provider-wide restart-evidence protocol rather than being unrelated mutations. Package-health and failed-services observations show no residue or damaged package state after the executor phase (global:after_executor:node1/2/3:failed-services all empty; package-health managers report normal). No unsafe exposure was introduced: firewalld opened only 8080/tcp, and the VyOS forward filter remains default-drop with a narrowly scoped allow rule.",
+    "evidence_ids": [
+      "cmd-c764ca8614f04bc8",
+      "cmd-7e4666e1f4fc4c4c",
+      "cmd-6cb170914baf49e2",
+      "cmd-8d3b6e285f284b34",
+      "cmd-39d3f804fc324715",
+      "cmd-648178cdc5474078",
+      "cmd-c01ba0ceeef24dcd",
+      "cmd-c16bb72dc15d4ce4",
+      "cmd-3a9051e3e20842f5",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-running",
+      "requirement": "RabbitMQ cluster running across node1, node2, and node3",
+      "status": "satisfied",
+      "summary": "rabbitmqctl cluster_status on node1 shows all three nodes (rabbit@node1/2/3) as Disk Nodes and Running Nodes both immediately after formation and again after the full restart sequence, corroborated by per-node listener output (5671/15672/25672 all up on each node).",
+      "evidence_ids": [
+        "cmd-8bfd605e815e4c43",
+        "cmd-9c40cb3f713e40b6",
+        "cmd-7cd67c802e6a4f52",
+        "cmd-ce30a8c8df4f4c95"
+      ]
+    },
+    {
+      "id": "custom-ca",
+      "requirement": "A cluster-specific CA is created and used to issue certificates for the cluster",
+      "status": "satisfied",
+      "summary": "A self-signed CA (CN=rabbitmq-cluster-CA) was generated with openssl, then used to sign per-node server certs (with correct SANs) and a client cert; a separate untrusted CA was created only for negative testing, not used for the cluster itself.",
+      "evidence_ids": [
+        "cmd-50be5a3037654d17",
+        "cmd-5fecaa83bf2d4b81",
+        "cmd-a9cc74cb27c3410a"
+      ]
+    },
+    {
+      "id": "amqp-tls-mtls",
+      "requirement": "AMQP is served over TLS and only clients presenting a certificate issued by the cluster CA are accepted",
+      "status": "satisfied",
+      "summary": "rabbitmq.conf disables plaintext AMQP (listeners.tcp=none), enables AMQPS on 5671 with verify_peer/fail_if_no_peer_cert=true. Server logs show fatal TLS alerts rejecting a connection with no client cert (certificate_required) and one signed by an untrusted CA (Unknown CA). A real pika-based AMQP client using the CA-issued cert completed publish/consume from both node1 and node2, while the same flow using an untrusted-CA client cert failed with an SSL unknown_ca error, both before and after the restart sequence.",
+      "evidence_ids": [
+        "cmd-d173202a0a8241fa",
+        "cmd-4add14a8bfc14fab",
+        "cmd-828df7ff54cb48d6",
+        "cmd-2b7b88d8e6cd4a23",
+        "cmd-3f3bf82ae5da4a29",
+        "cmd-0509b98f86f64b2a"
+      ]
+    },
+    {
+      "id": "mgmt-restricted",
+      "requirement": "Management interface is reachable only from within the cluster",
+      "status": "satisfied",
+      "summary": "firewalld/nft rules on all three nodes only accept 15672 (plus 25672 and 4369) from source 10.100.162.0/24, which is the cluster's own subnet containing exactly node1-3; all other sources fall to default deny. A cross-node HTTP call from node2 to node1's management API over the cluster network succeeded (200), confirming intra-cluster reachability; no external-source negative test was captured, so exposure to outside the /24 is not directly demonstrated, but the deny-by-default firewalld posture combined with the explicit rich rules is standard supporting evidence for this outcome.",
+      "evidence_ids": [
+        "cmd-812eaaa97c154093",
+        "cmd-6c8f97d76c1d474d",
+        "cmd-980fc9f626fb402c",
+        "cmd-aa341db2f6104222",
+        "cmd-badffe9de04e46e4",
+        "cmd-18ad712ddcea4d8d"
+      ]
+    },
+    {
+      "id": "restart-node1",
+      "requirement": "Provider-wide restart evidence protocol on node1: pre-restart baseline, ack, changed boot id, recovered state",
+      "status": "satisfied",
+      "summary": "Boot id captured before (67c52137...) and reboot acknowledged via a closed exec stream; post-restart boot id changed to 3d43725e..., matching the fixed after-executor lifecycle snapshot exactly. Cluster status, listeners, and the durable queue message were all confirmed recovered afterward.",
+      "evidence_ids": [
+        "cmd-f30b59ca19ea4db4",
+        "cmd-8f53ecd945154d62",
+        "cmd-1bb97532c8d04997",
+        "cmd-9c40cb3f713e40b6",
+        "cmd-9c8a0eab51b84224"
+      ]
+    },
+    {
+      "id": "restart-node2",
+      "requirement": "Provider-wide restart evidence protocol on node2: pre-restart baseline, ack, changed boot id, recovered state",
+      "status": "satisfied",
+      "summary": "Boot id captured before (555221a1...) and reboot acknowledged; post-restart boot id changed to 785331da..., matching the fixed after-executor lifecycle snapshot. Cluster status and AMQPS/management listeners confirmed up again after restart.",
+      "evidence_ids": [
+        "cmd-42354b6a39d7446f",
+        "cmd-809320cd47a1464b",
+        "cmd-c6d09c49dd354cdc",
+        "cmd-973fa1de4d9c43cc",
+        "cmd-7cd67c802e6a4f52"
+      ]
+    },
+    {
+      "id": "restart-node3",
+      "requirement": "Provider-wide restart evidence protocol on node3: pre-restart baseline, ack, changed boot id, recovered state",
+      "status": "satisfied",
+      "summary": "Boot id captured before (34027437...) and reboot acknowledged; post-restart boot id changed to 35b6d70e..., matching the fixed after-executor lifecycle snapshot. Cluster status and listeners confirmed up again, and a final end-to-end check (durable message present, valid client works, untrusted client rejected) was run after all three restarts.",
+      "evidence_ids": [
+        "cmd-d91b9ff24bd94de0",
+        "cmd-df99505b08af4e6f",
+        "cmd-48b6b41a68a44f5f",
+        "cmd-9904bfe3d6134b53",
+        "cmd-ce30a8c8df4f4c95",
+        "cmd-0509b98f86f64b2a"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a functioning 3-node RabbitMQ cluster with mutual TLS enforced by a purpose-built CA, verified both positive (CA-issued client) and negative (no cert, foreign-CA cert) AMQP-over-TLS behavior via server logs and real pika client tests, and confirmed the management API is firewalled to the cluster's own subnet with a working intra-cluster access check. The mandatory node-restart protocol was completed for all three nodes with matching boot-id transitions cross-verified against the fixed lifecycle snapshots, and cluster/queue/TLS state was shown recovered after each restart and again after the full sequence. Minor hygiene deductions apply for unremoved temporary files left in /tmp across all three nodes.",
+  "limitations": [
+    "No direct negative test was captured showing the management port is actually blocked from a source address outside the 10.100.162.0/24 cluster subnet; reachability was only confirmed from inside that subnet.",
+    "Selected evidence covers only a subset of the 96 total commands; a few early failed discovery commands were reviewed from the full timeline but the complete command set was not exhaustively cross-checked for anomalies beyond what the timeline surfaced."
+  ],
+  "command_stats": {
+    "total": 96,
+    "successful": 83,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Most state-changing commands map clearly to task outcomes: repo/package installs, CA/cert generation, cert distribution over SSH, rabbitmq.conf edits, plugin enablement, firewalld rules, test user/queue creation for durability proof, and the sequential reboots. Several early attempts to fetch a cloudsmith setup script returned 404s and one curl attempt (cmd-38ee2f8cf9c849a4) failed to write a file; these were read-only discovery/troubleshooting with no state mutation and are not penalized. Restarting sshd on node2 and node3 (cmd-8603048261744823, cmd-a742db6ebba4416c) was a necessary, bounded prerequisite to enable pubkey auth for the SSH-based cert distribution used later, and is reasonably tied to the material outcome. The main hygiene deduction is residual, unremoved temporary artifacts left in /tmp after the run (erl.sh, reboot.log, rmq_node2.conf, rmq_node3.conf on node1; reboot.log, rp1.log, rp2.log on node2/node3), visible in the after-executor vs. after-prepare temporary-files diff -- these are low-risk, non-sensitive leftovers (config snippets and install logs) that were never cleaned up, but they do not weaken any security control or conflict with services.",
+    "evidence_ids": [
+      "cmd-38ee2f8cf9c849a4",
+      "cmd-8603048261744823",
+      "cmd-a742db6ebba4416c",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

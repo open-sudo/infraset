@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Build an IPsec tunnel between node1 and node2 over the shared transit network",
+      "status": "satisfied",
+      "summary": "swanctl --list-sas on node1 (cmd-9fdf3d47ae64438c) and node2 (cmd-52f5490b51a446ef) show ESTABLISHED IKEv2 SAs between 10.10.10.1 and 10.10.10.2 (the transit addresses) with INSTALLED tunnel-mode CHILD_SAs. An earlier attempt (cmd-0952ec37b4974c3b) failed because charon was not yet running, but this was corrected by starting/reloading the IPsec service (cmd-415e5c3d407c4657, cmd-654f895d2d5f4aab), after which the tunnel came up on both ends.",
+      "evidence_ids": [
+        "cmd-9fdf3d47ae64438c",
+        "cmd-52f5490b51a446ef",
+        "cmd-415e5c3d407c4657",
+        "cmd-654f895d2d5f4aab"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Carry the private lan-a/lan-b networks over the tunnel so node3 and node4 reach each other by private address",
+      "status": "satisfied",
+      "summary": "Child SA traffic selectors are 10.50.10.0/24 <-> 10.50.20.0/24 (cmd-9fdf3d47ae64438c). node3 (10.50.10.12) successfully pings node4 (10.50.20.13) and vice versa both before and after the restart cycle (cmd-fd71183c4c484d25, cmd-e28e4977f1d14739, cmd-b3759446703546cb, cmd-6f81a79cf2224553), confirming private-address reachability via the tunnel.",
+      "evidence_ids": [
+        "cmd-9fdf3d47ae64438c",
+        "cmd-fd71183c4c484d25",
+        "cmd-e28e4977f1d14739",
+        "cmd-b3759446703546cb",
+        "cmd-6f81a79cf2224553"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Inter-site traffic must be encrypted in transit across the transit network",
+      "status": "satisfied",
+      "summary": "tcpdump captured on node1's transit interface (vtnet1) during active node3<->node4 ICMP traffic shows only ESP packets (spi=..., no plaintext ICMP), both during initial verification (cmd-58e5a566c9f44919) and again after all four nodes were restarted (cmd-c1e275330d3947e3), directly demonstrating encryption on the wire pre- and post-restart.",
+      "evidence_ids": [
+        "cmd-58e5a566c9f44919",
+        "cmd-c1e275330d3947e3"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart baseline, restart acknowledgement, changed boot identity, and recovered service/data/cluster state for every managed node",
+      "status": "satisfied",
+      "summary": "All four nodes show the full transition. node1: baseline boottime 17:27:40 + established SA (cmd-863587b4a7684248) -> reboot acknowledged (cmd-3897cf59fcc24b68) -> new boottime 17:48:47 (cmd-342a6314412044ce) -> SA re-established and ping success (cmd-835cb97f12514627, cmd-fac29ce010e04796). node2 shows an analogous sequence (cmd-8deabeaa66d6489e, cmd-5acd8f1635424c6d, cmd-52d3365892134158, cmd-ce5a43b1f6254c5c, cmd-b3759446703546cb). node3: boot_id 6bb7e004...->6676a130... (cmd-ab1c26443a8241c8, cmd-4f5abafb36174c9a, cmd-76b77b41e52a4b46) with route/ping recovery (cmd-36c292acd7fa4c50). node4: boot_id bf4e9cbb...->84460a52... (cmd-91027c89d3fc47f3, cmd-71cb4bf33e824113, cmd-0dbe20475c0e4c31) with route/ping recovery (cmd-313664b85d404a6f). The fixed lifecycle boot-identity snapshots (after_executor) independently corroborate all four changed boot identities.",
+      "evidence_ids": [
+        "cmd-863587b4a7684248",
+        "cmd-3897cf59fcc24b68",
+        "cmd-342a6314412044ce",
+        "cmd-835cb97f12514627",
+        "cmd-fac29ce010e04796",
+        "cmd-8deabeaa66d6489e",
+        "cmd-5acd8f1635424c6d",
+        "cmd-52d3365892134158",
+        "cmd-ce5a43b1f6254c5c",
+        "cmd-b3759446703546cb",
+        "cmd-ab1c26443a8241c8",
+        "cmd-4f5abafb36174c9a",
+        "cmd-76b77b41e52a4b46",
+        "cmd-36c292acd7fa4c50",
+        "cmd-91027c89d3fc47f3",
+        "cmd-71cb4bf33e824113",
+        "cmd-0dbe20475c0e4c31",
+        "cmd-313664b85d404a6f",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a working IKEv2/IPsec tunnel between node1 and node2 over the transit network, carrying the lan-a/lan-b private subnets so node3 and node4 reach each other by private address, with tcpdump directly confirming only ESP is visible on the transit link both before and after a full sequential restart of all four nodes. All four nodes show a complete baseline -> restart -> changed boot identity -> recovery evidence chain, independently corroborated by the fixed lifecycle snapshots. All material task outcomes are satisfied with direct, coherent evidence. Hygiene is good but not flawless: a generated PSK briefly sat in /tmp with default (world-readable) permissions on both firewalls before being incidentally cleared by the later reboots, some diagnostic nmcli interface cycling caused transient (bounded) connectivity flaps during topology discovery, and one config flag (disablevpnrules) was left set without a clearly demonstrated causal role in the final fix.",
+  "limitations": [
+    "PSK file permissions in /tmp were not explicitly hardened (chmod 600) before or immediately after the scp transfer; their eventual absence in the after_executor snapshot is attributable to the reboot clearing tmpfs rather than an explicit executor cleanup action, so exposure during the live window cannot be fully ruled out.",
+    "The causal contribution of the disablevpnrules=1 setting to the working enc0 firewall rule is not established in the trace; get_swanctl/pfctl outputs suggest pluginctl -i (dynamic interface registration) was the actual fix, making disablevpnrules's role indeterminate.",
+    "Command outcomes are based on captured stdout/stderr, which may be bounded/truncated for some long outputs (e.g., swanctl.conf template dumps), though the relevant SA/ESP evidence was not affected by truncation."
+  ],
+  "command_stats": {
+    "total": 158,
+    "successful": 137,
+    "failed": 21,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most state-changing commands were purposeful (interface addressing, PSK generation/transfer, config.xml edits, firewall rules, service reloads) or were corrective actions cleanly undoing a failed attempt (e.g., restoring /conf/config.xml.bak-ipsec after a script AttributeError in cmd-3307b2c562594d07, fixed by cmd-aa201199d4254489). Several items reduce the score: (1) the generated PSK was written to /tmp/psk.txt on node1 with default world-readable permissions (-rw-r--r--, confirmed by cmd-fe6c03189e224bb0's `ls -la`) and scp'd to the same path on node2, rather than being chmod 600'd immediately -- a transient but real weakening of secret handling, though incidentally cleared when both nodes were later rebooted (/tmp is not present with psk.txt in the after_executor temp-file listings). (2) Repeated nmcli disconnect/connect cycling on node3 and node4's enp8s0 (cmd-dbf35d85621d499c, cmd-eca5eb3411c04a85, cmd-5ba1167a54b24853, cmd-8fda160b874841c6) was used purely for DHCP-broadcast topology discovery, causing several failed/errored reconnects before being superseded by static addressing; this was a bounded, non-destructive diagnostic technique but caused transient connectivity flaps beyond simple read-only discovery. (3) A temporary IPv4 alias (10.10.10.1/30 on vtnet1) was added for connectivity testing and then explicitly removed (cmd-5785ecde39844d13 added, cmd-c9d0ea3627ba4763 removed) -- fully reverted, low risk. (4) The `disablevpnrules` flag was set to 1 in the IPsec general settings (cmd-e8435434e8024d8a) during troubleshooting of the enc0 pass rule; the evidence trace shows the actual fix was invoking `pluginctl -i` to register the enc0 interface (cmd-dfe790d90e2d4b18), so this setting's causal contribution to the final solution is unclear, and it was left in place on both node1 and node2 -- a retained mutation without a clearly demonstrated purpose, though it does not weaken security (it disables an automatic broad pass-rule generator in favor of the explicit rules the executor added).",
+    "evidence_ids": [
+      "cmd-fe6c03189e224bb0",
+      "cmd-8ff410634c184211",
+      "cmd-dbf35d85621d499c",
+      "cmd-eca5eb3411c04a85",
+      "cmd-5ba1167a54b24853",
+      "cmd-8fda160b874841c6",
+      "cmd-5785ecde39844d13",
+      "cmd-c9d0ea3627ba4763",
+      "cmd-e8435434e8024d8a",
+      "cmd-dfe790d90e2d4b18",
+      "cmd-3307b2c562594d07",
+      "cmd-aa201199d4254489"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

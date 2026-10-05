@@ -1,0 +1,77 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 to serve HTTPS on port 8443 via nginx with a self-signed certificate that auto-renews before expiry through a systemd timer, reloading nginx gracefully so the service keeps answering requests through cert rotation. Verified automatic renewal in-session (cert serial changed, zero dropped requests) and completed the mandatory single-node restart evidence protocol, confirming persistence and recovery across reboot.",
+  "actions_performed": [
+    "Installed nginx on node1 via apt",
+    "Created /etc/nginx/scripts/renew-cert.sh: checks cert expiry with openssl x509 -checkend, regenerates a self-signed 24h cert via openssl req when near expiry, atomically replaces key/cert, validates nginx config, and reloads nginx",
+    "Issued the initial self-signed cert into /etc/ssl/rotating/{tls.crt,tls.key}",
+    "Configured nginx site 'rotating-tls' listening on 8443 with ssl_certificate pointing at the rotating cert/key, enabled and started nginx",
+    "Verified HTTPS responds 200 on port 8443 using NODE_IP",
+    "Created systemd unit cert-renew.service (oneshot running the renewal script) and cert-renew.timer (OnBootSec=1min, OnUnitActiveSec=1min), enabled and started the timer",
+    "Ran a 90-second background curl loop against https://$NODE_IP:8443/ spanning a timer-triggered renewal to prove continuous availability",
+    "Observed automatic renewal: cert serial changed from 6446C1... to 7B24A6..., journalctl showed nginx config test + reload triggered by the timer, and the loop's aggregated results showed only HTTP 200 responses throughout",
+    "Captured pre-restart baseline: boot_id, nginx/timer active status, cert state, HTTPS 200",
+    "Issued 'sudo systemctl reboot' (backgrounded so the ack returned before disconnect), polled node1 until reachable again",
+    "Confirmed changed boot_id and fresh uptime post-reboot, confirmed nginx and cert-renew.timer are active and enabled (persisted across reboot), confirmed the rotated cert persisted on disk, confirmed HTTPS still returns 200",
+    "Confirmed cert-renew.timer has a live next-run schedule after reboot"
+  ],
+  "evidence": [
+    {
+      "requirement": "HTTPS served on port 8443",
+      "command_ids": [
+        "cmd-475aa92de8144c37",
+        "cmd-538ba27255fe4a23"
+      ],
+      "summary": "nginx configured, started, and confirmed serving HTTPS on 8443 with HTTP 200 and correct cert subject/issuer via curl -k"
+    },
+    {
+      "requirement": "Certificate renewed automatically before expiry",
+      "command_ids": [
+        "cmd-0bfb678329624d1d",
+        "cmd-4f3328170ba64ffc",
+        "cmd-51366096b0fb4077",
+        "cmd-8cf35a4048f04f0e"
+      ],
+      "summary": "Initial cert issued with 24h validity (serial 6446C1...); systemd timer cert-renew.timer enabled to run every minute; journalctl shows cert-renew.service firing automatically and the cert serial changing to 7B24A6... via the checkend-triggered renewal logic, well before actual expiry"
+    },
+    {
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no downtime)",
+      "command_ids": [
+        "cmd-51366096b0fb4077",
+        "cmd-8cf35a4048f04f0e",
+        "cmd-0b3456a8bb234481"
+      ],
+      "summary": "A 90-request/1-per-second curl loop against https://$NODE_IP:8443/ spanned the automatic renewal event (nginx -t + systemctl reload triggered by the timer); all 90 responses were HTTP 200, and a follow-up curl confirmed the served cert's expiry now matches the newly renewed cert"
+    },
+    {
+      "requirement": "Node1 pre-restart healthy baseline",
+      "command_ids": [
+        "cmd-5e9d61ce21584c42"
+      ],
+      "summary": "Captured boot_id 1e0cb179-..., nginx and cert-renew.timer both active, cert state, and HTTPS 200 before reboot"
+    },
+    {
+      "requirement": "Node1 restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-b5c3ce3e25a84f71"
+      ],
+      "summary": "Backgrounded 'sudo systemctl reboot' returned 'reboot_issued' acknowledgement immediately"
+    },
+    {
+      "requirement": "Node1 changed boot identity after restart",
+      "command_ids": [
+        "cmd-f4e842def9564db1",
+        "cmd-7fdef31610c84b56"
+      ],
+      "summary": "Connection timed out while node was rebooting, then reconnection succeeded with a new boot_id (9809b0cb-... vs prior 1e0cb179-...) and fresh uptime timestamp, proving an actual restart occurred"
+    },
+    {
+      "requirement": "Node1 post-restart recovery of required services, data, and cluster state",
+      "command_ids": [
+        "cmd-915c0a768dbb43fe",
+        "cmd-323960487d9141e7"
+      ],
+      "summary": "After reboot, nginx and cert-renew.timer are active and enabled (survived reboot), the rotated certificate persisted on disk unchanged, HTTPS on 8443 returns 200, and the renewal timer has a live next-scheduled run"
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-publish-8080",
+      "requirement": "node2's application on TCP 8080 must be reachable through node1 from node3, which sits outside node1/node2's private network.",
+      "status": "satisfied",
+      "summary": "An Ansible playbook configured a VyOS destination-NAT rule on node1 (eth0:8080 -> 10.50.50.2:8080) plus a default-drop forward firewall with a scoped accept rule for that destination/port. node3 successfully curled http://10.100.24.10:8080/ and received the app's response both before and after a full reboot cycle of node1 and node2, confirming the published path is live and durable across a restart.",
+      "evidence_ids": [
+        "cmd-2d849b700bac408b",
+        "cmd-129e1ee6e4d744f5",
+        "cmd-3e85a4813de14566",
+        "cmd-d2100de8b49e446f",
+        "cmd-b31c36dee0084ab9",
+        "cmd-e15d8d8b17504936"
+      ]
+    },
+    {
+      "id": "req-2-no-broader-exposure",
+      "requirement": "The rest of the private (lan) network between node1 and node2 must remain closed to node3 (only the single published port should be reachable).",
+      "status": "satisfied",
+      "summary": "The VyOS forward-filter default-action was set to drop, with only rule 10 (destination 10.50.50.2:8080) and an established/related rule permitted. node3's direct attempts to reach the private-network address (http://10.50.50.2:8080 and http://10.50.50.1) both failed (connection timed out / no route to host) both before and after the node1/node2 reboot cycle, while the published port continued to work, demonstrating the private network stayed closed.",
+      "evidence_ids": [
+        "cmd-757f20c4d1e34531",
+        "cmd-3748732cc5074c95",
+        "cmd-2d849b700bac408b",
+        "cmd-129e1ee6e4d744f5",
+        "cmd-9bb2c2223fa643ce"
+      ]
+    },
+    {
+      "id": "req-3-ansible-implementation",
+      "requirement": "The publishing solution must be implemented using Ansible.",
+      "status": "satisfied",
+      "summary": "All configuration (VyOS NAT/firewall via vyos.vyos.vyos_config, node2 NIC/routing via nmcli/ip route modules, and node2 app/service/firewalld setup) was driven from a single Ansible playbook (/root/port-forward-ansible/playbook.yml) run repeatedly via ansible-playbook against a dedicated inventory, with the final successful run showing all tasks converged (ok/changed, no failures) and the outcome independently verified from node3.",
+      "evidence_ids": [
+        "cmd-2bf4152c0c444452",
+        "cmd-63dafa4351a743a7",
+        "cmd-3ff5b1a950af4f2a",
+        "cmd-dc6d9c947c7442f2"
+      ]
+    }
+  ],
+  "overall_summary": "Despite the executor's own final report claiming the run was 'blocked' by a cluster lease expiry, the captured command trace shows the port-forwarding task was actually completed and verified: an Ansible playbook configured VyOS DNAT plus a default-drop forward firewall on node1 exposing only node2:8080, node3 could reach the app through node1's public IP while direct access to the private 10.50.50.0/24 network remained blocked, and this behavior was re-confirmed after a full reboot of node1 and node2 (including reapplying lost VyOS config and an SSH key that did not survive the reboot). The provider-wide restart-evidence protocol was also carried out on all four nodes with distinct pre/post boot IDs and recovered service state. Hygiene is reduced by a reverted routing experiment, unused leftover packages from Python-interpreter troubleshooting on node2, and an unused root SSH key added on node1 that was never removed.",
+  "limitations": [
+    "The executor's final report status ('blocked', 'The Antrieb managed cluster lease expired') contradicts the directly observed command evidence, which shows the task was completed and functionally verified before the lease expired; the after_executor lifecycle snapshot could not be captured at all due to the same expiry, so no fixed post-hoc listening-socket/package-health snapshot exists to independently corroborate the final state beyond the executor's own commands.",
+    "No evidence was captured of the playbook being re-run from a clean/idempotent state after all fixes were merged into the final playbook.yml (the last full successful run at cmd-63dafa4351a743a7 predates the final NAT/firewall persistence fix applied ad hoc via cmd-e9d2284dcffa4d7b and later playbook re-run at cmd-3ff5b1a950af4f2a), so full idempotency of the final playbook version was not directly demonstrated.",
+    "Whether the rh-python38 package and Development Tools group left on node2 were fully removed cannot be confirmed from the captured commands; only the source build directory and temporary repo files were observed being cleaned up."
+  ],
+  "command_stats": {
+    "total": 207,
+    "successful": 178,
+    "failed": 29,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.82,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "Most exploratory/diagnostic commands were read-only or fully reverted (e.g., a manual `ip rule`/`ip route table 100` policy-routing experiment on node2 was added then completely removed via `ip rule del`/`ip route flush`/`nmcli` cleanup before the equivalent change was made persistently through the playbook). Necessary but heavy prerequisite work was required on node2 to get a Python interpreter Ansible could use (RHEL7 shipped only Python 2/3.6, and ansible-core 2.20 requires 3.9+): after unsuccessful attempts via EPEL python36 and SCL rh-python38 (3.8, still too old), the executor built and installed Python 3.11 from source. This was a legitimate, well-justified prerequisite, and temporary repo files and the source tree were cleaned up afterward, but the intermediate rh-python38 package/runtime and 'Development Tools' toolchain installed along the way were left in place unused after the interpreter path was switched to /usr/local/bin/python3.11, adding unnecessary residual package footprint on node2. On node1, the executor also added a public key to root's authorized_keys (in addition to the vyos user's key) while diagnosing an unrelated SSH issue; root login remained denied afterward and this credential file was never removed, leaving an unused but security-relevant residual credential.",
+    "evidence_ids": [
+      "cmd-1f5ba740a9284ed6",
+      "cmd-9f06559189f84371",
+      "cmd-f9b78af068804c52",
+      "cmd-a9b1dc2acb9b49d8",
+      "cmd-e4a2a5d3995144f3",
+      "cmd-b846f4456e5e4318",
+      "cmd-51eb65af1ae44dcd",
+      "cmd-35fc23b9929541d2"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

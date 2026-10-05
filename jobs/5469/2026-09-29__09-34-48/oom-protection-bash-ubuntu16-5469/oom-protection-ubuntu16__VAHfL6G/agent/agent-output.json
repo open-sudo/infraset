@@ -1,0 +1,101 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-api as a systemd-managed service on node1 (Ubuntu 16.04, 999M RAM, no swap) with OOMScoreAdjust=-1000, and proved that when a memory hog drives the system out of memory, the kernel's OOM killer selects the hog (default oom_score_adj=0, oom_score 893) while inventory-api (protected, oom_score_adj=-1000) keeps serving. Completed the mandatory single-node restart protocol: boot identity changed and the service auto-recovered via systemd enablement.",
+  "actions_performed": [
+    "Wrote /usr/local/bin/inventory-api.py: stdlib-only HTTP JSON API (Python 3.5.2 compatible) exposing /healthz and /inventory on 0.0.0.0:8080",
+    "Created /etc/systemd/system/inventory-api.service with Restart=always and OOMScoreAdjust=-1000; enabled and started it",
+    "Verified baseline: service active, oom_score_adj=-1000 on its PID, /healthz and /inventory responding over $NODE_IP:8080",
+    "Set vm.overcommit_memory=1 temporarily so allocations would succeed and be reclaimed only by the kernel OOM killer rather than fail as a self-inflicted MemoryError (first attempt under default heuristic overcommit failed that way and was discarded)",
+    "Launched a memory-hog process (default oom_score_adj=0) that allocated and touched memory until physical RAM was exhausted (no swap present)",
+    "Captured dmesg OOM event showing inventory-api's PID (oom_score_adj -1000) spared, hog PID (oom_score_adj 0, oom_score 893) selected, and 'Killed process 3036 (python3)' confirming the hog was stopped",
+    "Confirmed inventory-api's original PID was untouched and /healthz and /inventory kept responding throughout and after the kill",
+    "Reverted vm.overcommit_memory to its original value (0) and removed hog script/log artifacts",
+    "Captured pre-restart baseline: boot_id, systemd enabled/active state, live API responses",
+    "Triggered 'shutdown -r now' in a detached background shell so the acknowledgement returned before disconnect",
+    "Polled node1 until exec access returned, confirmed boot_id changed (e4e401d2-... -> 1f0d164c-...) and new uptime-since timestamp",
+    "Verified post-restart recovery: inventory-api auto-started via systemd (enabled), new PID with oom_score_adj=-1000 restored, /healthz and /inventory serving correctly, overcommit_memory back to default 0"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-api deployed as a managed (systemd) service on node1",
+      "command_ids": [
+        "cmd-be8d9de032324a21",
+        "cmd-b6c136bc915f4055",
+        "cmd-074275b5a4ed4355"
+      ],
+      "summary": "Created the app script and systemd unit with OOMScoreAdjust=-1000, enabled and started; systemctl status shows active (running)"
+    },
+    {
+      "requirement": "Baseline: service healthy and OOM-protected before disruption",
+      "command_ids": [
+        "cmd-94ca391377e64351",
+        "cmd-fea2cb63ca7d4f46"
+      ],
+      "summary": "PID 2409 confirmed oom_score_adj=-1000; /healthz and /inventory return correct JSON over NODE_IP:8080"
+    },
+    {
+      "requirement": "Memory-hungry process drives the system out of memory",
+      "command_ids": [
+        "cmd-d45adbecb973491c",
+        "cmd-69ae6753b4ee43c9",
+        "cmd-5d54fcef25304585"
+      ],
+      "summary": "Hog process (PID 3036) allocated memory up to ~912MB RSS on a 999M/no-swap node, exhausting available memory"
+    },
+    {
+      "requirement": "Kernel OOM killer stops the memory hog, not inventory-api",
+      "command_ids": [
+        "cmd-5d54fcef25304585",
+        "cmd-75ebadab90b04fb9"
+      ],
+      "summary": "dmesg shows 'python3 invoked oom-killer', candidate table with inventory-api PID 2409 oom_score_adj=-1000, hog PID 3036 oom_score_adj=0 score 893, and 'Killed process 3036 (python3)'"
+    },
+    {
+      "requirement": "inventory-api keeps serving during and after the OOM event",
+      "command_ids": [
+        "cmd-69ae6753b4ee43c9",
+        "cmd-75ebadab90b04fb9"
+      ],
+      "summary": "curl to /healthz and /inventory succeeded throughout the hog's growth and immediately after the kill, PID 2409 unchanged"
+    },
+    {
+      "requirement": "Disruption reverted (overcommit sysctl restored)",
+      "command_ids": [
+        "cmd-75ebadab90b04fb9"
+      ],
+      "summary": "vm.overcommit_memory set back to 0 (original heuristic value) after the test"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline captured before reboot",
+      "command_ids": [
+        "cmd-72fb162d619f4eba"
+      ],
+      "summary": "Captured boot_id e4e401d2-3dd8-48c6-848a-545631b9e229, enabled+active service, healthy /healthz and /inventory responses"
+    },
+    {
+      "requirement": "node1 restart: acknowledgement returned before disconnect, node restarted one at a time",
+      "command_ids": [
+        "cmd-5d320ca5a8b64c49"
+      ],
+      "summary": "Backgrounded 'shutdown -r now' returned immediately; connection then closed by remote host, confirming the restart was issued"
+    },
+    {
+      "requirement": "node1 restart: boot identity proven changed after polling",
+      "command_ids": [
+        "cmd-2d3e9e8482c34ae7",
+        "cmd-4cde0f64378a4c44",
+        "cmd-8be1d5f74d5b4a87",
+        "cmd-48c44c27b6fb4c3a"
+      ],
+      "summary": "SSH refused during reboot window, then exec succeeded again; boot_id changed to 1f0d164c-4b85-4678-8399-ef50050b1051 with new uptime-since timestamp"
+    },
+    {
+      "requirement": "node1 restart: service/data recovery verified after restart",
+      "command_ids": [
+        "cmd-48c44c27b6fb4c3a",
+        "cmd-a8d5379d12084f05"
+      ],
+      "summary": "inventory-api auto-started via systemd enablement (new PID 841), oom_score_adj=-1000 restored, /healthz and /inventory served correct JSON post-reboot"
+    }
+  ]
+}

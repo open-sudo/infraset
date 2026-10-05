@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 9,
+    "successful": 6,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Healthy baseline captured before restart (boot id + current sysctl state)",
+      "command_ids": [
+        "cmd-e437b86233424e8a"
+      ],
+      "summary": "Captured baseline boot_id d9f8550d... and pre-change sysctl values showing accept_redirects/secure_redirects=1 on node1"
+    },
+    {
+      "requirement": "Persistently disable ICMP redirect acceptance and source-routed packet acceptance (IPv4)",
+      "command_ids": [
+        "cmd-0d7f2d707f0a4131",
+        "cmd-78cd0714793c4557"
+      ],
+      "summary": "Created /etc/sysctl.d/60-network-hardening.conf, applied via sysctl --system, and after discovering per-interface OR-semantics issue, extended config with explicit enp1s0/lo overrides; verified all/default/enp1s0/lo values are 0 for accept_redirects, secure_redirects, and accept_source_route"
+    },
+    {
+      "requirement": "Node1 restart acknowledgement returned before disconnection",
+      "command_ids": [
+        "cmd-9337bd25b50c4d1e"
+      ],
+      "summary": "Captured pre-restart boot_id and dispatched a backgrounded sudo systemctl reboot; command returned 'reboot command dispatched' before the node disconnected"
+    },
+    {
+      "requirement": "Poll node1 until command execution available again, proving changed boot identity",
+      "command_ids": [
+        "cmd-4babb6e834b7425a",
+        "cmd-e099f9777eaa41b5",
+        "cmd-de6522e88c564527",
+        "cmd-923f7dcdb8084873"
+      ],
+      "summary": "Polling attempts failed with connection timeout/reset while node1 was rebooting, then succeeded with a new boot_id 1c9de043-fbc0-444a-b00d-a9e41504fbcd, differing from the baseline d9f8550d..., proving an actual restart occurred"
+    },
+    {
+      "requirement": "Post-restart recovery of the hardening settings (persistence proof)",
+      "command_ids": [
+        "cmd-462303be7f434da4"
+      ],
+      "summary": "After reboot, sysctl and /proc/sys checks confirm accept_redirects, secure_redirects, and accept_source_route are still 0 for all/default/enp1s0/lo, and the persisted config file /etc/sysctl.d/60-network-hardening.conf is unchanged and present"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-e437b86233424e8a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:26.037614+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 178,
+      "command": "set -Eeuo pipefail\necho \"== boot id baseline ==\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\necho \"== current sysctl values (pre-change) ==\"\nsysctl net.ipv4.conf.all.accept_redirects net.ipv4.conf.default.accept_redirects \\\n  net.ipv4.conf.all.accept_source_route net.ipv4.conf.default.accept_source_route \\\n  net.ipv4.conf.all.secure_redirects net.ipv4.conf.default.secure_redirects || true\n",
+      "stdout": "== boot id baseline ==\nd9f8550d-5cb3-4929-9e62-a388df86bcf6\n2026-09-29 08:21:49\n== current sysctl values (pre-change) ==\nnet.ipv4.conf.all.accept_redirects = 1\nnet.ipv4.conf.default.accept_redirects = 1\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\nnet.ipv4.conf.all.secure_redirects = 1\nnet.ipv4.conf.default.secure_redirects = 1"
+    },
+    {
+      "command_id": "cmd-0d7f2d707f0a4131",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:31.113994+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 209,
+      "command": "set -Eeuo pipefail\necho \"== writing persistent sysctl config ==\"\nsudo -n tee /etc/sysctl.d/60-network-hardening.conf > /dev/null <<'EOF'\n# Disable acceptance of ICMP redirects (IPv4)\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.secure_redirects = 0\nnet.ipv4.conf.default.secure_redirects = 0\n\n# Disable acceptance of source-routed packets (IPv4)\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\nEOF\ncat /etc/sysctl.d/60-network-hardening.conf\n\necho \"== applying ==\"\nsudo -n sysctl --system\n\necho \"== verifying live values ==\"\nsysctl net.ipv4.conf.all.accept_redirects net.ipv4.conf.default.accept_redirects \\\n  net.ipv4.conf.all.secure_redirects net.ipv4.conf.default.secure_redirects \\\n  net.ipv4.conf.all.accept_source_route net.ipv4.conf.default.accept_source_route\n\necho \"== verifying per-existing-interface values ==\"\nfor f in /proc/sys/net/ipv4/conf/*/accept_redirects; do echo \"$f: $(cat \"$f\")\"; done\nfor f in /proc/sys/net/ipv4/conf/*/accept_source_route; do echo \"$f: $(cat \"$f\")\"; done\n",
+      "stdout": "== writing persistent sysctl config ==\n# Disable acceptance of ICMP redirects (IPv4)\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.secure_redirects = 0\nnet.ipv4.conf.default.secure_redirects = 0\n\n# Disable acceptance of source-routed packets (IPv4)\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\n== applying ==\n* Applying /usr/lib/sysctl.d/10-default-yama-scope.conf ...\n* Applying /usr/lib/sysctl.d/10-map-count.conf ...\n* Applying /usr/lib/sysctl.d/50-coredump.conf ...\n* Applying /usr/lib/sysctl.d/50-default.conf ...\n* Applying /usr/lib/sysctl.d/50-libkcapi-optmem_max.conf ...\n* Applying /usr/lib/sysctl.d/50-pid-max.conf ...\n* Applying /usr/lib/sysctl.d/50-redhat.conf ...\n* Applying /etc/sysctl.d/60-network-hardening.conf ...\n* Applying /etc/sysctl.d/99-sysctl.conf ...\n* Applying /etc/sysctl.conf ...\nkernel.yama.ptrace_scope = 0\nvm.max_map_count = 1048576\nkernel.core_pattern = |/usr/lib/systemd/systemd-coredump %P %u %g %s %t %c %h\nkernel.core_pipe_limit = 16\nfs.suid_dumpable = 2\nkernel.sysrq = 16\nkernel.core_uses_pid = 1\nnet.ipv4.conf.default.rp_filter = 2\nnet.ipv4.conf.enp1s0.rp_filter = 2\nnet.ipv4.conf.lo.rp_filter = 2\nnet.ipv4.conf.default.accept_source_route = 0\nnet.ipv4.conf.enp1s0.accept_source_route = 0\nnet.ipv4.conf.lo.accept_source_route = 0\nnet.ipv4.conf.default.promote_secondaries = 1\nnet.ipv4.conf.enp1s0.promote_secondaries = 1\nnet.ipv4.conf.lo.promote_secondaries = 1\nnet.ipv4.ping_group_range = 0 2147483647\nnet.core.default_qdisc = fq_codel\nfs.protected_hardlinks = 1\nfs.protected_symlinks = 1\nfs.protected_regular = 1\nfs.protected_fifos = 1\nnet.core.optmem_max = 81920\nkernel.pid_max = 4194304\nkernel.kptr_restrict = 1\nnet.ipv4.conf.default.rp_filter = 1\nnet.ipv4.conf.enp1s0.rp_filter = 1\nnet.ipv4.conf.lo.rp_filter = 1\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.secure_redirects = 0\nnet.ipv4.conf.default.secure_redirects = 0\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\n== verifying live values ==\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.secure_redirects = 0\nnet.ipv4.conf.default.secure_redirects = 0\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\n== verifying per-existing-interface values ==\n/proc/sys/net/ipv4/conf/all/accept_redirects: 0\n/proc/sys/net/ipv4/conf/default/accept_redirects: 0\n/proc/sys/net/ipv4/conf/enp1s0/accept_redirects: 1\n/proc/sys/net/ipv4/conf/lo/accept_redirects: 1\n/proc/sys/net/ipv4/conf/all/accept_source_route: 0\n/proc/sys/net/ipv4/conf/default/accept_source_route: 0\n/proc/sys/net/ipv4/conf/enp1s0/accept_source_route: 0\n/proc/sys/net/ipv4/conf/lo/accept_source_route: 0"
+    },
+    {
+      "command_id": "cmd-78cd0714793c4557",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:52.634722+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 234,
+      "command": "set -Eeuo pipefail\necho \"== extending persistent config with existing interfaces ==\"\nIFACES=$(ls -1 /proc/sys/net/ipv4/conf | grep -vE '^(all|default)$')\n{\n  echo \"\"\n  echo \"# Explicit per-interface overrides (existing interfaces already initialized at boot)\"\n  for i in $IFACES; do\n    echo \"net.ipv4.conf.${i}.accept_redirects = 0\"\n    echo \"net.ipv4.conf.${i}.secure_redirects = 0\"\n    echo \"net.ipv4.conf.${i}.accept_source_route = 0\"\n  done\n} | sudo -n tee -a /etc/sysctl.d/60-network-hardening.conf > /dev/null\n\ncat /etc/sysctl.d/60-network-hardening.conf\n\necho \"== re-applying ==\"\nsudo -n sysctl --system > /tmp/sysctl-apply.log 2>&1\ntail -20 /tmp/sysctl-apply.log\n\necho \"== verifying per-interface live values ==\"\nfor f in /proc/sys/net/ipv4/conf/*/accept_redirects; do echo \"$f: $(cat \"$f\")\"; done\nfor f in /proc/sys/net/ipv4/conf/*/secure_redirects; do echo \"$f: $(cat \"$f\")\"; done\nfor f in /proc/sys/net/ipv4/conf/*/accept_source_route; do echo \"$f: $(cat \"$f\")\"; done\n",
+      "stdout": "== extending persistent config with existing interfaces ==\n# Disable acceptance of ICMP redirects (IPv4)\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.secure_redirects = 0\nnet.ipv4.conf.default.secure_redirects = 0\n\n# Disable acceptance of source-routed packets (IPv4)\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\n\n# Explicit per-interface overrides (existing interfaces already initialized at boot)\nnet.ipv4.conf.enp1s0.accept_redirects = 0\nnet.ipv4.conf.enp1s0.secure_redirects = 0\nnet.ipv4.conf.enp1s0.accept_source_route = 0\nnet.ipv4.conf.lo.accept_redirects = 0\nnet.ipv4.conf.lo.secure_redirects = 0\nnet.ipv4.conf.lo.accept_source_route = 0\n== re-applying ==\nfs.protected_regular = 1\nfs.protected_fifos = 1\nnet.core.optmem_max = 81920\nkernel.pid_max = 4194304\nkernel.kptr_restrict = 1\nnet.ipv4.conf.default.rp_filter = 1\nnet.ipv4.conf.enp1s0.rp_filter = 1\nnet.ipv4.conf.lo.rp_filter = 1\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.secure_redirects = 0\nnet.ipv4.conf.default.secure_redirects = 0\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\nnet.ipv4.conf.enp1s0.accept_redirects = 0\nnet.ipv4.conf.enp1s0.secure_redirects = 0\nnet.ipv4.conf.enp1s0.accept_source_route = 0\nnet.ipv4.conf.lo.accept_redirects = 0\nnet.ipv4.conf.lo.secure_redirects = 0\nnet.ipv4.conf.lo.accept_source_route = 0\n== verifying per-interface live values ==\n/proc/sys/net/ipv4/conf/all/accept_redirects: 0\n/proc/sys/net/ipv4/conf/default/accept_redirects: 0\n/proc/sys/net/ipv4/conf/enp1s0/accept_redirects: 0\n/proc/sys/net/ipv4/conf/lo/accept_redirects: 0\n/proc/sys/net/ipv4/conf/all/secure_redirects: 0\n/proc/sys/net/ipv4/conf/default/secure_redirects: 0\n/proc/sys/net/ipv4/conf/enp1s0/secure_redirects: 0\n/proc/sys/net/ipv4/conf/lo/secure_redirects: 0\n/proc/sys/net/ipv4/conf/all/accept_source_route: 0\n/proc/sys/net/ipv4/conf/default/accept_source_route: 0\n/proc/sys/net/ipv4/conf/enp1s0/accept_source_route: 0\n/proc/sys/net/ipv4/conf/lo/accept_source_route: 0"
+    },
+    {
+      "command_id": "cmd-9337bd25b50c4d1e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:55.212059+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 71,
+      "command": "set -Eeuo pipefail\necho \"== pre-restart boot id ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== scheduling reboot (ack returns first) ==\"\nsudo -n sh -c 'sleep 1; systemctl reboot' >/tmp/reboot.log 2>&1 &\ndisown\necho \"reboot command dispatched\"\n",
+      "stdout": "== pre-restart boot id ==\nd9f8550d-5cb3-4929-9e62-a388df86bcf6\n== scheduling reboot (ack returns first) ==\nreboot command dispatched"
+    },
+    {
+      "command_id": "cmd-4babb6e834b7425a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:22:59.004245+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2110,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo \"not up yet\"",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-e099f9777eaa41b5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:02.647863+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2076,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo \"not up yet\"",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-de6522e88c564527",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:05.629662+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 1702,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo \"not up yet\"",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-923f7dcdb8084873",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:06.914836+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 82,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo \"not up yet\"",
+      "stdout": "1c9de043-fbc0-444a-b00d-a9e41504fbcd"
+    },
+    {
+      "command_id": "cmd-462303be7f434da4",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:23:10.750630+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 86,
+      "command": "set -Eeuo pipefail\necho \"== post-restart uptime (sanity) ==\"\nuptime -s\necho \"== post-restart sysctl values ==\"\nsysctl net.ipv4.conf.all.accept_redirects net.ipv4.conf.default.accept_redirects \\\n  net.ipv4.conf.all.secure_redirects net.ipv4.conf.default.secure_redirects \\\n  net.ipv4.conf.all.accept_source_route net.ipv4.conf.default.accept_source_route\necho \"== per-interface post-restart values ==\"\nfor f in /proc/sys/net/ipv4/conf/*/accept_redirects; do echo \"$f: $(cat \"$f\")\"; done\nfor f in /proc/sys/net/ipv4/conf/*/secure_redirects; do echo \"$f: $(cat \"$f\")\"; done\nfor f in /proc/sys/net/ipv4/conf/*/accept_source_route; do echo \"$f: $(cat \"$f\")\"; done\necho \"== persistent config file still present ==\"\ncat /etc/sysctl.d/60-network-hardening.conf\n",
+      "stdout": "== post-restart uptime (sanity) ==\n2026-09-29 08:23:03\n== post-restart sysctl values ==\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.secure_redirects = 0\nnet.ipv4.conf.default.secure_redirects = 0\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\n== per-interface post-restart values ==\n/proc/sys/net/ipv4/conf/all/accept_redirects: 0\n/proc/sys/net/ipv4/conf/default/accept_redirects: 0\n/proc/sys/net/ipv4/conf/enp1s0/accept_redirects: 0\n/proc/sys/net/ipv4/conf/lo/accept_redirects: 0\n/proc/sys/net/ipv4/conf/all/secure_redirects: 0\n/proc/sys/net/ipv4/conf/default/secure_redirects: 0\n/proc/sys/net/ipv4/conf/enp1s0/secure_redirects: 0\n/proc/sys/net/ipv4/conf/lo/secure_redirects: 0\n/proc/sys/net/ipv4/conf/all/accept_source_route: 0\n/proc/sys/net/ipv4/conf/default/accept_source_route: 0\n/proc/sys/net/ipv4/conf/enp1s0/accept_source_route: 0\n/proc/sys/net/ipv4/conf/lo/accept_source_route: 0\n== persistent config file still present ==\n# Disable acceptance of ICMP redirects (IPv4)\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.secure_redirects = 0\nnet.ipv4.conf.default.secure_redirects = 0\n\n# Disable acceptance of source-routed packets (IPv4)\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\n\n# Explicit per-interface overrides (existing interfaces already initialized at boot)\nnet.ipv4.conf.enp1s0.accept_redirects = 0\nnet.ipv4.conf.enp1s0.secure_redirects = 0\nnet.ipv4.conf.enp1s0.accept_source_route = 0\nnet.ipv4.conf.lo.accept_redirects = 0\nnet.ipv4.conf.lo.secure_redirects = 0\nnet.ipv4.conf.lo.accept_source_route = 0"
+    }
+  ]
+}

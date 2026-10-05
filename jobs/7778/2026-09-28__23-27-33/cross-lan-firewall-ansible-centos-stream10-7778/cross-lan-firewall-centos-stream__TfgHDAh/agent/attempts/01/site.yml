@@ -1,0 +1,125 @@
+---
+- name: Configure LAN segment addressing and cross-LAN routing on the hosts
+  hosts: lan_a:lan_b
+  gather_facts: false
+  tasks:
+    - name: Assign static IP to the LAN segment NIC
+      community.general.nmcli:
+        conn_name: "Wired connection 2"
+        ifname: "{{ segment_iface }}"
+        type: ethernet
+        method4: manual
+        ip4: "{{ segment_addr }}"
+        state: present
+
+    - name: Add static route to the peer LAN via node1
+      community.general.nmcli:
+        conn_name: "Wired connection 2"
+        ifname: "{{ segment_iface }}"
+        type: ethernet
+        method4: manual
+        ip4: "{{ segment_addr }}"
+        routes4: "{{ peer_route_net }} {{ peer_route_gw }}"
+        state: present
+      register: nmcli_route
+
+    - name: Reactivate connection to apply route
+      command: nmcli con up "Wired connection 2"
+      when: nmcli_route is changed
+
+- name: Configure PostgreSQL on node3 (lan-b)
+  hosts: lan_b
+  gather_facts: false
+  tasks:
+    - name: Install postgresql-server
+      dnf:
+        name: postgresql-server
+        state: present
+
+    - name: Check if database is initialized
+      stat:
+        path: /var/lib/pgsql/data/PG_VERSION
+      register: pg_data
+
+    - name: Initialize database
+      command: postgresql-setup --initdb
+      when: not pg_data.stat.exists
+
+    - name: Listen on all addresses
+      lineinfile:
+        path: /var/lib/pgsql/data/postgresql.conf
+        regexp: "^#?listen_addresses"
+        line: "listen_addresses = '*'"
+
+    - name: Allow lan-a clients in pg_hba.conf
+      lineinfile:
+        path: /var/lib/pgsql/data/pg_hba.conf
+        line: "host all all {{ hostvars['node2'].segment_addr | ansible.utils.ipaddr('network/prefix') }} scram-sha-256"
+        insertafter: EOF
+
+    - name: Enable and start postgresql
+      systemd:
+        name: postgresql
+        enabled: true
+        state: restarted
+
+    - name: Open port 5432 in the local firewall
+      ansible.posix.firewalld:
+        port: 5432/tcp
+        permanent: true
+        immediate: true
+        state: enabled
+
+- name: Configure VyOS forwarding firewall between lan-a and lan-b
+  hosts: router
+  gather_facts: false
+  tasks:
+    # This VyOS image requires sudo elevation for the operator user to commit
+    # configuration sessions (plain `vbash` config commits fail with a generic
+    # "Set failed" for this account), so raw + sudo vbash is used instead of
+    # the vyos_config module, per the platform's sudo-noninteractive contract.
+    - name: Apply interface addressing and forward-filter firewall via the VyOS CLI
+      ansible.builtin.raw: |
+        sudo /usr/bin/vbash -c '
+        source /opt/vyatta/etc/functions/script-template
+        configure
+        set interfaces ethernet eth1 address 10.50.10.254/24
+        set interfaces ethernet eth2 address 10.50.20.254/24
+        set firewall global-options state-policy established action accept
+        set firewall global-options state-policy related action accept
+        set firewall ipv4 forward filter rule 10 action accept
+        set firewall ipv4 forward filter rule 10 source address 10.50.10.0/24
+        set firewall ipv4 forward filter rule 10 destination address 10.50.20.0/24
+        set firewall ipv4 forward filter rule 10 protocol tcp
+        set firewall ipv4 forward filter rule 10 destination port 5432
+        set firewall ipv4 forward filter rule 900 action reject
+        set firewall ipv4 forward filter rule 900 source address 10.50.10.0/24
+        set firewall ipv4 forward filter rule 900 destination address 10.50.20.0/24
+        set firewall ipv4 forward filter rule 910 action reject
+        set firewall ipv4 forward filter rule 910 source address 10.50.20.0/24
+        set firewall ipv4 forward filter rule 910 destination address 10.50.10.0/24
+        set firewall ipv4 forward filter default-action drop
+        commit
+        save
+        exit
+        '
+      register: vyos_apply
+      changed_when: true
+      retries: 5
+      delay: 3
+      until: vyos_apply is success
+
+    - name: Show resulting firewall configuration
+      ansible.builtin.raw: |
+        sudo /usr/bin/vbash -c '
+        source /opt/vyatta/etc/functions/script-template
+        configure
+        show firewall
+        exit
+        '
+      register: vyos_firewall_show
+      changed_when: false
+
+    - name: Print firewall state
+      ansible.builtin.debug:
+        var: vyos_firewall_show.stdout_lines

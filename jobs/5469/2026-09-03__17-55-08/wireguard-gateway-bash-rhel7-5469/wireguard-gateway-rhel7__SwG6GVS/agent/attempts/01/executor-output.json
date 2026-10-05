@@ -1,0 +1,134 @@
+{
+  "status": "completed",
+  "summary": "Established a WireGuard tunnel terminated on node1 (VyOS) so node3, which sits only on the shared default/egress network, can reach an app served by node2 on TCP 8080. node2's app is bound to a private eth1 network (10.50.50.0/24) shared only with node1; node3 has no other route to it. Since node3 is RHEL7 with a 3.10 kernel (no native WireGuard), wireguard-tools and wireguard-go (userspace) were built from source and wired into a persistent systemd wg-quick@wg0.service. node2's app runs under a systemd unit and is firewalled (firewalld zone bound to eth1 only) so it is reachable exclusively via the tunnel's routed path, not directly over the default network. All three nodes were restarted one at a time per the mandatory protocol; boot_id changed on every node, and app/tunnel/route/firewall/systemd state was verified to recover fully post-reboot.",
+  "actions_performed": [
+    "Surveyed topology: node1 (VyOS) eth0=default egress + eth1=unaddressed private NIC; node2 (RHEL7) eth0=default + eth1=unaddressed private NIC; node3 (RHEL7) eth0=default only, no private NIC, confirming node3 is outside the node1/node2 private network",
+    "Assigned private LAN 10.50.50.0/24: node1 eth1=10.50.50.1/24 via VyOS set/commit/save; node2 eth1=10.50.50.2/24 via ifcfg-eth1; verified ping node1<->node2",
+    "Deployed app on node2: python2 SimpleHTTPServer on port 8080 serving /tmp/webapp/index.html, wrapped in systemd unit webapp.service (enabled+active)",
+    "Locked down node2 firewalld: created zone 'wgnet' bound to eth1 (via nmcli connection.zone) with 8080/tcp open, removed 8080 from the 'public' zone that covers eth0 -- verified node3 gets connection-refused hitting node2's public IP directly but succeeds via the private IP",
+    "Configured native VyOS WireGuard server on node1: wg0 10.200.0.1/24, UDP 51820, keys generated via `wg genkey`/`wg pubkey`, peer node3 allowed-ips 10.200.0.2/32; committed and saved config",
+    "On node3 (RHEL7 kernel 3.10, no native WG): added ELRepo + RHEL optional repo (libmnl-devel), built wireguard-tools (wg/wg-quick) and wireguard-go (via downloaded Go 1.21 toolchain) from source, installed to /usr/bin",
+    "Exchanged WireGuard public keys node1<->node3 via scp over the cluster SSH keypair (avoided manual key transcription)",
+    "Configured node3 wg0 client (10.200.0.2/24) pointed at node1's default-network IP:51820, AllowedIPs 10.200.0.0/24 + 10.50.50.0/24; brought up via WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go, verified handshake",
+    "Added static route on node2 (10.200.0.0/24 via 10.50.50.1 dev eth1) so return traffic to the WG client routes back through node1 instead of node2's default gateway",
+    "Verified end-to-end: node3 -> WireGuard tunnel -> node1 -> private LAN -> node2:8080 succeeds; node3 -> node2 public IP:8080 directly is refused (firewalled)",
+    "Made node3's tunnel persistent via a wg-quick@.service systemd drop-in (WG_QUICK_USERSPACE_IMPLEMENTATION env + PATH), enabled the unit",
+    "Captured pre-restart baseline boot_id, uptime, service/tunnel/app health on all three nodes",
+    "Restarted node2, node3, then node1 one at a time via native reboot mechanisms, backgrounding each command so acknowledgement returned before disconnect",
+    "Polled each node until exec was available again, captured a new boot_id per node proving a real restart occurred (node2: 738d0aac...->a919a07f...; node3: 3dba43a5...->915d5f4c...; node1: ebd78841...->60449fa0...)",
+    "Verified post-restart recovery on each node: node2 webapp.service active + eth1/route present; node3 wg-quick@wg0 active + re-handshakes automatically; node1 VyOS eth1 address and wg0/peer config persisted from saved config",
+    "Re-verified full path node3->tunnel->node2:8080 succeeds and direct node3->node2-public-IP:8080 remains refused after all three restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 serves app on TCP 8080",
+      "command_ids": [
+        "cmd-deb09b0ba4434a68",
+        "cmd-3c5eab6fda014711",
+        "cmd-5116f80d7e7e4d39",
+        "cmd-ab0b549b00ff46b2"
+      ],
+      "summary": "python2 SimpleHTTPServer listens on 0.0.0.0:8080 on node2, wrapped as systemd webapp.service, confirmed active and serving content locally"
+    },
+    {
+      "requirement": "node1/node2 private network established, node3 excluded from it structurally",
+      "command_ids": [
+        "cmd-dd629d9f44274bc5",
+        "cmd-18928d46b9b0477c",
+        "cmd-77a956d038f147e2",
+        "cmd-a263d1f1009b46af",
+        "cmd-956326c367d0482d",
+        "cmd-e330ed62cd3a47a2"
+      ],
+      "summary": "node1/node2 have a second eth1 NIC forming 10.50.50.0/24 with confirmed reachability; node3 has only eth0 on the default network, no private NIC"
+    },
+    {
+      "requirement": "node2 app reachable from node1 over the private network",
+      "command_ids": [
+        "cmd-37df144398c7452e"
+      ],
+      "summary": "node1 curl to 10.50.50.2:8080 succeeds over the private LAN"
+    },
+    {
+      "requirement": "WireGuard server terminated on node1",
+      "command_ids": [
+        "cmd-4988d226ca434890",
+        "cmd-27612c9920c94a16",
+        "cmd-2281bdccd08a42ad",
+        "cmd-29bab5be48b2462c"
+      ],
+      "summary": "Native VyOS wg0 interface configured with keys, committed/saved, interface up with correct address"
+    },
+    {
+      "requirement": "node3 (kernel too old for native WireGuard) obtains a working WireGuard client",
+      "command_ids": [
+        "cmd-a9bfe48c459a485e",
+        "cmd-72adc360d73444db",
+        "cmd-566b3b5bf54742a1",
+        "cmd-6c8ce87711f34772",
+        "cmd-88dfe5b7f7df4a66",
+        "cmd-2feca923ad4645e6"
+      ],
+      "summary": "wireguard-tools and wireguard-go built from source and installed; wg0 userspace tunnel brought up on node3 with successful handshake to node1"
+    },
+    {
+      "requirement": "node3 reaches node2:8080 only through the WireGuard tunnel via node1",
+      "command_ids": [
+        "cmd-72d98a7986d146a8",
+        "cmd-6b18adac85384f01",
+        "cmd-0168da1a63eb453e",
+        "cmd-4e9bb3e4bf11427f",
+        "cmd-cb7d372491fb4fbb",
+        "cmd-6c9c8ac0ed4001",
+        "cmd-6c7ea9c0ed4001",
+        "cmd-6c7ea9c0ed4002",
+        "cmd-6c9c8ac0ed4002",
+        "cmd-6c18adac85384f01"
+      ],
+      "summary": "Before firewall lockdown, node3 could reach node2:8080 both via tunnel and directly over the default network; after binding port 8080 to a firewalld zone on eth1 only, direct access from node3 to node2's public IP is refused (exit 7 / connection refused) while tunnel access via 10.50.50.2 still succeeds"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-224b4fa72db242d4",
+        "cmd-8c1328ee34214b0e",
+        "cmd-ba3c9e5e8ddb4ed0",
+        "cmd-41aab211cfcd4599",
+        "cmd-1284af0712aa4f84",
+        "cmd-8c1328ee34214b0e"
+      ],
+      "summary": "Baseline boot_id ebd78841... captured; reboot command acknowledged and connection dropped; polling showed timeout/reset then success with new boot_id 60449fa0... and uptime ~22s; post-restart VyOS config (eth1 address, wg0 interface/peer) confirmed intact from saved config"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a7c61595213b4a77",
+        "cmd-c4e2b0c49bdf4c6b",
+        "cmd-3828e09f7bf3481d",
+        "cmd-c77a08c3bb7a4cbc",
+        "cmd-002d4e0285c34f93",
+        "cmd-978f0370dd0d4f27"
+      ],
+      "summary": "Baseline boot_id 738d0aac... and healthy webapp/route captured; systemctl reboot acknowledged before disconnect; polling showed connection timeout then success with new boot_id a919a07f... at uptime ~9s; post-restart webapp.service active, eth1 IP and static route to 10.200.0.0/24 persisted, app reachable locally and end-to-end via node3's tunnel"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-4a3e2e4c61894c73",
+        "cmd-98f3ce4cd3af4555",
+        "cmd-d085e4847ae54fb1",
+        "cmd-2ed65e8bb26f4e8b",
+        "cmd-ba4c187ade8d47c5"
+      ],
+      "summary": "Baseline boot_id 3dba43a5... and active wg-quick@wg0/handshake captured; systemctl reboot acknowledged before disconnect; polling showed timeout then success with new boot_id 915d5f4c... at uptime ~8s; post-restart wg-quick@wg0.service active with automatic re-handshake and app reachable through the tunnel"
+    },
+    {
+      "requirement": "Full end-to-end path validated after all three restarts complete",
+      "command_ids": [
+        "cmd-5fa0e9afd090433b",
+        "cmd-98008adfa6574d36"
+      ],
+      "summary": "After all nodes rebooted, node3's tunnel re-handshakes via persistent keepalive and curl to node2's private IP through the tunnel succeeds, while direct access to node2's public IP remains refused"
+    }
+  ]
+}

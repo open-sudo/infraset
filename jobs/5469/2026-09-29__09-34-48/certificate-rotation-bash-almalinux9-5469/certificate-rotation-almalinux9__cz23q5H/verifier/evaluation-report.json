@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on port 8443 on node1",
+      "status": "satisfied",
+      "summary": "nginx installed, configured with an https server block on 8443, config test passes, ss shows nginx listening on 0.0.0.0:8443, and curl over TLS to the endpoint returns HTTP 200 with a valid certificate chain (CN=node1.internal, issuer=Internal-Test-CA). Port opened permanently in firewalld and confirmed present after reboot.",
+      "evidence_ids": [
+        "cmd-041657839cd44f17",
+        "cmd-548c3818f5b84e4d",
+        "cmd-8ca04ad2ea83402e",
+        "cmd-184c1755beb540b5",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "cert-auto-renew-before-expiry",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A checkend-based renewal script is driven by an enabled systemd timer (5-min interval). The executor directly demonstrated the mechanism: system clock was advanced to within the renewal window of the real notAfter, the timer-triggered service detected the impending expiry via `openssl x509 -checkend`, generated a new cert (serial changed 5326...8 -> 5326...9), and logged the renewal \u2014 all without manual certificate replacement.",
+      "evidence_ids": [
+        "cmd-cab9a473b37a4549",
+        "cmd-9236e29ca37f420e",
+        "cmd-53d66e3b60b64bc4"
+      ]
+    },
+    {
+      "id": "hot-reload-no-downtime",
+      "requirement": "Service picks up each new certificate while continuing to answer requests",
+      "status": "satisfied",
+      "summary": "A continuous curl loop (~0.3s interval) spanning the exact renewal/reload timestamp logged 70/70 HTTP 200 responses with zero failures, and a follow-up TLS handshake against the endpoint showed the newly issued certificate serial being served, confirming nginx reloaded via `systemctl reload` without dropping connections.",
+      "evidence_ids": [
+        "cmd-3b9d8b991d594c36",
+        "cmd-53d66e3b60b64bc4",
+        "cmd-917d2c0ce0aa4031",
+        "cmd-34eafb1d30d94341"
+      ]
+    },
+    {
+      "id": "renewal-mechanism-correctness-persistence",
+      "requirement": "Renewal mechanism remains correct and persists going forward (not just a one-off test artifact)",
+      "status": "satisfied",
+      "summary": "After restoring real system time via chronyd, the executor forced one more renewal so the live certificate's validity window aligns with actual current time, and strict CA-validated curl (no -k) succeeded. cert-renew.timer was confirmed enabled with an active next-fire schedule, and this held true across a reboot (timer still enabled/active, correct cert still served) at the end of the trace.",
+      "evidence_ids": [
+        "cmd-c79753b38cc34e06",
+        "cmd-6f94d5b965c545c7",
+        "cmd-4c45f4efd1dd4a4a"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task were directly demonstrated: HTTPS is served on 8443 with a CA-signed certificate, a systemd-timer-driven script auto-renews the certificate before expiry (proven via a bounded clock-advance test), and nginx hot-reloads to serve the new certificate without dropping any of 70 sampled requests. The renewal mechanism was shown to remain correct after the test (real time restored, cert re-aligned) and survived a full reboot with boot_id changing and all services/firewall/cert state recovering correctly, satisfying the independent node-restart evidence protocol as well.",
+  "limitations": [
+    "Evidence for renewal is based on simulated time-travel (advancing the system clock) rather than waiting for a real ~24h certificate lifetime to elapse; this is a reasonable and bounded verification technique but is not identical to unassisted real-time expiry.",
+    "/tmp/reboot.log was left behind after the reboot and not cleaned up; minor hygiene residue with no functional impact.",
+    "The before_prepare and after_prepare snapshots are identical (prepare was disabled for this task), so preparer-vs-executor state separation relies entirely on the after_executor snapshot comparison, which is otherwise complete and consistent with the boot-identity cross-check."
+  ],
+  "command_stats": {
+    "total": 30,
+    "successful": 28,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most state changes were clearly tied to building or verifying the solution (nginx install/config, CA and renewal script creation, systemd timer/service, firewalld port). The clock manipulation used to force a renewal test (cmd-9236e29ca37f420e) was bounded, necessary to directly demonstrate the auto-renewal and hot-reload requirements, and was fully reverted afterward (chronyd restarted, real time restored, cert re-forced to a correct validity window in cmd-34eafb1d30d94341/cmd-c79753b38cc34e06). Temporary curl-loop test artifacts (/tmp/curl-loop.sh, .log, .pid) and /tmp/real-epoch-before.txt were explicitly removed in cmd-6f94d5b965c545c7. One minor residue: /tmp/reboot.log, created by the backgrounded reboot command (cmd-f5f433a64faa464e) to capture the ack, was left behind and appears in the after_executor temp-files snapshot uncleaned \u2014 low-risk, non-destructive, but not tidied up. No failed services, no destructive or security-weakening actions, and package/listening-socket state after executor reflects only the intended nginx/firewalld additions.",
+    "evidence_ids": [
+      "cmd-9236e29ca37f420e",
+      "cmd-34eafb1d30d94341",
+      "cmd-c79753b38cc34e06",
+      "cmd-6f94d5b965c545c7",
+      "cmd-f5f433a64faa464e",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

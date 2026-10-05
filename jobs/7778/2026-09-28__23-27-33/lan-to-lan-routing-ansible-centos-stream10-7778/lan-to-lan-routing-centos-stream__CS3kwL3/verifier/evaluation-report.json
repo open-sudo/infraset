@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Configure node1 (VyOS) to route between lan-a and node2's network and lan-b and node3's network",
+      "status": "satisfied",
+      "summary": "IP forwarding was already enabled on node1 (net.ipv4.ip_forward=1, per-interface forwarding=1, cmd-74bfbaa340ed459c). The Ansible playbook set eth1=10.50.10.254/24 (lan-a) and eth2=10.50.20.254/24 (lan-b) via VyOS configure/commit/save (cmd-529f22e6f8074dfc), confirmed by 'show interfaces' and the VyOS routing table showing both subnets as directly connected (cmd-8a554bb4b90e43ef). Configuration persisted after node1's final restart (cmd-5e8e0dc8da1d4939).",
+      "evidence_ids": [
+        "cmd-74bfbaa340ed459c",
+        "cmd-529f22e6f8074dfc",
+        "cmd-8a554bb4b90e43ef",
+        "cmd-5e8e0dc8da1d4939"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node2 and node3 can reach each other directly on any port",
+      "status": "satisfied",
+      "summary": "Static routes to the peer subnet via node1 were configured on node2/node3 (cmd-529f22e6f8074dfc), and firewalld trusted-zone rules were added for the peer subnet to permit arbitrary ports (cmd-aba56efbf7d34bea). Bidirectional connectivity was demonstrated on non-standard ports: node2->node3:5000 (cmd-bb98b0432bcd45e1, HTTP 200) and node3->node2:6000 (cmd-5025b65455144a1d, HTTP 200), and re-verified after the full node-restart cycle (cmd-b4f94ef9229c4536, HTTP 200; ping also succeeded cmd-b8e43d4136084df9).",
+      "evidence_ids": [
+        "cmd-529f22e6f8074dfc",
+        "cmd-aba56efbf7d34bea",
+        "cmd-bb98b0432bcd45e1",
+        "cmd-5025b65455144a1d",
+        "cmd-b4f94ef9229c4536",
+        "cmd-b8e43d4136084df9"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Original source addresses are preserved across the routed path (no NAT/masquerade)",
+      "status": "satisfied",
+      "summary": "tcpdump captures on the receiving host's LAN interface show the TCP SYN's source IP as the sender's real LAN address rather than node1's address: node2(10.50.10.11)->node3 traffic seen with source 10.50.10.11 (cmd-1c25c54324d54ace), node3(10.50.20.12)->node2 traffic seen with source 10.50.20.12 (cmd-8913c30e80454454), reconfirmed after all four nodes were restarted (cmd-54b989ad7f7f49a8). node1's nft ruleset shows only an empty SNAT hook with a bare 'return' (cmd-9a08afff39894925), consistent with no NAT being applied.",
+      "evidence_ids": [
+        "cmd-1c25c54324d54ace",
+        "cmd-8913c30e80454454",
+        "cmd-54b989ad7f7f49a8",
+        "cmd-9a08afff39894925"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Implemented using Ansible",
+      "status": "satisfied",
+      "summary": "An inventory.ini and lan-routing.yml playbook were authored on the control node (node4) and executed with ansible-playbook against vyos_router and lan_hosts groups. Earlier runs failed due to a VyOS alias-expansion quirk and an nmcli connection-name lookup bug, both diagnosed and fixed in the playbook; the final run completed successfully for all three hosts (cmd-529f22e6f8074dfc, cmd-aba56efbf7d34bea).",
+      "evidence_ids": [
+        "cmd-d1c72b3f48074922",
+        "cmd-cabe367238ef474c",
+        "cmd-529f22e6f8074dfc",
+        "cmd-aba56efbf7d34bea"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all managed nodes with pre-restart baseline, restart acknowledgement, changed boot identity, and recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "All four nodes show a pre-restart boot_id/baseline capture, an acknowledged reboot command, connection loss during the transition, a distinct post-restart boot_id with low uptime, and recovery verification (interface config on node1, static IP/route/ping on node2 and node3, Ansible tooling/SSH/playbook-target reachability on node4). The fixed after-executor lifecycle snapshot's boot IDs (node1 f217eb21..., node2 fd0a9d52..., node3 0a407491..., node4 785c5621...) match the executor's own restart-evidence capture, cross-confirming the transitions.",
+      "evidence_ids": [
+        "cmd-1a18efa1a6634df0",
+        "cmd-1f8d86aa9b054c40",
+        "cmd-156a2bfba106490b",
+        "cmd-5e8e0dc8da1d4939",
+        "cmd-c8692248106349d3",
+        "cmd-2386e807813948de",
+        "cmd-2ace278eac404d1b",
+        "cmd-c402e8e6630947b2",
+        "cmd-7250857ea2fb4f59",
+        "cmd-4e9d041f76284d59",
+        "cmd-0f9e88b964aa4c85",
+        "cmd-80b299b281e94896",
+        "cmd-163ee04163214f69",
+        "cmd-abfa0345523247d3",
+        "cmd-842a4ffb1432485d",
+        "cmd-9d2c125a2e964112",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built and iteratively debugged an Ansible playbook that addresses node1's lan-a/lan-b interfaces, adds static peer-subnet routes and firewalld trusted-zone rules on node2/node3, and verified bidirectional, arbitrary-port, NAT-free reachability with tcpdump-observed original source addresses \u2014 before and after a full sequential restart of all four managed nodes, with matching boot-identity evidence in the fixed lifecycle snapshots. All material task outcomes are satisfied with direct, corroborating evidence. The only shortfall is minor residue (test HTTP server and tcpdump log/pid files) left on node2 and node3.",
+  "limitations": [
+    "Firewalld ruleset contents were not directly dumped after the playbook run to confirm the trusted-zone rule for the peer subnet persisted verbatim; satisfaction of 'any port' relies on the successful non-standard-port curl tests (5000/6000) plus the playbook's reported 'changed' status for the firewalld task.",
+    "No explicit test was captured for ICMP/other non-TCP protocols beyond ping and HTTP/TCP; 'any port' evidence is limited to TCP on two arbitrary ports in each direction."
+  ],
+  "command_stats": {
+    "total": 107,
+    "successful": 76,
+    "failed": 31,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "The executor's early troubleshooting attempts (VyOS 'configure' alias-expansion failures, an nmcli command using an empty connection name) errored out before applying any changes, so they left no residue. The two mutations that matter \u2014 VyOS interface addressing/commit and node2/node3 static IP + peer-subnet route + firewalld trusted-zone rule \u2014 are both directly required by the task and were retained deliberately. The main hygiene gap is ad hoc verification tooling left behind on node2/node3: ephemeral python3 http.server instances and tcpdump captures used to prove port-reachability and source-address preservation were only partially cleaned up (processes killed, but /tmp/http.log, /tmp/http.pid, /tmp/http2.log, /tmp/http2.pid, /tmp/tcpdump*.log, and /tmp/reboot.log files remained per the after-executor lifecycle snapshot). These are low-risk, non-sensitive log/pid files rather than broad or destructive residue, so the deduction is modest.",
+    "evidence_ids": [
+      "cmd-b2192c8c71654bba",
+      "cmd-3755a1b144284e4b",
+      "cmd-b96b88f75c0f43d4",
+      "cmd-1b0a111e9ee14015",
+      "cmd-8913c30e80454454",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

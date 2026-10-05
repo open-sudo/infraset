@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 16,
+    "successful": 13,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "UTC chronological ordering with explicit numeric offsets",
+      "command_ids": [
+        "cmd-35453988d71c46f3",
+        "cmd-0b98cd9c3a4c41c4"
+      ],
+      "summary": "Exact supplied-data comparisons passed before and after reboot."
+    },
+    {
+      "requirement": "Retain event IDs/messages and reject invalid timestamps",
+      "command_ids": [
+        "cmd-7603b03c152541a4",
+        "cmd-35453988d71c46f3"
+      ],
+      "summary": "Semantic tests passed; rejected.tsv contains the invalid E4 record in canonical TSV form."
+    },
+    {
+      "requirement": "Use event ID as the tie-breaker",
+      "command_ids": [
+        "cmd-7603b03c152541a4"
+      ],
+      "summary": "Equal-UTC test events sorted by IDs A1, B2, then Z9."
+    },
+    {
+      "requirement": "Preserve source logs and legacy OS/kernel",
+      "command_ids": [
+        "cmd-269e934ebf834143",
+        "cmd-0b98cd9c3a4c41c4"
+      ],
+      "summary": "Source SHA-256 hashes remained identical; Ubuntu 7.10, kernel 2.6.22-14-generic, and Python 2.5.1 remained installed."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-35453988d71c46f3",
+        "cmd-5c8b79e2314a41b1",
+        "cmd-d8da68a45e5b429c",
+        "cmd-0b98cd9c3a4c41c4"
+      ],
+      "summary": "Healthy baseline captured; reboot acknowledged; boot ID changed from 07109fa0-b425-47c3-9f09-2522a05dda1b to cb8b58fc-2322-40ee-b18d-d19413f33c47; sshd, code, data, and exact outputs recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-14c28b130a634598",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:54:31.752686+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 224,
+      "command": "cd /srv/legacy2/timezone-log-merge && pwd && find . -maxdepth 3 -type f -printf '%P\\n' | sort && printf '\\n--- timeline.py ---\\n' && sed -n '1,240p' bin/timeline.py && printf '\\n--- source metadata ---\\n' && find . -maxdepth 3 -type f -not -path './bin/timeline.py' -printf '%p\\t%s bytes\\n' | sort",
+      "stdout": "/srv/legacy2/timezone-log-merge\nbin/timeline.py\nlogs/east.tsv\nlogs/west.tsv\n\n--- timeline.py ---\n#!/usr/bin/python\nimport sys\nlines = []\nfor name in sys.argv[1:]:\n    lines.extend(open(name).readlines())\nlines.sort()\nsys.stdout.writelines(lines)\n\n--- source metadata ---\n./logs/east.tsv\t107 bytes\n./logs/west.tsv\t82 bytes\n"
+    },
+    {
+      "command_id": "cmd-269e934ebf834143",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:54:36.425384+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 218,
+      "command": "cd /srv/legacy2/timezone-log-merge && printf '%s\\n' '--- OS/kernel/runtime ---' && cat /etc/os-release 2>/dev/null || cat /etc/lsb-release 2>/dev/null || true; uname -r; command -v python || true; python --version 2>&1 || true; command -v python3 || true; python3 --version 2>&1 || true; printf '%s\\n' '--- input hashes ---' && sha256sum logs/* && printf '%s\\n' '--- inputs with visible delimiters ---' && for f in logs/*; do printf '%s\\n' \"[$f]\"; sed -n l \"$f\"; done; printf '%s\\n' '--- existing outputs ---' && ls -l timeline.tsv rejected.tsv 2>/dev/null || true",
+      "stdout": "--- OS/kernel/runtime ---\nDISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=7.10\nDISTRIB_CODENAME=gutsy\nDISTRIB_DESCRIPTION=\"Ubuntu 7.10\"\n2.6.22-14-generic\n/usr/bin/python\nPython 2.5.1\nbash: python3: command not found\n--- input hashes ---\n439fc86761f21f0866e233c6e11374f5864ac98973a509e02d319c035f516d0d  logs/east.tsv\nf04190f00f3f5d4fcc1f1246ba28acce937fed8a9740f80ad95ae424d462980d  logs/west.tsv\n--- inputs with visible delimiters ---\n[logs/east.tsv]\n2026-10-01T09:00:00-0400        E1      door opened$\n2026-10-01T10:00:00-0400        E3      truck departed$\n[logs/west.tsv]\n2026-10-01T06:30:00-0700        E2      truck arrived$\ninvalid E4      clock fault$\n--- existing outputs ---\n"
+    },
+    {
+      "command_id": "cmd-3b5aa225dd2d4091",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:55:05.662981+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 210,
+      "command": "cd /srv/legacy2/timezone-log-merge && cat > /tmp/timeline.py.new <<'PY_EOF'\n#!/usr/bin/python\n\"\"\"Merge timestamped TSV logs into a UTC-ordered incident timeline.\"\"\"\n\nimport datetime\nimport glob\nimport os\nimport re\nimport sys\n\nSTAMP_RE = re.compile(\n    r'^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})([+-])(\\d{2}):?(\\d{2})$')\n\n\ndef utc_timestamp(value):\n    \"\"\"Return a canonical UTC timestamp, or None for an invalid/unzoned value.\"\"\"\n    match = STAMP_RE.match(value)\n    if match is None:\n        return None\n\n    fields = [int(part) for part in match.groups()[0:6]]\n    offset_hour = int(match.group(8))\n    offset_minute = int(match.group(9))\n    if offset_hour > 23 or offset_minute > 59:\n        return None\n\n    try:\n        local_time = datetime.datetime(*fields)\n        offset = datetime.timedelta(hours=offset_hour, minutes=offset_minute)\n        if match.group(7) == '+':\n            utc_time = local_time - offset\n        else:\n            utc_time = local_time + offset\n    except (ValueError, OverflowError):\n        return None\n\n    return utc_time.strftime('%Y-%m-%dT%H:%M:%SZ')\n\n\ndef main(argv):\n    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n    input_names = argv[1:]\n    if not input_names:\n        input_names = sorted(glob.glob(os.path.join(project_dir, 'logs', '*.tsv')))\n\n    events = []\n    rejected = []\n    sequence = 0\n    for name in input_names:\n        source = open(name, 'rb')\n        try:\n            for raw_line in source:\n                line = raw_line.rstrip('\\r\\n')\n                parts = line.split('\\t', 2)\n                stamp = utc_timestamp(parts[0]) if len(parts) == 3 else None\n                if stamp is None:\n                    rejected.append(line)\n                    continue\n                event_id = parts[1]\n                message = parts[2]\n                events.append((stamp, event_id, sequence, message))\n                sequence += 1\n        finally:\n            source.close()\n\n    # ISO UTC timestamps sort chronologically; event ID is the required tie-breaker.\n    events.sort()\n\n    timeline_name = os.path.join(project_dir, 'timeline.tsv')\n    output = open(timeline_name, 'wb')\n    try:\n        for stamp, event_id, unused_sequence, message in events:\n            output.write('%s\\t%s\\t%s\\n' % (stamp, event_id, message))\n    finally:\n        output.close()\n\n    rejected_name = os.path.join(project_dir, 'rejected.tsv')\n    output = open(rejected_name, 'wb')\n    try:\n        for line in rejected:\n            output.write(line + '\\n')\n    finally:\n        output.close()\n\n    return 0\n\n\nif __name__ == '__main__':\n    sys.exit(main(sys.argv))\nPY_EOF\nchmod --reference=bin/timeline.py /tmp/timeline.py.new 2>/dev/null || chmod 755 /tmp/timeline.py.new\nmv /tmp/timeline.py.new bin/timeline.py\npython bin/timeline.py logs/east.tsv logs/west.tsv"
+    },
+    {
+      "command_id": "cmd-bef8849597134c90",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:55:11.917739+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 177,
+      "command": "cd /srv/legacy2/timezone-log-merge && printf '%s\\n' '--- timeline.tsv ---' && sed -n l timeline.tsv && printf '%s\\n' '--- rejected.tsv ---' && sed -n l rejected.tsv && printf '%s\\n' '--- exact expected comparisons ---' && printf '2026-10-01T13:00:00Z\\tE1\\tdoor opened\\n2026-10-01T13:30:00Z\\tE2\\ttruck arrived\\n2026-10-01T14:00:00Z\\tE3\\ttruck departed\\n' | cmp -s - timeline.tsv && echo timeline_exact=PASS || echo timeline_exact=FAIL; printf 'invalid\\tE4\\tclock fault\\n' | cmp -s - rejected.tsv && echo rejected_exact=PASS || echo rejected_exact=FAIL; printf '%s\\n' '--- source hashes after run ---' && sha256sum logs/* && printf '%s\\n' '--- installed release/kernel/runtime ---' && (cat /etc/lsb-release 2>/dev/null || true) && uname -r && python --version 2>&1",
+      "stdout": "--- timeline.tsv ---\n--- rejected.tsv ---\n2026-10-01T09:00:00-0400        E1      door opened$\n2026-10-01T10:00:00-0400        E3      truck departed$\n2026-10-01T06:30:00-0700        E2      truck arrived$\ninvalid E4      clock fault$\n--- exact expected comparisons ---\ntimeline_exact=FAIL\nrejected_exact=FAIL\n--- source hashes after run ---\n439fc86761f21f0866e233c6e11374f5864ac98973a509e02d319c035f516d0d  logs/east.tsv\nf04190f00f3f5d4fcc1f1246ba28acce937fed8a9740f80ad95ae424d462980d  logs/west.tsv\n--- installed release/kernel/runtime ---\nDISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=7.10\nDISTRIB_CODENAME=gutsy\nDISTRIB_DESCRIPTION=\"Ubuntu 7.10\"\n2.6.22-14-generic\nPython 2.5.1\n"
+    },
+    {
+      "command_id": "cmd-c60fe63f22cc423c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:55:17.857089+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 213,
+      "command": "cd /srv/legacy2/timezone-log-merge && od -An -tx1c logs/east.tsv && od -An -tx1c logs/west.tsv",
+      "stdout": " 32 30 32 36 2d 31 30 2d 30 31 54 30 39 3a 30 30\n   2   0   2   6   -   1   0   -   0   1   T   0   9   :   0   0\n 3a 30 30 2d 30 34 30 30 20 20 20 20 20 20 20 20\n   :   0   0   -   0   4   0   0                                \n 45 31 20 20 20 20 20 20 64 6f 6f 72 20 6f 70 65\n   E   1                           d   o   o   r       o   p   e\n 6e 65 64 0a 32 30 32 36 2d 31 30 2d 30 31 54 31\n   n   e   d  \\n   2   0   2   6   -   1   0   -   0   1   T   1\n 30 3a 30 30 3a 30 30 2d 30 34 30 30 20 20 20 20\n   0   :   0   0   :   0   0   -   0   4   0   0                \n 20 20 20 20 45 33 20 20 20 20 20 20 74 72 75 63\n                   E   3                           t   r   u   c\n 6b 20 64 65 70 61 72 74 65 64 0a\n   k       d   e   p   a   r   t   e   d  \\n\n 32 30 32 36 2d 31 30 2d 30 31 54 30 36 3a 33 30\n   2   0   2   6   -   1   0   -   0   1   T   0   6   :   3   0\n 3a 30 30 2d 30 37 30 30 20 20 20 20 20 20 20 20\n   :   0   0   -   0   7   0   0                                \n 45 32 20 20 20 20 20 20 74 72 75 63 6b 20 61 72\n   E   2                           t   r   u   c   k       a   r\n 72 69 76 65 64 0a 69 6e 76 61 6c 69 64 20 45 34\n   r   i   v   e   d  \\n   i   n   v   a   l   i   d       E   4\n 20 20 20 20 20 20 63 6c 6f 63 6b 20 66 61 75 6c\n                           c   l   o   c   k       f   a   u   l\n 74 0a\n   t  \\n\n"
+    },
+    {
+      "command_id": "cmd-027e492835c2495d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:55:23.811273+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 179,
+      "command": "cd /srv/legacy2/timezone-log-merge && sed \"s/parts = line.split('\\\\\\\\t', 2)/parts = line.split(None, 2)/\" bin/timeline.py > /tmp/timeline.py.new && cmp -s bin/timeline.py /tmp/timeline.py.new && { echo 'parser patch did not apply' >&2; exit 1; } || true; chmod --reference=bin/timeline.py /tmp/timeline.py.new 2>/dev/null || chmod 755 /tmp/timeline.py.new; mv /tmp/timeline.py.new bin/timeline.py; grep -n 'parts =' bin/timeline.py; python bin/timeline.py logs/east.tsv logs/west.tsv",
+      "stdout": "53:                parts = line.split(None, 2)\n"
+    },
+    {
+      "command_id": "cmd-d53f06c2e75b4f60",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:55:30.666139+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 231,
+      "command": "cd /srv/legacy2/timezone-log-merge && printf '%s\\n' '--- timeline.tsv ---' && sed -n l timeline.tsv && printf '%s\\n' '--- rejected.tsv ---' && sed -n l rejected.tsv && printf '%s\\n' '--- exact expected comparisons ---' && printf '2026-10-01T13:00:00Z\\tE1\\tdoor opened\\n2026-10-01T13:30:00Z\\tE2\\ttruck arrived\\n2026-10-01T14:00:00Z\\tE3\\ttruck departed\\n' | cmp -s - timeline.tsv && echo timeline_exact=PASS || echo timeline_exact=FAIL; printf 'invalid\\tE4\\tclock fault\\n' | cmp -s - rejected.tsv && echo rejected_exact=PASS || echo rejected_exact=FAIL; printf '%s\\n' '--- source hashes ---' && sha256sum logs/*",
+      "stdout": "--- timeline.tsv ---\n2026-10-01T13:00:00Z\\tE1\\tdoor opened$\n2026-10-01T13:30:00Z\\tE2\\ttruck arrived$\n2026-10-01T14:00:00Z\\tE3\\ttruck departed$\n--- rejected.tsv ---\ninvalid E4      clock fault$\n--- exact expected comparisons ---\ntimeline_exact=PASS\nrejected_exact=FAIL\n--- source hashes ---\n439fc86761f21f0866e233c6e11374f5864ac98973a509e02d319c035f516d0d  logs/east.tsv\nf04190f00f3f5d4fcc1f1246ba28acce937fed8a9740f80ad95ae424d462980d  logs/west.tsv\n"
+    },
+    {
+      "command_id": "cmd-275d1a4f3dc0461a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:55:38.142272+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 194,
+      "command": "cd /srv/legacy2/timezone-log-merge && sed \"/if stamp is None:/,/continue/ { s/rejected.append(line)/rejected.append('\\\\t'.join(parts) if len(parts) == 3 else line)/; }\" bin/timeline.py > /tmp/timeline.py.new && chmod --reference=bin/timeline.py /tmp/timeline.py.new 2>/dev/null || chmod 755 /tmp/timeline.py.new; mv /tmp/timeline.py.new bin/timeline.py; sed -n '48,66p' bin/timeline.py; python bin/timeline.py logs/east.tsv logs/west.tsv",
+      "stdout": "    for name in input_names:\n        source = open(name, 'rb')\n        try:\n            for raw_line in source:\n                line = raw_line.rstrip('\\r\\n')\n                parts = line.split(None, 2)\n                stamp = utc_timestamp(parts[0]) if len(parts) == 3 else None\n                if stamp is None:\n                    rejected.append('\t'.join(parts) if len(parts) == 3 else line)\n                    continue\n                event_id = parts[1]\n                message = parts[2]\n                events.append((stamp, event_id, sequence, message))\n                sequence += 1\n        finally:\n            source.close()\n\n    # ISO UTC timestamps sort chronologically; event ID is the required tie-breaker.\n    events.sort()\n"
+    },
+    {
+      "command_id": "cmd-7603b03c152541a4",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:55:46.877599+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 235,
+      "command": "cd /srv/legacy2/timezone-log-merge && cat > /tmp/timeline-semantic-test.log <<'TEST_EOF'\n2026-10-01T09:00:00-0400 Z9 east tie\n2026-10-01T06:00:00-0700 A1 west tie\n2026-10-01T14:30:00+01:30 B2 colon offset tie\n2026-02-30T10:00:00+0000 X1 impossible date\n2026-10-01T13:00:00Z X2 missing numeric offset\nTEST_EOF\npython bin/timeline.py /tmp/timeline-semantic-test.log\nprintf '%s\\n' '--- tie/offset test timeline ---'\nsed -n l timeline.tsv\nprintf '%s\\n' '--- invalid timestamp test rejections ---'\nsed -n l rejected.tsv\nprintf '2026-10-01T13:00:00Z\\tA1\\twest tie\\n2026-10-01T13:00:00Z\\tB2\\tcolon offset tie\\n2026-10-01T13:00:00Z\\tZ9\\teast tie\\n' | cmp -s - timeline.tsv && echo tie_and_offsets=PASS || echo tie_and_offsets=FAIL\nprintf '2026-02-30T10:00:00+0000\\tX1\\timpossible date\\n2026-10-01T13:00:00Z\\tX2\\tmissing numeric offset\\n' | cmp -s - rejected.tsv && echo invalid_rejection=PASS || echo invalid_rejection=FAIL",
+      "stdout": "--- tie/offset test timeline ---\n2026-10-01T13:00:00Z\\tA1\\twest tie$\n2026-10-01T13:00:00Z\\tB2\\tcolon offset tie$\n2026-10-01T13:00:00Z\\tZ9\\teast tie$\n--- invalid timestamp test rejections ---\n2026-02-30T10:00:00+0000\\tX1\\timpossible date$\n2026-10-01T13:00:00Z\\tX2\\tmissing numeric offset$\ntie_and_offsets=PASS\ninvalid_rejection=PASS\n"
+    },
+    {
+      "command_id": "cmd-35453988d71c46f3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:55:59.153406+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 285,
+      "command": "cd /srv/legacy2/timezone-log-merge && python bin/timeline.py && printf '%s\\n' '--- pre-restart boot identity ---' && cat /proc/sys/kernel/random/boot_id && printf '%s\\n' '--- supplied-data timeline ---' && sed -n l timeline.tsv && printf '%s\\n' '--- supplied-data rejections ---' && sed -n l rejected.tsv && printf '%s\\n' '--- exact verification ---' && printf '2026-10-01T13:00:00Z\\tE1\\tdoor opened\\n2026-10-01T13:30:00Z\\tE2\\ttruck arrived\\n2026-10-01T14:00:00Z\\tE3\\ttruck departed\\n' | cmp -s - timeline.tsv && echo timeline_exact=PASS || echo timeline_exact=FAIL; printf 'invalid\\tE4\\tclock fault\\n' | cmp -s - rejected.tsv && echo rejected_exact=PASS || echo rejected_exact=FAIL; printf '%s\\n' '--- preserved inputs and executable ---' && sha256sum logs/* bin/timeline.py && test -x bin/timeline.py && echo executable=PASS; printf '%s\\n' '--- platform unchanged ---' && (cat /etc/lsb-release 2>/dev/null || true) && uname -r && python --version 2>&1; printf '%s\\n' '--- management service ---' && ps -ef | grep '[s]shd' | head -5",
+      "stdout": "--- pre-restart boot identity ---\n07109fa0-b425-47c3-9f09-2522a05dda1b\n--- supplied-data timeline ---\n2026-10-01T13:00:00Z\\tE1\\tdoor opened$\n2026-10-01T13:30:00Z\\tE2\\ttruck arrived$\n2026-10-01T14:00:00Z\\tE3\\ttruck departed$\n--- supplied-data rejections ---\ninvalid\\tE4\\tclock fault$\n--- exact verification ---\ntimeline_exact=PASS\nrejected_exact=PASS\n--- preserved inputs and executable ---\n439fc86761f21f0866e233c6e11374f5864ac98973a509e02d319c035f516d0d  logs/east.tsv\nf04190f00f3f5d4fcc1f1246ba28acce937fed8a9740f80ad95ae424d462980d  logs/west.tsv\nf3e589625c05a0c96a02c64eb7b3718d4508a385c227b8b98c68b7d2217bc8f8  bin/timeline.py\nexecutable=PASS\n--- platform unchanged ---\nDISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=7.10\nDISTRIB_CODENAME=gutsy\nDISTRIB_DESCRIPTION=\"Ubuntu 7.10\"\n2.6.22-14-generic\nPython 2.5.1\n--- management service ---\nroot      3771     1  0 02:54 ?        00:00:00 /usr/sbin/sshd\nroot      4329  3771  0 02:55 ?        00:00:00 sshd: root@notty \n"
+    },
+    {
+      "command_id": "cmd-5c8b79e2314a41b1",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:56:03.206625+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 141,
+      "command": "sync; nohup sh -c 'sleep 3; /sbin/shutdown -r now' >/tmp/benchmark-reboot.log 2>&1 </dev/null & echo restart_scheduled_for_node1",
+      "stdout": "restart_scheduled_for_node1\n"
+    },
+    {
+      "command_id": "cmd-857d005377cc417c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:56:11.817697+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 92,
+      "command": "cat /proc/sys/kernel/random/boot_id && uptime",
+      "stderr": "ssh: connect to host 10.100.104.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-a8bb31d0c04b4a09",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:56:14.177164+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 85,
+      "command": "cat /proc/sys/kernel/random/boot_id && uptime",
+      "stderr": "ssh: connect to host 10.100.104.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-c7bf1cbecf6d4868",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:56:21.581740+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5062,
+      "command": "cat /proc/sys/kernel/random/boot_id && uptime",
+      "stderr": "ssh: connect to host 10.100.104.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-d8da68a45e5b429c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:56:25.189470+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1656,
+      "command": "cat /proc/sys/kernel/random/boot_id && uptime",
+      "stdout": "cb8b58fc-2322-40ee-b18d-d19413f33c47\n 02:56:24 up 0 min,  0 users,  load average: 0.00, 0.00, 0.00\n"
+    },
+    {
+      "command_id": "cmd-0b98cd9c3a4c41c4",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:56:31.534324+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 191,
+      "command": "cd /srv/legacy2/timezone-log-merge && printf '%s\\n' '--- post-restart boot identity ---' && cat /proc/sys/kernel/random/boot_id && printf '%s\\n' '--- service recovery ---' && ps -ef | grep '[s]shd' | head -5 && printf '%s\\n' '--- rerun repaired merger after reboot ---' && python bin/timeline.py && printf '2026-10-01T13:00:00Z\\tE1\\tdoor opened\\n2026-10-01T13:30:00Z\\tE2\\ttruck arrived\\n2026-10-01T14:00:00Z\\tE3\\ttruck departed\\n' | cmp -s - timeline.tsv && echo timeline_exact=PASS || echo timeline_exact=FAIL; printf 'invalid\\tE4\\tclock fault\\n' | cmp -s - rejected.tsv && echo rejected_exact=PASS || echo rejected_exact=FAIL; printf '%s\\n' '--- recovered outputs ---' && sed -n l timeline.tsv && sed -n l rejected.tsv && printf '%s\\n' '--- persisted code and unchanged sources ---' && sha256sum bin/timeline.py logs/* && test -x bin/timeline.py && echo executable=PASS && printf '%s\\n' '--- platform after reboot ---' && (cat /etc/lsb-release 2>/dev/null || true) && uname -r && python --version 2>&1",
+      "stdout": "--- post-restart boot identity ---\ncb8b58fc-2322-40ee-b18d-d19413f33c47\n--- service recovery ---\nroot      3786     1  0 02:56 ?        00:00:00 /usr/sbin/sshd\nroot      3891  3786  0 02:56 ?        00:00:00 sshd: root@notty \n--- rerun repaired merger after reboot ---\ntimeline_exact=PASS\nrejected_exact=PASS\n--- recovered outputs ---\n2026-10-01T13:00:00Z\\tE1\\tdoor opened$\n2026-10-01T13:30:00Z\\tE2\\ttruck arrived$\n2026-10-01T14:00:00Z\\tE3\\ttruck departed$\ninvalid\\tE4\\tclock fault$\n--- persisted code and unchanged sources ---\nf3e589625c05a0c96a02c64eb7b3718d4508a385c227b8b98c68b7d2217bc8f8  bin/timeline.py\n439fc86761f21f0866e233c6e11374f5864ac98973a509e02d319c035f516d0d  logs/east.tsv\nf04190f00f3f5d4fcc1f1246ba28acce937fed8a9740f80ad95ae424d462980d  logs/west.tsv\nexecutable=PASS\n--- platform after reboot ---\nDISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=7.10\nDISTRIB_CODENAME=gutsy\nDISTRIB_DESCRIPTION=\"Ubuntu 7.10\"\n2.6.22-14-generic\nPython 2.5.1\n"
+    }
+  ]
+}

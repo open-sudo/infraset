@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Configure node1, node2, node3 as a three-member MariaDB Galera cluster",
+      "status": "satisfied",
+      "summary": "After resolving Ubuntu's native mariadb-server-10.0 lacking wsrep support and switching to MariaDB 10.1 + galera-3 from the upstream MariaDB repo, node1 was bootstrapped and node2/node3 joined via SST. cmd-005012e76d0c409f shows wsrep_cluster_size=3, wsrep_incoming_addresses listing all three node IPs, and wsrep_local_state_comment=Synced.",
+      "evidence_ids": [
+        "cmd-66caae6da3934f18",
+        "cmd-005012e76d0c409f",
+        "cmd-fb770eba10a843ac",
+        "cmd-52fce2ceb8814951"
+      ]
+    },
+    {
+      "id": "multi-master-writes",
+      "requirement": "Writes through any member should be available from the other members",
+      "status": "satisfied",
+      "summary": "A row inserted on node1 was visible and appended to on node2; the resulting rows were visible and appended to on node3; and the full three-row set was visible back on node1, directly demonstrating full-mesh write propagation across all members.",
+      "evidence_ids": [
+        "cmd-056da05f0fad495a",
+        "cmd-934200c7aa9343d4",
+        "cmd-8ff917cfd44c42f2"
+      ]
+    },
+    {
+      "id": "availability-on-node-down",
+      "requirement": "Keep the database available when one member is unavailable",
+      "status": "satisfied",
+      "summary": "node3's mariadb service was stopped; node1 immediately showed wsrep_cluster_size=2 and wsrep_cluster_status=Primary and accepted a new write, and node2 confirmed the write was replicated, directly showing continued availability during a bounded disruption.",
+      "evidence_ids": [
+        "cmd-0a600083ee004957",
+        "cmd-7d45fc4ec9fc4120",
+        "cmd-8f7aeabd6fc84105"
+      ]
+    },
+    {
+      "id": "auto-resync",
+      "requirement": "Resynchronize an unavailable member automatically when it returns",
+      "status": "satisfied",
+      "summary": "node3's mariadb service was restarted; journal logs show an automatic IST transfer (seqnos 5-6) from node2 with no manual data-copy commands, and node3 subsequently reports wsrep_cluster_size=3, Synced, and the row that was written while it was down, directly showing before/during/after transition to healthy resynced state.",
+      "evidence_ids": [
+        "cmd-847af09e84304874",
+        "cmd-cedb16984fd04949"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node",
+      "status": "satisfied",
+      "summary": "Each node's boot_id and cluster health were captured before restart, a reboot was issued and acknowledged (SSH connection refused during the transition), a new differing boot_id was observed post-restart, and cluster_size=3/Synced/Primary plus intact table data were confirmed after each of the three sequential, quorum-preserving restarts. The fixed after-prepare/after-executor boot-identity snapshots corroborate the same boot_id transitions for all three nodes.",
+      "evidence_ids": [
+        "cmd-bfeb9d10554a4c15",
+        "cmd-a518c0fdb73146a5",
+        "cmd-9a4a1b0ddbbc45dd",
+        "cmd-b6cc15ca063a4069",
+        "cmd-8f6e27e22b7347f6",
+        "cmd-86dfddea6c284bd8",
+        "cmd-0d62d6509d6647a8",
+        "cmd-e917a8eef1f04f31",
+        "cmd-35b13c6b32bb497b",
+        "cmd-8a6d7bc9b97d4e13",
+        "cmd-304473946c354d6d",
+        "cmd-3797e913111e405e",
+        "cmd-4e8d9a8327554b0a"
+      ]
+    }
+  ],
+  "overall_summary": "All material task outcomes are directly and coherently evidenced: a healthy 3-member Galera cluster was formed (after correctly diagnosing that Ubuntu's native mariadb-server-10.0 lacked wsrep support and switching to MariaDB 10.1 from the upstream repo), full-mesh write propagation was demonstrated across all three nodes, availability was directly shown to persist with one node down and a write accepted and replicated during that window, and automatic IST-based resynchronization was directly observed when the node returned. The independent provider-wide node-restart protocol was completed for all three nodes with matching pre/post boot-identity, restart acknowledgement, and full cluster/data recovery evidence, cross-checked against the fixed lifecycle snapshots. Operational hygiene is good: package/apt-repo swaps and mysqld_safe recovery sessions were all purposeful, bounded, and left no residue or broken state in the after-executor snapshot.",
+  "limitations": [
+    "The 'availability during disruption' and 'auto-resync' tests used systemctl stop/start of the mariadb service rather than a full node reboot; this is a valid and common way to exercise Galera's node-loss/rejoin behavior but is a narrower disruption than an OS-level failure.",
+    "bind-address=0.0.0.0 was applied on all three nodes without additional evidence of network-level access restriction beyond the managed topology; this is standard for Galera cluster communication but was not independently verified as scoped to only the cluster's private network."
+  ],
+  "command_stats": {
+    "total": 134,
+    "successful": 108,
+    "failed": 25,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "The executor's mutations were almost all directly tied to resolving genuine environment obstacles (broken default apt mirrors, an i386/Xenial mariadb-server-10.0 build without wsrep support, and MariaDB's unix_socket auth plugin blocking root access) rather than unrelated experimentation. Repointing /etc/apt/sources.list to mirrors.mit.edu (cmd-9c0afc339d15482d) was a necessary, low-risk workaround for unreachable archive.ubuntu.com and was applied consistently across all three nodes. Purging mariadb-server-10.0/galera-3 (cmd-d999d13f4f7b421a) was a required prerequisite once wsrep support was confirmed absent, and package-health checks in the after-executor snapshot show no broken dpkg state. Killing stuck apt processes and removing stale locks (cmd-0554540451e74ba5) was a corrective action to unblock a hung lock, not a destructive mutation. Several manual mysqld_safe invocations with --skip-grant-tables (cmd-952790954d524381, cmd-c8b16c220f264de9) were used to reset the root password after wsrep/plugin config trial-and-error; these ad hoc mysqld instances were explicitly shut down afterward (cmd-f0d7e9d7313c4c02) and did not leave residue. No failed services, unexpected listening sockets, or leftover temp files beyond routine per-boot systemd-private directories appear in the after-executor snapshot. One point of caution: bind-address was set to 0.0.0.0 on all three nodes for Galera/SST connectivity, which is a common but non-trivial network exposure; the executor did not layer additional access restriction beyond default managed-network topology.",
+    "evidence_ids": [
+      "cmd-9c0afc339d15482d",
+      "cmd-0554540451e74ba5",
+      "cmd-d999d13f4f7b421a",
+      "cmd-952790954d524381",
+      "cmd-c8b16c220f264de9",
+      "cmd-f0d7e9d7313c4c02",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

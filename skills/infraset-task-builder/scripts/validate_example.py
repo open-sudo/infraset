@@ -13,6 +13,9 @@ from typing import Any
 
 import tomllib
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from variant_metadata import validate as validate_variant_metadata
+
 try:
     from harbor.models.task.config import TaskConfig
     from harbor_antrieb.config import AntriebDefinition
@@ -35,6 +38,7 @@ else:
 CORE_REQUIRED_FILES = (
     "instruction.md",
     "task.toml",
+    "variant.toml",
     "environment/harbor_antrieb.toml",
     "tests/test.sh",
 )
@@ -124,6 +128,12 @@ def validate(task_dir: Path) -> tuple[list[str], list[str]]:
     for relative in CORE_REQUIRED_FILES:
         if not (task_dir / relative).is_file():
             errors.append(f"missing required file: {relative}")
+
+    if (task_dir / "variant.toml").is_file():
+        try:
+            validate_variant_metadata(task_dir)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            errors.append(f"variant.toml: {exc}")
 
     for relative in LEGACY_VERIFIER_FILES:
         if (task_dir / relative).is_file():

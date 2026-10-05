@@ -1,0 +1,98 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) as a DHCP server for the private eth1 network shared with node2/node3, and configured node2/node3 (AlmaLinux9) to obtain their eth1 address via DHCP instead of static assignment, implemented entirely via an Ansible playbook run from node4 (the control node). node1 was given static address 10.50.50.1/24 on eth1 and a Kea/VyOS DHCP shared-network \"LAN\" serving 10.50.50.100-200 with default-router 10.50.50.1; node2 leased 10.50.50.101 and node3 leased 10.50.50.100, and repeat playbook runs are fully idempotent (no changes). All four managed nodes (node1-4) were then restarted one at a time via their native reboot mechanism per the mandatory protocol, with boot-identity change confirmed for each and full service/data/DHCP-lease recovery verified afterward. A VyOS SSH-key regression surfaced after node1's restart (a manually-appended authorized_keys entry was wiped by VyOS's config-driven login regeneration on boot); it was fixed by persisting the SSH public key through the proper VyOS config path (set system login user vyos authentication public-keys ...), after which the Ansible playbook ran cleanly again against a healthy, idempotent cluster.",
+  "actions_performed": [
+    "Surveyed topology: node1=VyOS (eth0 default mgmt net, eth1 private net), node2/node3=AlmaLinux9 (eth0+eth1), node4=Ubuntu24.04 control node with Ansible pre-installed",
+    "Wired up the cluster SSH keypair (CLUSTER_SSH_PRIVKEY/PUBKEY) for node4 -> node1 (vyos user)/node2/node3 (root) passwordless SSH",
+    "Fixed node1's eth0 (management network) DHCP lease by restarting dhclient@eth0 so node4 could reach it over SSH",
+    "Installed the vyos.vyos Ansible collection on node4 and researched the current VyOS Kea-backed DHCP-server CLI syntax directly from node1's own conf_mode/service_dhcp-server.py and smoke tests",
+    "Diagnosed that vyos.vyos_config (network_cli) fails with a generic device-level 'Set failed' for the unprivileged vyos user on this VyOS build (root-cause: the interactive vysh CLI's per-user unionfs-fuse config overlay session runs as the non-root uid and cannot commit new config, while a root-owned session can); confirmed this via direct pty-driven CLI tests",
+    "Worked around the platform bug by having the Ansible play SSH as user vyos, become root via NOPASSWD sudo, and apply the VyOS config through the primer's canonical bash + script-template envelope (set interface address, dhcp-server shared-network/subnet/range/default-router, commit, save)",
+    "Wrote /root/ansible-dhcp/{ansible.cfg,inventory.ini,playbook.yml} on node4: play 1 targets node1 (VyOS DHCP server setup with idempotent changed_when/failed_when and a post-apply assert against /config/config.boot); play 2 targets node2/node3 (community.general.nmcli forcing eth1 connection method4=auto, then waits for and reports the leased 10.50.50.x address)",
+    "Ran the playbook to completion, confirmed idempotency on a second run (all tasks 'ok', no changes), and verified via kea-dhcp4 lease file and node2/3 ip/route/nmcli output",
+    "Executed the mandatory node-restart evidence protocol: captured pre-restart boot_id and service health on all 4 nodes, rebooted node1, then node2, then node3, then node4 one at a time via `reboot`, polled each until reachable again, confirmed changed /proc/sys/kernel/random/boot_id on every node, and verified post-restart recovery (node1: eth1 address persisted, isc-kea-dhcp4-server + ssh active, lease DB intact; node2/node3: DHCP leases re-acquired via NetworkManager; node4: ansible/inventory/ssh key intact)",
+    "Discovered and fixed a post-reboot regression where node1's ad-hoc authorized_keys entry for the vyos user was overwritten by VyOS's config-driven login regeneration, by adding the key through 'set system login user vyos authentication public-keys' so it persists in config.boot, then re-ran the Ansible playbook end-to-end to confirm full recovery"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 configured as DHCP server for the eth1 private network via Ansible",
+      "command_ids": [
+        "cmd-1dd10ebdb9a5432d",
+        "cmd-d44625f6a37e443d",
+        "cmd-4fc11823b09d496e"
+      ],
+      "summary": "Ansible playbook run on node4 shows task 'Apply VyOS interface address and DHCP server configuration' changed:true and the follow-up assert 'All assertions passed' confirming dhcp-server + 10.50.50.0/24 present in node1's committed config.boot"
+    },
+    {
+      "requirement": "node2 and node3 configured to obtain their private-network address via DHCP (not static) via Ansible",
+      "command_ids": [
+        "cmd-1dd10ebdb9a5432d"
+      ],
+      "summary": "Same playbook run: nmcli task sets ipv4.method4=auto on 'Wired connection 2' (eth1) for node2/node3, and the wait task reports node2 leased 10.50.50.101/24 and node3 leased 10.50.50.100/24"
+    },
+    {
+      "requirement": "DHCP service is actually functioning end-to-end (not just configured)",
+      "command_ids": [
+        "cmd-f7d805d979a841ca",
+        "cmd-a4f96c2fbbf14c8a",
+        "cmd-d640c79ff859407d"
+      ],
+      "summary": "kea-dhcp4 lease file on node1 shows real leases for node2 (10.50.50.101) and node3 (10.50.50.100) with matching hostnames/MACs; node2 and node3 ip/route output confirms dynamic DHCP-sourced addresses and default route via 10.50.50.1"
+    },
+    {
+      "requirement": "Configuration is idempotent under Ansible",
+      "command_ids": [
+        "cmd-54a1420a83f9427d",
+        "cmd-21dcec4c1c56436c"
+      ],
+      "summary": "Two separate re-runs of the playbook (before and after the full restart cycle) show all tasks reporting 'ok' with zero changes across node1, node2, node3"
+    },
+    {
+      "requirement": "node1 mandatory restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-94529f0bb5234c1a",
+        "cmd-4f0a06cdfe2b4d40",
+        "cmd-c97213f8684e4fea",
+        "cmd-e13e70ee2d4d4b85"
+      ],
+      "summary": "Baseline boot_id ebd78841... and active kea/ssh captured; reboot acknowledged; post-restart boot_id 59d8c48a... (changed); recovery verified via eth1 address persisted, isc-kea-dhcp4-server+ssh active, and intact lease file"
+    },
+    {
+      "requirement": "node2 mandatory restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-4899db9c6cf1489a",
+        "cmd-20bd0fcefa0b4e56",
+        "cmd-03b4f50d4da64ef4"
+      ],
+      "summary": "Baseline boot_id c207ab79... and leased address captured; reboot issued; post-restart boot_id f99a540c... (changed); recovery verified via re-acquired DHCP lease 10.50.50.101/24 and ipv4.method=auto"
+    },
+    {
+      "requirement": "node3 mandatory restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-246f21bcca154b2f",
+        "cmd-5ac90bb614fc4720",
+        "cmd-a24f43562fc54cc7"
+      ],
+      "summary": "Baseline boot_id 5fb1b173... and leased address captured; reboot issued; post-restart boot_id 5e103fc1... (changed); recovery verified via re-acquired DHCP lease 10.50.50.100/24 and ipv4.method=auto"
+    },
+    {
+      "requirement": "node4 (control node) mandatory restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-6e7146a351c3474e",
+        "cmd-8768fb43d5824c70",
+        "cmd-625c94fba23c4ffa",
+        "cmd-21dcec4c1c56436c"
+      ],
+      "summary": "Baseline boot_id adba3716... and ansible project files captured; reboot issued; post-restart boot_id 4237f110... (changed); recovery verified via ansible/ssh key/project files intact and a fully successful, idempotent playbook re-run against all managed nodes after the full restart cycle"
+    },
+    {
+      "requirement": "Post-restart regression discovered and fixed (SSH key persistence on VyOS)",
+      "command_ids": [
+        "cmd-a30346c2ccd64e5f",
+        "cmd-33bdfffed87345ba",
+        "cmd-21dcec4c1c56436c"
+      ],
+      "summary": "After node1's reboot the ad-hoc authorized_keys entry was wiped by VyOS login regeneration causing SSH failure; fixed by committing the key via 'set system login user vyos authentication public-keys', confirmed by authorized_keys content and a subsequent fully successful playbook run"
+    }
+  ]
+}

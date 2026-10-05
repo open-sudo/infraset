@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "On node1, only root and opsadmin can schedule cron jobs (all other users denied)",
+      "status": "partially_satisfied",
+      "summary": "The executor built a wrapper at /usr/bin/crontab that checks the caller against an allowlist (root, opsadmin) before exec'ing the real crontab binary, moved that real binary into a 0710 root:cron directory, and directly demonstrated root and opsadmin succeeding while the 'alpine' user is denied both via the wrapper and via the locked-down real-binary path (exit 126). This is solid evidence for the intended access path. However, the underlying setuid dispatcher /bin/bbsuid (mode ---s--x--x, world-executable) was left untouched and still has other symlinks pointing at it (passwd, su, vlock, traceroute), and busybox's bbsuid applet dispatch is driven by the invoked basename. Nothing in the evidence shows the executor tested (or closed) the case of a non-privileged user creating their own symlink or hardlink named 'crontab' directly to /bin/bbsuid from a location the user controls (e.g. /tmp), which would bypass the wrapper and the locked-down directory entirely and run the real crontab applet as root. Because this plausible bypass vector was neither tested nor mitigated (e.g. by restricting /bin/bbsuid's own execute bit or applet list), the control cannot be confirmed as fully closing off non-root/non-opsadmin scheduling.",
+      "evidence_ids": [
+        "cmd-38e54cb516cc4eb0",
+        "cmd-7da07663cbfe4878",
+        "cmd-b863d52451f04422",
+        "cmd-03ed93ee662e4179",
+        "cmd-d0d60c08ea1c4bda",
+        "cmd-28e78d50f2a243cc",
+        "cmd-fe5b5eddb2434616",
+        "cmd-405afdbc578b47d3"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Cron scheduling remains functional for permitted users (crond service enabled/running so root and opsadmin's crontabs actually execute)",
+      "status": "satisfied",
+      "summary": "crond was enabled at boot (rc-update add crond default) and started, confirmed running with a live PID both before and after the reboot. opsadmin successfully installed, listed, and removed a real crontab entry that was written to /etc/crontabs/opsadmin, and root's pre-existing crontab was preserved untouched throughout.",
+      "evidence_ids": [
+        "cmd-7c0817959a1b4232",
+        "cmd-56b3b3155f42460d",
+        "cmd-fe5b5eddb2434616",
+        "cmd-8cf5431f092946f6",
+        "cmd-405afdbc578b47d3"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1 with recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id and healthy baseline were captured (crond running, wrapper and directory permissions intact). A backgrounded reboot returned its scheduling ack before the connection dropped; subsequent probes failed with connection reset/timeout for ~40s, then the node became reachable again with a fresh ~30s uptime and a changed boot_id (446f0a24... -> ff186243...), matching the fixed global before/after boot-identity observations. Post-reboot, crond was auto-started, and the access-control mechanism (wrapper contents, directory permissions, root/opsadmin/alpine behavior) was re-verified as functionally intact, satisfying the restart evidence protocol independent of the caveat noted in req-1.",
+      "evidence_ids": [
+        "cmd-7cf7f0cd1fbc4a43",
+        "cmd-4b33a4f00a4740e5",
+        "cmd-ad9f9f6532254b60",
+        "cmd-4f99a3fd984749ef",
+        "cmd-c1ddba12ff054556",
+        "cmd-8cf5431f092946f6",
+        "cmd-405afdbc578b47d3",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor implemented a plausible and well-tested wrapper-based cron access control on Alpine's busybox crontab, demonstrating root/opsadmin access and alpine denial both before and after a verified reboot, and crond is enabled and running. However, the design leaves the underlying setuid /bin/bbsuid dispatcher (which busybox's other suid symlinks like passwd, su, and vlock also point to) world-executable, and the evidence does not show the executor tested or closed the likely bypass of a user creating their own symlink to /bin/bbsuid to invoke the crontab applet directly, bypassing the new wrapper and locked-down directory. This is a material gap in confirming the requirement is fully and robustly satisfied, though the demonstrated primary path works correctly and the mandatory restart protocol was executed and observed end-to-end. Hygiene is otherwise clean aside from one small leftover log file.",
+  "limitations": [
+    "The evaluator has no tool access and could not independently test whether a symlink to /bin/bbsuid named 'crontab' from an arbitrary writable location would bypass the wrapper for a non-allowed user; this is inferred from the observed permissions and symlink list rather than directly demonstrated.",
+    "The executor's evidence does not include a check or hardening of /bin/bbsuid's own permissions or an /etc/bbsuid.conf-style allowlist, leaving open whether the applet dispatch could be reached directly.",
+    "/tmp/reboot.log was left behind after the reboot and not cleaned up, though it is low-risk."
+  ],
+  "command_stats": {
+    "total": 32,
+    "successful": 21,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.65,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.8333,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewed all state-changing executor commands in order: user creation (cmd-5676117eaa9e479a), password set (cmd-e5097103525f4160), real-binary relocation (cmd-b863d52451f04422), wrapper deployment (cmd-03ed93ee662e4179), group/permission lockdown (cmd-d0d60c08ea1c4bda), crond enable/start (cmd-7c0817959a1b4232), and the reboot (cmd-4b33a4f00a4740e5) all map directly to satisfying the task or the mandatory restart protocol, with no unnecessary or unexplained mutations. Two test crontab entries were installed for opsadmin (cmd-fe5b5eddb2434616 pre-reboot, cmd-405afdbc578b47d3 post-reboot) purely to validate the access-control mechanism, and both were immediately removed via 'crontab -r' in the same command block, leaving no residue. The one unreverted residue is /tmp/reboot.log, a small log file created as a side effect of backgrounding the reboot command (cmd-4b33a4f00a4740e5); it is low-risk, bounded, and visible in the after-executor temporary-files diff, but it was not cleaned up.",
+    "evidence_ids": [
+      "cmd-fe5b5eddb2434616",
+      "cmd-56b3b3155f42460d",
+      "cmd-405afdbc578b47d3",
+      "cmd-4b33a4f00a4740e5",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 0.8333,
+  "provisional_reward": 0.8333
+}

@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "unprivileged-rootless-container",
+      "requirement": "Containerized web application runs as the unprivileged account appsvc via a genuine (non-root-daemon) rootless mechanism",
+      "status": "satisfied",
+      "summary": "appsvc system user (uid 112) created with a dedicated subuid/subgid range (cmd-d925445ca0234d3a, cmd-3b82d3109d1c42ed). A rootless runc OCI bundle was built with a user-namespace mapping (container uid 0 -> host uid 112, size 1) and pid/mount/uts/ipc/user namespaces enabled (cmd-83bb5537901d4eb7, cmd-effbd2b59d634f05, cmd-21d782fb84e44360). Both the initial manual test and the final systemd-managed run show the container's busybox process owned by host uid 112 with NSpid showing PID 1 inside its own PID namespace, confirming a real (not merely chrooted) user-namespaced container both before and after reboot (cmd-2e7513bb28d8466e, cmd-b42bba3544cf4b0e).",
+      "evidence_ids": [
+        "cmd-d925445ca0234d3a",
+        "cmd-3b82d3109d1c42ed",
+        "cmd-83bb5537901d4eb7",
+        "cmd-effbd2b59d634f05",
+        "cmd-21d782fb84e44360",
+        "cmd-2e7513bb28d8466e",
+        "cmd-b42bba3544cf4b0e",
+        "cmd-7c3ff01ea4014b33"
+      ]
+    },
+    {
+      "id": "serves-port-8080",
+      "requirement": "Application serves on port 8080",
+      "status": "satisfied",
+      "summary": "ss shows a LISTEN socket on :8080 and curl against both the node IP and localhost return the served HTML before the systemd unit setup (cmd-05d799a4a8eb4384) and again after the reboot cycle (cmd-22ceb2a70f1647d2, http_status=200).",
+      "evidence_ids": [
+        "cmd-05d799a4a8eb4384",
+        "cmd-22ceb2a70f1647d2"
+      ]
+    },
+    {
+      "id": "boot-start-no-login-session",
+      "requirement": "Service starts at boot while appsvc has no active login session",
+      "status": "satisfied",
+      "summary": "loginctl enable-linger appsvc set Linger=yes (cmd-4597a08896f5489a) and a systemd --user unit (appsvc-web.service) was created, enabled and started under user@112.service (cmd-d1adcb9428574a9e, cmd-7c3ff01ea4014b33). A pre-reboot baseline captured boot_id 2f708738... with linger/http state healthy (cmd-7452759daa2b4776). A `reboot` was issued and acknowledged (cmd-0808451b4aac4e5f), and the node was polled through 16 failed SSH attempts until it returned with a new boot_id 4ce1d446... (cmd-30fdf3fdd3ec46ef), matching the fixed lifecycle boot-identity snapshots. Post-reboot, user@112.service and appsvc-web.service are active, loginctl list-sessions shows only the operator's own session (no appsvc entry), HTTP 200 is served, and the container process is still uid 112 with NSpid 1 (cmd-22ceb2a70f1647d2, cmd-b42bba3544cf4b0e) \u2014 a full pre/disruption/post transition is directly observed.",
+      "evidence_ids": [
+        "cmd-4597a08896f5489a",
+        "cmd-d1adcb9428574a9e",
+        "cmd-7c3ff01ea4014b33",
+        "cmd-7452759daa2b4776",
+        "cmd-0808451b4aac4e5f",
+        "cmd-30fdf3fdd3ec46ef",
+        "cmd-22ceb2a70f1647d2",
+        "cmd-b42bba3544cf4b0e",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor delivered a genuinely rootless (user-namespace) containerized busybox httpd running as appsvc (host uid 112) on port 8080, managed by a lingering systemd --user unit that survives without an active login session. A full pre-restart baseline, an acknowledged reboot, a changed boot_id, and post-restart recovery of the service, HTTP response, and no-login-session state were all directly observed, satisfying the mandatory restart-evidence protocol as well as the public task contract. All three material outcomes are satisfied.",
+  "limitations": [
+    "The fixed lifecycle 'listening-sockets' snapshot shows empty results both before and after the executor's work, which contradicts the executor's own direct `ss -tlnp` output showing a LISTEN entry on :8080 at two points in time; this is likely a difference in observation scope/privilege rather than an actual absence of the service, but it could not be independently reconciled from the evidence provided.",
+    "Direct inspection of /proc/<pid>/ns/user was denied ('Permission denied') when checked cross-user, so the distinct user-namespace identity could not be confirmed via namespace inode comparison; the conclusion of a real user namespace instead rests on the OCI spec's uid/gid mapping plus the NSpid PID-namespace evidence, which is strong but indirect for the user-namespace claim specifically.",
+    "Minor untracked residue (/tmp/appsvc-test-run, /tmp/appsvc-xdg scratch directories and the unused systemd-container/busybox-static packages) was not explicitly shown as cleaned up in the captured command trace."
+  ],
+  "command_stats": {
+    "total": 46,
+    "successful": 28,
+    "failed": 17,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Exploration was mostly read-only discovery, but two state-changing detours were not fully reverted and have low-risk residue. (1) cmd-ff136f1b1dff4901 installed the `systemd-container` (nspawn) and `busybox-static` packages while investigating an nspawn-based approach that was abandoned in favor of runc; the packages remain installed and unused in the final solution \u2014 a minor, low-risk, retained residue. (2) The nspawn test attempts (cmd-6b592038d13542ba, cmd-8d328b41e18b4d68) and early runc test runs (cmd-7deac99c46254a3b, cmd-4080f1d4bca84b20) created scratch directories (/tmp/appsvc-test-run, /tmp/appsvc-xdg) and a test 'appsvc-web' runc container; the test container was explicitly killed and deleted (cmd-2e7513bb28d8466e) before the final systemd-managed instance was created, but the /tmp test directories are not shown being removed, leaving small owned-by-appsvc scratch residue. None of these mutations were destructive, broadly scoped, or weakened security controls, and the fixed lifecycle temporary-files snapshot shows only expected systemd-private timesync directories differing between before/after, so actual footprint is bounded.",
+    "evidence_ids": [
+      "cmd-ff136f1b1dff4901",
+      "cmd-6b592038d13542ba",
+      "cmd-8d328b41e18b4d68",
+      "cmd-7deac99c46254a3b",
+      "cmd-4080f1d4bca84b20",
+      "cmd-2e7513bb28d8466e",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

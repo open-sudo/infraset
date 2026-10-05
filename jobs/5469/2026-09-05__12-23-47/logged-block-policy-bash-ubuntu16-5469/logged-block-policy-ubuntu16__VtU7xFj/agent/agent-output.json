@@ -1,0 +1,92 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) as router between lan-a (vtnet1/opt1, 10.60.10.0/24, toward node2) and lan-b (vtnet2/opt2, 10.60.20.0/24, toward node3). Added a logged pf block rule for TCP/23 on both opt1 and opt2 (other traffic still passes), verified a telnet-style attempt from node2 to node3 is refused and logged on node1's filter log, then restarted all three nodes one at a time and re-verified the block+log behavior and network state persisted after each restart.",
+  "actions_performed": [
+    "Discovered actual topology: node1 (OPNsense/FreeBSD) has vtnet0 (shared mgmt network), vtnet1 (link to node2), vtnet2 (link to node3); node2/node3 (Ubuntu 16.04) each have ens2 (mgmt) and ens7 (lan link)",
+    "Assigned OPNsense interfaces opt1=lan-a (10.60.10.1/24 on vtnet1) and opt2=lan-b (10.60.20.1/24 on vtnet2) via config.xml edit + configctl interface reconfigure",
+    "Added pf filter rules per interface: block+log TCP port 23 (quick), then pass-all for other traffic; applied via configctl filter reload; fixed a duplicate-port XML bug found via the PHP filter-compile error",
+    "Statically configured node2 ens7=10.60.10.2/24 and node3 ens7=10.60.20.2/24 persistently via /etc/network/interfaces.d/*.cfg, with cross-LAN static routes added the same way",
+    "Verified cross-LAN ping works (pass rule) and a TCP/23 connection from node2 to node3 times out (blocked)",
+    "Located and displayed the OPNsense filter log entry on node1 (/var/log/filter/filter_20260905.log) showing block,in on vtnet1 from 10.60.10.2 (node2) to 10.60.20.2 port 23",
+    "Captured pre-restart boot markers (FreeBSD kern.boottime; Linux /proc/sys/kernel/random/boot_id) and health evidence for all 3 nodes",
+    "Restarted node1, node2, node3 sequentially (one at a time) using native reboot (shutdown -r now), polled each until exec was available again, and confirmed each node's boot marker changed",
+    "Post-restart, re-verified on all nodes: interface IPs/routes persisted, pf rules present, forwarding enabled, cross-LAN ping still works, and a repeat telnet attempt from node2 to node3:23 was again blocked and logged on node1",
+    "Cleaned up temporary nc listener on node3 and scratch files on node1"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 routes between lan-a and lan-b",
+      "command_ids": [
+        "cmd-8338e3e161344195",
+        "cmd-b9d5c9a511f7498d",
+        "cmd-c521cfd7f8cd46c9",
+        "cmd-2f84dd8591b0499e"
+      ],
+      "summary": "node1's vtnet1/vtnet2 identified as links to node2/node3 respectively; configured as opt1=lan-a/opt2=lan-b; cross-LAN ping from node2 (10.60.10.2) to node3 (10.60.20.2) succeeds through node1."
+    },
+    {
+      "requirement": "Refuse TCP port 23 between lan-a and lan-b",
+      "command_ids": [
+        "cmd-045714a52c834186",
+        "cmd-8f2d48432fde4a87",
+        "cmd-0817c456bbbd4c1d"
+      ],
+      "summary": "pf ruleset shows block-quick-log rules for tcp port 23 on vtnet1 and vtnet2; live telnet-style (nc) connection attempts from node2 to node3:23 time out both before and after restart."
+    },
+    {
+      "requirement": "Record every refused attempt in a log on node1",
+      "command_ids": [
+        "cmd-4a79016d2f594b39",
+        "cmd-cc35cfac14b94816"
+      ],
+      "summary": "node1's /var/log/filter/filter_20260905.log contains block,in entries on vtnet1 tagged with the block rule's label, for every SYN retry from 10.60.10.2 to 10.60.20.2:23, both pre- and post-restart."
+    },
+    {
+      "requirement": "Show a log entry produced by an attempt made from node2",
+      "command_ids": [
+        "cmd-4a79016d2f594b39"
+      ],
+      "summary": "Filter log line: block,in on vtnet1 from 10.60.10.2 (node2) to 10.60.20.2 port 23 -- directly attributable to node2's nc connection attempt."
+    },
+    {
+      "requirement": "Mandatory restart evidence - node1",
+      "command_ids": [
+        "cmd-805c3a00ff114c2d",
+        "cmd-0dbff2927c9a4a6a",
+        "cmd-4cb4d931b0ec4c26",
+        "cmd-01afde9806404ff9"
+      ],
+      "summary": "Baseline kern.boottime captured (1788629867); reboot acknowledged; exec available again; new kern.boottime (1788630221) proves restart; interfaces, pf rules, and forwarding all recovered."
+    },
+    {
+      "requirement": "Mandatory restart evidence - node2",
+      "command_ids": [
+        "cmd-f29a1619122f4b66",
+        "cmd-15d033b7b49e4279",
+        "cmd-12afe57104a84cad",
+        "cmd-2ce5cdb7637b445e"
+      ],
+      "summary": "Baseline boot_id (dbb46974...) captured with working ens7/route; reboot acknowledged (connection closed); exec available again; new boot_id (0cc1a8be...) proves restart; ens7 config, route, and cross-LAN ping all recovered."
+    },
+    {
+      "requirement": "Mandatory restart evidence - node3",
+      "command_ids": [
+        "cmd-314915e88db74945",
+        "cmd-b57a00f1f9d64b13",
+        "cmd-dd184f3fd8b440a9",
+        "cmd-f7cea25c9d2d4b79"
+      ],
+      "summary": "Baseline boot_id (2dffe735...) captured with working ens7/route; reboot acknowledged (connection closed); exec available again; new boot_id (7368881f...) proves restart; ens7 config, route, and cross-LAN ping all recovered."
+    },
+    {
+      "requirement": "Post-restart functional re-verification of block+log",
+      "command_ids": [
+        "cmd-657568701c754eda",
+        "cmd-0817c456bbbd4c1d",
+        "cmd-cc35cfac14b94816",
+        "cmd-70f15d9eda24477e"
+      ],
+      "summary": "After all three nodes were restarted, a fresh telnet attempt from node2 to node3:23 was blocked and a new matching log entry appeared on node1, confirming the policy survives node restarts; listener cleaned up afterward."
+    }
+  ]
+}

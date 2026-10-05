@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node1 (VyOS) configured as DNS resolver answering inventory.internal with node2's address on the shared 10.100.232.0/24 network",
+      "status": "satisfied",
+      "summary": "VyOS static-host-mapping for inventory.internal -> 10.100.232.11 was applied and committed/saved; dig from node1 and from clients confirms resolution. Config was applied via manual validation (cmd-17d7c20f5f8c469b/cmd-80215e19446840bc) and then confirmed reproducible/applied through the Ansible playbook (cmd-13bbd69976c54166). Configuration persisted and worked identically after a full node1 reboot (cmd-44bcf48e207440e4).",
+      "evidence_ids": [
+        "cmd-17d7c20f5f8c469b",
+        "cmd-80215e19446840bc",
+        "cmd-13bbd69976c54166",
+        "cmd-44bcf48e207440e4"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "node1 forwards all other DNS queries upstream",
+      "status": "satisfied",
+      "summary": "VyOS 'service dns forwarding' with name-server 10.100.232.1 configured; dig for example.com against node1 resolves correctly both before and after the node1 restart.",
+      "evidence_ids": [
+        "cmd-80215e19446840bc",
+        "cmd-44bcf48e207440e4"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node2 and node3 configured to resolve through node1",
+      "status": "satisfied",
+      "summary": "resolvconf head override pointing at 10.100.232.10 installed via the Ansible playbook on both clients; getent hosts confirms inventory.internal and a public name resolve through node1 both immediately after the playbook run and after independent restarts of node2 and node3.",
+      "evidence_ids": [
+        "cmd-13bbd69976c54166",
+        "cmd-4008b74dea8346b6",
+        "cmd-f501256393354695",
+        "cmd-912bce5e3e2b42fd"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Implementation performed using Ansible from the control node",
+      "status": "satisfied",
+      "summary": "An inventory/ansible.cfg/playbook.yml were created on node4 (the designated control node) and ansible-playbook was run against node1/node2/node3, with a subsequent idempotent re-run also completing successfully.",
+      "evidence_ids": [
+        "cmd-afa17fff762f41d6",
+        "cmd-13bbd69976c54166",
+        "cmd-4008b74dea8346b6"
+      ]
+    },
+    {
+      "id": "R5",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (node1-node4) with pre-restart baseline, restart acknowledgement, changed boot identity, and recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "For each of node1, node2, node3, and node4, distinct baseline boot_id, a reboot command, a subsequent different boot_id, and post-reboot verification of DNS/resolver functionality (and, for node4, a full successful playbook re-run) are all directly observed in the evidence, matching the fixed lifecycle boot-identity cross-check.",
+      "evidence_ids": [
+        "cmd-1a5e49c03bad42c0",
+        "cmd-b1b6125519ca48e8",
+        "cmd-1674728b796c40df",
+        "cmd-44bcf48e207440e4",
+        "cmd-6f4979fbeb814b84",
+        "cmd-9ccfd46a8b7142f6",
+        "cmd-368ebe4ed1d04131",
+        "cmd-f501256393354695",
+        "cmd-202eacd1315e4398",
+        "cmd-920b37a68b7244a6",
+        "cmd-a1ded998e60e4694",
+        "cmd-912bce5e3e2b42fd",
+        "cmd-d60ef54c87cb476c",
+        "cmd-065ae67192f7430c",
+        "cmd-24a15977601441b5",
+        "cmd-1d3caeaade2b4cbd"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully implemented node1 as a VyOS DNS forwarder answering inventory.internal with node2's address and forwarding all other queries upstream, and configured node2/node3 to resolve through node1, all via an Ansible playbook run from the designated control node (node4). Functional verification (dig/getent) confirms correct resolution both immediately after configuration and after each node's individual restart, with idempotent playbook re-runs also succeeding. The mandatory provider-wide restart-evidence protocol was completed for all four managed nodes with clear baseline, restart, changed-boot-identity, and recovery evidence, including a full playbook re-run from node4 after its own reboot.",
+  "limitations": [
+    "The first successful Ansible-driven application of node1's DNS config (cmd-13bbd69976c54166) occurred after the same configuration had already been applied manually via raw SSH; because the VyOS task uses ansible.builtin.raw (which reports changed by default), it cannot be fully distinguished from evidence alone whether the playbook task itself would independently apply the config from a clean state versus reporting changed due to raw-module semantics on an already-configured system.",
+    "Systemd 'listening-sockets' hygiene evidence is only available for node1 and node4; node2/node3 listening-socket observations were empty/unavailable both before and after, limiting cross-checking of unexpected service exposure on the Ubuntu clients."
+  ],
+  "command_stats": {
+    "total": 84,
+    "successful": 70,
+    "failed": 14,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "The bulk of state-changing commands were clearly tied to necessary prerequisites (SSH key setup for Ansible connectivity to node1/node2/node3) or to applying and verifying the DNS configuration itself. One unnecessary, bounded mutation occurred: the executor wrote /root/.ssh/authorized_keys on node1 (cmd-7bf2d980a3434a23) in an attempt to enable root SSH login, which was refused by sshd (ROOT LOGIN REFUSED, observed in cmd-dda4a11b91eb4aeb) and was then fully reverted (cmd-ef76c8fd24c6474e removed the file) once the executor switched to the working 'vyos' user. Several ansible-playbook and raw-SSH command attempts failed during iterative debugging of quoting/escaping issues (e.g. cmd-69a29de7df044361, cmd-3daa64e0816c40e1, cmd-8db6df840f794991, cmd-5ce7590ffb284467, cmd-8bcdb165f6364a05) but these were re-attempts of the same intended configuration, not divergent or destructive mutations, and did not leave residue. The lifecycle diff between after-prepare and after-executor shows only expected changes (new boot identities from restarts, DNS service now listening on node1, rotated systemd-private temp dirs) with no failed services, no package-health issues, and no unexplained residue.",
+    "evidence_ids": [
+      "cmd-7bf2d980a3434a23",
+      "cmd-dda4a11b91eb4aeb",
+      "cmd-ef76c8fd24c6474e",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

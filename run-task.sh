@@ -70,9 +70,14 @@ provider_requirement="${INFRASET_PROVIDER_REQUIREMENT:-harbor-antrieb @ git+http
 harbor_requirement="${HARBOR_REQUIREMENT:-harbor @ git+https://github.com/open-sudo/harbor.git}"
 model="${INFRASET_MODEL:-claude-sonnet-5}"
 reasoning_effort="${INFRASET_REASONING_EFFORT:-medium}"
+evaluator_model="${INFRASET_EVALUATOR_MODEL:-}"
+evaluator_reasoning_effort="${INFRASET_EVALUATOR_REASONING_EFFORT:-}"
 service_tier="${INFRASET_SERVICE_TIER:-fast}"
 agent_name="${INFRASET_AGENT_NAME:-claude-code}"
 jobs_root="${INFRASET_JOBS_DIR:-$script_dir/jobs}"
+transport="${INFRASET_TRANSPORT:-trentina}"
+execution_mode="${INFRASET_EXECUTION_MODE:-interactive}"
+skip_existing=0
 n_attempts="${INFRASET_N_ATTEMPTS:-1}"
 parallel_limit="${INFRASET_PARALLEL:-1}"
 # Fallback for a task that declares no [agent] timeout_sec of its own. A task
@@ -94,7 +99,7 @@ usage() {
     "Several tasks and folders may be given at once, so a shell glob that" \
     "expands to many task directories works directly:" \
     "" \
-    "  $0 ./tasks/sonic-networking/*/traffic-mirroring-*" \
+    "  $0 ./tasks/4523/*" \
     "" \
     "A path named more than once, whether directly or by way of a folder that" \
     "contains it, runs once." \
@@ -102,16 +107,29 @@ usage() {
     "Options:" \
     "  -j, --parallel N       Tasks to run concurrently (default: $parallel_limit)" \
     "  -k, --n-attempts N     Sequential trials for each task (default: $n_attempts)" \
+    "      --agent-name NAME  Host agent backend (default: $agent_name)" \
+    "      --model MODEL      Model passed to the selected host agent (default: $model)" \
+    "      --reasoning-effort LEVEL  Agent reasoning effort (default: $reasoning_effort)" \
+    "      --evaluator-model MODEL  Independent evaluator model (default: main model)" \
+    "      --evaluator-reasoning-effort LEVEL  Independent evaluator reasoning effort (default: main level)" \
+    "      --service-tier TIER  Codex service tier (default: $service_tier)" \
+    "      --transport NAME   Execution transport: direct or trentina (default: $transport)." \
+    "      --mode MODE        Executor mode: interactive or batch (default: $execution_mode)." \
+    "      --skip-existing    Skip completed tasks with matching settings and task revision." \
     "  -m, --match GLOB       Keep only tasks whose directory name matches GLOB." \
     "                         Repeatable; a task matching any GLOB is kept." \
     "                         Quote it so the shell leaves it alone:" \
-    "                           $0 -m 'traffic-mirroring*' ./tasks/sonic-networking" \
+    "                           $0 -m '*-bash-*' ./tasks/4523" \
     "  -h, --help             Show this help" \
     "" \
     "Trials for the same task never overlap. Up to --parallel different tasks" \
     "may run at the same time." \
     "" \
-    "Environment equivalents: INFRASET_PARALLEL and INFRASET_N_ATTEMPTS." \
+    "Environment equivalents: INFRASET_PARALLEL, INFRASET_N_ATTEMPTS," \
+    "and INFRASET_TRANSPORT. Results are written below" \
+    "jobs/<id>/<timestamp>/<usecase>-<language>-<os>-<id>." \
+    "Task layout: tasks/<id>/<usecase>-<language>-<os>-<id>." \
+    "The scenario folder supplies the ID; every task in it must carry that ID." \
     "INFRASET_AGENT_TIMEOUT_SEC sets the executor timeout (default:" \
     "$agent_timeout_sec) only for a task that declares no [agent] timeout_sec." \
     "A task that declares one wins, so change the task, or its catalog entry," \
@@ -166,6 +184,114 @@ while [[ $# -gt 0 ]]; do
       n_attempts="${1#*=}"
       shift
       ;;
+    --agent-name)
+      if [[ $# -lt 2 ]]; then
+        printf 'Option %s requires a value.\n' "$1" >&2
+        usage
+        exit 2
+      fi
+      agent_name="$2"
+      shift 2
+      ;;
+    --agent-name=*)
+      agent_name="${1#*=}"
+      shift
+      ;;
+    --model)
+      if [[ $# -lt 2 ]]; then
+        printf 'Option %s requires a value.\n' "$1" >&2
+        usage
+        exit 2
+      fi
+      model="$2"
+      shift 2
+      ;;
+    --model=*)
+      model="${1#*=}"
+      shift
+      ;;
+    --reasoning-effort)
+      if [[ $# -lt 2 ]]; then
+        printf 'Option %s requires a value.\n' "$1" >&2
+        usage
+        exit 2
+      fi
+      reasoning_effort="$2"
+      shift 2
+      ;;
+    --reasoning-effort=*)
+      reasoning_effort="${1#*=}"
+      shift
+      ;;
+    --evaluator-model)
+      if [[ $# -lt 2 ]]; then
+        printf 'Option %s requires a value.\n' "$1" >&2
+        usage
+        exit 2
+      fi
+      evaluator_model="$2"
+      shift 2
+      ;;
+    --evaluator-model=*)
+      evaluator_model="${1#*=}"
+      shift
+      ;;
+    --evaluator-reasoning-effort)
+      if [[ $# -lt 2 ]]; then
+        printf 'Option %s requires a value.\n' "$1" >&2
+        usage
+        exit 2
+      fi
+      evaluator_reasoning_effort="$2"
+      shift 2
+      ;;
+    --evaluator-reasoning-effort=*)
+      evaluator_reasoning_effort="${1#*=}"
+      shift
+      ;;
+    --service-tier)
+      if [[ $# -lt 2 ]]; then
+        printf 'Option %s requires a value.\n' "$1" >&2
+        usage
+        exit 2
+      fi
+      service_tier="$2"
+      shift 2
+      ;;
+    --service-tier=*)
+      service_tier="${1#*=}"
+      shift
+      ;;
+    --transport)
+      if [[ $# -lt 2 ]]; then
+        printf 'Option %s requires a value.\n' "$1" >&2
+        usage
+        exit 2
+      fi
+      transport="$2"
+      shift 2
+      ;;
+    --transport=*)
+      transport="${1#*=}"
+      shift
+      ;;
+    --mode)
+      if [[ $# -lt 2 ]]; then
+        printf 'Option %s requires a value.\n' "$1" >&2
+        usage
+        exit 2
+      fi
+      execution_mode="$2"
+      shift 2
+      ;;
+    --mode=*)
+      execution_mode="${1#*=}"
+      shift
+      ;;
+    --skip-existing)
+      skip_existing=1
+      shift
+      ;;
     --match|-m)
       if [[ $# -lt 2 ]]; then
         printf 'Option %s requires a value.\n' "$1" >&2
@@ -203,6 +329,13 @@ if [[ ${#input_args[@]} -eq 0 ]]; then
   exit 2
 fi
 
+if [[ -z "$evaluator_model" ]]; then
+  evaluator_model="$model"
+fi
+if [[ -z "$evaluator_reasoning_effort" ]]; then
+  evaluator_reasoning_effort="$reasoning_effort"
+fi
+
 for value_name in parallel_limit n_attempts agent_timeout_sec; do
   value="${!value_name}"
   if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
@@ -210,6 +343,31 @@ for value_name in parallel_limit n_attempts agent_timeout_sec; do
     exit 2
   fi
 done
+
+if [[ "$transport" != "direct" && "$transport" != "trentina" ]]; then
+  printf 'Unsupported transport %s; expected direct or trentina.\n' "$transport" >&2
+  exit 2
+fi
+
+if [[ "$execution_mode" != "interactive" && "$execution_mode" != "batch" ]]; then
+  printf 'Unsupported execution mode %s; expected interactive or batch.\n' \
+    "$execution_mode" >&2
+  exit 2
+fi
+export INFRASET_EXECUTION_MODE="$execution_mode"
+
+if [[ "$transport" == "trentina" ]]; then
+    # Route only executor commands through Trentina. Provisioning, preparation,
+    # collection, and teardown continue to use the direct Antrieb connection.
+    export ANTRIEB_EXECUTOR_MCP_URL="${ANTRIEB_EXECUTOR_MCP_URL:-http://localhost:8019/gateway/infraset/mcp}"
+    export ANTRIEB_EXECUTOR_TOKEN="${ANTRIEB_EXECUTOR_TOKEN:-somesecretstring}"
+    export ANTRIEB_EXECUTOR_TOOL_PREFIX="${ANTRIEB_EXECUTOR_TOOL_PREFIX:-antrieb__}"
+else
+  # Route executor commands directly to Antrieb.
+  unset ANTRIEB_EXECUTOR_MCP_URL
+  unset ANTRIEB_EXECUTOR_TOKEN
+  unset ANTRIEB_EXECUTOR_TOOL_PREFIX
+fi
 
 declare -a task_paths=()
 declare -A task_paths_seen=()
@@ -268,12 +426,32 @@ if [[ ${#match_globs[@]} -gt 0 ]]; then
   task_paths=("${filtered_paths[@]}")
 fi
 
+# A scenario owns the ID. Every task must be directly inside its scenario folder.
+task_scenario_id() {
+  local task_path="$1"
+  local parent="${task_path%/*}"
+  local scenario_id="${parent##*/}"
+  if [[ ! "$scenario_id" =~ ^[1-9][0-9]{3}$ ]]; then
+    printf 'Task must be inside a four-digit scenario folder: %s\n' "$task_path" >&2
+    return 2
+  fi
+  if [[ "${task_path##*/}" != *-"$scenario_id" ]]; then
+    printf 'Task name must end with its scenario ID %s: %s\n' "$scenario_id" "$task_path" >&2
+    return 2
+  fi
+  printf '%s' "$scenario_id"
+}
+
 declare -A task_names_seen=()
+declare -A result_names=()
+declare -A scenario_ids=()
 declare -A environment_files=()
 for task_path in "${task_paths[@]}"; do
-  task_name="$(basename "$task_path")"
+  scenario_ids["$task_path"]="$(task_scenario_id "$task_path")"
+  task_name="${task_path##*/}"
+  result_names["$task_path"]="$task_name"
   if [[ -n "${task_names_seen[$task_name]+present}" ]]; then
-    printf 'Duplicate task name %s found in %s and %s\n' \
+    printf 'Duplicate result folder %s found in %s and %s\n' \
       "$task_name" "${task_names_seen[$task_name]}" "$task_path" >&2
     exit 2
   fi
@@ -316,6 +494,10 @@ else
 fi
 
 job_name="${INFRASET_JOB_NAME:-$(date '+%Y-%m-%d__%H-%M-%S')}"
+if [[ ! "$job_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+  printf 'INFRASET_JOB_NAME must be one path segment: %s\n' "$job_name" >&2
+  exit 2
+fi
 
 "${validator_runner[@]}" bash -c '
 validator="$1"
@@ -343,32 +525,78 @@ fi
 
 max_active_tasks="$parallel_limit"
 
-task_jobs_dir() {
+task_job_dir() {
   local task_path="$1"
-  local tasks_root="$script_dir/tasks"
-  if [[ "$task_path" == "$tasks_root/"* ]]; then
-    printf '%s/%s' "$jobs_root" "${task_path#$tasks_root/}"
-  else
-    printf '%s/%s' "$jobs_root" "$(basename "$task_path")"
+  printf '%s/%s/%s/%s' \
+    "$jobs_root" "${scenario_ids[$task_path]}" "$job_name" "${result_names[$task_path]}"
+}
+
+execution_parameters=(
+  --parameter "transport=$transport"
+  --parameter "execution_mode=$execution_mode"
+  --parameter "agent_name=$agent_name"
+  --parameter "model=$model"
+  --parameter "reasoning_effort=$reasoning_effort"
+  --parameter "service_tier=$([[ "$agent_name" == codex ]] && printf '%s' "$service_tier" || true)"
+  --parameter "evaluator_model=$evaluator_model"
+  --parameter "evaluator_reasoning_effort=$evaluator_reasoning_effort"
+  --parameter "agent_timeout_sec=$agent_timeout_sec"
+  --parameter "n_attempts=$n_attempts"
+  --parameter "parallel_limit=$parallel_limit"
+  --parameter "harbor_requirement=$harbor_requirement"
+  --parameter "provider_requirement=$provider_requirement"
+  --harbor-dir "${HARBOR_DIR:-}"
+  --provider-dir "${INFRASET_PROVIDER_DIR:-}"
+)
+if (( skip_existing )); then
+  execution_parameters+=(--skip-existing)
+fi
+refresh_job_index() {
+  if ! "${validator_runner[@]}" python "$script_dir/scripts/generate_job_index.py" \
+      --jobs-root "$jobs_root" "$@"; then
+    printf 'Warning: could not refresh %s/INDEX.md; regenerate with scripts/generate_job_index.py.\n' "$jobs_root" >&2
   fi
 }
 
-printf 'Tasks: %s; sequential trials per task: %s; concurrent tasks: %s\n' \
-  "${#task_paths[@]}" "$n_attempts" "$parallel_limit"
+execution_paths="$("${validator_runner[@]}" python "$script_dir/scripts/execution_metadata.py" \
+  --jobs-root "$jobs_root" --batch "$job_name" \
+  "${execution_parameters[@]}" "${task_paths[@]}")"
+if [[ -z "$execution_paths" ]]; then
+  refresh_job_index
+  exit 0
+fi
+mapfile -t task_paths <<< "$execution_paths"
+
+printf 'Transport: %s; mode: %s; tasks: %s; sequential trials per task: %s; concurrent tasks: %s\n' \
+  "$transport" "$execution_mode" "${#task_paths[@]}" "$n_attempts" "$parallel_limit"
+printf 'Results: %s/<scenario-id>/%s/<task-name>\n' "$jobs_root" "$job_name"
 
 for task_path in "${task_paths[@]}"; do
-  job_dir="$(task_jobs_dir "$task_path")/$job_name"
+  job_dir="$(task_job_dir "$task_path")"
   mkdir -p "$job_dir"
   cp "$task_path/instruction.md" "$job_dir/instruction.md"
   cp "${environment_files[$task_path]}" "$job_dir/environment.toml"
+  cp "$task_path/variant.toml" "$job_dir/variant.toml"
+  printf '\n[run]\nid = "%s"\nexecution_mode = "%s"\ntransport = "%s"\n' \
+    "${scenario_ids[$task_path]}" "$execution_mode" "$transport" >> "$job_dir/variant.toml"
 done
+
+refresh_job_index
 
 run_one_task() {
   local task_path="$1"
   local task_name
+  local job_dir
   local jobs_dir
   task_name="$(basename "$task_path")"
-  jobs_dir="$(task_jobs_dir "$task_path")"
+  job_dir="$(task_job_dir "$task_path")"
+  jobs_dir="$(dirname "$job_dir")"
+  # Pass this scenario's snapshotted prompt to this child only; preserve newlines.
+  export INFRASET_EXECUTOR_PROMPT=""
+  if [[ -f "$jobs_dir/prompt" ]]; then
+    INFRASET_EXECUTOR_PROMPT="$(cat "$jobs_dir/prompt"; printf '.')"
+    INFRASET_EXECUTOR_PROMPT="${INFRASET_EXECUTOR_PROMPT%.}"
+  fi
 
   printf '[%s] Starting (%s sequential trial(s))\n' \
     "$task_name" "$n_attempts"
@@ -377,14 +605,15 @@ run_one_task() {
     --agent-kwarg agent_name="$agent_name"
     --agent-kwarg reasoning_effort="$reasoning_effort"
     --agent-kwarg timeout_sec="$agent_timeout_sec"
+    --agent-kwarg execution_mode="$execution_mode"
     --agent-kwarg diagnostic_agent="$agent_name"
     --agent-kwarg diagnostic_model="$model"
     --agent-kwarg diagnostic_reasoning_effort="$reasoning_effort"
   )
   local -a verifier_kwargs=(
     --verifier-kwarg agent="$agent_name"
-    --verifier-kwarg model="$model"
-    --verifier-kwarg reasoning_effort="$reasoning_effort"
+    --verifier-kwarg model="$evaluator_model"
+    --verifier-kwarg reasoning_effort="$evaluator_reasoning_effort"
     --verifier-kwarg minimum_coverage=1.0
   )
   if [[ "$agent_name" == "codex" && -n "$service_tier" ]]; then
@@ -396,7 +625,7 @@ run_one_task() {
     --yes \
     --path "$task_path" \
     --jobs-dir "$jobs_dir" \
-    --job-name "$job_name" \
+    --job-name "$task_name" \
     --agent harbor_antrieb.agent:AntriebHostAgent \
     --model "$model" \
     "${agent_kwargs[@]}" \
@@ -443,10 +672,12 @@ wait_for_one_task() {
   completed_tasks=$((completed_tasks + 1))
 
   if (( status == 0 )); then
+    refresh_job_index --job "$(task_job_dir "$task_path")" --status finished --exit-code "$status"
     printf '[%s] Completed successfully\n' "$task_name"
   else
     printf '[%s] Failed with exit code %s\n' "$task_name" "$status" >&2
     failed_tasks+=("$task_name")
+    refresh_job_index --job "$(task_job_dir "$task_path")" --status failed --exit-code "$status"
   fi
 }
 
@@ -458,6 +689,7 @@ terminate_active_tasks() {
   done
   for pid in "${active_pids[@]}"; do
     wait "$pid" 2>/dev/null || true
+    refresh_job_index --job "$(task_job_dir "${task_by_pid[$pid]}")" --status interrupted --exit-code 130
   done
   exit 130
 }
@@ -468,6 +700,7 @@ for task_path in "${task_paths[@]}"; do
     wait_for_one_task
   done
 
+  refresh_job_index --job "$(task_job_dir "$task_path")" --status running
   (run_one_task "$task_path") &
   pid=$!
   active_pids+=("$pid")

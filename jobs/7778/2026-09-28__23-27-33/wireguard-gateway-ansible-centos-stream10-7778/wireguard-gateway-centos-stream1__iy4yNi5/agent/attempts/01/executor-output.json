@@ -1,0 +1,107 @@
+{
+  "status": "completed",
+  "summary": "Implemented via Ansible from control node4: node2 serves an app on tcp/8080 (nginx), firewalled to accept 8080 only from node1's LAN IP. node1 (VyOS) terminates a WireGuard tunnel (wg0, 10.200.0.0/24) and applies a hairpin source-NAT rule that translates node3's tunnel-sourced traffic to node1's own LAN IP before it reaches node2, plus forward/input firewall rules that scope tunnel traffic to only node2:8080 and allow inbound UDP/51820. node3 runs a WireGuard client with AllowedIPs scoped to only node2's IP, so it reaches the app solely through the tunnel via node1; a forced direct-LAN attempt from node3 to node2:8080 is rejected. Completed the mandatory one-at-a-time restart protocol on all four managed nodes, confirming changed boot_id and full functional recovery after each restart.",
+  "actions_performed": [
+    "Surveyed topology: node1=VyOS gateway, node2/node3=CentOS Stream 10, node4=Ubuntu 24.04 Ansible control node, all on flat 10.100.96.0/24",
+    "Wired cluster SSH key from node4 to node1/2/3; added CLUSTER_SSH_PUBKEY to VyOS 'vyos' user login (root SSH login is disabled on VyOS) with existing sudo NOPASSWD",
+    "Wrote /root/ansible/{inventory.ini,ansible.cfg,site.yml} on node4 implementing: nginx app on node2:8080 restricted via firewalld rich-rule to node1's IP only (zone default target implicitly denies everything else); WireGuard server (wg0) on node1 with keypair generated via VyOS PKI helper; WireGuard client keypair + wg-quick config generated on node3 with AllowedIPs scoped to node2's IP only; peer registration + hairpin source-NAT (tunnel src -> node2 dst translated to node1 LAN IP) + forward/input firewall rules on node1",
+    "Debugged and fixed real issues found while iterating the playbook: VyOS shell tasks require executable:/bin/bash (POSIX sh rejects vyatta function names); wg0 private-key must be generated after the interface's address is staged, not before interface creation; removed a generic firewalld reject rule on node2 that was evaluated before the source-specific allow rule and blocked all 8080 traffic including from node1",
+    "Ran the playbook to completion (idempotent on re-run) and validated end-to-end: node3 curl to http://10.100.96.11:8080/ returns 200 through wg0, and a forced --interface enp1s0 (bypassing the tunnel) direct attempt fails",
+    "Executed mandatory restart protocol on node2, node3, node1 (VyOS 'run reboot now'), then node4, one at a time: captured boot_id + health baseline before each, restarted with a backgrounded ack-then-reboot command (or VyOS op-mode reboot), polled until reachable, confirmed boot_id changed, and reverified nginx/firewalld (node2), wg-quick tunnel and handshake (node3), VyOS wg0/NAT/firewall config reloaded from saved config (node1), and Ansible ping to all managed nodes (node4)",
+    "Re-verified node3->node2 tunnel connectivity (200 OK) after every node's restart, including the final one"
+  ],
+  "evidence": [
+    {
+      "requirement": "Application served from node2 on TCP port 8080",
+      "command_ids": [
+        "cmd-ff94bc06ccbb422b",
+        "cmd-9e8681c988394268"
+      ],
+      "summary": "node2 has nginx listening on 8080 (ss -tlnp) and curl to 127.0.0.1:8080 returns the app page both before and after node2's restart"
+    },
+    {
+      "requirement": "node3 can reach node2:8080 only via a WireGuard tunnel terminated on node1",
+      "command_ids": [
+        "cmd-d516e09425364adb",
+        "cmd-cf195b5a5b26468e",
+        "cmd-9b4d3e3d9afd4bbd",
+        "cmd-f81d28defea744b9"
+      ],
+      "summary": "curl from node3 to 10.100.96.11:8080 returns 200 via the wg0-routed path; a forced direct-LAN attempt (--interface enp1s0, bypassing wg0) fails with connection error; tunnel access continues to succeed after node1's and node4's restarts"
+    },
+    {
+      "requirement": "node2 rejects direct (non-tunnel) access on 8080",
+      "command_ids": [
+        "cmd-25c32d64af8545f6",
+        "cmd-8ecce44fb5bb4c04",
+        "cmd-b921decedbcf43c5",
+        "cmd-cf195b5a5b26468e"
+      ],
+      "summary": "firewalld on node2 only allows 8080 from node1's IP (10.100.96.10/32); zone target 'default' implicitly denies unlisted ports/sources; node3's direct-LAN curl attempt fails"
+    },
+    {
+      "requirement": "WireGuard gateway configured on node1 (VyOS) via Ansible, with NAT/forwarding making the tunnel usable",
+      "command_ids": [
+        "cmd-3859e474e8f04999",
+        "cmd-d137f77c7d724ea1",
+        "cmd-63c896e460fb4818",
+        "cmd-4b68aa743e6f4ebc"
+      ],
+      "summary": "node1 shows wg0 up with address 10.200.0.1/24, NAT source rule 100 translating tunnel traffic to node1's LAN IP, and forward-filter rule 10 restricting forwarded traffic to node2:8080 from wg0; conntrack and forward-filter counters show hits; config persists after reboot"
+    },
+    {
+      "requirement": "Implementation done using Ansible from the designated control node",
+      "command_ids": [
+        "cmd-947906579aa649cc",
+        "cmd-f5850bab6d944c14",
+        "cmd-268bbc0504dc4764",
+        "cmd-f09c29bc5a674267"
+      ],
+      "summary": "node4 (Ubuntu, ansible-core 2.20 pre-installed) is the only node used as Ansible control; site.yml orchestrates node1/node2/node3 over SSH and was run/re-run successfully (idempotent) from node4"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node2 (baseline, restart ack, changed boot_id, recovery)",
+      "command_ids": [
+        "cmd-6a8c8a203dde43e2",
+        "cmd-f3625ceccd2a46d0",
+        "cmd-62cc01d922564f0b",
+        "cmd-04e5204d75cb463a",
+        "cmd-9e8681c988394268",
+        "cmd-9e8681c988394268"
+      ],
+      "summary": "Baseline boot_id 5e93a57c...; reboot acknowledged; new boot_id 92b40853...; nginx/firewalld and app curl confirmed healthy post-reboot"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node3 (baseline, restart ack, changed boot_id, recovery)",
+      "command_ids": [
+        "cmd-6c434defbd294137",
+        "cmd-1b14ca4365654e88",
+        "cmd-8ee071dc729645fc",
+        "cmd-d276547f5c9f46be"
+      ],
+      "summary": "Baseline boot_id 21de1f79...; reboot acknowledged; new boot_id abcffc91...; wg-quick@wg0 active, fresh handshake, tunnel curl returns 200 post-reboot"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node1/VyOS (baseline, restart ack, changed boot_id, recovery)",
+      "command_ids": [
+        "cmd-017c45606c1045e3",
+        "cmd-a94dd0c230284d2f",
+        "cmd-9da8d7da29ae4b44",
+        "cmd-4b68aa743e6f4ebc",
+        "cmd-9b4d3e3d9afd4bbd"
+      ],
+      "summary": "Baseline boot_id 2674ee60...; VyOS 'reboot now' acknowledged; new boot_id fabc4037...; wg0/NAT/firewall config reloaded from saved config and tunnel end-to-end curl still returns 200 post-reboot"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node4/control node (baseline, restart ack, changed boot_id, recovery)",
+      "command_ids": [
+        "cmd-010c16c3e841451e",
+        "cmd-efe122c22e6f43c7",
+        "cmd-40ec5ae2ea0d4067",
+        "cmd-286278b8c6984000",
+        "cmd-f81d28defea744b9"
+      ],
+      "summary": "Baseline boot_id 489b0bb4...; reboot acknowledged; new boot_id cc0ad2b4...; Ansible ping to all three managed nodes succeeds post-reboot and the app remains reachable through the tunnel"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 has a routed interface inside each VLAN (correct per-VLAN IP addressing on separate NICs facing node2 and node3)",
+      "status": "satisfied",
+      "summary": "node1 eth1 assigned 192.168.10.1/24 (facing node2's subnet) and eth2 assigned 192.168.20.1/24 (facing node3's subnet), confirmed up and directly reachable to both peers before and after restart.",
+      "evidence_ids": [
+        "cmd-702c29d007214a1d",
+        "cmd-4d7e48d0d3304313",
+        "cmd-c441f26475194464",
+        "cmd-c4ffa6659a114115"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node1 forwards traffic between the two VLANs (acts as a router)",
+      "status": "satisfied",
+      "summary": "net.ipv4.ip_forward and per-interface forwarding enabled on eth1/eth2 with rp_filter disabled, persisted via sysctl.d, and shown active both before and after node1's restart.",
+      "evidence_ids": [
+        "cmd-efcbc6426e454c09",
+        "cmd-c441f26475194464",
+        "cmd-c4ffa6659a114115"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node2 and node3 can reach each other across the VLAN boundary through node1",
+      "status": "satisfied",
+      "summary": "node2->node3 and node3->node2 pings succeed with ttl=63 (one router hop), consistent with routing through node1, both pre-restart and re-verified after all three nodes were rebooted.",
+      "evidence_ids": [
+        "cmd-c7c8fcb8572f4f28",
+        "cmd-103f42ee940641b1",
+        "cmd-c03823532fd342e2",
+        "cmd-2f66bdad27704849"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task contract are directly satisfied with observed evidence: node1 has correctly addressed routed interfaces in both VLANs (192.168.10.1/24 on eth1, 192.168.20.1/24 on eth2), IPv4 forwarding is enabled and active on node1, and node2/node3 successfully ping each other with ttl=63 confirming routing through node1. Beyond the public contract, the executor also ran the full node-restart evidence protocol on all three nodes: each shows a distinct pre-restart boot identity and healthy baseline, an explicit reboot acknowledgement, a changed post-restart boot identity matching the fixed after_executor snapshot, and full recovery of interface IPs, forwarding sysctls, static routes, and cross-VLAN connectivity \u2014 a coherent, complete transition for every node. The main blemish is an initial overly broad service-masking mutation on node1 that risked breaking management access, which the executor detected and corrected before the disruptive reboot test.",
+  "limitations": [
+    "No independent access to live systems; assessment relies entirely on the captured command transcript and fixed lifecycle snapshots.",
+    "The corrected networking.service masking issue was resolved before the restart test, but the transcript does not show an explicit reboot attempt during the brief masked window, so the severity of that specific risk window cannot be fully confirmed beyond the executor's own diagnosis.",
+    "Cross-VLAN reachability is demonstrated via ICMP ping only; no other protocols (TCP/UDP application traffic) were tested, though this is a reasonable and sufficient proxy for the stated requirement."
+  ],
+  "command_stats": {
+    "total": 48,
+    "successful": 43,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most executor mutations were purposeful and either final or cleanly superseded. Two issues are worth flagging: (1) plain `ip addr add` on node2/node3 enp8s0 (cmd-fe74a76bfef24128, cmd-f83fbe0164e4484b) was silently reverted by NetworkManager and had to be redone via nmcli (cmd-84fe732067f34cc8, cmd-2b6afc4e006b4d4b) \u2014 a low-risk, self-corrected troubleshooting detour with no lasting residue. (2) More significantly, the executor's first persistence attempt on node1 masked both interfaces-config.service and networking.service (cmd-cc05760101784f3d) without initially realizing networking.service brings up the eth0 management interface \u2014 a broad, higher-risk mutation to a boot-critical service. This was caught before the reboot test (cmd-09c51b4fbf934d30, cmd-87f26163c1a94272) and corrected by unmasking both services and re-ordering the custom oneshot unit after them (cmd-f808ec91c8094782), and node1 remained reachable through its full reboot cycle. Because the risky masking was bounded in time and fully reverted prior to the disruptive test, it is treated less severely than a retained misconfiguration, but it still represents an unnecessary, self-inflicted risk to management connectivity that a more careful initial design would have avoided. No residual failed services, orphaned files, or package inconsistencies attributable to the executor were found in the after_executor snapshot (SONiC's system-health.service/watchdog-control.service failures are pre-existing baseline conditions, not executor-caused).",
+    "evidence_ids": [
+      "cmd-fe74a76bfef24128",
+      "cmd-f83fbe0164e4484b",
+      "cmd-84fe732067f34cc8",
+      "cmd-2b6afc4e006b4d4b",
+      "cmd-cc05760101784f3d",
+      "cmd-09c51b4fbf934d30",
+      "cmd-87f26163c1a94272",
+      "cmd-f808ec91c8094782",
+      "global:after_executor:node1:failed-services",
+      "global:before_prepare:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

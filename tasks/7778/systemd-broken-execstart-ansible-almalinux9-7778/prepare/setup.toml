@@ -1,0 +1,86 @@
+timeout_sec = 300
+
+[[steps]]
+id = "install-heartbeat-service"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+if ! id svc-heartbeat >/dev/null 2>&1; then
+  useradd --system --home-dir /nonexistent --shell /sbin/nologin svc-heartbeat
+fi
+install -o root -g root -m 0755 /dev/null /usr/local/bin/telemetry-heartbeat
+cat > /usr/local/bin/telemetry-heartbeat <<'INFRASET_PROGRAM'
+#!/bin/sh
+set -eu
+umask 027
+while :; do
+  temporary="/run/telemetry-heartbeat/heartbeat.$$"
+  date -u '+%Y-%m-%dT%H:%M:%SZ' > "$temporary"
+  mv -f "$temporary" /run/telemetry-heartbeat/heartbeat
+  sleep 1
+done
+INFRASET_PROGRAM
+chown root:root /usr/local/bin/telemetry-heartbeat
+chmod 0755 /usr/local/bin/telemetry-heartbeat
+restorecon /usr/local/bin/telemetry-heartbeat
+cat > /etc/systemd/system/telemetry-heartbeat.service <<'INFRASET_UNIT'
+[Unit]
+Description=Telemetry heartbeat writer
+After=local-fs.target
+StartLimitIntervalSec=10
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=svc-heartbeat
+Group=svc-heartbeat
+RuntimeDirectory=telemetry-heartbeat
+RuntimeDirectoryMode=0750
+ExecStart=/usr/local/bin/telemetry-heartbeat-missing
+Restart=on-failure
+RestartSec=200ms
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/telemetry-heartbeat
+
+[Install]
+WantedBy=multi-user.target
+INFRASET_UNIT
+chown root:root /etc/systemd/system/telemetry-heartbeat.service
+chmod 0644 /etc/systemd/system/telemetry-heartbeat.service
+restorecon /etc/systemd/system/telemetry-heartbeat.service
+systemctl daemon-reload
+systemctl enable telemetry-heartbeat.service >/dev/null
+'''
+
+[[steps]]
+id = "trigger-broken-execstart"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+systemctl reset-failed telemetry-heartbeat.service || true
+systemctl start telemetry-heartbeat.service >/dev/null 2>&1 || true
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  if systemctl is-failed --quiet telemetry-heartbeat.service; then
+    break
+  fi
+  sleep 1
+done
+systemctl is-enabled --quiet telemetry-heartbeat.service
+systemctl is-failed --quiet telemetry-heartbeat.service
+test "$(systemctl show telemetry-heartbeat.service -p Result --value)" = exit-code
+test "$(systemctl show telemetry-heartbeat.service -p ExecMainStatus --value)" = 203
+test ! -e /run/telemetry-heartbeat/heartbeat
+'''

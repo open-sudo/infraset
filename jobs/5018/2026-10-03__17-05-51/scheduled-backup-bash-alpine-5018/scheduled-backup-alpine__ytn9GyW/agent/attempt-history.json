@@ -1,0 +1,70 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-10-03T21:18:52.064000+00:00",
+      "outcome": "executor_blocked",
+      "finished_at": "2026-10-03T21:26:45.696876+00:00",
+      "error": "The nightly backup was configured and verified, and node1 passed restart persistence. During the mandatory node2 restart, node2 returned at the network layer but SSH and managed command execution did not recover. The existing archive remains healthy on node1, but future backups are currently blocked because node2 TCP/22 is closed. Restart persistence is not claimed for node2.",
+      "diagnosis": {
+        "summary": "The backup implementation worked before node2\u2019s restart and persisted across node1\u2019s restart, but the attempt did not establish an operational nightly backup after both nodes restarted. The observed blocker was node2 accepting ICMP while refusing TCP/22. The evidence cannot determine why SSH failed to return because no post-restart commands or logs were obtainable from node2.",
+        "evidence": [
+          {
+            "source": "Executor report and pre-restart evidence",
+            "finding": "Both nodes reported Alpine Linux 3.23 with kernel 6.18.7-0-lts; no OS or kernel replacement was reported."
+          },
+          {
+            "source": "Backup validation evidence",
+            "finding": "A restricted SSH/tar transfer produced /var/backups/inventory/inventory-2026-10-03.tar.gz on node1. The archive was readable and checksummed, though its listing contained only data/, consistent with the newly created and apparently empty source directory."
+          },
+          {
+            "source": "Scheduling and retention evidence",
+            "finding": "The executor reports a 02:00 daily schedule, active/enabled crond, and successful deletion of an expired test archive. The persisted script used dated filenames and find -mtime +6."
+          },
+          {
+            "source": "node1 post-restart command",
+            "finding": "node1 had a changed boot ID, active crond in the default runlevel, a retained mode-600 root-owned archive, and persisted backup-script controls."
+          },
+          {
+            "source": "node2 post-restart network tests",
+            "finding": "node2 answered ping at 10.100.45.11, but TCP/22 was closed and the backup pull returned connection refused. A subnet scan found no alternate node2 SSH endpoint."
+          },
+          {
+            "source": "Missing evidence",
+            "finding": "No post-restart node2 boot ID, process state, OpenRC state, SSH configuration test, or logs were captured. Therefore node2 restart completion and the root cause of the SSH outage are unproven."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "Immediate failure: no SSH service was listening on node2 after the restart, so node1 could not pull the source data.",
+            "confidence": "high"
+          },
+          {
+            "cause": "sshd was not enabled in node2\u2019s persistent OpenRC runlevel, despite having worked before restart.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "A persisted sshd configuration or host-key problem allowed the pre-restart daemon to keep running but prevented a clean startup after reboot.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "A broader node2 boot or service-startup failure occurred while basic networking still initialized.",
+            "confidence": "low"
+          }
+        ],
+        "next_attempt_guidance": [
+          "On the fresh cluster, first confirm the exact OS/kernel and inspect the existing tar, gzip, SSH, and cron/OpenRC facilities; keep the installed release and kernel.",
+          "Before changing SSH, capture node2\u2019s baseline with rc-service sshd status, rc-update show, and the applicable sshd configuration test. Do not assume a running daemon is enabled at boot.",
+          "Configure the restricted backup account and forced tar command, then validate sshd configuration, restart sshd deliberately, and prove a new restricted connection from node1 succeeds. Ensure sshd is in the default OpenRC runlevel before any reboot.",
+          "Create the node1 backup script atomically: write to a temporary archive, validate it, then rename it to inventory-YYYY-MM-DD.tar.gz. Delete only matching archives older than seven days.",
+          "Verify the scheduled 02:00 invocation from the actual crontab configuration, not merely the presence of a script under /etc/periodic/daily. Confirm crond is enabled at boot.",
+          "Test with at least one known file under /srv/inventory/data and verify its path and content in the resulting archive; an archive containing only data/ proves transport but not meaningful data preservation.",
+          "If restart testing is mandatory, record boot IDs and service/runlevel state first. Reboot node2 only after sshd survives a manual restart and a second connection succeeds; immediately verify its changed boot ID, sshd status, crond-independent backup pull, and logs. If SSH fails, report the observable failure without assigning a root cause absent node-local evidence."
+        ]
+      }
+    }
+  ]
+}

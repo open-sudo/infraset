@@ -1,0 +1,63 @@
+{
+  "evidence": [
+    {
+      "source": "command log 02:53:14 \u2014 creation of srvdata-loop.service, enabled under local-fs-pre.target.wants",
+      "finding": "vg_srvdata is not backed by a plain block device; a custom systemd unit is required to set up a loop device before the LVM volume group can activate. The unit's actual script content is redacted (base64), so its correctness cannot be verified from this evidence."
+    },
+    {
+      "source": "command log 02:53:21 \u2014 /etc/fstab entry for /srv/data",
+      "finding": "The fstab line uses x-systemd.requires=srvdata-loop.service but has no `nofail` or device-timeout option. If the loop/LVM dependency is slow or fails at boot, systemd's default behavior is to block local-fs.target (and therefore multi-user/network-online targets) until the mount succeeds or times out."
+    },
+    {
+      "source": "command log 02:53:26 \u2192 02:53:54 \u2014 snapshot/corrupt/merge cycle",
+      "finding": "While the VM was still running (no reboot), the executor proved the core mechanism works: lvcreate snapshot, corrupt data (delete file, alter config, add rogue file), umount, lvconvert --merge, remount \u2014 sha256sums matched the original 3 files exactly and the rogue file was gone. This part of the task was demonstrably correct pre-reboot."
+    },
+    {
+      "source": "command log 02:54:00 \u2014 second lvcreate snapshot taken after the successful restore, to leave a fresh recoverable checkpoint",
+      "finding": "Snapshot size was fixed at 300M (non-thin, `swi-a-s` attr) against a 1.46G origin. No overflow occurred in this session, but this is a size-limited COW snapshot, not thin-provisioned \u2014 a latent fragility for keeping data 'recoverable' over a longer period of writes, not something observed to have failed here."
+    },
+    {
+      "source": "command log 02:54:04 \u2014 pre-reboot state check",
+      "finding": "srvdata-loop.service was `inactive` (consistent with a oneshot unit that already ran) but `enabled`; /srv/data was mounted; file hashes matched expected content. This was the last fully-confirmed-good state before reboot."
+    },
+    {
+      "source": "command log 02:54:11 \u2014 `shutdown -r now` issued in background",
+      "finding": "Reboot was explicitly triggered by the executor to test that the snapshot/mount setup survives a restart."
+    },
+    {
+      "source": "command log 02:57:44 \u2014 next exec attempt (boot_id/uptime check)",
+      "finding": "Returned `Connection reset by peer` (return_code -1) roughly 3.5 minutes after the reboot was issued, and no further completed records appear in the redacted audit afterward."
+    },
+    {
+      "source": "executor structured report, result field",
+      "finding": "Executor explicitly ended the session stating it was 'Still waiting on node1's reboot to complete before I can verify its post-restart state' \u2014 i.e., it never confirmed the node came back up, and never verified /srv/data remounted with correct content post-reboot."
+    }
+  ],
+  "likely_causes": [
+    {
+      "cause": "The fstab entry for /srv/data lacks `nofail`/a bounded device timeout, so if the loop-device-setup unit (srvdata-loop.service) is slow, fails, or is mis-ordered relative to LVM activation on boot, systemd blocks local-fs.target and consequently delays or hangs reaching the target that brings up networking/sshd \u2014 explaining sustained unreachability after reboot rather than a normal ~30-60s reboot delay.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "The custom srvdata-loop.service (needed because the LVM PV is loop-file-backed rather than a real block device) may not correctly re-establish the loop association / activate the VG on boot due to ordering or idempotency issues in the (redacted, unverified) unit script.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "The executor simply did not poll for reconnection long enough or with retries/backoff after issuing the reboot, ending the turn budget while the node may have still been in a normal (if slow) boot sequence \u2014 a process/patience gap rather than a system defect.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "Snapshot sized at a fixed 300M (non-thin) against a 1.46G origin is a latent robustness gap for the 'keep recoverable' requirement over time (risk of snapshot invalidation on heavy writes), though nothing in the evidence shows this actually triggered a failure in this run.",
+      "confidence": "low"
+    }
+  ],
+  "next_attempt_guidance": [
+    "Before building the snapshot workflow, check for a real spare block device/partition on node1 (lsblk) to host vg_srvdata; avoid a loop-file-backed PV and its custom bootstrap unit if any real device is available.",
+    "If a loop-backed PV is unavoidable, add `nofail,x-systemd.device-timeout=15s` (or similar bounded timeout) to the /srv/data fstab line so a failure in the loop/LVM setup can't hang the whole boot; verify with `systemd-analyze verify` and `systemd-analyze blame` after enabling the unit.",
+    "Test a full reboot cycle immediately after setting up the loop+LVM+fstab stack, before doing any snapshot/rollback work on top of it, so a boot-ordering problem is caught early and cheaply.",
+    "After issuing a reboot, poll for reconnection with several bounded retries and increasing backoff (e.g., every 10-15s for up to 5 minutes) instead of one check; if still unreachable, that is a genuine signal of a boot problem worth treating as such rather than ending the session.",
+    "Confirm reboot success explicitly: new `boot_id` differs from the pre-reboot value, `systemctl is-active srvdata-loop.service` and `mount | grep /srv/data` succeed, and the three known file sha256sums still match the last verified snapshot content \u2014 do this before declaring the task complete.",
+    "Prefer a thin-provisioned LVM snapshot, or size a classic COW snapshot generously relative to expected write volume, since a fixed small snapshot size is a known way to lose 'recoverability' silently if writes to the origin exceed the snapshot's COW space."
+  ],
+  "summary": "The prior attempt on node1 correctly implemented and validated the LVM snapshot/rollback mechanism itself: a snapshot was taken, /srv/data was intentionally corrupted (file deleted, config altered, rogue file added), and `lvconvert --merge` restored the exact original content (verified by matching sha256sums). Where the attempt stalled was in the follow-up reboot test: the executor took a fresh snapshot, confirmed a good pre-reboot state, then issued `shutdown -r now` to verify the setup survives a restart \u2014 but the very next check returned `Connection reset by peer`, and the session ended with the executor still waiting for node1 to come back, having never confirmed the post-reboot state of /srv/data or the snapshot. The task was left in an unverified, blocked state at the reboot-persistence check, not at the core snapshot/restore logic."
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "single-path-open",
+      "requirement": "Open exactly one path through node1: node2 (lan-a) to node3 (lan-b) on TCP/8080",
+      "status": "satisfied",
+      "summary": "A single pf pass rule was added on node1 scoped to the opt1 (lan-a) network to 192.168.20.2 (node3) port 8080/http-alt. Rule listings before and after the change (cmd-6f057654a34a4251, cmd-709148187b8a4005) show only this new pass rule alongside the pre-existing default-deny block rules and unrelated SSH/mgmt pass rules on vtnet0; no other cross-LAN pass rule was introduced. This was re-confirmed identically after all three nodes were restarted (cmd-93f3870130fc46ae).",
+      "evidence_ids": [
+        "cmd-e1632ca293e14ad5",
+        "cmd-cbea6047039e4326",
+        "cmd-6f057654a34a4251",
+        "cmd-709148187b8a4005",
+        "cmd-93f3870130fc46ae"
+      ]
+    },
+    {
+      "id": "path-functions",
+      "requirement": "The allowed node2->node3:8080 path functions end-to-end",
+      "status": "satisfied",
+      "summary": "After the executor discovered and fixed an independent, node3-local firewalld rule blocking port 8080 (root-caused via tcpdump showing an ICMP admin-prohibited reply originating from node3 itself, cmd-b45dc069ec0343dd), curl from node2 to 192.168.20.2:8080 returned HTTP 200 (cmd-f45092cf57e348f6), and the node1 pf rule showed matched packets/state creations (cmd-9de30926a9984ee8). The same result was reproduced after restarting all three nodes (cmd-1eba3c1883b64a6b).",
+      "evidence_ids": [
+        "cmd-b45dc069ec0343dd",
+        "cmd-1df772c232e54521",
+        "cmd-f45092cf57e348f6",
+        "cmd-9de30926a9984ee8",
+        "cmd-1eba3c1883b64a6b"
+      ]
+    },
+    {
+      "id": "other-flows-refused",
+      "requirement": "Every other flow between lan-a and lan-b remains refused as it already was",
+      "status": "satisfied",
+      "summary": "From node2: ICMP to node3 and TCP to an arbitrary other port both blocked/timed out (cmd-693a286005124eeb). From node3: initiating TCP toward node2:22 timed out (cmd-b1f4e43e2f594aaa). The same refusal pattern (ICMP blocked, other-port blocked, only 8080 allowed) was reconfirmed after restarting all three nodes (cmd-1eba3c1883b64a6b).",
+      "evidence_ids": [
+        "cmd-693a286005124eeb",
+        "cmd-b1f4e43e2f594aaa",
+        "cmd-1eba3c1883b64a6b"
+      ]
+    },
+    {
+      "id": "node-restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (independent of public task contract)",
+      "status": "satisfied",
+      "summary": "For all three nodes, a pre-restart healthy baseline (interfaces/pf rule for node1 via cmd-93f3870130fc46ae pre-reboot state; boot_id for node2/node3 via cmd-4ea7bb664c9549f5, cmd-bb8081cd1eaa4bf6), a restart acknowledgement (cmd-6eeb20b92c0a4537, cmd-247f4776cb2648d8, cmd-bdf95af6d9b14b5e), a differing post-restart boot identity (node1 kern.boottime changed via cmd-2fff118a4f4b4ce7; node2 boot_id changed via cmd-e0f57e261a1f4fcc; node3 boot_id changed via cmd-2a07d96c57b143af), and recovered service/data/cluster state (node1 interfaces/pf rule/forwarding via cmd-93f3870130fc46ae; node2 IP/route via cmd-3a0ab0dacd834a2a; node3 IP/route/firewalld port via cmd-acfd63a0187341eb, plus full end-to-end re-verification via cmd-1eba3c1883b64a6b) were all directly captured. This matches the fixed after-prepare/after-executor boot-identity cross-check, which shows changed boot identities for all three nodes.",
+      "evidence_ids": [
+        "cmd-93f3870130fc46ae",
+        "cmd-4ea7bb664c9549f5",
+        "cmd-bb8081cd1eaa4bf6",
+        "cmd-6eeb20b92c0a4537",
+        "cmd-2fff118a4f4b4ce7",
+        "cmd-247f4776cb2648d8",
+        "cmd-e0f57e261a1f4fcc",
+        "cmd-3a0ab0dacd834a2a",
+        "cmd-bdf95af6d9b14b5e",
+        "cmd-2a07d96c57b143af",
+        "cmd-acfd63a0187341eb",
+        "cmd-1eba3c1883b64a6b"
+      ]
+    }
+  ],
+  "overall_summary": "The executor opened exactly one pf pass rule on node1 permitting node2 (lan-a) to reach node3 (lan-b) on TCP/8080, verified the path works end-to-end (including fixing an independent node3-local firewalld block that was unrelated to node1's default-deny policy), and confirmed all other cross-LAN flows (ICMP, other ports, reverse direction) remain refused. This behavior was demonstrated both before and after sequentially restarting all three nodes, with clear boot-identity changes and full state recovery on each node, satisfying the independent node-restart evidence protocol. Hygiene is good overall, with only minor leftover log/pid files and one harmless failed troubleshooting mutation.",
+  "limitations": [
+    "Package-manager health checks were unavailable (timed out) on node2/node3 for all phases, so package-state integrity cannot be independently confirmed.",
+    "No after_prepare snapshot distinct from before_prepare was captured (prepare was disabled/static), so preparer-vs-executor state separation relies entirely on before_prepare vs after_executor.",
+    "Minor leftover diagnostic files (/tmp/reboot.log, /tmp/n2t.log, /tmp/http8080.log, /tmp/http8080.pid) remain on node2/node3 per the after-executor snapshot; these do not affect functional outcomes but are unreverted residue."
+  ],
+  "command_stats": {
+    "total": 102,
+    "successful": 79,
+    "failed": 23,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.78,
+    "summary": "Most mutations were directly necessary: pf rule addition, opt1/opt2 interface registration, node2/node3 static IP/route assignment (needed since the RHEL hosts had no route to the other LAN's subnet), and the node3 firewalld fix (a genuine blocker for demonstrating the allowed path). The temporary HTTP listener on node3 was cleanly started and killed twice (cmd-5e3227397c84422e/cmd-b573642be497405a, cmd-067c45c1921f4c86/cmd-2c213aee15dc4d31) \u2014 fully restored, low risk. A few troubleshooting mutations had no lasting effect: 'sudo conntrack -F' failed (command not found, cmd-dcb7cba6268a46bd) so no state changed, and 'sysctl -w net.ipv4.route.flush=1' (cmd-ee8f44bf674c4de5) is a low-risk, ephemeral route-cache flush attempted while diagnosing the (ultimately unrelated) 'no route to host' symptom \u2014 bounded and non-destructive. Some diagnostic byproducts were left behind rather than cleaned up: /tmp/reboot.log and /tmp/n2t.log on node2, and /tmp/reboot.log, /tmp/http8080.log, /tmp/http8080.pid on node3 (visible in the after-executor temporary-files snapshot). These are minor, non-conflicting residue but were not tidied up.",
+    "evidence_ids": [
+      "cmd-dcb7cba6268a46bd",
+      "cmd-ee8f44bf674c4de5",
+      "cmd-5e3227397c84422e",
+      "cmd-b573642be497405a",
+      "cmd-067c45c1921f4c86",
+      "cmd-2c213aee15dc4d31",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

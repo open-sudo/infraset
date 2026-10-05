@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Enable a persistent firewalld configuration on node1 that permits inbound SSH and TCP/8080",
+      "status": "satisfied",
+      "summary": "firewalld is active and enabled at boot; ssh service and 8080/tcp were permanently added to the public zone, firewall-cmd --reload was applied, and firewall-cmd --list-all / permanent listing confirms ssh and 8080/tcp are allowed in the running and permanent configuration.",
+      "evidence_ids": [
+        "cmd-5af7317ca61548ba",
+        "cmd-38fa97cf32ce45d0",
+        "cmd-212e607f833b4b5e",
+        "cmd-94834ba5b7a3411a"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Reject unrelated inbound connections (only SSH and 8080 should be reachable)",
+      "status": "partially_satisfied",
+      "summary": "The nft ruleset shows a reject-by-default policy and confirms only a bounded allow list (tcp/22, tcp/8080, plus tcp/9090 for cockpit and udp/546 dhcpv6-client). However, TCP/9090 (cockpit web console) remains permitted inbound in both the pre- and post-change state, which is an additional service beyond SSH and 8080 that the task instruction implies should be rejected as 'unrelated'. This service predates the executor's changes (visible in the very first firewall listing before any modification and in the before-prepare listening-socket snapshot), so it was not introduced by the executor, but it was also never removed or flagged, leaving the final state short of the literal 'only SSH and 8080' requirement.",
+      "evidence_ids": [
+        "cmd-5af7317ca61548ba",
+        "cmd-38fa97cf32ce45d0",
+        "cmd-94834ba5b7a3411a",
+        "cmd-101634fdc473471a",
+        "global:before_prepare:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Firewall configuration persists across a reboot",
+      "status": "satisfied",
+      "summary": "A pre-restart baseline (boot_id 4d340bf4...) with healthy firewalld state was captured, a native reboot (shutdown -r now) was issued and acknowledged (exec stream closed as the node went down), the node was polled through connection failures until a new boot_id (57cee3d9...) was observed confirming an actual restart, and post-reboot firewalld was active with an identical permanent zone configuration and identical nft allow-chain (tcp/22, tcp/8080, tcp/9090, udp/546), directly demonstrating rule persistence through a real restart.",
+      "evidence_ids": [
+        "cmd-531dd9d9b4534ad9",
+        "cmd-92a3c6664c024a29",
+        "cmd-205ad7b5f519455e",
+        "cmd-9d2555eb8a334ae7",
+        "cmd-e177a334ccf947c6",
+        "cmd-101634fdc473471a",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly enabled a persistent firewalld configuration on node1 with SSH and TCP/8080 permitted, backed by a default-reject nft ruleset, and directly demonstrated persistence across an actual reboot (distinct boot IDs, service and rule recovery). The one gap is that TCP/9090 (cockpit) remained open in both pre- and post-change states; this predates the executor's involvement and was not part of any explicit task scope discussion, but it means the final firewall does not strictly limit inbound access to only SSH and 8080 as the instruction implies, so the 'reject unrelated inbound' outcome is only partially satisfied. Hygiene is clean: the only state-changing commands were the required firewall change and the mandatory restart, with a minor uncollected /tmp/reboot.log artifact.",
+  "limitations": [
+    "Whether cockpit's TCP/9090 exposure is an intentional exception to 'unrelated inbound' (e.g., a platform-managed service outside task scope) or a genuine gap could not be determined from the captured evidence; it existed before the executor acted and was left unchanged.",
+    "No source-restricted or external network probe was captured (e.g., an actual outside connection attempt to a blocked port) to directly confirm the reject behavior beyond ruleset inspection; conclusions rely on nft ruleset listings rather than live external connection tests."
+  ],
+  "command_stats": {
+    "total": 13,
+    "successful": 10,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.8333,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All state-changing executor commands map directly to the task or the mandatory restart protocol: cmd-38fa97cf32ce45d0 (permanent add-service ssh, add-port 8080/tcp, reload) implements the firewall requirement, and cmd-92a3c6664c024a29 (shutdown -r now) performs the required restart-evidence protocol. No exploratory or reverted mutations were found in the timeline. The reboot process left a small artifact, /tmp/reboot.log, as a byproduct of backgrounding the shutdown command's output; this is low-risk residue directly tied to the mandated restart evidence collection rather than an unnecessary mutation, but it was not cleaned up.",
+    "evidence_ids": [
+      "cmd-38fa97cf32ce45d0",
+      "cmd-92a3c6664c024a29",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 0.8333,
+  "provisional_reward": 0.8333
+}

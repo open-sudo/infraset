@@ -1,0 +1,84 @@
+{
+  "status": "completed",
+  "summary": "Implemented the NFS share with Ansible run from node3 (the only node with Ansible pre-installed, used as control node): node1 exports /srv/nfs/shared, node2 mounts it at /mnt/shared, both using a shared dataops identity (uid/gid 4500) with the directory owned dataops:dataops, mode 2770. Verified cross-node ownership consistency and full recovery after restarting all three nodes one at a time.",
+  "actions_performed": [
+    "Surveyed nodes: node1/node2 are RHEL 7.9 (NFS server/client targets), node3 is Ubuntu 24.04 with Ansible core 2.20 pre-installed (control node)",
+    "Wired passwordless SSH between node3 and node1/node2 using the cluster keypair; discovered and cleared a stale /var/run/yum.pid lock on both RHEL7 nodes so yum would work",
+    "Enabled the RHSCL repo and installed rh-python38 on node1/node2 (RHEL7 base only ships python2, which modern Ansible cannot target)",
+    "Since node3's Ansible-core 2.20 requires Python >=3.9 on managed nodes (RHEL7 tops out at 3.8 via RHSCL), installed ansible-core 2.16.19 in an isolated venv on node3 to retain RHEL7 compatibility",
+    "Authored and ran an Ansible playbook (nfs_server play for node1, nfs_client play for node2) creating the dataops user/group (uid/gid 4500) on both hosts, creating /srv/nfs/shared (dataops:dataops, mode 2770), configuring /etc/exports scoped to node2's IP, starting/enabling rpcbind+nfs-server, opening firewalld services (nfs, rpc-bind, mountd), and mounting the share persistently at /mnt/shared with an fstab _netdev entry via the mount module",
+    "Verified functionally: files created as dataops on either node1 or node2 show identical dataops:dataops ownership on both sides",
+    "Executed the mandatory restart protocol: captured boot_id baseline on all 3 nodes, restarted node1, node2, then node3 one at a time using the native reboot command backgrounded so the ack returned before disconnection, polled each node until reachable again, confirmed changed boot_id on each, and re-verified NFS export/mount/ownership health after each restart",
+    "Cleaned up all temporary test files created on the share during verification"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 exports /srv/nfs/shared via NFS with dataops:dataops ownership, mode 2770, uid/gid 4500",
+      "command_ids": [
+        "cmd-c7f257ff2acd44e1",
+        "cmd-04e77fd4a4f5465f"
+      ],
+      "summary": "Playbook run shows the NFS server play completing (group/user/dir/exports/service/firewalld tasks all changed=ok); post-run inspection on node1 shows id dataops -> uid=4500 gid=4500, ls -ld /srv/nfs/shared -> drwxrws---. dataops dataops, /etc/exports and exportfs -v showing the export to node2's IP, and nfs-server/rpcbind active"
+    },
+    {
+      "requirement": "node2 mounts the share at /mnt/shared with the same dataops identity and 2770 mode",
+      "command_ids": [
+        "cmd-c7f257ff2acd44e1",
+        "cmd-63c51af6359a4fb8"
+      ],
+      "summary": "Playbook run shows the NFS client play completing; post-run inspection on node2 shows id dataops -> uid=4500 gid=4500, mount output showing 10.100.253.10:/srv/nfs/shared mounted at /mnt/shared, and ls -ld /mnt/shared -> drwxrws---. dataops dataops matching the server side"
+    },
+    {
+      "requirement": "Consistent ownership for files created on either system",
+      "command_ids": [
+        "cmd-def6d20019f344a5",
+        "cmd-c2eee24f723641a1",
+        "cmd-8e39f92d8b274d60",
+        "cmd-717d21c724254b37"
+      ],
+      "summary": "Created from-node2.txt as dataops on node2 and from-node1.txt as dataops on node1; sudo ls -l on both node1 and node2 shows both files present with identical dataops:dataops ownership, proving cross-node consistency"
+    },
+    {
+      "requirement": "Implementation done via Ansible",
+      "command_ids": [
+        "cmd-20fb38d421044fdb",
+        "cmd-e6e87296a35d4bd5",
+        "cmd-c7f257ff2acd44e1"
+      ],
+      "summary": "ansible-core 2.16.19 installed in a venv on node3 (the control node), playbook syntax-checked, then executed against inventory targeting node1 (nfs_server) and node2 (nfs_client) with full PLAY RECAP showing ok/changed with 0 failures"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-6639f7456beb424a",
+        "cmd-df6e829f6d7f439d",
+        "cmd-b490c321a32e494b",
+        "cmd-0555b803391341df",
+        "cmd-cda042983f8d4049",
+        "cmd-524282b35fbb49e3"
+      ],
+      "summary": "Baseline boot_id fe422859... with nfs-server/rpcbind active and exports configured; reboot acknowledged and returned before disconnect; connection timed out confirming node was down; boot_id changed to 5009c262... on reconnect; post-restart nfs-server/rpcbind active again, export intact, and node2 successfully wrote a new file through the mount with correct dataops ownership"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-e9945f51383447db",
+        "cmd-546cc93fe06246c5",
+        "cmd-d9943416729e4bf2",
+        "cmd-5febce20245543f4"
+      ],
+      "summary": "Reboot acknowledged and returned before disconnect; connection timed out confirming node was down; boot_id changed from 738d0aac... to 0780d491... on reconnect; post-restart mount automatically restored via fstab _netdev entry and a new file was created through it with correct dataops:dataops ownership"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-c646f052ed274475",
+        "cmd-c5ea5fcd15cd4060",
+        "cmd-5cd4c623d8034c04",
+        "cmd-c640811966ff45dd",
+        "cmd-5b45f0de8b84471e"
+      ],
+      "summary": "Reboot acknowledged and returned before disconnect; connection timed out confirming node was down; boot_id changed from adba3716... to 76048aaf... on reconnect; final end-to-end check after all three restarts confirms node1's nfs-server/rpcbind active with export intact and node2's mount still functional with correct ownership"
+    }
+  ]
+}

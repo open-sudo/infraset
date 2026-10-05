@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Run a containerized web application on node1 as the unprivileged account appsvc",
+      "status": "satisfied",
+      "summary": "appsvc (uid 1001) was created with subuid/subgid ranges for rootless podman (cmd-7debd2b4ba8849c9). The nginx:alpine container was pulled and run via `su -s /bin/sh appsvc` using rootless podman (cmd-186faa2fb6224fc3, cmd-a70ecb00528740db). Process listings repeatedly show conmon and nginx master processes owned by uid appsvc, both at initial run (cmd-2d9ed2666d4545fc) and after both reboots (cmd-b6943fe5389149be, cmd-838f09d6b69f4dd3).",
+      "evidence_ids": [
+        "cmd-7debd2b4ba8849c9",
+        "cmd-186faa2fb6224fc3",
+        "cmd-a70ecb00528740db",
+        "cmd-2d9ed2666d4545fc",
+        "cmd-b6943fe5389149be",
+        "cmd-838f09d6b69f4dd3"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Serve the application on port 8080",
+      "status": "satisfied",
+      "summary": "The container was published with -p 8080:80. curl to both 127.0.0.1:8080 and NODE_IP:8080 returned http_code=200 at initial deployment (cmd-a70ecb00528740db), after the boot-start fix (cmd-b6943fe5389149be), and after the second reboot (cmd-838f09d6b69f4dd3). The after-executor global snapshot independently confirms a listening socket on 0.0.0.0:8080 via the rootless port-forwarder pasta (global:after_executor:node1:listening-sockets), corroborating the rootless container's port binding.",
+      "evidence_ids": [
+        "cmd-a70ecb00528740db",
+        "cmd-b6943fe5389149be",
+        "cmd-838f09d6b69f4dd3",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Application starts at boot while appsvc has no active login session",
+      "status": "satisfied",
+      "summary": "An OpenRC init script (/etc/init.d/appsvc-webapp) was created and added to the default runlevel (cmd-4075b685a48845c7), and manual rc-service start/stop/status control plus absence of a who login session for appsvc was verified (cmd-2d9ed2666d4545fc). A healthy pre-restart baseline was captured (boot_id 53c8268a..., HTTP 200, no login session; cmd-2922862fd0214b9f). Reboot 1 changed the boot identity to 0e7f2a28... but exposed a genuine boot-start bug (checkpath failure on freshly-created /run tmpfs; cmd-7df781ff49354cc1, cmd-ca653d7e6c8447cd), which was diagnosed and fixed by replacing checkpath with explicit mkdir/chown/chmod (cmd-2032751a77a64348, cmd-e2b771fa456c4215) and validated manually (cmd-b6943fe5389149be). A second, independent reboot then changed the boot identity again (0e7f2a28...->601c9539...) and the service auto-started via the OpenRC default runlevel with no manual intervention, serving HTTP 200 on both loopback and NODE_IP, with processes owned by appsvc and no login session present (cmd-1b33c5e0539241eb, cmd-ee14d9d08a6a4ae0, cmd-c497190d82514428, cmd-838f09d6b69f4dd3). The global after-executor boot-identity (601c9539-...) matches the second reboot's final state, corroborating the transition.",
+      "evidence_ids": [
+        "cmd-4075b685a48845c7",
+        "cmd-2d9ed2666d4545fc",
+        "cmd-2922862fd0214b9f",
+        "cmd-7df781ff49354cc1",
+        "cmd-ca653d7e6c8447cd",
+        "cmd-2032751a77a64348",
+        "cmd-e2b771fa456c4215",
+        "cmd-b6943fe5389149be",
+        "cmd-1b33c5e0539241eb",
+        "cmd-ee14d9d08a6a4ae0",
+        "cmd-c497190d82514428",
+        "cmd-838f09d6b69f4dd3",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The task's three material outcomes (rootless containerized web app running as appsvc, served on port 8080, and boot-start persistence without a login session) are all satisfied with direct, coherent evidence. Notably, the restart-evidence trace does not merely show configuration: it captures a genuine pre-fix boot-start failure during the first reboot, the diagnosis and fix, and then a clean auto-start on a second independent reboot with a distinct boot identity, HTTP 200 confirmed on loopback and NODE_IP, correct process ownership, and no active login session for appsvc \u2014 satisfying the higher evidentiary bar required for boot/restart-related outcomes. Hygiene is generally good; the only issues are a bounded, fully-reverted troubleshooting mutation and some leftover diagnostic log files in /tmp.",
+  "limitations": [
+    "The captured evidence relies on shell command outputs and does not include independent artifact verification (e.g., contents of the final /etc/init.d/appsvc-webapp file after the fix, beyond what was echoed during the heredoc write and syntax check).",
+    "ps output truncates the full conmon command line in several captures, but ownership (appsvc) and the presence of the nginx master process remain clearly legible.",
+    "No loginctl/systemd session manager exists on this Alpine node (busybox who/last used instead), a slightly weaker session-absence check than loginctl but standard for this OS and applied consistently across all checks."
+  ],
+  "command_stats": {
+    "total": 36,
+    "successful": 22,
+    "failed": 14,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Most state-changing commands map directly to task prerequisites (package install, cgroups service, appsvc user/subuid/subgid creation, container run, OpenRC script authorship) or to bounded final-evidence collection (two reboots, which also satisfy the boot-persistence requirement). One troubleshooting experiment, cmd-87d6026b9f564329, directly stopped the container as appsvc bypassing the rc-service state machine to probe recovery behavior; this left appsvc-webapp in a stale 'already started' state that required an explicit rc-service zap correction in cmd-43b92472ddfb42a6 before the service could be restarted normally. This was a bounded, low-risk, fully-reverted mutation with no lasting residue, so it is noted but weighted lightly. Executor-caused residue does remain in /tmp (apkupdate.log, install.log, podman-info-appsvc.log, reboot.log, reboot2.log, w.out), confirmed present in the after-executor global snapshot's temporary-files observation and absent from before-prepare; these are minor abandoned diagnostic log files, not security- or availability-impacting, but were never cleaned up.",
+    "evidence_ids": [
+      "cmd-87d6026b9f564329",
+      "cmd-43b92472ddfb42a6",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

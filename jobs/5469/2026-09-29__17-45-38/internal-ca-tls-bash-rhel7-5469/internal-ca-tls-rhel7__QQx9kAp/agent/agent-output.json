@@ -1,0 +1,80 @@
+{
+  "status": "completed",
+  "summary": "Created \"Fleet Internal CA\" on node1 (self-signed root, 4096-bit RSA, 10y validity), issued a TLS server cert to node2 (CN=node2, SAN=DNS:node2/IP:10.100.36.11, signed by the CA), deployed it to node2 and configured node2 to serve HTTPS on port 8443 (systemd-managed Python2/ssl HTTP server, cert readable, firewalld port 8443/tcp opened). Installed the CA cert as a trusted system CA on both node1 and node2 via /etc/pki/ca-trust + update-ca-trust, verified curl trusts node2's cert with no --cacert override on both nodes. Ran the mandatory node-restart protocol: captured boot_id/service/trust/HTTPS baselines on both nodes, restarted node1 then node2 one at a time via `shutdown -r now`, confirmed boot_id changed on each, and confirmed fleet-https.service (enabled+active), CA trust anchor, firewall port, and HTTPS 200 response all recovered post-reboot on both nodes.",
+  "actions_performed": [
+    "Inspected OS/tooling on node1 and node2 (RHEL 7.9, openssl 1.0.2k, no httpd/python3, no enabled yum repos on node2)",
+    "Generated CA private key and self-signed 'Fleet Internal CA' root certificate on node1 (~/ca/ca/ca.key, ca.crt)",
+    "Generated node2 key + CSR with SAN (DNS:node2, IP:10.100.36.11) and signed it with the CA to produce node2.crt",
+    "Set up cluster SSH (authorized_keys on node2, /etc/hosts on node1) and scp'd ca.crt/node2.crt/node2.key from node1 to node2",
+    "Installed cert/key under /etc/pki/tls/fleet-internal/ on node2 with correct root ownership and key permissions (600)",
+    "Wrote a Python2 ssl-wrapped HTTP server script and a systemd unit (fleet-https.service) on node2 serving HTTPS on 0.0.0.0:8443 with the issued cert; enabled and started it",
+    "Opened firewalld port 8443/tcp permanently on node2 and reloaded",
+    "Verified HTTPS from node1 to node2 with --cacert (curl), confirming full chain and correct CN/SAN/issuer",
+    "Installed CA cert into /etc/pki/ca-trust/source/anchors/ and ran update-ca-trust extract on both node1 and node2; verified via `trust list`",
+    "Verified curl trusts node2's HTTPS endpoint without --cacert on both nodes (system trust store)",
+    "Captured pre-restart baseline (boot_id, who -b, CA trust, service status, HTTPS 200) on both nodes",
+    "Restarted node1 via `shutdown -r now` (backgrounded to let ack return), polled until reachable, confirmed new boot_id, verified CA trust and HTTPS to node2 still worked",
+    "Restarted node2 via `shutdown -r now`, polled until reachable, confirmed new boot_id, verified fleet-https.service active+enabled, firewall port persisted, CA trust persisted, and HTTPS 200 from both node2 (self) and node1 (remote)"
+  ],
+  "evidence": [
+    {
+      "requirement": "CA 'Fleet Internal CA' created on node1",
+      "command_ids": [
+        "cmd-3fb692ffc3084cee"
+      ],
+      "summary": "openssl req -x509 created self-signed CA with subject/issuer CN=Fleet Internal CA, valid 2026-2036"
+    },
+    {
+      "requirement": "TLS certificate issued to node2 with correct identity",
+      "command_ids": [
+        "cmd-73b7736b31af4814",
+        "cmd-7794e4b214344fd9"
+      ],
+      "summary": "CSR signed by CA; resulting cert has subject CN=node2, SAN DNS:node2/IP:10.100.36.11, issued by Fleet Internal CA"
+    },
+    {
+      "requirement": "node2 configured to serve HTTPS on port 8443 with the issued certificate",
+      "command_ids": [
+        "cmd-08c3514ff9bc4dc1",
+        "cmd-0312efe2b7544dd9",
+        "cmd-7087befca8574b82"
+      ],
+      "summary": "systemd service fleet-https.service active on node2, firewalld port 8443/tcp opened, curl --cacert from node1 gets TLS handshake with subject CN=node2 / issuer Fleet Internal CA and 200 response"
+    },
+    {
+      "requirement": "CA installed as trusted system CA on node1",
+      "command_ids": [
+        "cmd-051c13f49b9040e3"
+      ],
+      "summary": "update-ca-trust extract run; trust list shows Fleet Internal CA as anchor/authority; curl to node2:8443 succeeds with default system trust (no --cacert)"
+    },
+    {
+      "requirement": "CA installed as trusted system CA on node2",
+      "command_ids": [
+        "cmd-7f3ae46279bb4a62"
+      ],
+      "summary": "update-ca-trust extract run on node2; trust list shows Fleet Internal CA as anchor/authority; local curl to https://node2:8443 succeeds with default system trust"
+    },
+    {
+      "requirement": "node1 restart evidence: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-eb626d8ccf2147f2",
+        "cmd-389f633c793a4c2c",
+        "cmd-62c262f9acc44fae",
+        "cmd-431be3f071004904"
+      ],
+      "summary": "Baseline boot_id 3dba43a5...; shutdown -r now acknowledged (connection closed); post-reboot boot_id 28a66508... (changed); CA trust anchor present and HTTPS to node2 verified (200) after restart"
+    },
+    {
+      "requirement": "node2 restart evidence: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-4fe4f6ccce6449f8",
+        "cmd-e404a0ebb8e842f6",
+        "cmd-0e2a17a925df49f1",
+        "cmd-1502be1af96046cc",
+        "cmd-450ce597106143fd"
+      ],
+      "summary": "Baseline boot_id b35fad86...; shutdown -r now acknowledged; post-reboot boot_id cbf361f7... (changed); fleet-https.service active+enabled, firewall port 8443 persisted, CA trust anchor present, HTTPS 200 from both node2 locally and node1 remotely after restart"
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) to route between two new subnets, lan-a (10.50.1.0/24, opt1/vtnet1, connected to node2) and lan-b (10.50.2.0/24, opt2/vtnet2, connected to node3), which were previously unconfigured second NICs. Created a single OPNsense port alias \"node3_allowed_tcp_ports\" (8080,8443,9000) and one firewall rule on interface lan-a permitting node2 (10.50.1.10) to reach node3 (10.50.2.10) over TCP on that alias \u2014 pf expands this into per-port rules sharing one rule label, confirming the alias is doing the port-set expansion rather than three hand-written rules. Also opened the same 3 ports in node3's local firewalld zone, since OPNsense's rule only governs the inter-subnet hop. Verified end-to-end TCP connectivity on all three ports and confirmed an unlisted port (7000) remains blocked (default-deny). Completed the mandatory node-restart evidence protocol: captured healthy baselines, restarted node2 then node3 (Linux boot_id changed) then node1 (OPNsense kern.boottime changed) one at a time via native reboot commands, polled until each node's exec access returned, and re-verified interface config, routes, firewalld ports, the pf alias-derived rule, and live TCP connectivity all fully recovered after each restart.",
+  "actions_performed": [
+    "Assigned static IP 10.50.1.1/24 to node1 vtnet1 (opt1, descr lan-a) and 10.50.2.1/24 to vtnet2 (opt2, descr lan-b) via /conf/config.xml edit + configctl interface reconfigure",
+    "Configured node2 enp8s0 with static 10.50.1.10/24 and a route to 10.50.2.0/24 via 10.50.1.1 using nmcli (persistent connection profile, since NetworkManager was clobbering ad-hoc ip-addr-add)",
+    "Configured node3 enp8s0 with static 10.50.2.10/24 and a route to 10.50.1.0/24 via 10.50.2.1 using nmcli",
+    "Added OPNsense MVC port alias 'node3_allowed_tcp_ports' (8080,8443,9000) and a single pass rule on interface opt1 (lan-a) from 10.50.1.10 to 10.50.2.10 referencing the alias by name, then ran configctl filter reload",
+    "Opened TCP 8080/8443/9000 in node3's firewalld public zone (persistent) after discovering it also blocked the traffic",
+    "Verified via pfctl -sr that the single alias-based rule expands into 3 discrete port rules sharing one label",
+    "Ran end-to-end TCP tests (socat listeners on node3, socat clients on node2) proving 8080/8443/9000 succeed and 7000 is blocked",
+    "Captured pre-restart baselines (kern.boottime on node1, /proc/sys/kernel/random/boot_id on node2/node3)",
+    "Sequentially restarted node2, node3, then node1 using native reboot commands, polling exec until each returned",
+    "Confirmed changed boot identity for all three nodes and re-verified network config, firewall state, alias-derived pf rule, and live TCP connectivity post-restart",
+    "Cleaned up temporary socat listeners on node3"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 routes between lan-a and lan-b (topology established)",
+      "command_ids": [
+        "cmd-48c961d353b04e25",
+        "cmd-96e2e23dc8e14cc2",
+        "cmd-75ecb12722f24e48",
+        "cmd-a89048a198a04876",
+        "cmd-dc1362cac4a44049",
+        "cmd-9f12cf4fbd6d4a8b",
+        "cmd-a64e5f731e884d28",
+        "cmd-3d3e439b33d1432b"
+      ],
+      "summary": "vtnet1/vtnet2 on node1 configured and persisted as opt1(lan-a)/opt2(lan-b) with static IPs; node2/node3 enp8s0 configured with matching subnets and routes via NetworkManager; ping connectivity confirmed both directions"
+    },
+    {
+      "requirement": "Single named alias object represents the port set, referenced by one rule instead of per-port rules",
+      "command_ids": [
+        "cmd-952d5dd5cf294c4e",
+        "cmd-3446811c8e684b7f",
+        "cmd-d84d269988494f6a",
+        "cmd-d9510e076b214e5e"
+      ],
+      "summary": "Created MVC Firewall/Alias entry 'node3_allowed_tcp_ports' (port type, content 8080/8443/9000) and one <filter><rule> referencing it by name; pfctl -sr shows pf expanding it into 3 rules sharing a single rule label (source of one authored rule)"
+    },
+    {
+      "requirement": "node2 can reach node3 on TCP 8080, 8443, 9000; other ports remain blocked",
+      "command_ids": [
+        "cmd-8d5b31fec4ba4a04",
+        "cmd-a4d8da4a2f324add",
+        "cmd-2ecbca656c9d46f4",
+        "cmd-56d82d8fec784776"
+      ],
+      "summary": "socat listeners on node3, successful TCP round-trips from node2 on all 3 allowed ports after also opening them in node3 firewalld; port 7000 timed out confirming default-deny still applies"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-98577cb519d544ab",
+        "cmd-28833d6d937a4371",
+        "cmd-90a040ee7fcc48c6",
+        "cmd-1c2a39b17185402b",
+        "cmd-97fee87a95f342cb"
+      ],
+      "summary": "boot_id a70d7f83... before, systemctl reboot issued, connection dropped then recovered with new boot_id 93c09cb4...; post-reboot ip addr/route and nmcli profile confirmed persisted"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-c991163a52eb452f",
+        "cmd-ecb14c74d5454c3a",
+        "cmd-a821eb989f8d48b2",
+        "cmd-9038a05023c64660",
+        "cmd-5b8f13498f7444a6"
+      ],
+      "summary": "boot_id 4cee4ea8... before, systemctl reboot issued, recovered with new boot_id a1519d13...; post-reboot ip addr/route and firewalld ports (8080/8443/9000) confirmed persisted"
+    },
+    {
+      "requirement": "node1 (router) restart: healthy baseline, restart, changed boot identity, recovery, full end-to-end functional recovery",
+      "command_ids": [
+        "cmd-a8b13f22fc434b31",
+        "cmd-12130c822e674e25",
+        "cmd-025a0920e4f24984",
+        "cmd-23b92d9cefed4764",
+        "cmd-a560e14c599f4a46",
+        "cmd-43fd2b8777dc4a31",
+        "cmd-40bd6ec152374d94",
+        "cmd-7c38b9ae6f1a41b9"
+      ],
+      "summary": "kern.boottime 16:43:31 before, shutdown -r now issued, SSH transport dropped then recovered with new kern.boottime 16:50:24; post-reboot config.xml-derived interfaces and alias-based pf rule intact; fresh end-to-end socat test proved node2->node3 still works on 8080/8443/9000 and blocked on 7000"
+    }
+  ]
+}

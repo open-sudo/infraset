@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ssh-ca-created",
+      "requirement": "Create an SSH certificate authority on node1",
+      "status": "satisfied",
+      "summary": "ssh-keygen generated an ed25519 CA keypair at /etc/ssh/ca/ssh_ca on node1, with the public key printed and chmod applied.",
+      "evidence_ids": [
+        "cmd-53b2ee7bb4a44c06"
+      ]
+    },
+    {
+      "id": "host-cert-signed-and-presented",
+      "requirement": "Host presents a certificate signed by the CA",
+      "status": "satisfied",
+      "summary": "ssh-keygen -s signed the host's ed25519 public key into ssh_host_ed25519_key-cert.pub with correct CA fingerprint and principals (node1, 10.100.61.10, localhost, 127.0.0.1), sshd_config was updated with HostCertificate, sshd -t passed, and sshd was reloaded active. Post-reboot inspection confirms the cert file, its content, and the sshd_config directive persisted unchanged.",
+      "evidence_ids": [
+        "cmd-a4a15d31a03740e8",
+        "cmd-0dc19d3d50f7413d"
+      ]
+    },
+    {
+      "id": "client-connects-without-pinning",
+      "requirement": "A client that trusts the CA (no pinned host key) connects without host-key verification issues",
+      "status": "satisfied",
+      "summary": "A client known_hosts file containing only an @cert-authority line (no pinned host key) was used with StrictHostKeyChecking=yes. The connection failed only at the publickey/password auth stage (expected under BatchMode with no credentials), while verbose debug output explicitly shows the host-authentication step succeeded: 'Host ... is known and matches the ED25519-CERT host certificate.' This directly demonstrates CA-based host trust replacing host-key pinning. The same result was reproduced after reboot.",
+      "evidence_ids": [
+        "cmd-32052e97f4844466",
+        "cmd-256cfee5878b425b",
+        "cmd-0dc19d3d50f7413d"
+      ]
+    },
+    {
+      "id": "node-restart-evidence",
+      "requirement": "Provider-wide node-restart evidence protocol on node1",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (325732f1...), sshd active, and cert files captured; shutdown -r now issued and acknowledged; subsequent polls timed out during reboot; boot_id changed to f40a0274... after recovery; post-restart checks confirm sshd active, config valid, CA and host cert files persisted with identical content, and the CA-trust client connection test again shows the certificate validated. Fixed lifecycle snapshots (global:before_prepare vs global:after_executor boot-identity) independently corroborate the boot_id change.",
+      "evidence_ids": [
+        "cmd-71536679910f498e",
+        "cmd-246dd75241c845da",
+        "cmd-3321298c473f4f12",
+        "cmd-0dc19d3d50f7413d",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor created an ed25519 SSH CA on node1, signed the host's ed25519 key into a certificate presented via sshd_config's HostCertificate directive, and demonstrated a client trusting only the CA (no pinned host key) successfully validating the host certificate at the SSH protocol level. The mandatory node-restart evidence protocol was completed with a clear pre/post boot_id change, healthy baseline, and confirmed recovery of sshd, certificate files, and CA-trust connectivity after reboot, cross-checked against the fixed lifecycle snapshots. Minor hygiene deduction for leftover temporary test files (CA pub copy, known_hosts_ca, reboot.log) not cleaned up in /tmp.",
+  "limitations": [
+    "The client connection test never completed full authentication (it used BatchMode with no valid credentials), so success is inferred from debug-log confirmation of host-certificate validation rather than a fully established interactive session; this is consistent with the task's focus on host trust, not user auth.",
+    "Package-health checks were unavailable (timed out) in both before_prepare and after_executor snapshots, so package-manager consistency could not be independently verified.",
+    "Leftover /tmp test artifacts were not explicitly assessed for sensitivity beyond containing only public key material and a benign log."
+  ],
+  "command_stats": {
+    "total": 11,
+    "successful": 7,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "All state-changing commands (CA creation, signing, sshd_config edit, reload, reboot) were necessary and causally tied to the task or its restart-evidence protocol. The one failed signing attempt (cmd-53b2ee7bb4a44c06, invalid 'always:forever' validity syntax) was a bounded, corrected retry with no lasting effect. However, the executor left temporary test artifacts on node1 that were never cleaned up: /tmp/ssh_ca_node1.pub, /tmp/ssh_client_test/ (with known_ca.pub and known_hosts_ca), and /tmp/reboot.log, all visible in the after-executor temporary-files snapshot. These are low-risk residue (copies of a public key and a log file, no secrets or executable content) but represent unremoved scratch state from verification steps.",
+    "evidence_ids": [
+      "cmd-53b2ee7bb4a44c06",
+      "cmd-a4a15d31a03740e8",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

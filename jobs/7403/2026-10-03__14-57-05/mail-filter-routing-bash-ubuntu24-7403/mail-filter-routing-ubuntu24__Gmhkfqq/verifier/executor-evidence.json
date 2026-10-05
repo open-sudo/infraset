@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 12,
+    "successful": 10,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Correct accounts, support, and general routing with case-insensitive header names",
+      "command_ids": [
+        "cmd-6dd3ab72827040b1",
+        "cmd-86788604a3dd42ba"
+      ],
+      "summary": "The staged support sample uses lowercase `x-department`; all samples reached their intended Maildir paths."
+    },
+    {
+      "requirement": "Byte-for-byte message preservation and separate repeated deliveries",
+      "command_ids": [
+        "cmd-86788604a3dd42ba",
+        "cmd-24419225cb934f5e"
+      ],
+      "summary": "Delivered hashes match source hashes; two accounts deliveries produced distinct filenames and passed direct `cmp` checks."
+    },
+    {
+      "requirement": "Staged samples retained and legacy platform unchanged",
+      "command_ids": [
+        "cmd-24419225cb934f5e",
+        "cmd-1029022e886e4b24"
+      ],
+      "summary": "All three samples remained present; Ubuntu 24.04.3 and kernel 6.8.0-71 were unchanged before and after restart."
+    },
+    {
+      "requirement": "node1 restart persistence and recovery",
+      "command_ids": [
+        "cmd-24419225cb934f5e",
+        "cmd-bcd0db5e48e84ede",
+        "cmd-65ac49be3a66424a",
+        "cmd-1029022e886e4b24"
+      ],
+      "summary": "Healthy baseline boot ID cf34dc87-fdca-4c6a-80e1-579d5524a1da, acknowledged safe reboot, new boot ID 5243170d-8f51-492b-939d-f84e3fedeff1, preserved deliveries, and successful post-restart support delivery."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-a70b6e8f4a68431f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:30:07.395808+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 250,
+      "command": "uname -r; sed -n '1,8p' /etc/os-release; find /srv/legacy2/mail-filter-routing -maxdepth 4 -printf '%M %u:%g %s %p\\n' | sort",
+      "stdout": "6.8.0-71-generic\nPRETTY_NAME=\"Ubuntu 24.04.3 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.3 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\n-rw-r--r-- root:root 65 /srv/legacy2/mail-filter-routing/samples/general.eml\n-rw-r--r-- root:root 83 /srv/legacy2/mail-filter-routing/samples/support.eml\n-rw-r--r-- root:root 86 /srv/legacy2/mail-filter-routing/samples/accounts.eml\n-rwxr-xr-x root:root 142 /srv/legacy2/mail-filter-routing/bin/deliver\ndrwxr-xr-x root:root 4096 /srv/legacy2/mail-filter-routing\ndrwxr-xr-x root:root 4096 /srv/legacy2/mail-filter-routing/bin\ndrwxr-xr-x root:root 4096 /srv/legacy2/mail-filter-routing/samples"
+    },
+    {
+      "command_id": "cmd-6dd3ab72827040b1",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:30:11.078657+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 71,
+      "command": "cd /srv/legacy2/mail-filter-routing && printf '%s\\n' '--- bin/deliver ---' && sed -n '1,200p' bin/deliver && printf '%s\\n' '--- sample headers ---' && for f in samples/*.eml; do printf '%s\\n' \"[$f]\"; sed -n '1,/^$/p' \"$f\"; done && printf '%s\\n' '--- Maildir ---' && find Maildir -maxdepth 3 -printf '%M %u:%g %s %p\\n' 2>/dev/null | sort || true",
+      "stdout": "--- bin/deliver ---\n#!/bin/sh\nbase=$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\nmkdir -p \"$base/Maildir/general/new\"\ncat > \"$base/Maildir/general/new/message\"\n--- sample headers ---\n[samples/accounts.eml]\nFrom: finance@branch.test\nX-Department: accounts\nSubject: Monthly update\n\n[samples/general.eml]\nFrom: office@branch.test\nSubject: Monthly update\n\n[samples/support.eml]\nFrom: customer@branch.test\nx-department: support\nSubject: Monthly update\n\n--- Maildir ---"
+    },
+    {
+      "command_id": "cmd-6df0871277dc4186",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:30:28.120867+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 143,
+      "command": "cat > /srv/legacy2/mail-filter-routing/bin/deliver <<'ANTRIEB_DELIVER_EOF'\n#!/bin/sh\nset -eu\n\nbase=$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\nstage=$(mktemp \"$base/.deliver.XXXXXXXXXX\")\ntrap 'rm -f \"$stage\"' EXIT HUP INT TERM\n\ncat > \"$stage\"\n\ndepartment=$(\n    awk '\n        BEGIN { value = \"\" }\n        /^\\r?$/ { exit }\n        {\n            line = $0\n            sub(/\\r$/, \"\", line)\n            colon = index(line, \":\")\n            if (colon > 0) {\n                name = substr(line, 1, colon - 1)\n                if (tolower(name) == \"x-department\") {\n                    value = substr(line, colon + 1)\n                    sub(/^[[:space:]]+/, \"\", value)\n                    sub(/[[:space:]]+$/, \"\", value)\n                    print tolower(value)\n                    exit\n                }\n            }\n        }\n    ' \"$stage\"\n)\n\ncase \"$department\" in\n    accounts) mailbox=accounts ;;\n    support)  mailbox=support ;;\n    *)        mailbox=general ;;\nesac\n\ndestination=\"$base/Maildir/$mailbox/new\"\nmkdir -p \"$destination\"\ntarget=$(mktemp \"$destination/$(date +%s).XXXXXXXXXX.$(hostname)\")\nmv \"$stage\" \"$target\"\ntrap - EXIT HUP INT TERM\nANTRIEB_DELIVER_EOF\nchmod 0755 /srv/legacy2/mail-filter-routing/bin/deliver\nsh -n /srv/legacy2/mail-filter-routing/bin/deliver\nstat -c '%A %U:%G %s %n' /srv/legacy2/mail-filter-routing/bin/deliver\n",
+      "stdout": "-rwxr-xr-x root:root 1076 /srv/legacy2/mail-filter-routing/bin/deliver"
+    },
+    {
+      "command_id": "cmd-86788604a3dd42ba",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:30:36.713305+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 170,
+      "command": "cd /srv/legacy2/mail-filter-routing && sha256sum samples/*.eml && bin/deliver < samples/accounts.eml && bin/deliver < samples/accounts.eml && bin/deliver < samples/support.eml && bin/deliver < samples/general.eml && printf '%s\\n' 'DELIVERED_FILES' && find Maildir -type f -path '*/new/*' -printf '%P\\n' | sort && printf '%s\\n' 'DELIVERED_SHA256' && find Maildir -type f -path '*/new/*' -exec sha256sum {} \\; | sort",
+      "stdout": "b6486112ecab2b7d23c49a313704ef13f1eed059e4be5416eb32d998398ab0a8  samples/accounts.eml\nfd6b1134abfbca31c96640fa89b440fe44e81524014eed40b9c02971dad052b2  samples/general.eml\nbfca22c7abbb84be5378d2ed016404c2a688941e2da60a05874f6fa4cb22b2b9  samples/support.eml\nDELIVERED_FILES\naccounts/new/1791055836.LuJRKZI4y5.node1\naccounts/new/1791055836.ZJLJbF9v5u.node1\ngeneral/new/1791055836.lhsLen5oPS.node1\nsupport/new/1791055836.FksUQACSvb.node1\nDELIVERED_SHA256\nb6486112ecab2b7d23c49a313704ef13f1eed059e4be5416eb32d998398ab0a8  Maildir/accounts/new/1791055836.LuJRKZI4y5.node1\nb6486112ecab2b7d23c49a313704ef13f1eed059e4be5416eb32d998398ab0a8  Maildir/accounts/new/1791055836.ZJLJbF9v5u.node1\nbfca22c7abbb84be5378d2ed016404c2a688941e2da60a05874f6fa4cb22b2b9  Maildir/support/new/1791055836.FksUQACSvb.node1\nfd6b1134abfbca31c96640fa89b440fe44e81524014eed40b9c02971dad052b2  Maildir/general/new/1791055836.lhsLen5oPS.node1"
+    },
+    {
+      "command_id": "cmd-24419225cb934f5e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:30:50.738683+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 203,
+      "command": "set -eu; cd /srv/legacy2/mail-filter-routing; printf 'BOOT_ID=%s\\n' \"$(cat /proc/sys/kernel/random/boot_id)\"; printf 'KERNEL=%s\\n' \"$(uname -r)\"; printf 'OS='; . /etc/os-release; printf '%s\\n' \"$PRETTY_NAME\"; sh -n bin/deliver; test -x bin/deliver; test \"$(find samples -maxdepth 1 -type f -name '*.eml' | wc -l)\" -eq 3; test \"$(find Maildir/accounts/new -maxdepth 1 -type f | wc -l)\" -eq 2; test \"$(find Maildir/support/new -maxdepth 1 -type f | wc -l)\" -eq 1; test \"$(find Maildir/general/new -maxdepth 1 -type f | wc -l)\" -eq 1; for f in Maildir/accounts/new/*; do cmp -s samples/accounts.eml \"$f\"; done; for f in Maildir/support/new/*; do cmp -s samples/support.eml \"$f\"; done; for f in Maildir/general/new/*; do cmp -s samples/general.eml \"$f\"; done; printf '%s\\n' 'HEALTH=PASS script executable; 3 samples retained; routing counts 2/1/1; every delivery cmp-identical'",
+      "stdout": "BOOT_ID=cf34dc87-fdca-4c6a-80e1-579d5524a1da\nKERNEL=6.8.0-71-generic\nOS=Ubuntu 24.04.3 LTS\nHEALTH=PASS script executable; 3 samples retained; routing counts 2/1/1; every delivery cmp-identical"
+    },
+    {
+      "command_id": "cmd-bcd0db5e48e84ede",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:30:58.038064+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 126,
+      "command": "systemd-run --unit=[REDACTED] --on-active=3s /usr/bin/systemctl reboot && printf 'REBOOT_ACK boot_id=%s\\n' \"$(cat /proc/sys/kernel/random/boot_id)\"",
+      "stdout": "Running timer as unit: [REDACTED].timer\nWill run service as unit: [REDACTED].service\nREBOOT_ACK boot_id=cf34dc87-fdca-4c6a-80e1-579d5524a1da"
+    },
+    {
+      "command_id": "cmd-48e1a3a30b7a4f84",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:31:01.179456+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 85,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "cf34dc87-fdca-4c6a-80e1-579d5524a1da"
+    },
+    {
+      "command_id": "cmd-5adaed1736dd44b1",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:31:09.908151+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 5076,
+      "command": "sleep 5; printf 'BOOT_ID=%s\\n' \"$(cat /proc/sys/kernel/random/boot_id)\"",
+      "stdout": "BOOT_ID=cf34dc87-fdca-4c6a-80e1-579d5524a1da"
+    },
+    {
+      "command_id": "cmd-b8e376f7623c4c80",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:31:13.088488+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 136,
+      "command": "systemctl status [REDACTED].timer [REDACTED].service --no-pager || true; systemctl list-timers [REDACTED].timer --no-pager || true",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-50706e5f61724835",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:31:16.985325+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2108,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-65ac49be3a66424a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:31:19.203431+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 75,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "5243170d-8f51-492b-939d-f84e3fedeff1"
+    },
+    {
+      "command_id": "cmd-1029022e886e4b24",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T19:31:29.706858+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 136,
+      "command": "set -eu; cd /srv/legacy2/mail-filter-routing; printf 'BOOT_ID=%s\\n' \"$(cat /proc/sys/kernel/random/boot_id)\"; printf 'KERNEL=%s\\n' \"$(uname -r)\"; printf 'OS='; . /etc/os-release; printf '%s\\n' \"$PRETTY_NAME\"; sh -n bin/deliver; test -x bin/deliver; test \"$(find samples -maxdepth 1 -type f -name '*.eml' | wc -l)\" -eq 3; test \"$(find Maildir/accounts/new -maxdepth 1 -type f | wc -l)\" -eq 2; test \"$(find Maildir/support/new -maxdepth 1 -type f | wc -l)\" -eq 1; test \"$(find Maildir/general/new -maxdepth 1 -type f | wc -l)\" -eq 1; for f in Maildir/accounts/new/*; do cmp -s samples/accounts.eml \"$f\"; done; for f in Maildir/support/new/*; do cmp -s samples/support.eml \"$f\"; done; for f in Maildir/general/new/*; do cmp -s samples/general.eml \"$f\"; done; printf '%s\\n' 'RECOVERED_DATA=PASS pre-restart deliveries and samples intact'; before=$(find Maildir/support/new -maxdepth 1 -type f | wc -l); bin/deliver < samples/support.eml; after=$(find Maildir/support/new -maxdepth 1 -type f | wc -l); test \"$after\" -eq \"$((before + 1))\"; for f in Maildir/support/new/*; do cmp -s samples/support.eml \"$f\"; done; printf 'POST_RESTART_DELIVERY=PASS support_count_before=%s support_count_after=%s all_cmp_identical\\n' \"$before\" \"$after\"; sha256sum samples/*.eml; find Maildir -type f -path '*/new/*' -exec sha256sum {} \\; | sort",
+      "stdout": "BOOT_ID=5243170d-8f51-492b-939d-f84e3fedeff1\nKERNEL=6.8.0-71-generic\nOS=Ubuntu 24.04.3 LTS\nRECOVERED_DATA=PASS pre-restart deliveries and samples intact\nPOST_RESTART_DELIVERY=PASS support_count_before=1 support_count_after=2 all_cmp_identical\nb6486112ecab2b7d23c49a313704ef13f1eed059e4be5416eb32d998398ab0a8  samples/accounts.eml\nfd6b1134abfbca31c96640fa89b440fe44e81524014eed40b9c02971dad052b2  samples/general.eml\nbfca22c7abbb84be5378d2ed016404c2a688941e2da60a05874f6fa4cb22b2b9  samples/support.eml\nb6486112ecab2b7d23c49a313704ef13f1eed059e4be5416eb32d998398ab0a8  Maildir/accounts/new/1791055836.LuJRKZI4y5.node1\nb6486112ecab2b7d23c49a313704ef13f1eed059e4be5416eb32d998398ab0a8  Maildir/accounts/new/1791055836.ZJLJbF9v5u.node1\nbfca22c7abbb84be5378d2ed016404c2a688941e2da60a05874f6fa4cb22b2b9  Maildir/support/new/1791055836.FksUQACSvb.node1\nbfca22c7abbb84be5378d2ed016404c2a688941e2da60a05874f6fa4cb22b2b9  Maildir/support/new/1791055889.PsG81V9dRL.node1\nfd6b1134abfbca31c96640fa89b440fe44e81524014eed40b9c02971dad052b2  Maildir/general/new/1791055836.lhsLen5oPS.node1"
+    }
+  ]
+}

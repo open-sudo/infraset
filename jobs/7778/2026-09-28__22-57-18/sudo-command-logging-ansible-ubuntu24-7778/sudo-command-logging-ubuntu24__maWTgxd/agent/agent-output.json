@@ -1,0 +1,67 @@
+{
+  "status": "completed",
+  "summary": "Implemented sudo command logging on node1 via an Ansible playbook (local connection): a sudoers.d drop-in sets a dedicated logfile (/var/log/sudo-commands.log, root-only 0600) and disables sudo's syslog output (Defaults !syslog), so every sudo command is recorded with user, timestamp, PWD, and command, and is no longer duplicated into /var/log/auth.log. Verified functionally (auth.log COMMAND= count frozen at 6 while the dedicated log kept growing) both before and after a full node restart. Completed the mandatory restart-evidence protocol on both node1 and node2: captured baseline boot IDs, restarted each node one at a time via systemctl reboot, polled until reachable, and confirmed changed boot IDs plus recovered health/config.",
+  "actions_performed": [
+    "Confirmed node1 baseline: Ubuntu 24.04, ansible not installed, passwordless sudo available, /var/log/sudo-commands.log absent, sudo commands recorded in /var/log/auth.log",
+    "Installed ansible (ansible-core 2.16.3 / ansible 9.2.0) on node1 via apt",
+    "Wrote /tmp/ansible-sudo-log/playbook.yml: creates /var/log/sudo-commands.log (root:root 0600) and /etc/sudoers.d/99-sudo-command-logging (Defaults logfile=..., log_year, !syslog), validated with visudo -cf via the copy module's validate parameter",
+    "Ran the playbook with ansible-playbook -i localhost, (local connection, become: true) \u2014 completed with changed=2, failed=0",
+    "Verified functionality: pre-change auth.log had 6 COMMAND= entries from baseline sudo calls; after the change, multiple new sudo commands appeared only in /var/log/sudo-commands.log with user/timestamp fields, while the auth.log COMMAND= count stayed frozen at 6 (only unrelated PAM session open/close lines continued there)",
+    "Captured pre-restart baseline boot IDs and health on node1 and node2",
+    "Restarted node1 via sudo systemctl reboot (backgrounded so the ack returned before disconnect), polled until reachable, confirmed new boot ID and that the sudoers drop-in, log file, and logging behavior (no new auth.log COMMAND= entries) survived the reboot",
+    "Restarted node2 via sudo systemctl reboot, polled until reachable, confirmed new boot ID and systemctl is-system-running=running plus working sudo"
+  ],
+  "evidence": [
+    {
+      "requirement": "Sudo commands are recorded with user and timestamp to /var/log/sudo-commands.log",
+      "command_ids": [
+        "cmd-9f47374e33b7486e",
+        "cmd-e952228406214520",
+        "cmd-7f39b240cbce4107"
+      ],
+      "summary": "Playbook run created the sudoers drop-in; subsequent sudo commands (id -u, systemctl is-active, tail, etc.) appear in /var/log/sudo-commands.log with format 'Mon DD HH:MM:SS YYYY : user : PWD=... ; USER=... ; COMMAND=...'"
+    },
+    {
+      "requirement": "Entries are kept out of the general system log",
+      "command_ids": [
+        "cmd-e952228406214520",
+        "cmd-9ad0c64d36dc4ac4",
+        "cmd-7f39b240cbce4107"
+      ],
+      "summary": "auth.log had exactly 6 COMMAND= entries from pre-change baseline sudo calls (apt-get, tee, whoami, grep); after applying the sudoers !syslog directive, additional sudo commands (ls, systemctl, wc, grep, tail) did not add any new COMMAND= lines to auth.log \u2014 count stayed at 6 across multiple subsequent commands"
+    },
+    {
+      "requirement": "Implemented using Ansible",
+      "command_ids": [
+        "cmd-ff36a126b27f4a9b",
+        "cmd-727793a8cc6b4ff6",
+        "cmd-d3c1a4b0a16b437c",
+        "cmd-9f47374e33b7486e"
+      ],
+      "summary": "Ansible installed via apt; playbook.yml authored with file and sudoers copy(validate=visudo) tasks; ansible-playbook run against localhost with connection=local completed changed=2/failed=0"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-1de4dcaf3093459d",
+        "cmd-16b64a6e3a3648df",
+        "cmd-a560b9b7b1884d6e",
+        "cmd-67c9f3fbf9f64d8c",
+        "cmd-09050fed02104e93"
+      ],
+      "summary": "Baseline boot_id f9bf293d captured with working sudoers config; systemctl reboot acknowledged and returned before disconnect (confirmed by subsequent connection timeout); node polled back to reachable; post-reboot boot_id 2a6d52aa (changed) with sudoers drop-in intact, visudo valid, and logging still functioning correctly (no new auth.log COMMAND= entries)"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-f43ec68c12c24383",
+        "cmd-84f0e3e23aa04587",
+        "cmd-126d1d0a14e74652",
+        "cmd-65fbe04bad8c4275",
+        "cmd-d8fd5894a03c4105",
+        "cmd-f75b712798fa48e0"
+      ],
+      "summary": "Baseline boot_id 489b0bb4 captured with systemctl is-system-running=running; systemctl reboot acknowledged and returned before disconnect (confirmed by subsequent connection timeout); node polled back to reachable; post-reboot boot_id d7241438 (changed) with system healthy (is-system-running=running) and sudo functional"
+    }
+  ]
+}

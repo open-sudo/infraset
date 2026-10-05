@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 9,
+    "successful": 7,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "os-comparison-worker runs as managed service inventory-worker under dedicated inventorysvc account",
+      "command_ids": [
+        "cmd-7960eec994c440be",
+        "cmd-45069045886a43b4",
+        "cmd-057fb8fd1de846ab"
+      ],
+      "summary": "Confirmed binary and absence of prior user/service, then created inventorysvc, installed and started inventory-worker.service; systemctl status and ps show it active and running as inventorysvc"
+    },
+    {
+      "requirement": "node1 mandatory restart evidence: healthy baseline before restart",
+      "command_ids": [
+        "cmd-0f4ad847ca5946f4"
+      ],
+      "summary": "Captured pre-restart boot_id (e8afb731-420c-4162-a989-583aca271335) and confirmed inventory-worker active with process running"
+    },
+    {
+      "requirement": "node1 mandatory restart evidence: restart acknowledgement and disconnect",
+      "command_ids": [
+        "cmd-e192e54405cb43a5",
+        "cmd-cf92ad8923ad4a23"
+      ],
+      "summary": "Issued backgrounded sudo reboot which returned acknowledgement immediately; subsequent exec call failed with connection reset, confirming the node went down"
+    },
+    {
+      "requirement": "node1 mandatory restart evidence: changed boot identity after restart",
+      "command_ids": [
+        "cmd-bc3d27dac32043aa"
+      ],
+      "summary": "Polling succeeded once node1 came back, returning a new boot_id (3601e4ff-0a6f-4865-b9bc-44d47af33ca9), differing from the pre-restart value, proving an actual reboot"
+    },
+    {
+      "requirement": "node1 mandatory restart evidence: post-restart recovery of service and account",
+      "command_ids": [
+        "cmd-637a03ab1f2d4d32"
+      ],
+      "summary": "Post-restart check shows same new boot_id, inventory-worker enabled and active with a fresh process (PID 654) running as inventorysvc, and the inventorysvc account still present"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-7960eec994c440be",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:26:46.922677+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 230,
+      "command": "set -Eeuo pipefail\necho \"=== boot id ===\"; cat /proc/sys/kernel/random/boot_id\necho \"=== binary ===\"; ls -la /usr/local/bin/os-comparison-worker; file /usr/local/bin/os-comparison-worker\necho \"=== existing user ===\"; id inventorysvc 2>&1 || true\necho \"=== existing service ===\"; systemctl status inventory-worker 2>&1 || true\n",
+      "stdout": "=== boot id ===\ne8afb731-420c-4162-a989-583aca271335\n=== binary ===\n-rwxr-xr-x 1 root root 60 Sep 29 09:26 /usr/local/bin/os-comparison-worker\n/usr/local/bin/os-comparison-worker: POSIX shell script, ASCII text executable\n=== existing user ===\nid: \u2018inventorysvc\u2019: no such user\n=== existing service ===\nUnit inventory-worker.service could not be found."
+    },
+    {
+      "command_id": "cmd-45069045886a43b4",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:26:49.519805+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 82,
+      "command": "cat /usr/local/bin/os-comparison-worker",
+      "stdout": "#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 30; done"
+    },
+    {
+      "command_id": "cmd-057fb8fd1de846ab",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:26:57.707426+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2420,
+      "command": "set -Eeuo pipefail\n\necho \"=== create system user inventorysvc ===\"\nsudo -n useradd --system --no-create-home --shell /usr/sbin/nologin inventorysvc\nid inventorysvc\n\necho \"=== write unit file ===\"\nsudo -n tee /etc/systemd/system/inventory-worker.service > /dev/null <<'UNIT'\n[Unit]\nDescription=Inventory Worker (OS comparison worker)\nAfter=network.target\n\n[Service]\nType=simple\nUser=inventorysvc\nGroup=inventorysvc\nExecStart=/usr/local/bin/os-comparison-worker\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\nUNIT\n\necho \"=== reload, enable, start ===\"\nsudo -n systemctl daemon-reload\nsudo -n systemctl enable --now inventory-worker\n\necho \"=== verify status ===\"\nsleep 2\nsudo -n systemctl is-enabled inventory-worker\nsudo -n systemctl is-active inventory-worker\nsudo -n systemctl status inventory-worker --no-pager\n\necho \"=== verify running user ===\"\nps -o pid,user,cmd -C os-comparison-worker\n",
+      "stdout": "=== create system user inventorysvc ===\nuid=999(inventorysvc) gid=988(inventorysvc) groups=988(inventorysvc)\n=== write unit file ===\n=== reload, enable, start ===\nCreated symlink /etc/systemd/system/multi-user.target.wants/inventory-worker.service \u2192 /etc/systemd/system/inventory-worker.service.\n=== verify status ===\nenabled\nactive\n\u25cf inventory-worker.service - Inventory Worker (OS comparison worker)\n     Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; preset: enabled)\n     Active: active (running) since Tue 2026-09-29 09:26:55 EDT; 2s ago\n   Main PID: 1466 (os-comparison-w)\n      Tasks: 2 (limit: 2317)\n     Memory: 440.0K (peak: 596.0K)\n        CPU: 1ms\n     CGroup: /system.slice/inventory-worker.service\n             \u251c\u25001466 /bin/sh /usr/local/bin/os-comparison-worker\n             \u2514\u25001467 sleep 30\n\nSep 29 09:26:55 node1 systemd[1]: Started inventory-worker.service - Inventory Worker (OS comparison worker).\n=== verify running user ===\n    PID USER     CMD\n   1466 invento+ /bin/sh /usr/local/bin/os-comparison-worker"
+    },
+    {
+      "command_id": "cmd-0f4ad847ca5946f4",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:27:00.546520+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 84,
+      "command": "set -Eeuo pipefail\necho \"=== pre-restart boot id ===\"; cat /proc/sys/kernel/random/boot_id\necho \"=== pre-restart service health ===\"\nsudo -n systemctl is-active inventory-worker\nps -o pid,user,cmd -C os-comparison-worker\n",
+      "stdout": "=== pre-restart boot id ===\ne8afb731-420c-4162-a989-583aca271335\n=== pre-restart service health ===\nactive\n    PID USER     CMD\n   1466 invento+ /bin/sh /usr/local/bin/os-comparison-worker"
+    },
+    {
+      "command_id": "cmd-e192e54405cb43a5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:27:02.797910+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 76,
+      "command": "sudo -n sh -c 'nohup reboot >/dev/null 2>&1 &' ; echo \"reboot-acknowledged\"",
+      "stdout": "reboot-acknowledged"
+    },
+    {
+      "command_id": "cmd-cf92ad8923ad4a23",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:27:05.236960+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 67,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-3261f97d769942d6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:27:09.398545+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2134,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-bc3d27dac32043aa",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:27:14.864630+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 125,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "3601e4ff-0a6f-4865-b9bc-44d47af33ca9"
+    },
+    {
+      "command_id": "cmd-637a03ab1f2d4d32",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:27:18.152925+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 112,
+      "command": "set -Eeuo pipefail\necho \"=== post-restart boot id ===\"; cat /proc/sys/kernel/random/boot_id\necho \"=== enabled? ===\"; sudo -n systemctl is-enabled inventory-worker\necho \"=== active? ===\"; sudo -n systemctl is-active inventory-worker\nsudo -n systemctl status inventory-worker --no-pager\necho \"=== running as user ===\"; ps -o pid,user,cmd -C os-comparison-worker\necho \"=== user account persisted ===\"; id inventorysvc\n",
+      "stdout": "=== post-restart boot id ===\n3601e4ff-0a6f-4865-b9bc-44d47af33ca9\n=== enabled? ===\nenabled\n=== active? ===\nactive\n\u25cf inventory-worker.service - Inventory Worker (OS comparison worker)\n     Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; preset: enabled)\n     Active: active (running) since Tue 2026-09-29 09:27:10 EDT; 7s ago\n   Main PID: 654 (os-comparison-w)\n      Tasks: 2 (limit: 2317)\n     Memory: 456.0K (peak: 1.6M)\n        CPU: 2ms\n     CGroup: /system.slice/inventory-worker.service\n             \u251c\u2500654 /bin/sh /usr/local/bin/os-comparison-worker\n             \u2514\u2500698 sleep 30\n\nSep 29 09:27:10 node1 systemd[1]: Started inventory-worker.service - Inventory Worker (OS comparison worker).\n=== running as user ===\n    PID USER     CMD\n    654 invento+ /bin/sh /usr/local/bin/os-comparison-worker\n=== user account persisted ===\nuid=999(inventorysvc) gid=988(inventorysvc) groups=988(inventorysvc)"
+    }
+  ]
+}

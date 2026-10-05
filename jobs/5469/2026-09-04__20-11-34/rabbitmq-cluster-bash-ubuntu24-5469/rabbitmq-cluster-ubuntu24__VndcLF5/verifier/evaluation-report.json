@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Join node1, node2, node3 into a single RabbitMQ cluster",
+      "status": "satisfied",
+      "summary": "join_cluster commands and final cluster_status (cmd-0178084ffa9b454f, cmd-8ffead8a88d543b3, cmd-393acf630a654848) show all three nodes as Disk Nodes and Running Nodes with no partitions or alarms, using a synced Erlang cookie.",
+      "evidence_ids": [
+        "cmd-0178084ffa9b454f",
+        "cmd-8ffead8a88d543b3",
+        "cmd-393acf630a654848"
+      ]
+    },
+    {
+      "id": "payments-vhost-and-app-account",
+      "requirement": "Create a payments virtual host and an application account that can publish and consume there",
+      "status": "satisfied",
+      "summary": "add_vhost payments and add_user/set_permissions for app_user scoped to payments vhost (configure/write/read '.*') with no admin tags are directly observed, and app_user was later shown to actually publish and consume via AMQP against this vhost.",
+      "evidence_ids": [
+        "cmd-f156397db9994c6a",
+        "cmd-40005aeaecb74ec8",
+        "cmd-393acf630a654848",
+        "cmd-e4d5b21d21da4467",
+        "cmd-2922e926c8d74012"
+      ]
+    },
+    {
+      "id": "durable-queue-replicated",
+      "requirement": "Durable queue replicated so it can tolerate loss of one node",
+      "status": "satisfied",
+      "summary": "Quorum queue 'orders' declared durable with x-quorum-initial-group-size=3; list_queues confirms members on rabbit@node1, rabbit@node2, rabbit@node3.",
+      "evidence_ids": [
+        "cmd-763ac17dd27a4746",
+        "cmd-77904d06cf8e41a1"
+      ]
+    },
+    {
+      "id": "message-durability-under-node-loss",
+      "requirement": "Messages published to the durable queue survive the loss of any one node and stay consumable from the remaining nodes",
+      "status": "satisfied",
+      "summary": "3 durable messages published and confirmed (count=3); node1's rabbitmq-server was stopped; queue still reported messages=3 with the quorum leader re-elected to rabbit@node2 and members spanning all 3 nodes; all 3 messages were then successfully consumed from node3 as app_user. This is a directly observed bounded disruption-and-recovery transition, not just configuration.",
+      "evidence_ids": [
+        "cmd-e4d5b21d21da4467",
+        "cmd-8bad942e0f9d4454",
+        "cmd-150685d389334042",
+        "cmd-114c3a182d184ce6",
+        "cmd-647d563cd90e479e",
+        "cmd-053da2d32c8c4d94",
+        "cmd-2922e926c8d74012"
+      ]
+    },
+    {
+      "id": "node1-restored-cluster-healthy",
+      "requirement": "After simulated node loss, node1 is restored and the cluster returns to full health",
+      "status": "satisfied",
+      "summary": "node1's rabbitmq-server was restarted; cluster_status shows all 3 nodes Running with the quorum queue reporting 3 members.",
+      "evidence_ids": [
+        "cmd-eb45ee2ceffe4f70",
+        "cmd-c5961f35e8134aac"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (independent of public contract)",
+      "status": "satisfied",
+      "summary": "For each of node1, node2, node3: a pre-reboot boot_id and healthy baseline was captured, a native `reboot` was issued and acknowledged, a different post-reboot boot_id was observed after the node became reachable again, and RabbitMQ/cluster/quorum-queue health was verified as recovered. These match the fixed before_prepare boot-identity values and after_executor boot-identity values, providing a coherent independent cross-check.",
+      "evidence_ids": [
+        "cmd-b7299c86baf743f7",
+        "cmd-0a50dd5cbed94cfd",
+        "cmd-bcdb9884f97a46c7",
+        "cmd-097a14e5109d4263",
+        "cmd-3d758ba2e5d34627",
+        "cmd-724bce6173b74aad",
+        "cmd-49aa4c38c9bd4289",
+        "cmd-83d656f9b7c34743",
+        "cmd-302eb66941fc41b8",
+        "cmd-96a552f1b8844c19",
+        "cmd-5ceeca0df3b540f7",
+        "cmd-47b7babadd6948cf",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    },
+    {
+      "id": "post-restart-functional-verification",
+      "requirement": "Application account can still publish and consume, and cluster remains healthy, after all node restarts",
+      "status": "satisfied",
+      "summary": "After all three reboots, app_user published 2 messages from node2, the queue confirmed count=2, and both were consumed successfully from node1 as app_user; final cluster_status/list_permissions confirm 3 running nodes and app_user's scoped permissions intact.",
+      "evidence_ids": [
+        "cmd-dfdc73976158409e",
+        "cmd-77005019b9024570",
+        "cmd-479b8a8bac87450c",
+        "cmd-393acf630a654848"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully clustered all three nodes, created the payments vhost with a scoped app_user, declared a durable quorum queue replicated across all nodes, and directly demonstrated message survival and consumability through a real node-stop/re-election/consume cycle rather than relying on configuration alone. All three nodes were also rebooted one at a time with directly observed boot-id changes and recovered cluster/queue health, consistent with the fixed before/after boot-identity snapshots, and a final publish/consume test confirmed end-to-end functionality post-restart. The main deduction is on operational hygiene: the RabbitMQ management plugin was left enabled and listening on 0.0.0.0:15672 on all nodes, and the default guest/guest administrator account (used during setup) was never disabled or restricted, leaving a retained network-exposed admin surface beyond what the task required, plus minor leftover temp test files.",
+  "limitations": [
+    "Command outputs are the only evidence available; no independent live verification of current cluster or queue state was possible.",
+    "The retained rabbitmq_management exposure and guest/guest admin account were not addressed by the executor's final report, so their risk was not weighed against any business justification the executor might have had.",
+    "Two transient failed commands (e.g. cmd-3b5739e1fd914363 and cmd-86122d0af8964216, consume.py missing on node3/node1) were script-transfer issues corrected in immediately following commands, and do not affect the final observed outcomes."
+  ],
+  "command_stats": {
+    "total": 151,
+    "successful": 117,
+    "failed": 34,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "Most state-changing commands map clearly to task prerequisites (Erlang/RabbitMQ install, cookie sync, clustering, vhost/user/queue creation) or were necessary corrective actions for a broken apt mirror on node1 (cmd-fdb157bb040e42a1 through cmd-9f73ea0f6a2b4c57, including killing stuck apt processes and clearing lock files, a reasonable troubleshooting response to a genuinely broken package state rather than an unforced mutation). The temporary python3 http.server used to transfer .deb files (cmd-6e451aac15c943c1, cmd-84373fb0ce9947d1) was bounded and cleanly stopped (cmd-14905ca3bb3f48b8). The temporary guest permission grant on the payments vhost, used only to declare the queue via the management API because app_user lacked admin/management tags (cmd-763ac17dd27a4746), was explicitly reverted (cmd-368a56eec6dc4f1c) \u2014 a bounded, fully-restored mutation. However, two retained mutations are unnecessary and weaken the security posture beyond what the task required: (1) rabbitmq_management plugin was enabled on all three nodes (cmd-d7cb74203ffa4e9d, cmd-f68b73598e324813, cmd-960bb812b99549c2) and left running, exposing the HTTP management/admin API on 0.0.0.0:15672 on every node in the final state (confirmed by after_executor listening-sockets snapshots); (2) the default guest account retains its 'administrator' tag and default guest/guest credentials throughout (cmd-601ba73ea5a64a36, cmd-393acf630a654848 final list_users), and was actively used with those default credentials against the now-exposed management API \u2014 combined, this is a retained, network-wide, credentialed admin exposure that was never disabled or hardened after use. Additionally, temporary test scripts (/tmp/publish.py, /tmp/consume.py) were left on node1 and node2 rather than cleaned up, a minor residue.",
+    "evidence_ids": [
+      "cmd-d7cb74203ffa4e9d",
+      "cmd-f68b73598e324813",
+      "cmd-960bb812b99549c2",
+      "cmd-601ba73ea5a64a36",
+      "cmd-393acf630a654848",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node2:listening-sockets",
+      "global:after_executor:node3:listening-sockets",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

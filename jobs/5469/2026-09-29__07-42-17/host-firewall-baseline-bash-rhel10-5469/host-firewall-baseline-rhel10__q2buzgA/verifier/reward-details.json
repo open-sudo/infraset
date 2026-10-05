@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "allow-ssh-8080",
+      "requirement": "Persistent firewall on node1 permits inbound SSH and TCP/8080",
+      "status": "satisfied",
+      "summary": "firewall-cmd --permanent and --list-all (runtime) both show services=ssh, ports=8080/tcp in the public zone (cmd-8c2614fa34134728, cmd-09993ad60ac64395), and the live nft ruleset's filter_IN_public_allow chain contains exactly 'tcp dport 22 accept' and 'tcp dport 8080 accept' (cmd-a0c270d893b34879). Post-reboot re-check confirms the same nft chain and firewall-cmd output (cmd-04159a74a9e642fe), with sshd actively listening on :22.",
+      "evidence_ids": [
+        "cmd-8c2614fa34134728",
+        "cmd-09993ad60ac64395",
+        "cmd-a0c270d893b34879",
+        "cmd-04159a74a9e642fe"
+      ]
+    },
+    {
+      "id": "reject-unrelated",
+      "requirement": "Unrelated inbound connections are rejected",
+      "status": "satisfied",
+      "summary": "Zone target was set to DROP and default-open extras (cockpit, dhcpv6-client) were removed, leaving only ssh/8080 permitted (cmd-8c2614fa34134728, cmd-09993ad60ac64395). The nft dump shows filter_INPUT falls through to 'reject with icmpx admin-prohibited' for anything not matched by filter_IN_public_allow (cmd-a0c270d893b34879), which persisted after reboot (cmd-04159a74a9e642fe). The executor's own functional curl test against a decoy port 9999 returned HTTP:200 instead of being blocked (cmd-6a48ce49a8c34afc), but this is explained by curl targeting the host's own IP, which routes over loopback (iifname 'lo' is unconditionally accepted early in filter_INPUT) and never traverses the enp1s0-scoped public-zone chain being tested \u2014 the executor correctly flagged this as inconclusive and relied on the nft ruleset as the authoritative source. No evidence contradicts the ruleset-based conclusion.",
+      "evidence_ids": [
+        "cmd-8c2614fa34134728",
+        "cmd-09993ad60ac64395",
+        "cmd-a0c270d893b34879",
+        "cmd-6a48ce49a8c34afc",
+        "cmd-04159a74a9e642fe"
+      ]
+    },
+    {
+      "id": "persistence",
+      "requirement": "Firewall configuration is persistent (survives reload and reboot), not just runtime",
+      "status": "satisfied",
+      "summary": "Permanent config matches runtime config after --reload (cmd-8c2614fa34134728, cmd-09993ad60ac64395). firewalld is enabled at boot (cmd-d664ae567be941bd, cmd-8c2614fa34134728). A real reboot was performed (boot_id changed from 636556ce... to 3a6c3b2f..., confirmed both by executor commands cmd-ef3052382cc14fa3/cmd-083801522ee44635 and independently by the fixed lifecycle snapshots' boot-identity observations), and post-reboot state (cmd-04159a74a9e642fe) shows firewalld active/enabled, target=DROP, services=ssh, ports=8080/tcp, and the same restrictive nft allow-chain, demonstrating true persistence across a full restart rather than only a --reload.",
+      "evidence_ids": [
+        "cmd-8c2614fa34134728",
+        "cmd-09993ad60ac64395",
+        "cmd-ef3052382cc14fa3",
+        "cmd-3685cbcc6ca6403f",
+        "cmd-083801522ee44635",
+        "cmd-04159a74a9e642fe",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task \u2014 allowing SSH and TCP/8080, rejecting unrelated inbound traffic, and persistence \u2014 are satisfied with direct, coherent evidence including a permanent firewalld public-zone config (target=DROP, services=ssh, ports=8080/tcp), a matching live nft ruleset showing only those two ports accepted and a reject-admin-prohibited catch-all, and confirmation that this state survived both a --reload and a full node reboot (verified via a genuine boot_id change cross-checked against the fixed lifecycle snapshots). The independent restart-evidence protocol was satisfied for node1 with pre-restart baseline, restart acknowledgement/disconnect, changed boot identity, and post-restart recovery of firewalld, sshd, and the firewall rules. Minor hygiene deductions are for unreverted temporary test artifacts left in /tmp and an inconclusive (but appropriately caveated) loopback-based functional block test.",
+  "limitations": [
+    "The functional curl test against the decoy port 9999 was inconclusive (returned HTTP:200 instead of being blocked) because it was routed over loopback rather than the enp1s0 interface the zone rules apply to; the reject behavior for genuinely external unrelated traffic is inferred from the nft ruleset rather than directly demonstrated end-to-end from an external source.",
+    "Only a single managed node (node1) exists in this topology, so the restart-evidence protocol was exercised once; no cross-node comparison is possible.",
+    "Small temporary artifacts (/tmp/http8080.log, /tmp/http8080.pid, /tmp/http9999.log, /tmp/http9999.pid, /tmp/reboot.log) were left on node1 after testing/reboot and were not cleaned up."
+  ],
+  "command_stats": {
+    "total": 12,
+    "successful": 10,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "State-changing commands were mostly purposeful: the firewalld permanent config changes and service removals (cmd-8c2614fa34134728, cmd-09993ad60ac64395) directly implement the task; the reboot (cmd-3685cbcc6ca6403f) was needed for the required restart-evidence protocol. The temporary test HTTP listeners on 8080/9999 (cmd-c55ed6c923cf4f5c) were a bounded, low-risk diagnostic that was stopped (cmd-6a48ce49a8c34afc, 'listeners stopped'), but the associated log/pid files (/tmp/http8080.log, /tmp/http8080.pid, /tmp/http9999.log, /tmp/http9999.pid) and /tmp/reboot.log were left behind and appear in the after-executor temp-file inventory as unreverted residue \u2014 minor, non-sensitive, but unnecessary leftover artifacts. No failed services, no package-manager damage, and no security controls were weakened (the final posture is strictly tighter than baseline, having removed cockpit/dhcpv6-client and added a DROP target).",
+    "evidence_ids": [
+      "cmd-c55ed6c923cf4f5c",
+      "cmd-6a48ce49a8c34afc",
+      "cmd-3685cbcc6ca6403f",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

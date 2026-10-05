@@ -1,0 +1,122 @@
+{
+  "status": "completed",
+  "summary": "Built the double-NAT path (node3/lan-a -> node1 -> transit -> node2 -> node4/lan-b:8080) so node4 records the connection as arriving from node2's lan-b address. Then executed the mandatory one-node-at-a-time restart protocol on all four nodes, confirming boot-identity change and full recovery (config, services, and end-to-end connectivity) after each restart.",
+  "actions_performed": [
+    "Discovered physical topology by testing candidate subnets across unconfigured interfaces: lan-a = node1 eth2 <-> node3 eth1; transit = node1 eth1 <-> node2 vtnet1; lan-b = node2 vtnet2 <-> node4 eth1",
+    "Configured node1 (VyOS): addressed eth1=10.10.2.1/24 (transit) and eth2=10.10.1.254/24 (lan-a); added static route 10.10.3.0/24 via 10.10.2.2; added source NAT rule 10 (masquerade on eth1 for source 10.10.1.0/24); added forward-filter default-drop plus established/related, tcp/8080, and icmp accept rules; committed and saved",
+    "Configured node2 (OPNsense) via config.xml Python surgery: added opt1 (vtnet1, 10.10.2.2/24 transit) and opt2 (vtnet2, 10.10.3.254/24 lan-b) interfaces; added pf pass rules for tcp/8080 and icmp on opt1; switched outbound NAT to hybrid mode and added manual SNAT masquerading 10.10.2.0/24 traffic out opt2; applied via configctl interface reconfigure + configctl filter reload without losing SSH/exec reachability",
+    "Configured node3 (10.10.1.10/24 on eth1, persisted in /etc/network/interfaces with a static route to 10.10.3.0/24 via node1) and node4 (10.10.3.10/24 on eth1, persisted similarly)",
+    "Installed busybox-extras and tcpdump on node4; started an httpd service on port 8080 serving a test page, made persistent via /etc/local.d/httpd8080.start + rc-update add local default",
+    "Verified end-to-end: node3 fetched http://10.10.3.10:8080 successfully; tcpdump on node4 eth1 and node4's socket table showed source 10.10.3.254 (node2 lan-b IP), not node1 or node3; conntrack on node1 and pf state on node2 confirmed both NAT hops",
+    "Captured pre-restart baseline (boot_id/kern.boottime + service/config state) on all 4 nodes",
+    "Restarted node3, node4, node1, node2 one at a time via native reboot, polling exec availability, confirming changed boot identity, and re-verifying config/service recovery and the full double-NAT path after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "Topology discovery (which interfaces form lan-a/transit/lan-b)",
+      "command_ids": [
+        "cmd-b41b066834ba47b6",
+        "cmd-b08cbb935070483e",
+        "cmd-cc1a256034cb4997",
+        "cmd-3c60779ae5e946f9",
+        "cmd-3f5168a33c374437",
+        "cmd-e0ecfc46ef404676",
+        "cmd-15f5e39a20d2450a",
+        "cmd-30e188dba38a4a61",
+        "cmd-1c80df223a5a40bc",
+        "cmd-5a905067273b40b5"
+      ],
+      "summary": "Bidirectional ping tests across distinct test subnets on the spare interfaces established that node1 eth2<->node3 eth1 (lan-a), node1 eth1<->node2 vtnet1 (transit), and node2 vtnet2<->node4 eth1 (lan-b)"
+    },
+    {
+      "requirement": "node1 (VyOS) NAT + firewall + routing configuration applied",
+      "command_ids": [
+        "cmd-804d6282905a415d",
+        "cmd-956ac4918f244316",
+        "cmd-5df3d9b8cceb4f8a"
+      ],
+      "summary": "show interfaces/ip route/nat source rules/firewall confirm eth1/eth2 addressing, static route to lan-b, masquerade SNAT rule 10, and forward-filter rules are active"
+    },
+    {
+      "requirement": "node2 (OPNsense) interface/NAT/firewall configuration applied without losing exec access",
+      "command_ids": [
+        "cmd-e64f43d303ea4f03",
+        "cmd-dbd94d782a044de5",
+        "cmd-559af7591d9b4191",
+        "cmd-c3c2521fdc2d4157",
+        "cmd-c24354991f634d92"
+      ],
+      "summary": "config.xml updated, opt1/opt2 reconfigured with correct IPs, filter reload succeeded (SSH still reachable), pfctl -s nat shows the manual SNAT rule on vtnet2, pfctl -s rules shows pass rules for tcp/8080 and icmp on vtnet1"
+    },
+    {
+      "requirement": "node3/node4 addressing and lan-b HTTP service in place",
+      "command_ids": [
+        "cmd-6b136fe301dc446b",
+        "cmd-fe0f2546eeaa4d8f",
+        "cmd-3b6935ad7c3449d6",
+        "cmd-fd91d521823b4f55"
+      ],
+      "summary": "eth1 addresses and routes configured on node3/node4; httpd installed and listening on node4:8080"
+    },
+    {
+      "requirement": "End-to-end connection succeeds and node4 records source as node2's lan-b address (core task requirement)",
+      "command_ids": [
+        "cmd-f9e888b2f3eb4696",
+        "cmd-c6f24c3ed0c041a2",
+        "cmd-9ad3fd85f6cd44dc",
+        "cmd-86dd0fa642c046fc",
+        "cmd-683ffd3947a64862"
+      ],
+      "summary": "node3 successfully fetched the page from node4:8080; tcpdump on node4's eth1 and its netstat socket table show the incoming SYN/connection sourced from 10.10.3.254 (node2 lan-b IP); conntrack on node1 and pf state on node2 show both NAT translation hops (10.10.1.10->10.10.2.1 then 10.10.2.1->10.10.3.254)"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-716645c2a72b40ff",
+        "cmd-9d66a563a7794816",
+        "cmd-9e928ecf9a2e4cf2",
+        "cmd-d129d8a6792d4b99",
+        "cmd-02717879c83b40a5"
+      ],
+      "summary": "Baseline boot_id 48193c62...; reboot acked; connection dropped confirming restart in progress; new boot_id ae0b9e32... with uptime 0 min; post-restart eth1/route/wget to node4:8080 all recovered"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-13e8fe47286c4a41",
+        "cmd-3a8d4e3d185e407b",
+        "cmd-82cacc416ecd4c3b",
+        "cmd-25b66b2794384bed",
+        "cmd-31be2fb7e7ab4f89",
+        "cmd-b3889449f3cc4034"
+      ],
+      "summary": "Baseline boot_id a36fc7f5... with httpd listening; reboot acked; new boot_id 7750af4c... uptime 0 min; eth1 address and httpd service auto-recovered via local.d; node3 successfully re-fetched the page confirming full path recovery"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-985acb969e5d47a8",
+        "cmd-7b7aa5b5488f450a",
+        "cmd-86fccd9283154b0a",
+        "cmd-7503a750a5a64ff9",
+        "cmd-d735f345da514f81",
+        "cmd-7150ac18078c449a"
+      ],
+      "summary": "Baseline boot_id e636d872...; reboot acked; new boot_id fd14b431... uptime 0 min; VyOS NAT rule and full route table (including static route to lan-b) restored from saved config; node3 successfully re-fetched the page confirming recovery"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state, full path re-verified post-all-restarts",
+      "command_ids": [
+        "cmd-985acb969e5d47a8",
+        "cmd-305afeb59153467e",
+        "cmd-9d59877b03754b3a",
+        "cmd-9cab43b1ba53447e",
+        "cmd-5ef6666297dc48b2",
+        "cmd-4f5c52e1fb774e9c",
+        "cmd-14906d1a4cf84797",
+        "cmd-53032d1aa1884837"
+      ],
+      "summary": "Baseline kern.boottime 04:34:21; reboot acked (SSH connection timed out confirming restart); new kern.boottime 04:45:30; opt1/opt2 interfaces, SNAT rule, and pf pass rules all restored from config.xml; final tcpdump on node4 after all 4 restarts shows the connection still sourced from 10.10.3.254, proving the double-NAT path is fully persistent and functional"
+    }
+  ]
+}

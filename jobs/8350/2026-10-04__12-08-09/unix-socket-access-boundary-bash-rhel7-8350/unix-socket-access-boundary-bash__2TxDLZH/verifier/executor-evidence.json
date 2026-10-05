@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 11,
+    "successful": 6,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Preserve the supplied status document",
+      "command_ids": [
+        "cmd-6aae42b3803543ec",
+        "cmd-71b81ae158d245f9"
+      ],
+      "summary": "Pre-change and post-restart SHA-256 values match: 5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b."
+    },
+    {
+      "requirement": "Provision access-role accounts",
+      "command_ids": [
+        "cmd-c042923fb8204fd1",
+        "cmd-71b81ae158d245f9"
+      ],
+      "summary": "status-reader belongs to status-readers; outsider does not; identities persisted after reboot."
+    },
+    {
+      "requirement": "Restrict service access to statusd and status-readers",
+      "command_ids": [
+        "cmd-5eb3c9b2403f438d",
+        "cmd-71b81ae158d245f9"
+      ],
+      "summary": "Socket is statusd:status-readers mode 0660. Both authorized identities connect successfully; outsider receives permission denied and cannot read the document."
+    },
+    {
+      "requirement": "Return the document for STATUS newline and an error otherwise",
+      "command_ids": [
+        "cmd-5eb3c9b2403f438d",
+        "cmd-71b81ae158d245f9"
+      ],
+      "summary": "Authorized response hashes and byte-for-byte comparisons match the document; invalid requests return ERROR."
+    },
+    {
+      "requirement": "Operate persistently without changing the legacy OS or kernel",
+      "command_ids": [
+        "cmd-5305fee186594dff",
+        "cmd-71b81ae158d245f9"
+      ],
+      "summary": "statusd.service is enabled and active after reboot; RHEL 7.9 and kernel 3.10.0-1160.el7.x86_64 remain installed."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-e552e2d75a1e479e",
+        "cmd-eefd2d3ebe9847f9",
+        "cmd-71b81ae158d245f9"
+      ],
+      "summary": "Captured healthy baseline and reboot acknowledgment, proved boot ID changed from b35fad86-4e61-46bf-bbd2-0dadcedb685d to 3d0afbf4-7f98-42c2-8c82-a61aea582ecd, then verified service, socket, data, roles, protocol, and access denial recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-6aae42b3803543ec",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:40:07.034936+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3412,
+      "command": "set -eu\nBASE=/srv/legacy2/unix-socket-access-boundary\nprintf 'NODE=%s IP=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'OS='; cat /etc/redhat-release\nprintf 'KERNEL='; uname -r\nprintf '%s\\n' '--- directory ---'\nls -la \"$BASE\" \"$BASE/run\" 2>&1 || true\nprintf '%s\\n' '--- files ---'\nfind \"$BASE\" -maxdepth 2 -type f -printf '%M %u:%g %p %s bytes\\n' 2>/dev/null || true\nprintf '%s\\n' '--- server.py ---'\nif [ -f \"$BASE/server.py\" ]; then sed -n '1,240p' \"$BASE/server.py\"; fi\nprintf '%s\\n' '--- status candidates and hashes ---'\nfind \"$BASE\" -maxdepth 2 -type f ! -name server.py -exec sha256sum {} \\; 2>/dev/null || true\nprintf '%s\\n' '--- identities ---'\ngetent passwd statusd status-reader outsider || true\ngetent group status-readers || true\nprintf '%s\\n' '--- processes/listeners/services ---'\nps -ef | grep '[s]erver.py' || true\nss -xlpn 2>/dev/null | grep 'status.sock' || true\nsystemctl list-unit-files --type=service 2>/dev/null | grep -E 'status|legacy' || true",
+      "stdout": "NODE=node1 IP=10.100.83.10\nBOOT_ID=b35fad86-4e61-46bf-bbd2-0dadcedb685d\nOS=Red Hat Enterprise Linux Server release 7.9 (Maipo)\nKERNEL=3.10.0-1160.el7.x86_64\n--- directory ---\n/srv/legacy2/unix-socket-access-boundary:\ntotal 8\ndrwxr-xr-x. 3 root root  52 Aug 26 10:38 .\ndrwxr-xr-x. 3 root root  41 Aug 26 10:38 ..\ndrwxr-xr-x. 2 root root  19 Aug 26 10:38 run\n-rwxr-xr-x. 1 root root 413 Nov 14  2023 server.py\n-rw-r--r--. 1 root root  24 Nov 14  2023 status.txt\n\n/srv/legacy2/unix-socket-access-boundary/run:\ntotal 0\ndrwxr-xr-x. 2 root root 19 Aug 26 10:38 .\ndrwxr-xr-x. 3 root root 52 Aug 26 10:38 ..\n-rw-r--r--. 1 root root  0 Nov 14  2023 .keep\n--- files ---\n-rw-r--r-- root:root /srv/legacy2/unix-socket-access-boundary/run/.keep 0 bytes\n-rwxr-xr-x root:root /srv/legacy2/unix-socket-access-boundary/server.py 413 bytes\n-rw-r--r-- root:root /srv/legacy2/unix-socket-access-boundary/status.txt 24 bytes\n--- server.py ---\n#!/usr/bin/python\nimport os, socket\nbase = os.path.dirname(os.path.abspath(__file__))\npath = os.path.join(base, 'run/status.sock')\nif os.path.exists(path):\n    os.unlink(path)\ns = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\ns.bind(path)\nos.chmod(path, 438)\ns.listen(5)\nwhile True:\n    c, address = s.accept()\n    c.recv(1024)\n    c.sendall(open(os.path.join(base, 'status.txt'), 'rb').read())\n    c.close()\n--- status candidates and hashes ---\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /srv/legacy2/unix-socket-access-boundary/run/.keep\n5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b  /srv/legacy2/unix-socket-access-boundary/status.txt\n--- identities ---\n--- processes/listeners/services ---\nantrieb   2145  2127  0 10:39 ?        00:00:00 bash -c set -eu BASE=/srv/legacy2/unix-socket-access-boundary printf 'NODE=%s IP=%s\\n' \"$NODE_NAME\" \"$NODE_IP\" printf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id printf 'OS='; cat /etc/redhat-release printf 'KERNEL='; uname -r printf '%s\\n' '--- directory ---' ls -la \"$BASE\" \"$BASE/run\" 2>&1 || true printf '%s\\n' '--- files ---' find \"$BASE\" -maxdepth 2 -type f -printf '%M %u:%g %p %s bytes\\n' 2>/dev/null || true printf '%s\\n' '--- server.py ---' if [ -f \"$BASE/server.py\" ]; then sed -n '1,240p' \"$BASE/server.py\"; fi printf '%s\\n' '--- status candidates and hashes ---' find \"$BASE\" -maxdepth 2 -type f ! -name server.py -exec sha256sum {} \\; 2>/dev/null || true printf '%s\\n' '--- identities ---' getent passwd statusd status-reader outsider || true getent group status-readers || true printf '%s\\n' '--- processes/listeners/services ---' ps -ef | grep '[s]erver.py' || true ss -xlpn 2>/dev/null | grep 'status.sock' || true systemctl list-unit-files --type=service 2>/dev/null | grep -E 'status|legacy' || true\n"
+    },
+    {
+      "command_id": "cmd-c042923fb8204fd1",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:40:27.242940+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1968,
+      "command": "set -eu\nsudo /usr/sbin/groupadd -f status-readers\nif ! getent group statusd >/dev/null 2>&1; then sudo /usr/sbin/groupadd -r statusd; fi\nif ! id statusd >/dev/null 2>&1; then sudo /usr/sbin/useradd -r -g statusd -d /nonexistent -s /sbin/nologin statusd; fi\nif ! id status-reader >/dev/null 2>&1; then sudo /usr/sbin/useradd -m -s /bin/bash status-reader; fi\nsudo /usr/sbin/usermod -a -G status-readers status-reader\nif ! id outsider >/dev/null 2>&1; then sudo /usr/sbin/useradd -m -s /bin/bash outsider; fi\nprintf '%s\\n' '--- resulting identities ---'\nid statusd\nid status-reader\nid outsider\ngetent group status-readers",
+      "stdout": "--- resulting identities ---\nuid=997(statusd) gid=995(statusd) groups=995(statusd)\nuid=1001(status-reader) gid=1002(status-reader) groups=1002(status-reader),1001(status-readers)\nuid=1002(outsider) gid=1003(outsider) groups=1003(outsider)\nstatus-readers:x:1001:status-reader\n"
+    },
+    {
+      "command_id": "cmd-0814200138744eae",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:40:39.500776+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 748,
+      "command": "set -eu\nBASE=/srv/legacy2/unix-socket-access-boundary\nBEFORE=$(sha256sum \"$BASE/status.txt\" | awk '{print $1}')\nsudo tee \"$BASE/server.py\" >/dev/null <<'PYEOF'\n#!/usr/bin/python\nfrom __future__ import print_function\nimport grp\nimport os\nimport socket\n\nbase = os.path.dirname(os.path.abspath(__file__))\npath = os.path.join(base, 'run/status.sock')\nstatus_path = os.path.join(base, 'status.txt')\n\nif os.path.lexists(path):\n    os.unlink(path)\n\nserver = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\nserver.bind(path)\nos.chown(path, -1, grp.getgrnam('status-readers').gr_gid)\nos.chmod(path, 0o660)\nserver.listen(5)\n\nwhile True:\n    client, unused_address = server.accept()\n    try:\n        request = b''\n        while b'\\n' not in request and len(request) <= 4096:\n            chunk = client.recv(1024)\n            if not chunk:\n                break\n            request += chunk\n        if request == b'STATUS\\n':\n            with open(status_path, 'rb') as status_file:\n                client.sendall(status_file.read())\n        else:\n            client.sendall(b'ERROR\\n')\n    finally:\n        client.close()\nPYEOF\nsudo chown root:root \"$BASE/server.py\"\nsudo chmod 0755 \"$BASE/server.py\"\nsudo chown root:statusd \"$BASE/status.txt\"\nsudo chmod 0640 \"$BASE/status.txt\"\nsudo chown statusd:status-readers \"$BASE/run\"\nsudo chmod 0750 \"$BASE/run\"\nAFTER=$(sha256sum \"$BASE/status.txt\" | awk '{print $1}')\n[ \"$BEFORE\" = \"$AFTER\" ]\nprintf 'status_sha256_before=%s\\nstatus_sha256_after=%s\\n' \"$BEFORE\" \"$AFTER\"\nstat -c '%A %U:%G %n' \"$BASE/server.py\" \"$BASE/status.txt\" \"$BASE/run\"",
+      "stderr": "sha256sum: /srv/legacy2/unix-socket-access-boundary/status.txt: Permission denied\n"
+    },
+    {
+      "command_id": "cmd-bfdd4a0834424b32",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:40:48.646919+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 2827,
+      "command": "set -eu\nBASE=/srv/legacy2/unix-socket-access-boundary\nprintf 'status_sha256='; sudo sha256sum \"$BASE/status.txt\" | awk '{print $1}'\nstat -c '%A %U:%G %n' \"$BASE/server.py\" \"$BASE/status.txt\" \"$BASE/run\"\n/usr/bin/python -m py_compile \"$BASE/server.py\"\nsudo tee /etc/systemd/system/statusd.service >/dev/null <<'UNITEOF'\n[Unit]\nDescription=Local status service with Unix socket access boundary\nAfter=local-fs.target\n\n[Service]\nType=simple\nUser=statusd\nGroup=statusd\nSupplementaryGroups=status-readers\nWorkingDirectory=/srv/legacy2/unix-socket-access-boundary\nExecStart=/usr/bin/python /srv/legacy2/unix-socket-access-boundary/server.py\nRestart=on-failure\nRestartSec=2\nPrivateTmp=true\nNoNewPrivileges=true\n\n[Install]\nWantedBy=multi-user.target\nUNITEOF\nsudo systemctl daemon-reload\nsudo systemctl enable --now statusd.service\nsleep 1\nsystemctl is-enabled statusd.service\nsystemctl is-active statusd.service\nsystemctl --no-pager --full status statusd.service | sed -n '1,16p'\nstat -Lc '%F %A %a %U:%G %n' \"$BASE/run/status.sock\"\nss -xlpn | grep \"$BASE/run/status.sock\"",
+      "stdout": "status_sha256=5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b\n-rwxr-xr-x root:root /srv/legacy2/unix-socket-access-boundary/server.py\n-rw-r----- root:statusd /srv/legacy2/unix-socket-access-boundary/status.txt\ndrwxr-x--- statusd:status-readers /srv/legacy2/unix-socket-access-boundary/run\n",
+      "stderr": "Traceback (most recent call last):\n  File \"/usr/lib64/python2.7/runpy.py\", line 162, in _run_module_as_main\n    \"__main__\", fname, loader, pkg_name)\n  File \"/usr/lib64/python2.7/runpy.py\", line 72, in _run_code\n    exec code in run_globals\n  File \"/usr/lib64/python2.7/py_compile.py\", line 170, in <module>\n    sys.exit(main())\n  File \"/usr/lib64/python2.7/py_compile.py\", line 162, in main\n    compile(filename, doraise=True)\n  File \"/usr/lib64/python2.7/py_compile.py\", line 123, in compile\n    with open(cfile, 'wb') as fc:\nIOError: [Errno 13] Permission denied: '/srv/legacy2/unix-socket-access-boundary/server.pyc'\n"
+    },
+    {
+      "command_id": "cmd-5305fee186594dff",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:40:59.200954+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 3163,
+      "command": "set -eu\nBASE=/srv/legacy2/unix-socket-access-boundary\n/usr/bin/python -c \"compile(open('$BASE/server.py').read(), '$BASE/server.py', 'exec')\"\nsudo tee /etc/systemd/system/statusd.service >/dev/null <<'UNITEOF'\n[Unit]\nDescription=Local status service with Unix socket access boundary\nAfter=local-fs.target\n\n[Service]\nType=simple\nUser=statusd\nGroup=statusd\nSupplementaryGroups=status-readers\nWorkingDirectory=/srv/legacy2/unix-socket-access-boundary\nExecStart=/usr/bin/python /srv/legacy2/unix-socket-access-boundary/server.py\nRestart=on-failure\nRestartSec=2\nPrivateTmp=true\nNoNewPrivileges=true\n\n[Install]\nWantedBy=multi-user.target\nUNITEOF\nsudo systemctl daemon-reload\nsudo systemctl enable --now statusd.service\nsleep 1\nsystemctl is-enabled statusd.service\nsystemctl is-active statusd.service\nsystemctl --no-pager --full status statusd.service | sed -n '1,16p'\nstat -Lc '%F %A %a %U:%G %n' \"$BASE/run/status.sock\"\nss -xlpn | grep \"$BASE/run/status.sock\"",
+      "stdout": "enabled\nactive\n\u25cf statusd.service - Local status service with Unix socket access boundary\n   Loaded: loaded (/etc/systemd/system/statusd.service; enabled; vendor preset: disabled)\n   Active: active (running) since Sun 2026-10-04 13:40:56 EDT; 1s ago\n Main PID: 2377 (python)\n   CGroup: /system.slice/statusd.service\n           \u2514\u25002377 /usr/bin/python /srv/legacy2/unix-socket-access-boundary/server.py\n",
+      "stderr": "Created symlink from /etc/systemd/system/multi-user.target.wants/statusd.service to /etc/systemd/system/statusd.service.\nstat: cannot stat \u2018/srv/legacy2/unix-socket-access-boundary/run/status.sock\u2019: Permission denied\n"
+    },
+    {
+      "command_id": "cmd-5eb3c9b2403f438d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:41:17.509225+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2461,
+      "command": "set -u\nBASE=/srv/legacy2/unix-socket-access-boundary\nSOCK=$BASE/run/status.sock\nprintf '%s\\n' '--- service/socket ---'\nsystemctl is-enabled statusd.service\nsystemctl is-active statusd.service\nsudo stat -Lc '%F %A %a %U:%G %n' \"$SOCK\"\nsudo ss -xlpn | grep \"$SOCK\"\nprintf '%s\\n' '--- expected document ---'\nprintf 'document_sha256='; sudo sha256sum \"$BASE/status.txt\" | awk '{print $1}'\nprintf 'document_bytes='; sudo stat -c '%s' \"$BASE/status.txt\"\nprintf '%s\\n' '--- statusd STATUS response ---'\nprintf 'response_sha256='; sudo -u statusd /usr/bin/python -c \"import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect('$SOCK'); s.sendall(b'STATUS\\\\n'); data=s.recv(4096); s.close(); sys.stdout.write(data)\" | sha256sum | awk '{print $1}'\nprintf '%s\\n' '--- status-reader STATUS response ---'\nprintf 'response_sha256='; sudo -u status-reader /usr/bin/python -c \"import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect('$SOCK'); s.sendall(b'STATUS\\\\n'); data=s.recv(4096); s.close(); sys.stdout.write(data)\" | sha256sum | awk '{print $1}'\nprintf '%s\\n' '--- invalid request response ---'\nprintf 'invalid_response='; sudo -u status-reader /usr/bin/python -c \"import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect('$SOCK'); s.sendall(b'NOPE\\\\n'); data=s.recv(4096); s.close(); sys.stdout.write(data)\"\nprintf '%s\\n' '--- outsider denial ---'\nsudo -u outsider /usr/bin/python -c \"import socket; s=socket.socket(socket.AF_UNIX); s.connect('$SOCK')\" >/tmp/outsider-connect.out 2>/tmp/outsider-connect.err\nOUTSIDER_RC=$?\nprintf 'outsider_connect_rc=%s\\n' \"$OUTSIDER_RC\"\nsed -n '1,3p' /tmp/outsider-connect.err\nif sudo -u outsider test -r \"$BASE/status.txt\"; then echo 'outsider_document_readable=yes'; else echo 'outsider_document_readable=no'; fi\nif [ \"$OUTSIDER_RC\" -eq 0 ]; then exit 1; fi",
+      "stdout": "--- service/socket ---\nenabled\nactive\nsocket srw-rw---- 660 statusd:status-readers /srv/legacy2/unix-socket-access-boundary/run/status.sock\nu_str  LISTEN     0      5      /srv/legacy2/unix-socket-access-boundary/run/status.sock 27233                 * 0                   users:((\"python\",pid=2377,fd=3))\n--- expected document ---\ndocument_sha256=5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b\ndocument_bytes=24\n--- statusd STATUS response ---\nresponse_sha256=5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b\n--- status-reader STATUS response ---\nresponse_sha256=5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b\n--- invalid request response ---\ninvalid_response=ERROR\n--- outsider denial ---\noutsider_connect_rc=1\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/lib64/python2.7/socket.py\", line 224, in meth\noutsider_document_readable=no\n"
+    },
+    {
+      "command_id": "cmd-e552e2d75a1e479e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:41:29.690697+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1777,
+      "command": "set -eu\nBASE=/srv/legacy2/unix-socket-access-boundary\nSOCK=$BASE/run/status.sock\nprintf 'pre_restart_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'pre_restart_service='; systemctl is-active statusd.service\nprintf 'pre_restart_document_sha256='; sudo sha256sum \"$BASE/status.txt\" | awk '{print $1}'\nprintf 'pre_restart_reader_response_sha256='; sudo -u status-reader /usr/bin/python -c \"import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect('$SOCK'); s.sendall(b'STATUS\\\\n'); data=s.recv(4096); s.close(); sys.stdout.write(data)\" | sha256sum | awk '{print $1}'\nsudo /bin/sh -c '(sleep 3; /sbin/shutdown -r now) >/var/tmp/statusd-reboot.log 2>&1 &'\necho 'restart_acknowledgement=scheduled_safe_reboot_in_3_seconds'",
+      "stdout": "pre_restart_boot_id=b35fad86-4e61-46bf-bbd2-0dadcedb685d\npre_restart_service=active\npre_restart_document_sha256=5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b\npre_restart_reader_response_sha256=5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b\nrestart_acknowledgement=scheduled_safe_reboot_in_3_seconds\n"
+    },
+    {
+      "command_id": "cmd-57535ee5801b4b04",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:41:37.745181+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5402,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime",
+      "stderr": "ssh: connect to host 10.100.83.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-6a73b7381c3b4e60",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:41:45.119733+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5397,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime",
+      "stderr": "ssh: connect to host 10.100.83.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-eefd2d3ebe9847f9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:41:48.927658+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1601,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime",
+      "stdout": "boot_id=3d0afbf4-7f98-42c2-8c82-a61aea582ecd\n 13:41:47 up 0 min,  0 users,  load average: 0.00, 0.00, 0.00\n"
+    },
+    {
+      "command_id": "cmd-71b81ae158d245f9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:42:10.843511+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2687,
+      "command": "set -u\nBASE=/srv/legacy2/unix-socket-access-boundary\nSOCK=$BASE/run/status.sock\nprintf '%s\\n' '--- post-restart identity/platform ---'\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'os='; cat /etc/redhat-release\nprintf 'kernel='; uname -r\nid statusd\nid status-reader\nid outsider\ngetent group status-readers\nprintf '%s\\n' '--- post-restart service/socket/data ---'\nprintf 'service_enabled='; systemctl is-enabled statusd.service\nprintf 'service_active='; systemctl is-active statusd.service\nsystemctl --no-pager --full status statusd.service | sed -n '1,9p'\nsudo stat -Lc '%F %A %a %U:%G %n' \"$SOCK\"\nstat -c '%A %a %U:%G %n' \"$BASE/status.txt\" \"$BASE/run\"\nprintf 'document_sha256='; sudo sha256sum \"$BASE/status.txt\" | awk '{print $1}'\nprintf 'document_bytes='; sudo stat -c '%s' \"$BASE/status.txt\"\nprintf '%s\\n' '--- post-restart protocol ---'\nsudo -u statusd /usr/bin/python -c \"import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect('$SOCK'); s.sendall(b'STATUS\\\\n'); data=s.recv(4096); s.close(); sys.stdout.write(data)\" >/tmp/statusd-response\nsudo -u status-reader /usr/bin/python -c \"import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect('$SOCK'); s.sendall(b'STATUS\\\\n'); data=s.recv(4096); s.close(); sys.stdout.write(data)\" >/tmp/status-reader-response\nprintf 'statusd_response_sha256='; sha256sum /tmp/statusd-response | awk '{print $1}'\nprintf 'reader_response_sha256='; sha256sum /tmp/status-reader-response | awk '{print $1}'\nif sudo cmp -s \"$BASE/status.txt\" /tmp/statusd-response; then echo 'statusd_exact_document_match=yes'; else echo 'statusd_exact_document_match=no'; fi\nif sudo cmp -s \"$BASE/status.txt\" /tmp/status-reader-response; then echo 'reader_exact_document_match=yes'; else echo 'reader_exact_document_match=no'; fi\nprintf 'invalid_response='; sudo -u status-reader /usr/bin/python -c \"import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect('$SOCK'); s.sendall(b'STATUS\\\\nEXTRA'); data=s.recv(4096); s.close(); sys.stdout.write(data)\"\nprintf '%s\\n' '--- post-restart outsider denial ---'\nsudo -u outsider /usr/bin/python -c \"import socket; s=socket.socket(socket.AF_UNIX); s.connect('$SOCK')\" >/tmp/outsider-post.out 2>/tmp/outsider-post.err\nOUTSIDER_RC=$?\nprintf 'outsider_connect_rc=%s\\n' \"$OUTSIDER_RC\"\ntail -n 1 /tmp/outsider-post.err\nif sudo -u outsider test -r \"$BASE/status.txt\"; then echo 'outsider_document_readable=yes'; else echo 'outsider_document_readable=no'; fi\nif [ \"$OUTSIDER_RC\" -eq 0 ]; then exit 1; fi\nsystemctl is-active --quiet statusd.service",
+      "stdout": "--- post-restart identity/platform ---\nboot_id=3d0afbf4-7f98-42c2-8c82-a61aea582ecd\nos=Red Hat Enterprise Linux Server release 7.9 (Maipo)\nkernel=3.10.0-1160.el7.x86_64\nuid=997(statusd) gid=995(statusd) groups=995(statusd)\nuid=1001(status-reader) gid=1002(status-reader) groups=1002(status-reader),1001(status-readers)\nuid=1002(outsider) gid=1003(outsider) groups=1003(outsider)\nstatus-readers:x:1001:status-reader\n--- post-restart service/socket/data ---\nservice_enabled=enabled\nservice_active=active\n\u25cf statusd.service - Local status service with Unix socket access boundary\n   Loaded: loaded (/etc/systemd/system/statusd.service; enabled; vendor preset: disabled)\n   Active: active (running) since Sun 2026-10-04 13:41:44 EDT; 24s ago\n Main PID: 520 (python)\n   CGroup: /system.slice/statusd.service\n           \u2514\u2500520 /usr/bin/python /srv/legacy2/unix-socket-access-boundary/server.py\nsocket srw-rw---- 660 statusd:status-readers /srv/legacy2/unix-socket-access-boundary/run/status.sock\n-rw-r----- 640 root:statusd /srv/legacy2/unix-socket-access-boundary/status.txt\ndrwxr-x--- 750 statusd:status-readers /srv/legacy2/unix-socket-access-boundary/run\ndocument_sha256=5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b\ndocument_bytes=24\n--- post-restart protocol ---\nstatusd_response_sha256=5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b\nreader_response_sha256=5b47f32d92c3ae9661d765212aa884f1610132293932355cfac4dc28b94f305b\nstatusd_exact_document_match=yes\nreader_exact_document_match=yes\ninvalid_response=ERROR\n--- post-restart outsider denial ---\noutsider_connect_rc=1\nsocket.error: [Errno 13] Permission denied\noutsider_document_readable=no\n"
+    }
+  ]
+}

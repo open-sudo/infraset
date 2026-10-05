@@ -1,0 +1,83 @@
+{
+  "status": "completed",
+  "summary": "Built the required WireGuard gateway topology: node1 (VyOS) and node2 (CentOS Stream 10) were discovered to share a private, previously-unconfigured second NIC segment (node1 eth1 / node2 enp8s0), which was statically addressed as 10.50.50.0/24. node3 has no interface on that segment and sits only on the shared/default 10.100.56.0/24 network with node1. A Python http.server app was deployed on node2 as a systemd service, bound exclusively to its private IP 10.50.50.2:8080, with firewalld restricted via a rich rule to only accept port 8080 from the WireGuard subnet 10.99.0.0/24 \u2014 so it is unreachable from node2's shared-network IP or directly from node3. A WireGuard tunnel was built between node1 (server, wg0 10.99.0.1/24, UDP 51820, VyOS-native config via `set interfaces wireguard`) and node3 (client, wg0 10.99.0.2/24, systemd-managed wg-quick@wg0, AllowedIPs scoped to 10.99.0.1/32 and 10.50.50.2/32 so only traffic to the app is tunneled). node1 forwards/routes between wg0 and eth1 (IP forwarding confirmed on), and node2 has a static return route to 10.99.0.0/24 via node1's private IP. End-to-end verification: node3 curl to node2's private IP directly (via shared net or no route) fails with No route to host / times out; curl over the tunnel returns the app's 200 OK payload. All three nodes were then restarted one at a time (VyOS/CentOS native `reboot`, backgrounded so the ack returned before disconnection), boot_id changed on each, and post-restart the private IPs, WireGuard interfaces/config, systemd services, firewall rich rule, and full app path through the tunnel were all confirmed recovered without manual intervention (services enabled at boot).",
+  "actions_performed": [
+    "Inspected network topology on all 3 nodes, found node1 eth1 and node2 enp8s0 as unconfigured private-segment NICs",
+    "Assigned static IPs 10.50.50.1/24 (node1 eth1) and 10.50.50.2/24 (node2 enp8s0) and verified L2/L3 connectivity",
+    "Confirmed node3 has no route to 10.50.50.0/24 (baseline isolation)",
+    "Deployed app8080.service (python3 http.server) on node2 bound to 10.50.50.2:8080, enabled at boot",
+    "Generated WireGuard keypairs on node1 and node3",
+    "Configured VyOS wg0 on node1 (10.99.0.1/24, UDP 51820, peer node3) via configure/commit/save",
+    "Installed wireguard-tools on node3 (CentOS), configured wg0 client (10.99.0.2/24) via wg-quick, enabled at boot",
+    "Verified WireGuard handshake between node1 and node3",
+    "Added static return route on node2 (10.99.0.0/24 via node1's private IP) persisted via nmcli",
+    "Diagnosed and fixed a firewalld REJECT on node2 blocking port 8080 by adding a rich rule scoped to the WireGuard subnet",
+    "Verified end-to-end: node3 blocked from reaching node2 directly, but reaches the app successfully over the WireGuard tunnel",
+    "Captured pre-restart baseline (boot_id, service/tunnel state) on all 3 nodes",
+    "Restarted node1, node2, node3 one at a time via native reboot, polled until reachable, confirmed changed boot_id and full recovery of network config, WireGuard tunnel, systemd services, firewall rule, and app reachability after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "App served from node2 on TCP 8080",
+      "command_ids": [
+        "cmd-de4391a368434562",
+        "cmd-4c45ada7d13d4711"
+      ],
+      "summary": "systemd service app8080.service active, python3 listening on 10.50.50.2:8080 only"
+    },
+    {
+      "requirement": "node3 is outside the private network shared by node1/node2 and cannot reach the app directly",
+      "command_ids": [
+        "cmd-1ea59829f0ab4d22",
+        "cmd-a2196f8005ec4566"
+      ],
+      "summary": "node3 has no route to 10.50.50.0/24 and cannot reach node2's shared-network IP on 8080 (no listener there); both attempts fail with No route to host"
+    },
+    {
+      "requirement": "WireGuard tunnel terminated on node1 between node1 and node3",
+      "command_ids": [
+        "cmd-5fd278ead71f4b57",
+        "cmd-622522b45bd746a7"
+      ],
+      "summary": "VyOS wg0 configured and committed on node1 (10.99.0.1/24); node3 wg-quick@wg0 client established handshake with node1"
+    },
+    {
+      "requirement": "node3 reaches node2's app only through the tunnel",
+      "command_ids": [
+        "cmd-93859b5828f74cfb",
+        "cmd-7e21cd83c5444edd"
+      ],
+      "summary": "After scoping node2 firewalld to the WireGuard subnet, node3 curl over the tunnel to 10.50.50.2:8080 returns HTTP 200 with app payload"
+    },
+    {
+      "requirement": "node1 restart with changed boot identity and recovered state",
+      "command_ids": [
+        "cmd-3adc6cef1d33445f",
+        "cmd-dce49f9fedd04022",
+        "cmd-bac876d605564c3d",
+        "cmd-d15f99f0b30d4db5",
+        "cmd-1a76cd3a1a7b4910"
+      ],
+      "summary": "boot_id changed from 4098161f... to 5cd424be...; post-reboot eth1/wg0 addresses, wg peer config, and IP forwarding all recovered; end-to-end curl via tunnel succeeded again"
+    },
+    {
+      "requirement": "node2 restart with changed boot identity and recovered state",
+      "command_ids": [
+        "cmd-22e91191dbf1489f",
+        "cmd-82a2099489c443b8",
+        "cmd-6748ffd3ea8a48a0",
+        "cmd-ae4452a782994812"
+      ],
+      "summary": "boot_id changed from be303eb3... to 809cf3b0...; app8080.service active, private IP, static route, and firewalld rich rule all recovered; tunnel path verified working from node3"
+    },
+    {
+      "requirement": "node3 restart with changed boot identity and recovered state",
+      "command_ids": [
+        "cmd-24ee47ddabb544f4",
+        "cmd-cdf9ae951a0d4d69",
+        "cmd-8d6fa679136a4192"
+      ],
+      "summary": "boot_id changed from 21de1f79... to ca04a675...; wg-quick@wg0 active with fresh handshake to node1, full app path via tunnel confirmed working"
+    }
+  ]
+}

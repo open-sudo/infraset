@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Run a containerized web application on node1 as the unprivileged appsvc account, serving on port 8080",
+      "status": "satisfied",
+      "summary": "appsvc (uid 999) system user created; a rootless runc OCI bundle (BusyBox httpd, host network namespace) was built and run as appsvc; runc list shows OWNER=appsvc; curl against both NODE_IP:8080 and loopback:8080 returned the expected HTML content while the container ran under the appsvc UID.",
+      "evidence_ids": [
+        "cmd-38ca83cfa7034454",
+        "cmd-426219b9a0f84ffd",
+        "cmd-3e58435f492044e6",
+        "cmd-50ae4f5a301e48a0",
+        "cmd-2fc72af52e274665"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Application starts at boot while the appsvc account has no active login session",
+      "status": "satisfied",
+      "summary": "A webapp.service was created under appsvc's systemd --user instance, enabled, and started; loginctl enable-linger appsvc was set. Baseline evidence showed appsvc had State=lingering, Linger=yes, and no session under loginctl list-sessions while webapp.service was active. This was then directly validated across an actual reboot: post-restart evidence shows a new boot_id, user@999.service and webapp.service both active, the runc container running under appsvc with a fresh PID, no active appsvc login session, and successful HTTP 8080 response \u2014 demonstrating the boot-without-login-session behavior rather than only its static configuration.",
+      "evidence_ids": [
+        "cmd-6199c3632f904d27",
+        "cmd-6d6437a814c64b1e",
+        "cmd-b1bf1e6ad7184222",
+        "cmd-1f887b196cb24cf7",
+        "cmd-7a89a3f1285d4af0"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (node1)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id, service active state, HTTP 200, and linger state (cmd-1f887b196cb24cf7). A backgrounded 'shutdown -r now' returned an acknowledgement before the SSH session closed (cmd-9c125579c8ec48f1). The node was polled until reachable again, with one refused attempt during the reboot window followed by a successful one (cmd-0f1ca2fb7f0b4d91, cmd-981efb5bbde6457e). Post-restart evidence shows a different boot_id, matching uptime, and recovered service/container/HTTP state (cmd-7a89a3f1285d4af0). This is corroborated by the fixed lifecycle snapshots, which independently show boot-identity changing from 8336c3a1... (before_prepare) to 3e00038f... (after_executor), consistent with the executor's own before/after boot IDs.",
+      "evidence_ids": [
+        "cmd-1f887b196cb24cf7",
+        "cmd-9c125579c8ec48f1",
+        "cmd-0f1ca2fb7f0b4d91",
+        "cmd-981efb5bbde6457e",
+        "cmd-7a89a3f1285d4af0",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task were satisfied with direct evidence: a rootless runc/BusyBox container runs on port 8080 under the unprivileged appsvc user, it is wired to start at boot via a systemd --user unit plus loginctl linger with no active login session, and the mandatory node-restart evidence protocol on node1 was completed end-to-end (pre-restart baseline, reboot acknowledgement, polling, and post-restart recovery with a changed boot identity), cross-checked against the fixed lifecycle boot-identity snapshots. Hygiene is good: the only broader mutation (installing docker.io to obtain runc, since no standalone runc/podman package existed for this old i386 distro) was a justified prerequisite, and the resulting unused rootful docker daemon was disabled; a couple of proxy-timed-out runc-run attempts were investigated and properly cleaned up before final systemd configuration.",
+  "limitations": [
+    "Only node1 is in scope as a managed node, so the restart protocol and outcome verification apply to a single node with no other nodes to cross-check.",
+    "Two executor commands (cmd-89211b48ff40438c, cmd-5bde86f94ed348be) returned proxy-timeout errors rather than clean success/failure signals; their effects had to be inferred from subsequent commands (cmd-50ae4f5a301e48a0, cmd-0ab5f432c9c94b4c) rather than being directly confirmed by their own output.",
+    "No sustained-load or multi-cycle boot test was captured beyond a single reboot, so long-term persistence across repeated reboots is not directly demonstrated, though the single observed cycle is fully coherent."
+  ],
+  "command_stats": {
+    "total": 24,
+    "successful": 19,
+    "failed": 3,
+    "indeterminate": 2,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Executor commands were reviewed chronologically. Diagnostic/discovery commands (os/kernel/cgroup/subuid checks, podman/snap/static-tarball searches, unshare tests) were read-only and appropriately exploratory given the constrained i686 Ubuntu 16.04 target with no rootless Docker/Podman available. Installing docker.io (cmd-9ab5ec1251d746bf) was the only viable way to obtain a working runc binary on this platform after other options were exhausted; it pulled in extra packages (dockerd, containerd, ubuntu-fan, bridge-utils, cgroupfs-mount) beyond the strictly needed runc/busybox, but the unused rootful docker.service was promptly disabled (cmd-38ca83cfa7034454), limiting residual footprint and attack surface. Two manual runc-run attempts hit a 120s proxy timeout (cmd-89211b48ff40438c, cmd-5bde86f94ed348be); the first actually succeeded in starting a background container (confirmed via cmd-50ae4f5a301e48a0), which was verified working and then deliberately killed and deleted (cmd-0ab5f432c9c94b4c) before the systemd --user unit was created, leaving no orphaned container. No unreverted unnecessary mutations, failed services, or unsafe exposures were found in the after-executor lifecycle snapshot (no failed-services, no unexpected listening sockets beyond intended 8080, dpkg health unchanged).",
+    "evidence_ids": [
+      "cmd-9ab5ec1251d746bf",
+      "cmd-38ca83cfa7034454",
+      "cmd-89211b48ff40438c",
+      "cmd-5bde86f94ed348be",
+      "cmd-50ae4f5a301e48a0",
+      "cmd-0ab5f432c9c94b4c",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

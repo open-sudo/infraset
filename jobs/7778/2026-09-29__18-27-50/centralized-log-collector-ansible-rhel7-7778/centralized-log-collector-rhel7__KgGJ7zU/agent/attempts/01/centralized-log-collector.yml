@@ -1,0 +1,111 @@
+---
+# RHEL7 managed nodes only ship Python 2.7 with no package repos available,
+# while this control node's ansible-core requires Python 3 on managed hosts.
+# All tasks therefore use `raw`, which runs over SSH without any Python
+# module framework on the target.
+
+- name: Configure inventory app log forwarding on node2
+  hosts: log_forwarder
+  gather_facts: false
+  vars:
+    collector_ip: "10.100.142.10"
+    collector_port: 514
+
+  tasks:
+    - name: Deploy the inventory application script
+      raw: |
+        cat > /usr/local/bin/inventory-app.sh <<'EOF'
+        #!/bin/sh
+        # Simulated inventory application: emits periodic stock events via syslog.
+        while :; do
+          logger -t inventory -p local6.info "inventory-update sku=$((RANDOM % 900 + 100)) qty=$((RANDOM % 50)) host=$(hostname -s)"
+          sleep 10
+        done
+        EOF
+        chmod 0755 /usr/local/bin/inventory-app.sh
+
+    - name: Install the inventory application systemd unit
+      raw: |
+        cat > /etc/systemd/system/inventory.service <<'EOF'
+        [Unit]
+        Description=Inventory application
+        After=network-online.target rsyslog.service
+        Wants=network-online.target
+
+        [Service]
+        Type=simple
+        ExecStart=/bin/sh /usr/local/bin/inventory-app.sh
+        Restart=always
+        RestartSec=2
+
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+
+    - name: Reload systemd units
+      raw: systemctl daemon-reload
+
+    - name: Enable and start the inventory application
+      raw: systemctl enable --now inventory.service
+
+    - name: Configure rsyslog to forward inventory application logs to the collector
+      raw: |
+        cat > /etc/rsyslog.d/60-inventory-forward.conf <<'EOF'
+        # Forward the inventory application log messages to the centralized
+        # collector on node1. A disk-assisted queue buffers messages locally
+        # if node1 or the network link is unavailable, so log delivery
+        # survives restarts on either side without losing messages.
+        if $programname == 'inventory' then {
+            action(
+                type="omfwd"
+                target="{{ collector_ip }}"
+                port="{{ collector_port }}"
+                protocol="tcp"
+                action.resumeRetryCount="-1"
+                queue.type="LinkedList"
+                queue.filename="inventory_fwd"
+                queue.maxdiskspace="104857600"
+                queue.saveonshutdown="on"
+            )
+            stop
+        }
+        EOF
+
+    - name: Enable rsyslog at boot
+      raw: systemctl enable rsyslog
+
+    - name: Restart rsyslog to apply the forwarding configuration
+      raw: systemctl restart rsyslog
+
+- name: Configure centralized log collector on node1
+  hosts: log_collector
+  gather_facts: false
+  vars:
+    listen_port: 514
+
+  tasks:
+    - name: Create the inventory log directory
+      raw: mkdir -p /var/log/inventory && chmod 0750 /var/log/inventory
+
+    - name: Configure rsyslog to receive and store node2 inventory logs
+      raw: |
+        cat > /etc/rsyslog.d/10-inventory-listener.conf <<'EOF'
+        # Centralized log collector: accept syslog over TCP and persist
+        # node2 inventory application messages to a dedicated file.
+        module(load="imtcp")
+        input(type="imtcp" port="{{ listen_port }}")
+
+        if $programname == 'inventory' and $fromhost-ip == '10.100.142.11' then {
+            action(type="omfile" file="/var/log/inventory/node2.log")
+            stop
+        }
+        EOF
+
+    - name: Open the syslog TCP port in firewalld
+      raw: firewall-cmd --permanent --add-port={{ listen_port }}/tcp && firewall-cmd --reload
+
+    - name: Enable rsyslog at boot
+      raw: systemctl enable rsyslog
+
+    - name: Restart rsyslog to apply the listener configuration
+      raw: systemctl restart rsyslog

@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "inventory-worker is created on node1 as a managed (OpenRC) service running a long-running background worker",
+      "status": "satisfied",
+      "summary": "An /etc/init.d/inventory-worker OpenRC service using the supervise-daemon supervisor was created, enabled in the default runlevel (rc-update add), and started successfully (cmd-07f59739a7e1451a). Live process inspection shows supervise-daemon, bwrap, and the worker shell all running, with state.json/worker.log incrementing every ~5s across multiple checks (cmd-4565a1a51a7845a2, cmd-746ef0a7bbf84321), confirming a genuine long-running background process rather than a one-shot script. An earlier attempt using start-stop-daemon/command_background crashed (cmd-fb3f7f073f95420b) and was corrected in the same session before final verification.",
+      "evidence_ids": [
+        "cmd-0e11124c21a14366",
+        "cmd-07f59739a7e1451a",
+        "cmd-4565a1a51a7845a2",
+        "cmd-746ef0a7bbf84321",
+        "cmd-fb3f7f073f95420b"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Worker writes only inside /var/lib/inventory",
+      "status": "satisfied",
+      "summary": "Direct tests inside the exact sandbox invocation show writes to /root fail with Permission denied and writes to /etc fail with Read-only file system, while writes to /var/lib/inventory succeed (cmd-b3e32e430f184b25). The live service process's /proc/<pid>/mounts confirms / is mounted read-only and only /var/lib/inventory is mounted read-write (cmd-746ef0a7bbf84321, cmd-7f88c20e039f459e), both pre- and post-restart. Minor caveat: the bwrap invocation also mounts a private --tmpfs /tmp inside the sandbox's own mount namespace, which is writable but ephemeral/non-persistent and not part of host storage, so it does not undermine the confinement intent.",
+      "evidence_ids": [
+        "cmd-b3e32e430f184b25",
+        "cmd-746ef0a7bbf84321",
+        "cmd-7f88c20e039f459e"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Worker gains no new privileges",
+      "status": "satisfied",
+      "summary": "Both the manual sandbox test and the live running service process (pre- and post-restart) show NoNewPrivs:1 in /proc/<pid>/status, and the process runs as non-root uid/gid 103/104 (inventory), never root, enforced via setpriv --no-new-privs prior to exec'ing bwrap.",
+      "evidence_ids": [
+        "cmd-b3e32e430f184b25",
+        "cmd-746ef0a7bbf84321",
+        "cmd-7f88c20e039f459e"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1 with healthy pre-restart baseline, restart acknowledgement, changed boot identity, and recovered service/data/confinement state",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 9eff3fed... with the service started and data being written (cmd-5c30cca428c6485f). A native reboot was issued and acknowledged before disconnect (cmd-b93eb943d66d4743), followed by polling through connection resets until node1 returned with a new boot_id faa097b3... and 44s uptime (cmd-1f226a8b02234ea4). Post-restart checks confirm the service auto-started, is producing new incrementing state.json/worker.log entries, and the worker process again shows non-root uid/gid, NoNewPrivs:1, and the same read-only-root/writable-inventory-dir confinement (cmd-c372c07b8a9f44e7, cmd-7f88c20e039f459e). This is independently corroborated by the fixed lifecycle boot-identity observations, which show the same 9eff3fed...\u2192faa097b3... transition.",
+      "evidence_ids": [
+        "cmd-5c30cca428c6485f",
+        "cmd-b93eb943d66d4743",
+        "cmd-1f226a8b02234ea4",
+        "cmd-c372c07b8a9f44e7",
+        "cmd-7f88c20e039f459e",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are satisfied with direct, coherent evidence: inventory-worker runs as an OpenRC-managed, supervise-daemon-supervised long-running process; it is confined via bwrap+setpriv such that only /var/lib/inventory is writable (root read-only) and NoNewPrivs is set, verified via both manual tests and live /proc inspection before and after a real reboot. The mandatory node-restart evidence protocol was fully and consistently demonstrated: healthy pre-restart baseline, acknowledged reboot, a genuinely changed boot identity, and full post-restart recovery of the service, its data, and its confinement properties, cross-checked against the fixed lifecycle boot-identity snapshots. Operational hygiene is good, with only a trivial leftover /tmp/reboot.log and appropriately bounded/cleaned-up troubleshooting steps.",
+  "limitations": [
+    "A small tmpfs is mounted at /tmp inside the sandbox's private mount namespace, which is technically writable but ephemeral and not host-persistent; this is a reasonable interpretation of 'writes only inside /var/lib/inventory' but a stricter literal reading could flag it.",
+    "/tmp/reboot.log left on node1 from the reboot dispatch redirect was not cleaned up, though it is low-risk and non-sensitive.",
+    "No systemd-based failed-services check was available on this Alpine/OpenRC node, so that portion of the fixed lifecycle protocol is marked unsupported rather than observed."
+  ],
+  "command_stats": {
+    "total": 39,
+    "successful": 22,
+    "failed": 17,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.88,
+    "summary": "Executor behavior was largely clean and purposeful. Troubleshooting bwrap invocations (cmd-b6b859dd37c5456c, cmd-d9fd7c18f1f44f37, cmd-fbe1f4494f0c4a4b, cmd-fd705a69a1424331, cmd-3b51e40ab4c646c9) were bounded, mostly read-only diagnostic attempts to find a working sandbox invocation; the one that wrote a test file (cmd-ba16033d82b24577, t1) and the follow-up confinement test (cmd-b3e32e430f184b25, ok_write) were both fully cleaned up before final state.json/worker.log were established (cmd-0e11124c21a14366). The initial start-stop-daemon-based service definition crashed and was promptly replaced with a working supervise-daemon definition (cmd-07f59739a7e1451a) \u2014 a corrective action, not unnecessary churn. One minor residue: the reboot was dispatched via `nohup reboot >/tmp/reboot.log 2>&1 &` (cmd-b93eb943d66d4743), leaving /tmp/reboot.log present in the after-executor temporary-files snapshot; this is low-risk, non-sensitive residue that was not cleaned up.",
+    "evidence_ids": [
+      "cmd-ba16033d82b24577",
+      "cmd-b3e32e430f184b25",
+      "cmd-0e11124c21a14366",
+      "cmd-fb3f7f073f95420b",
+      "cmd-07f59739a7e1451a",
+      "cmd-b93eb943d66d4743",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

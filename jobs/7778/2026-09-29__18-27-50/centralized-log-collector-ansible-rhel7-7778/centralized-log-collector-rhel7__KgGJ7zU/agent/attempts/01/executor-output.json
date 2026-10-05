@@ -1,0 +1,83 @@
+{
+  "status": "completed",
+  "summary": "Deployed an Ansible playbook from control_node (node3) that: (1) on node2, installs a simulated \"inventory\" application (systemd service logging via syslog tag \"inventory\") and configures rsyslog to forward its messages via TCP to node1, with a disk-assisted queue so messages buffer locally if node1/the network is unreachable; (2) on node1, configures rsyslog with an imtcp listener on port 514 (opened in firewalld) that filters on programname \"inventory\" plus source IP and persists messages to /var/log/inventory/node2.log. Both rsyslog and the inventory app are enabled at boot. Verified live log flow, verified queuing/resync across a deliberate node1 outage, then performed the mandatory one-at-a-time restart of node1 and node2, confirming changed boot IDs and full recovery of services, firewall port, and log flow after each restart.",
+  "actions_performed": [
+    "Repaired cluster SSH trust: appended CLUSTER_SSH_PUBKEY to /home/antrieb/.ssh/authorized_keys on node1 and node2, and regenerated node3's stale id_rsa.pub from CLUSTER_SSH_PRIVKEY so ansible could authenticate as user antrieb",
+    "Discovered node1/node2 (RHEL7.9) have only Python 2.7 and no usable yum repos (RHSM registered but zero entitled repos), while the pre-installed ansible-core 2.21 on node3 requires Python 3 on managed hosts",
+    "Installed an isolated ansible-core 2.16 venv on node3 (/opt/ansible-py2compat) via pip from PyPI, which still supports Python 2 managed nodes, and verified `ansible -m ping` succeeds against both nodes",
+    "Wrote /root/centralized-log-collector.yml and /root/inventory.ini on node3 using `raw` tasks (bypassing the Python module framework, which is unavailable on targets) to: deploy an inventory systemd app on node2, configure rsyslog omfwd forwarding with a LinkedList disk queue to node1:514/tcp, and on node1 configure imtcp input plus a rule writing to /var/log/inventory/node2.log, opening firewalld port 514/tcp and enabling rsyslog at boot on both nodes",
+    "Fixed an rsyslog config error (queue.type must be 'LinkedList', not lowercase 'linklist') discovered via rsyslogd -N1 validation after the first playbook run failed to restart rsyslog on node2",
+    "Ran the playbook successfully end-to-end (ansible-playbook -i inventory.ini centralized-log-collector.yml), confirmed idempotent re-run",
+    "Verified live log delivery: inventory app messages on node2 appear in /var/log/inventory/node2.log on node1",
+    "Disrupted availability: stopped rsyslog on node1, confirmed node2's omfwd disk queue buffered messages (inventory_fwd.* queue files grew), restarted node1's rsyslog and confirmed the buffered backlog drained into node2.log with no gaps",
+    "Captured pre-restart baselines (boot_id, service state, listening port, log tail) on both nodes",
+    "Restarted node1 via `sudo reboot`, polled until reachable, confirmed changed boot_id and full recovery (rsyslog active+enabled, port 514 listening, log file intact, new inventory entries continuing to arrive)",
+    "Restarted node2 via `sudo reboot`, polled until reachable, confirmed changed boot_id and full recovery (rsyslog and inventory.service both active+enabled, new syslog messages resuming)",
+    "Verified end-to-end flow resumed after both restarts by observing fresh timestamped entries land in node1's node2.log immediately following node2's reboot"
+  ],
+  "evidence": [
+    {
+      "requirement": "Forward node2's inventory application logs to a centralized collector on node1",
+      "command_ids": [
+        "cmd-322efe11d446437b",
+        "cmd-ca864f66a7af499a",
+        "cmd-f8ba38e0f958431f",
+        "cmd-4f04b87342dc49b7"
+      ],
+      "summary": "Playbook run succeeded (ok=5/ok=7, 0 failed); node2's inventory.service emits syslog messages tagged 'inventory'; node1 listens on tcp/514 and receives them"
+    },
+    {
+      "requirement": "Persist received messages on node1 under /var/log/inventory/node2.log",
+      "command_ids": [
+        "cmd-4f04b87342dc49b7",
+        "cmd-8b3c08bdb4984508"
+      ],
+      "summary": "sudo tail/wc on node1 shows inventory-update lines from node2 accumulating in /var/log/inventory/node2.log"
+    },
+    {
+      "requirement": "Keep log flow working across a disruption (availability/resync)",
+      "command_ids": [
+        "cmd-bbce921f512f498f",
+        "cmd-24480525068948c8",
+        "cmd-8b3c08bdb4984508"
+      ],
+      "summary": "Stopped rsyslog on node1; node2's disk-assisted omfwd queue (inventory_fwd.00000001) buffered messages; restarting node1 drained the backlog into node2.log with no gaps in the timestamp sequence"
+    },
+    {
+      "requirement": "Implement using Ansible",
+      "command_ids": [
+        "cmd-a796fa86049344e3",
+        "cmd-6aa86e6a37f34315",
+        "cmd-741255751000497c",
+        "cmd-3823af33b53144ec",
+        "cmd-322efe11d446437b",
+        "cmd-f5739205f88f4b70"
+      ],
+      "summary": "Built a working ansible-core 2.16 control environment on node3 (control_node) after discovering the pre-installed ansible-core 2.21 could not manage the Python-2-only RHEL7 targets; playbook syntax-checked and applied successfully, then re-applied idempotently"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node1 baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-3d5b98a952364352",
+        "cmd-6425df2558614305",
+        "cmd-e35597f0e4fd462a",
+        "cmd-62269a7b7e7a43c7",
+        "cmd-db623ad896254751",
+        "cmd-968c3edb3c2b4c83"
+      ],
+      "summary": "Baseline boot_id 809708f3...; reboot acknowledged then connection dropped; polled until reachable; post-restart boot_id changed to a3f7c36b...; rsyslog active+enabled, port 514 listening, log file intact, and fresh log entries continuing to arrive 15s later"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node2 baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-0fbcede04421417d",
+        "cmd-3a0fab42c7884480",
+        "cmd-3dff0b125f9540c2",
+        "cmd-3fe1dd4dd9de4176",
+        "cmd-c4c5adee9071480d",
+        "cmd-94f88018f9314fd0"
+      ],
+      "summary": "Baseline boot_id d7a80301...; reboot acknowledged then connection dropped; polled until reachable; post-restart boot_id changed to 035dc2b1...; rsyslog and inventory.service both active+enabled, and node1 observed new timestamped log entries arriving immediately after node2's reboot, confirming full pipeline recovery"
+    }
+  ]
+}

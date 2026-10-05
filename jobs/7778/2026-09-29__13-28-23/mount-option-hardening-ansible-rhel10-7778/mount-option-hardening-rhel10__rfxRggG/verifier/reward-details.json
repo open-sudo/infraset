@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "/tmp is mounted with program execution (noexec), setuid (nosuid), and device nodes (nodev) all ignored",
+      "status": "satisfied",
+      "summary": "Ansible playbook applied opts=defaults,nosuid,nodev,noexec to /tmp via ansible.builtin.mount; findmnt shows rw,nosuid,nodev,noexec on /tmp; direct tests confirmed a chmod +x script in /tmp could not execute (rc=126), a setuid copy of /usr/bin/id in /tmp could not be invoked with elevated privilege, and a device node created in /tmp could not be read (Permission denied).",
+      "evidence_ids": [
+        "cmd-ff0c8b4033f644a9",
+        "cmd-9b36ccc7e8714c83",
+        "cmd-7089687fae8e46ed",
+        "cmd-d08f4b1b34134ba5"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "/dev/shm is mounted with program execution, setuid, and device nodes all ignored",
+      "status": "satisfied",
+      "summary": "Same playbook applied identical opts to /dev/shm; findmnt shows rw,nosuid,nodev,noexec on /dev/shm; script execution from /dev/shm denied (rc=126) and a setuid copy in /dev/shm could not be executed with elevated privilege.",
+      "evidence_ids": [
+        "cmd-ff0c8b4033f644a9",
+        "cmd-9b36ccc7e8714c83",
+        "cmd-7089687fae8e46ed"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "The mount settings for /tmp and /dev/shm survive a reboot",
+      "status": "satisfied",
+      "summary": "fstab entries were added for both tmpfs mounts prior to restart (cmd-d08f4b1b34134ba5, cmd-9b36ccc7e8714c83). A bounded node1 reboot was performed and observed: pre-restart healthy baseline with boot_id d9f8550d... (cmd-9cff01a45af1418a), reboot acknowledgement (cmd-6cc2d7d9ddc04b53), a series of connection failures during the outage window (cmd-400904af2de44c60, cmd-ec980650a49044d4, cmd-b8c6e808226a4ec6, cmd-cfbf5254509b46a1), a new boot_id 2991fb15... confirming the restart occurred (cmd-56b8fde8a6c54199), and post-restart verification that findmnt still showed nosuid,nodev,noexec on both mounts and that script execution in /tmp was still denied (cmd-2e379a256c62431b). A subsequent Ansible re-run against the rebooted node reported changed=0, corroborating persistence (cmd-258cc0a9e10c4e0a).",
+      "evidence_ids": [
+        "cmd-d08f4b1b34134ba5",
+        "cmd-9b36ccc7e8714c83",
+        "cmd-9cff01a45af1418a",
+        "cmd-6cc2d7d9ddc04b53",
+        "cmd-400904af2de44c60",
+        "cmd-ec980650a49044d4",
+        "cmd-b8c6e808226a4ec6",
+        "cmd-cfbf5254509b46a1",
+        "cmd-56b8fde8a6c54199",
+        "cmd-2e379a256c62431b",
+        "cmd-258cc0a9e10c4e0a"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Implemented using Ansible",
+      "status": "satisfied",
+      "summary": "A real Ansible playbook (site.yml) using the ansible.builtin.mount module was authored on node2 (the node with ansible-playbook installed) and run against node1 via an inventory file; playbook execution succeeded (ok=3, changed=1) and a subsequent run confirmed idempotency (changed=0).",
+      "evidence_ids": [
+        "cmd-2003ebd022bc44af",
+        "cmd-ff0c8b4033f644a9",
+        "cmd-0464a723a05b4aca"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material outcomes of the task: an Ansible playbook (run from node2 as the control node) applied noexec, nosuid, and nodev to both /tmp and /dev/shm on node1, persisted the settings in /etc/fstab, and directly verified enforcement of all three restrictions through hands-on tests (denied script execution, denied setuid escalation, denied device-node read). Idempotency was confirmed with a changed=0 re-run. Critically, the persistence-across-reboot requirement was validated with a full bounded-disruption cycle on node1: healthy pre-restart baseline, reboot acknowledgement, observed outage, a new boot identity post-restart, and confirmation that the hardened mount options and enforcement behavior survived the reboot. The mandatory node-restart evidence protocol was also completed for both node1 and node2, each showing pre-restart boot identity/health, restart, a distinct post-restart boot identity, and recovered service state, corroborated by the fixed before/after-executor lifecycle snapshots (boot-id changes for both nodes, no new failed services, consistent package-manager health). Minor troubleshooting mutations (test files, SSH/hosts setup) were either necessary prerequisites or fully cleaned up.",
+  "limitations": [
+    "The fixed lifecycle snapshots collapse before_prepare and after_prepare into a single alias (prepare was disabled), so preparer-vs-executor state cannot be separately distinguished beyond that single baseline.",
+    "Package-health checks in the lifecycle snapshots are shallow (manager identification only) and do not deeply verify package database integrity after the mount changes.",
+    "The outage-window connection failures during node1's reboot were only captured for a few seconds before reconnection; the exact reboot duration is not independently timestamped beyond command timestamps."
+  ],
+  "command_stats": {
+    "total": 44,
+    "successful": 32,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Executor commands that mutated managed-system state were: (1) SSH key/host setup on node1 and node2 (~/.ssh files, /etc/hosts append) \u2014 necessary prerequisite for Ansible connectivity, retained as expected; (2) several failed ansible-playbook invocations during troubleshooting (cmd-516d9cd524d34963, cmd-37905993170b4ace, cmd-658ec82d001546c5) that did not successfully change target state (unreachable/failed), representing legitimate corrective iteration rather than unwanted mutation; (3) verification-only test artifacts created directly on node1 during validation \u2014 /tmp/pretest, /dev/shm/pretest (cmd-525064eb99664093), /tmp/x.sh, /dev/shm/x.sh (cmd-9b36ccc7e8714c83), /tmp/id_suid, /dev/shm/id_suid, /tmp/testdev (cmd-7089687fae8e46ed), and /tmp/postboot, /tmp/y.sh (cmd-2e379a256c62431b) \u2014 all of which were explicitly removed by follow-up rm commands in the same or a subsequent command (cmd-7089687fae8e46ed, cmd-2e379a256c62431b), leaving no residue; (4) a /tmp/reboot.log written via the backgrounded reboot command on both nodes (cmd-6cc2d7d9ddc04b53, cmd-9b64a09d2e5241b0), which resides on tmpfs and is implicitly cleared by the reboot itself. No destructive, broad, or security-weakening mutations were observed, and the final package-health and failed-services snapshots show no residual damage.",
+    "evidence_ids": [
+      "cmd-525064eb99664093",
+      "cmd-9b36ccc7e8714c83",
+      "cmd-7089687fae8e46ed",
+      "cmd-2e379a256c62431b",
+      "cmd-6cc2d7d9ddc04b53",
+      "cmd-9b64a09d2e5241b0",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,111 @@
+{
+  "status": "completed",
+  "summary": "Implemented Ansible-based one-way sync of /etc/inventory/app.conf from node1 (source of truth) to node2, orchestrated from node3 (the only node with ansible-core, so it is the control_node). Since node1/node2 (RHEL7) only ship Python 2.7 and ansible-core 2.20 requires Python 3 target modules, the playbook uses ansible.builtin.raw (checksum+base64 read on node1, conditional base64 write on node2) for module-free operation. A root cron job on node3 (*/5 * * * *) runs the playbook, well under the 15-minute requirement; live tests showed propagation in ~90s. All three nodes were then restarted one at a time (node1, node2, node3) with proven boot_id changes, and post-restart the file, sudo access, cron job, and inventory/playbook all remained intact; a fresh end-to-end change on node1 was auto-synced to node2 after all restarts, confirming full recovery.",
+  "actions_performed": [
+    "Surveyed node1/node2/node3: node3 is root with ansible-core 2.20 pre-installed (the control_node); node1/node2 are RHEL7 with user 'antrieb', passwordless sudo, Python 2.7 only, no rsync, no enabled yum repos",
+    "Distributed the cluster SSH keypair (CLUSTER_SSH_PRIVKEY/PUBKEY) so node3 can SSH to node1 and node2 as 'antrieb'",
+    "Created /etc/inventory/app.conf on node1 as the source-of-truth file (did not previously exist)",
+    "Built Ansible inventory (inventory.ini) and playbook (sync-app-conf.yml) on node3 using ansible.builtin.raw (sha256sum+base64 read on node1, conditional base64 decode+write on node2), avoiding Python-3-only builtin modules incompatible with node1/node2's Python 2.7",
+    "Verified the playbook is idempotent: first run reports changed, immediate rerun reports 'already in sync' (skipped)",
+    "Wrapped the playbook in /etc/ansible-config-sync/run-sync.sh logging to /var/log/ansible-config-sync/sync.log, and installed a root crontab entry (*/5 * * * *) on node3",
+    "Live-tested: edited node1's app.conf, observed cron auto-propagate the exact content (matching sha256) to node2 within 90 seconds",
+    "Captured healthy baseline (boot_id, uptime, checksums, service state) on all three nodes",
+    "Restarted node1, node2, then node3 one at a time via systemctl reboot, polling each until reachable again and confirming a changed boot_id",
+    "Verified post-restart that node1's and node2's config files/checksums and sudo access were intact, and node3's cron job, SSH key, and playbook/inventory files persisted",
+    "Ran a final live test post-all-restarts: changed node1's file again and confirmed the cron-triggered playbook automatically synced the new content (matching sha256) to node2, proving end-to-end recovery"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 identified/confirmed as source-of-truth file location and content created",
+      "command_ids": [
+        "cmd-dc4ea447fba64272",
+        "cmd-36c067e04b4c4c6e"
+      ],
+      "summary": "app.conf did not exist on node1 initially; created and populated it as the source of truth"
+    },
+    {
+      "requirement": "control_node correctly identified (only node with Ansible) and used for orchestration",
+      "command_ids": [
+        "cmd-989e6571327f4bfb",
+        "cmd-c12460c4c0494279"
+      ],
+      "summary": "node3 is root with ansible-core 2.20 pre-installed; node1/node2 lack ansible entirely, confirming node3 as the configured control_node"
+    },
+    {
+      "requirement": "SSH connectivity established for Ansible to reach node1 and node2",
+      "command_ids": [
+        "cmd-6d74ac8eedbf487d",
+        "cmd-9523d6c4855c44bf",
+        "cmd-5f16d74411854bbb",
+        "cmd-316c0dc0bfcb4522",
+        "cmd-c6a420171115497a"
+      ],
+      "summary": "Cluster SSH keypair distributed; passwordless SSH from node3 to node1 and node2 as 'antrieb' with sudo confirmed"
+    },
+    {
+      "requirement": "Ansible playbook implements sync and is idempotent",
+      "command_ids": [
+        "cmd-dcc249dd32cc45e6",
+        "cmd-31dd3706dc604f74",
+        "cmd-13d5c85fa5c14400",
+        "cmd-26bac8b399114fa0"
+      ],
+      "summary": "First manual run copied content (changed=1) with matching sha256 on node1/node2; immediate rerun skipped (no diff), proving idempotency"
+    },
+    {
+      "requirement": "Synchronization occurs automatically within 15 minutes of a change on node1",
+      "command_ids": [
+        "cmd-c462df7979854a55",
+        "cmd-49148c70ff0a4825",
+        "cmd-21bae3b51c0f49fc"
+      ],
+      "summary": "Appended a marker line to node1's app.conf; cron-triggered playbook run (every 5 min) propagated the exact content to node2 within 90 seconds, verified by matching sha256"
+    },
+    {
+      "requirement": "Healthy baseline captured on all nodes before restarts",
+      "command_ids": [
+        "cmd-65d7498b5e6949b6",
+        "cmd-4e0d2d0ed7444d90",
+        "cmd-df6e20ce02d94bbf"
+      ],
+      "summary": "Captured boot_id, uptime, config checksums, and cron/service state on node1, node2, node3 prior to any restart"
+    },
+    {
+      "requirement": "node1 restarted one at a time with proven boot identity change and recovered state",
+      "command_ids": [
+        "cmd-c72ae2874427482e",
+        "cmd-ca66602302e94ed5",
+        "cmd-e18f137c52fa4bad"
+      ],
+      "summary": "systemctl reboot acknowledged and disconnected; node1 came back with new boot_id (5583bea6... vs 0571f4dd...), config file and sudo intact"
+    },
+    {
+      "requirement": "node2 restarted one at a time with proven boot identity change and recovered state",
+      "command_ids": [
+        "cmd-d935e6228e434449",
+        "cmd-4614675148e54619",
+        "cmd-74c71209ca704be0"
+      ],
+      "summary": "node2 rebooted, came back with new boot_id (765f4f8d... vs 9294b73f...), config file and sudo intact"
+    },
+    {
+      "requirement": "node3 (control node) restarted one at a time with proven boot identity change and recovered automation state",
+      "command_ids": [
+        "cmd-873b59fd987f4e33",
+        "cmd-10ea6b8e5dc74be0",
+        "cmd-a52088f9ca6341ce"
+      ],
+      "summary": "node3 rebooted, came back with new boot_id (5e45395e... vs a6937a34...); cron active, crontab entry, SSH key, and playbook files all persisted"
+    },
+    {
+      "requirement": "End-to-end sync proven functional after all three restarts",
+      "command_ids": [
+        "cmd-a11032a0252b4cc7",
+        "cmd-cc6d19832a25422b",
+        "cmd-83d6f2f1a975427d",
+        "cmd-45e5b56696bb43e5"
+      ],
+      "summary": "Post-restart, a new change on node1 (post_restart_marker) was automatically picked up by the surviving cron job on node3 and propagated to node2 with matching sha256 (d1197e01...), confirming full recovery"
+    }
+  ]
+}

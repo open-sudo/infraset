@@ -1,0 +1,120 @@
+{
+  "status": "completed",
+  "summary": "Built a site-to-site IPsec tunnel between node1 (OPNsense, in front of node3/lan-a) and node2 (OPNsense, in front of node4/lan-b) over their shared transit network. node3 and node4 now reach each other by private address (10.50.10.12 <-> 10.50.20.13) with all inter-site traffic encrypted (IKEv2/ESP). Completed the mandatory sequential restart-and-recovery protocol on all four nodes, confirming persistence of the tunnel and routing across reboots.",
+  "actions_performed": [
+    "Mapped the actual topology by capturing DHCP broadcasts and ARP: node1 vtnet2<->node3 enp8s0 (lan-a), node2 vtnet2<->node4 enp8s0 (lan-b), node1 vtnet1<->node2 vtnet1 (transit)",
+    "Assigned OPNsense interfaces opt1/TRANSIT (10.10.10.1/2, /30) and opt2/LANA|LANB (10.50.10.1/24, 10.50.20.1/24) on node1/node2 via config.xml edits + configctl interface reconfigure",
+    "Generated a PSK on node1 with openssl and copied it to node2 over the existing management network via scp using the cluster SSH keypair; no secret was placed in any tool command or final output",
+    "Edited config.xml (Python/ElementTree, .bak preserved) to add OPNsense.Swanctl Connection/local/remote/child (IKEv2, PSK, tunnel mode, local_ts/remote_ts = 10.50.10.0/24 <-> 10.50.20.0/24) and the IPsec preSharedKeys entry plus the legacy root <ipsec><enable> flag required to start strongswan",
+    "Added firewall pass rules for opt1 (transit IKE/ESP) and opt2 (private LAN); registered the dynamic enc0 IPsec pseudo-interface via pluginctl -i so pf could filter/pass decrypted tunnel traffic",
+    "Configured static addressing and cross-subnet static routes on node3 (10.50.10.12/24) and node4 (10.50.20.13/24) via nmcli, preserving existing management default routes",
+    "Verified end-to-end ping node3<->node4 and confirmed via tcpdump on the transit link that only ESP packets are visible (encryption in transit)",
+    "Captured healthy baselines (boot markers, IPsec SA state, interface state) on all four nodes, then restarted node1, node2, node3, and node4 one at a time using native reboot mechanisms, polling each until exec access returned and confirming a changed boot identity plus full IPsec/tunnel/connectivity recovery before proceeding to the next node"
+  ],
+  "evidence": [
+    {
+      "requirement": "IPsec tunnel established between node1 and node2 carrying private networks",
+      "command_ids": [
+        "cmd-0952ec37b4974c3b",
+        "cmd-a5dded26c07847ca"
+      ],
+      "summary": "swanctl --list-sas shows ESTABLISHED IKEv2 SA and INSTALLED tunnel-mode CHILD_SA with local/remote traffic selectors 10.50.10.0/24 <-> 10.50.20.0/24 on both node1 and node2"
+    },
+    {
+      "requirement": "node3 and node4 reach each other by private address",
+      "command_ids": [
+        "cmd-fd71183c4c484d25",
+        "cmd-b3759446703546cb"
+      ],
+      "summary": "Successful pings node3(10.50.10.12)->node4(10.50.20.13) and node4->node3 across the tunnel"
+    },
+    {
+      "requirement": "traffic encrypted in transit across the transit network",
+      "command_ids": [
+        "cmd-58e5a566c9f44919",
+        "cmd-c1e275330d3947e3"
+      ],
+      "summary": "tcpdump on node1 vtnet1 (transit link) during active node3<->node4 pings shows only ESP packets, no plaintext ICMP"
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-863587b4a7684248"
+      ],
+      "summary": "Captured kern.boottime, established IPsec SAs, and interface addresses on node1 prior to restart"
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-3897cf59fcc24b68",
+        "cmd-e29d5f36cc904b3d",
+        "cmd-342a6314412044ce",
+        "cmd-835cb97f12514627",
+        "cmd-fac29ce010e04796"
+      ],
+      "summary": "Reboot command acknowledged before disconnect; subsequent polls timed out then succeeded with a new kern.boottime (17:48:47 vs original 17:27:40); IPsec SA re-established and node3->node4 ping succeeded after recovery"
+    },
+    {
+      "requirement": "node2 healthy baseline before restart",
+      "command_ids": [
+        "cmd-8deabeaa66d6489e"
+      ],
+      "summary": "Captured kern.boottime, established IPsec SAs, and interface addresses on node2 prior to restart"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-5acd8f1635424c6d",
+        "cmd-a94730bb7d7d4831",
+        "cmd-52d3365892134158",
+        "cmd-ce5a43b1f6254c5c",
+        "cmd-b3759446703546cb"
+      ],
+      "summary": "Reboot acknowledged; boottime changed to 17:49:27 (from 17:27:40); IPsec SA re-established and node4->node3 ping succeeded after recovery"
+    },
+    {
+      "requirement": "node3 healthy baseline before restart",
+      "command_ids": [
+        "cmd-ab1c26443a8241c8"
+      ],
+      "summary": "Captured /proc/sys/kernel/random/boot_id and uptime on node3 prior to restart"
+    },
+    {
+      "requirement": "node3 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-4f5abafb36174c9a",
+        "cmd-d50cca5e72604556",
+        "cmd-76b77b41e52a4b46",
+        "cmd-36c292acd7fa4c50"
+      ],
+      "summary": "systemctl reboot triggered (stream closed as expected); boot_id changed from 6bb7e004... to 6676a130...; static IP, routes, and ping to node4 all recovered post-reboot"
+    },
+    {
+      "requirement": "node4 healthy baseline before restart",
+      "command_ids": [
+        "cmd-91027c89d3fc47f3"
+      ],
+      "summary": "Captured /proc/sys/kernel/random/boot_id and uptime on node4 prior to restart"
+    },
+    {
+      "requirement": "node4 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-71cb4bf33e824113",
+        "cmd-6a2b14e888314802",
+        "cmd-6cb8509e22c64d93",
+        "cmd-0dbe20475c0e4c31",
+        "cmd-313664b85d404a6f"
+      ],
+      "summary": "systemctl reboot triggered; boot_id changed from bf4e9cbb... to 84460a52...; static IP, routes, and ping to node3 all recovered post-reboot"
+    },
+    {
+      "requirement": "post-restart re-verification that traffic remains encrypted end-to-end",
+      "command_ids": [
+        "cmd-54c2f878bd8f457d",
+        "cmd-6f81a79cf2224553",
+        "cmd-c1e275330d3947e3"
+      ],
+      "summary": "After all four nodes were restarted, a fresh tcpdump on node1's transit interface during a node4->node3 ping showed only ESP packets"
+    }
+  ]
+}

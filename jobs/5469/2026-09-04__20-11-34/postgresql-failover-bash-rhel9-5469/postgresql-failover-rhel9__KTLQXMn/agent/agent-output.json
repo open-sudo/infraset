@@ -1,0 +1,119 @@
+{
+  "status": "completed",
+  "summary": "Deployed PostgreSQL 13 streaming replication across node1 (primary), node2 and node3 (standbys) on RHEL9. Demonstrated full failover: stopped node1, promoted node2 to writable primary with zero data loss, repointed node3 to node2, and rejoined the recovered former primary (node1) as a standby of node2 via fresh pg_basebackup. Then executed the mandatory one-at-a-time reboot protocol on all three nodes (standbys first, primary last), verifying changed boot_id and full replication/quorum recovery after each restart, finishing with an end-to-end write propagated to all nodes.",
+  "actions_performed": [
+    "Installed postgresql-server 13.23 on node1, node2, node3 via dnf",
+    "Initialized primary DB on node1; configured wal_level=replica, max_wal_senders, hot_standby, listen_addresses='*'",
+    "Fixed password_encryption mismatch (md5 default vs scram-sha-256 in pg_hba.conf) that was blocking replicator authentication",
+    "Created replicator role and appdb database with a bench table and seed rows on node1",
+    "Opened firewalld port 5432/tcp on all three nodes",
+    "Built pg_basebackup-based standbys on node2 and node3 from node1, verified streaming replication and data propagation",
+    "Simulated primary loss (stopped postgresql on node1), promoted node2 via pg_promote(), verified no committed data lost and node2 writable",
+    "Repointed node3's primary_conninfo to node2 and confirmed streaming resumed with full data set",
+    "Rejoined node1 as a standby of node2 via fresh pg_basebackup, confirmed streaming and data integrity",
+    "Captured pre-restart boot_id, service state, and data counts on node1, node3, node2 (in that order)",
+    "Rebooted node1, node3, node2 one at a time (background nohup reboot with ack before disconnect), polled until reachable",
+    "Verified changed boot_id on all three nodes post-restart, and confirmed replication/quorum and data fully recovered after each restart before moving to the next node",
+    "Performed final end-to-end write on node2 (primary) and confirmed propagation to node1 and node3 (7/7 rows matching)"
+  ],
+  "evidence": [
+    {
+      "requirement": "Primary/standby replication established (node1 primary, node2/node3 standby)",
+      "command_ids": [
+        "cmd-9448e3e97a3b4928",
+        "cmd-816094a3be4b4d31",
+        "cmd-44e390c1a2cf4131",
+        "cmd-509e1c6817c54421",
+        "cmd-d0db47d95d5a4adc",
+        "cmd-a65fbdfa98334509",
+        "cmd-d701571fd1d84a1f",
+        "cmd-3cdbe0840c8d4c04",
+        "cmd-0255f468c7ef413a",
+        "cmd-f6d84c57c8f348d4"
+      ],
+      "summary": "node1 initialized as primary with wal_level/replica settings and replicator role; node2 and node3 built via pg_basebackup with -R and started as standbys (pg_is_in_recovery=t)."
+    },
+    {
+      "requirement": "Replication actively streaming and data propagating from primary to both standbys",
+      "command_ids": [
+        "cmd-4ae8d153161c4dd8",
+        "cmd-459ca3dbf8fb4caf",
+        "cmd-f0a233acc8854726"
+      ],
+      "summary": "pg_stat_replication on node1 shows both walreceivers streaming; a new row inserted on node1 appears on node2 and node3."
+    },
+    {
+      "requirement": "Failover: standby takes over as writable primary without losing committed data",
+      "command_ids": [
+        "cmd-a360aad307914d66",
+        "cmd-c1ef918b8e484e6b",
+        "cmd-a200b634e2194e4c",
+        "cmd-b47a87bbf5e543f1",
+        "cmd-d61af17cd287489c",
+        "cmd-4d39f92ffb2f48c5"
+      ],
+      "summary": "Marker row committed and confirmed replicated to both standbys before node1 was stopped; node2 promoted via pg_promote() and confirmed writable with all 4 pre-failover rows intact plus a new post-failover write."
+    },
+    {
+      "requirement": "Surviving standby (node3) repointed to new primary (node2)",
+      "command_ids": [
+        "cmd-099593a806a648c1",
+        "cmd-ad641b391b3c4edd",
+        "cmd-8ece74ce1c24487e"
+      ],
+      "summary": "node3's primary_conninfo updated to node2 and restarted; node2 shows node3's walreceiver streaming; node3 has full post-failover dataset."
+    },
+    {
+      "requirement": "Recovered former primary (node1) rejoins as standby of the current primary (node2)",
+      "command_ids": [
+        "cmd-9e3d1340677f40ca",
+        "cmd-4ef0ec4625f5445b",
+        "cmd-a38dde49f53b49f6",
+        "cmd-1460109f334c4892",
+        "cmd-1373113e9ab94873"
+      ],
+      "summary": "node1 rebuilt via pg_basebackup from node2, started in recovery mode with all data intact; node2 shows both node1 and node3 streaming; a new write on node2 propagates to both."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-5fc08a3d23614e67",
+        "cmd-b4f1c435a5114dde",
+        "cmd-3deb930cf75e4280",
+        "cmd-b60479876625426a",
+        "cmd-2909cb76afba45af"
+      ],
+      "summary": "Baseline boot_id 6bb7e004... captured with active standby and 6 rows; reboot acked before disconnect; post-restart boot_id 12244391... (changed); postgresql active, standby recovered, data intact, node2 shows node1 streaming again."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-ca6b239dcf664981",
+        "cmd-26ca60c9942b4bf4",
+        "cmd-449665c9c14443a3",
+        "cmd-6d8b1f86ccea4c97",
+        "cmd-568b44661c6444bf"
+      ],
+      "summary": "Baseline boot_id fbdf5b2c... captured with active standby and 6 rows; reboot acked before disconnect; post-restart boot_id 318b155b... (changed); postgresql active, standby recovered, data intact, node2 shows both standbys streaming."
+    },
+    {
+      "requirement": "node2 (primary) restart: healthy baseline, restart ack, changed boot identity, recovered state with quorum",
+      "command_ids": [
+        "cmd-099c5ca23ab446f6",
+        "cmd-6b0425b18a8e43ea",
+        "cmd-fa3035a61f854a4b",
+        "cmd-fa25c49f5cca4918"
+      ],
+      "summary": "Baseline boot_id bf4e9cbb... captured as active primary with 6 rows; reboot acked before disconnect; post-restart boot_id cf4a8c23... (changed); postgresql active as primary again, both node1 and node3 walreceivers streaming."
+    },
+    {
+      "requirement": "Post-restart end-to-end data integrity across full cluster",
+      "command_ids": [
+        "cmd-b6a6dc9b99824d83",
+        "cmd-4412cc2627cb4c01",
+        "cmd-2874917a7efd45f4"
+      ],
+      "summary": "New row inserted on node2 (primary) after all three restarts; node1 and node3 both report matching row count of 7, confirming replication fully healthy end-to-end."
+    }
+  ]
+}

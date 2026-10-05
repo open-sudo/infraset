@@ -1,0 +1,77 @@
+{
+  "status": "completed",
+  "summary": "On node1, created user `datauser`, built a dedicated XFS filesystem (loopback image at /var/lib/quota-images/srv-data.img, 512M) mounted at /srv/data via /etc/fstab with the `usrquota` option, and set a 100MB (soft=hard) block quota for datauser via xfs_quota. Verified the kernel enforces the limit directly (writes fail with \"Disk quota exceeded\" exactly at 100MB), that the config survives a full node reboot (boot_id changed, confirming a real restart), and that enforcement still works identically afterward. Switched from ext4 quotas to XFS after discovering this kernel ships CONFIG_QUOTA_TREE only as an unavailable module, so ext4's userspace quota format could not activate (\"Quota format not supported in kernel\"); XFS quotas are built directly into the XFS driver (CONFIG_XFS_QUOTA=y) and worked without issue.",
+  "actions_performed": [
+    "Inspected node1 filesystem layout, confirmed /srv/data did not exist and root fs is ext4 with no spare block device",
+    "Installed quota + xfsprogs packages",
+    "Created datauser account (uid 1000)",
+    "Attempted ext4 loopback filesystem with usrquota; quotaon failed due to missing quota_v2/quota_tree kernel module",
+    "Rebuilt the loopback image as XFS, mounted at /srv/data with usrquota via /etc/fstab",
+    "Set 100MB (bsoft=bhard=100m) quota for datauser with xfs_quota",
+    "Verified enforcement: write of 100MB succeeded, next write failed with 'Disk quota exceeded' at exactly the 100M boundary",
+    "Cleaned up test files, confirmed quota usage returns to 0",
+    "Captured baseline boot_id and quota state",
+    "Rebooted node1 via `reboot` (backgrounded ack), polled until reachable again",
+    "Confirmed boot_id changed (242af11e... -> 2ff7e3ae...), proving an actual restart",
+    "Verified /srv/data remounted automatically from fstab with usrquota active and the 100MB limit intact post-reboot",
+    "Re-ran the write test post-reboot to confirm quota enforcement still triggers at 100MB, then cleaned up"
+  ],
+  "evidence": [
+    {
+      "requirement": "datauser account exists on node1",
+      "command_ids": [
+        "cmd-a7cdedaa79354042"
+      ],
+      "summary": "useradd -m datauser succeeded; id shows uid=1000(datauser)"
+    },
+    {
+      "requirement": "/srv/data is a dedicated, quota-enabled filesystem for datauser",
+      "command_ids": [
+        "cmd-befc7cc896e747df",
+        "cmd-c9739850eb904639"
+      ],
+      "summary": "XFS loopback image mounted at /srv/data with usrquota option; xfs_quota report shows datauser limited to 100M soft/hard"
+    },
+    {
+      "requirement": "100MB limit is enforced by the filesystem itself (not application-level)",
+      "command_ids": [
+        "cmd-60601131f3e3431b"
+      ],
+      "summary": "dd as datauser writes 50MB successfully, then fails at the 100MB total boundary with kernel-level 'Disk quota exceeded' from dd/write(2), not a wrapper script"
+    },
+    {
+      "requirement": "Quota state is clean/accurate baseline before restart",
+      "command_ids": [
+        "cmd-5ae023b298dd4577",
+        "cmd-e149e614106e40fd"
+      ],
+      "summary": "After removing test files and sync, xfs_quota report shows datauser usage back to 0M with limits still 100M/100M; baseline boot_id captured"
+    },
+    {
+      "requirement": "node1 restart executed one at a time with ack returning before disconnect",
+      "command_ids": [
+        "cmd-7d926c691e58404d",
+        "cmd-d0b39de66cd747c7",
+        "cmd-9f09aaf61ab34c7c"
+      ],
+      "summary": "Backgrounded `sleep 2; reboot` returned ack immediately; subsequent poll still showed old boot_id then a connection timeout as the reboot took effect"
+    },
+    {
+      "requirement": "Proof of changed boot identity after restart",
+      "command_ids": [
+        "cmd-e149e614106e40fd",
+        "cmd-9a337701002c4528",
+        "cmd-d4356d734a854fb6"
+      ],
+      "summary": "boot_id changed from 242af11e-49fb-4e07-a001-8016b2349acb (pre-reboot) to 2ff7e3ae-d28c-4c17-beea-a97814d4f590 (post-reboot), confirmed after connection was reset during the reboot and node became reachable again"
+    },
+    {
+      "requirement": "Quota configuration and enforcement recovered after restart",
+      "command_ids": [
+        "cmd-ecaf1b081a744b38",
+        "cmd-ef72fe29cbd04020"
+      ],
+      "summary": "/srv/data auto-remounted from fstab with usrquota active and datauser's 100M/100M limit intact; write test post-reboot again failed exactly at 100MB with 'Disk quota exceeded', proving enforcement persists across restart"
+    }
+  ]
+}

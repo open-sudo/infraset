@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on port 8443 on node1",
+      "status": "satisfied",
+      "summary": "nginx vhost configured on 8443 with TLS; curl to https://$NODE_IP:8443/ returned HTTP 200 both pre- and post-restart, and the after-executor listening-sockets snapshot directly shows nginx bound to 0.0.0.0:8443 and [::]:8443.",
+      "evidence_ids": [
+        "cmd-b55cd39e3b484481",
+        "cmd-6f509e37bd304d2a",
+        "cmd-3046b588f4454736",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "auto-renewal",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A systemd timer (renew-cert.timer, OnBootSec=10s/OnUnitActiveSec=30s) invoked renew-cert.service every ~30s. The journal directly shows an automatic renewal firing at 08:10:51 with 145s remaining on the 300s-lived cert (below the 150s threshold), issuing a new cert (serial ...704EF -> ...704F0, notAfter extended to 12:15:51) with no manual intervention, i.e. renewal completed well before expiry.",
+      "evidence_ids": [
+        "cmd-f10ff9fa55b44198"
+      ]
+    },
+    {
+      "id": "hot-reload-no-downtime",
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no downtime)",
+      "status": "satisfied",
+      "summary": "The renewal script performs an atomic file swap followed by `systemctl reload nginx` (graceful reload). A background curl loop polling every 2s for ~3.5 minutes recorded continuous HTTP 200 responses throughout, and the journal confirms 'nginx reloaded' immediately after the 08:10:51 cert reissue. The exact watcher line spanning the serial transition was truncated out of the captured log excerpt, so the precise before/after sample pairing is inferred from the journal timestamp plus the executor's narrative rather than directly visible in the quoted evidence, a minor gap that slightly limits directness but does not contradict the claim.",
+      "evidence_ids": [
+        "cmd-a6ed9977c55d4bb7",
+        "cmd-7957869ff14042c5",
+        "cmd-f10ff9fa55b44198"
+      ]
+    },
+    {
+      "id": "restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id=4cee4ea8... with nginx/timer active+enabled and HTTPS 200. A deferred reboot was scheduled via systemd-run and acknowledged before disconnection; the node became unreachable (timeouts/connection reset) during the transition, then returned with a different boot_id=a00fa18c... Post-restart checks show nginx and renew-cert.timer active+enabled, the same certificate persisted, firewalld port 8443 and SELinux Enforcing preserved, HTTPS returning 200, and the renewal service running again automatically per the timer \u2014 a full pre/disruption/post recovery cycle, corroborated by the fixed before-prepare/after-executor boot-identity snapshots.",
+      "evidence_ids": [
+        "cmd-6f509e37bd304d2a",
+        "cmd-6600b1c365e14a5b",
+        "cmd-6cce7d8e094d46eb",
+        "cmd-28d17129a02b4d11",
+        "cmd-9d35dbce4aa640ae",
+        "cmd-c1ad5976008b4cad",
+        "cmd-4d98e2b049554489",
+        "cmd-3046b588f4454736",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract \u2014 HTTPS on 8443, automatic pre-expiry certificate renewal via a systemd timer, and zero-downtime graceful reload picking up the new cert \u2014 are satisfied with direct evidence, and the independent node-restart protocol was fully demonstrated with a genuine boot-identity change and complete post-restart recovery of services, cert state, and network exposure. The only weakness is that the exact watcher log line capturing the HTTP-200 sample immediately around the certificate serial swap was truncated from the retained evidence, so that specific instant is inferred from adjacent journal timestamps rather than directly quoted.",
+  "limitations": [
+    "The watch-rotation.log excerpt in cmd-f10ff9fa55b44198 is truncated across the exact timestamp window (08:10:44 to shortly before 08:10:51) where the certificate serial would have changed in the live HTTP responses, so the precise before/after sample proving zero-downtime was not directly visible in the retained evidence, only reconstructed from the journal and executor narrative.",
+    "The short (5-minute) certificate validity and 30s renewal cadence are a compressed demo timescale chosen by the executor to make renewal observable within the session; this is a reasonable proof approach but means the evidence does not directly demonstrate renewal behavior at realistic (e.g. 90-day) certificate lifetimes."
+  ],
+  "command_stats": {
+    "total": 18,
+    "successful": 13,
+    "failed": 4,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Command trace shows a coherent, mostly linear build: package install, CA creation, renewal script iteration (rewritten once to fix openssl -days rounding via -not_after, a legitimate corrective fix rather than an abandoned experiment), nginx vhost, SELinux port label, firewalld rule, systemd units, and verification. All state-changing commands map to the task outcome or the restart protocol. The background watcher script and its pid/log files (/tmp/watch-rotation.*) were explicitly removed in cmd-6f509e37bd304d2a before the restart. One minor residue: /tmp/dnf-install.log was created during package install (cmd-189566eb4ae54918) and never cleaned up, visible in the after-executor temporary-files snapshot; this is small, low-risk, and non-destructive. No failed or conflicting services are present in the after-executor snapshot, and firewalld/SELinux controls were opened narrowly (single port) rather than weakened broadly.",
+    "evidence_ids": [
+      "cmd-6f509e37bd304d2a",
+      "cmd-189566eb4ae54918",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

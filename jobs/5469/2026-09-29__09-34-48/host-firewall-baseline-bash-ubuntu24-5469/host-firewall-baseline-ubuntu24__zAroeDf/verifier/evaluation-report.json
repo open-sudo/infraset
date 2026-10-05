@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Configure a persistent ufw host firewall on node1 with default-deny incoming, allowing SSH (22/tcp) and 8080/tcp",
+      "status": "satisfied",
+      "summary": "Baseline showed ufw inactive with only sshd listening. Executor set default deny incoming/allow outgoing, added allow rules for OpenSSH and 8080/tcp, and enabled ufw ('active and enabled on system startup'). iptables ufw-user-input chain confirmed ACCEPT limited to tcp/22 and tcp/8080. systemctl is-enabled ufw returned 'enabled', confirming boot-time persistence configuration.",
+      "evidence_ids": [
+        "cmd-133a593afc5c470b",
+        "cmd-31f457562dba42ac",
+        "cmd-ed01eaf069804fd1",
+        "cmd-06931cd006a74f45"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Reject/deny unrelated inbound traffic (ports other than 22 and 8080)",
+      "status": "satisfied",
+      "summary": "A probe to an unrelated port (2222) failed both before and after the reboot (exit=1 / blocked_exit=1), directly demonstrating that traffic outside the allowed set is rejected by the configured firewall.",
+      "evidence_ids": [
+        "cmd-06931cd006a74f45",
+        "cmd-595f99c2429d4f89"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Firewall configuration and enforcement survives a full node restart (persistence)",
+      "status": "partially_satisfied",
+      "summary": "The executor captured a pre-restart boot_id, triggered 'shutdown -r now', observed a changed boot_id after reconnect, and its own final command (cmd-595f99c2429d4f89, ~15:10:07) showed ufw active with the same rules, port 2222 still blocked, and a successful nc probe against port 22. However, the fixed after-executor lifecycle snapshot, captured about 11 seconds later (15:10:18), independently shows ssh.service and ssh.socket in the FAILED state and no port 22 listener at all in the socket inventory \u2014 directly contradicting the executor's own 'SSH reachable' claim moments earlier. This unresolved discrepancy means the recovered state cannot be confirmed as stable, even though the ufw rule set itself is shown intact post-reboot.",
+      "evidence_ids": [
+        "cmd-bf4e5ea165ca4c2c",
+        "cmd-3404496b2c20492e",
+        "cmd-a9c85c2dc65a4687",
+        "cmd-657ac7e0ced04ceb",
+        "cmd-595f99c2429d4f89",
+        "global:after_executor:node1:failed-services",
+        "global:after_executor:node1:listening-sockets",
+        "global:before_prepare:node1:failed-services"
+      ]
+    }
+  ],
+  "overall_summary": "The ufw firewall was correctly configured on node1 (default deny incoming, allow OpenSSH and 8080/tcp) and enforcement was directly verified via iptables and a rejected probe to an unrelated port, both before and after a full reboot \u2014 satisfying the core task contract. However, the independent, fixed after-executor lifecycle snapshot taken moments after the executor's own final verification shows ssh.service and ssh.socket in a FAILED state with no port 22 listener, contradicting the executor's claim that SSH remained reachable post-restart. This unresolved contradiction is the main open issue and prevents full confidence in the persistence/recovery outcome, even though the firewall rule configuration itself is well evidenced.",
+  "limitations": [
+    "The fixed after-executor snapshot (ssh.service/ssh.socket FAILED, no port 22 listener) directly contradicts the executor's last command output (SSH reachable, port 22 listening via systemd socket activation) captured only ~11 seconds earlier; the trace does not explain this discrepancy or show any later remediation/verification.",
+    "No command in the trace re-checks SSH state after the after-executor snapshot was taken, so it is unknown whether this was a transient flap or a persistent failure of SSH access on node1."
+  ],
+  "command_stats": {
+    "total": 9,
+    "successful": 8,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.55,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.8333,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "All state-changing commands (ufw configuration/enable, and the reboot) tie directly to the task's material outcomes or the required restart-evidence protocol; no unrelated or abandoned mutations were found in the executor timeline. However, the fixed after-executor snapshot \u2014 captured after all executor commands finished \u2014 shows ssh.service and ssh.socket newly in the FAILED state (absent from the before-prepare baseline) and no port 22 socket listening at all, whereas the executor's own last probe 11 seconds earlier showed SSH reachable. This is either a genuine post-task regression left unresolved (the executor never re-checked or remediated it) or a transient/flaky observation, but either way it was not detected, explained, or fixed by the executor, and it directly concerns the very service (SSH) the task required to remain reachable. This lowers the hygiene score even though no destructive or unnecessary mutation was identified in the command trace itself.",
+    "evidence_ids": [
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets",
+      "global:before_prepare:node1:failed-services",
+      "cmd-595f99c2429d4f89"
+    ]
+  },
+  "reward": 0.8333,
+  "provisional_reward": 0.8333
+}

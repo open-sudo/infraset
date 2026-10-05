@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-managed-service",
+      "requirement": "inventory-api runs as a managed (OpenRC) service on node1",
+      "status": "satisfied",
+      "summary": "Init script /etc/init.d/inventory-api was created, enabled via rc-update add default, and shown as 'started' both before and after a full node reboot (auto-started on boot), with health/inventory endpoints responding.",
+      "evidence_ids": [
+        "cmd-400147b975384225",
+        "cmd-e2b8308d81024fc6",
+        "cmd-79b6940102ed438f",
+        "cmd-de7541d4e5d04954",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-2-oom-protection",
+      "requirement": "inventory-api is protected from the kernel OOM killer",
+      "status": "satisfied",
+      "summary": "A start_post hook sets oom_score_adj=-1000 on the service pid; verified directly via /proc/<pid>/oom_score_adj immediately after start and again just before the OOM event, and independently confirmed inside the kernel's own OOM task dump (pid 3273, oom_score_adj:-1000).",
+      "evidence_ids": [
+        "cmd-e2b8308d81024fc6",
+        "cmd-fc4bc82b0d744835",
+        "cmd-95dd172e11bd40f8"
+      ]
+    },
+    {
+      "id": "req-3-hog-drives-oom-and-is-killed",
+      "requirement": "A memory-hungry process drives the system out of memory and is the process the kernel stops",
+      "status": "satisfied",
+      "summary": "hog.py (pid 3438, oom_score_adj:0) was launched under setsid, consumed memory until free/available memory collapsed, and the kernel's global OOM killer log explicitly shows 'Out of memory: Killed process 3438 (python3)... oom_score_adj:0' \u2014 a single, clearly identified victim matching the hog, not inventory-api.",
+      "evidence_ids": [
+        "cmd-fc4bc82b0d744835",
+        "cmd-95dd172e11bd40f8"
+      ]
+    },
+    {
+      "id": "req-4-continued-serving",
+      "requirement": "inventory-api keeps serving through the OOM event",
+      "status": "satisfied",
+      "summary": "Immediately after the hog was killed, inventory-api's original pid (3273) was still present in the same OOM task dump, and a curl to /health during the same command returned 200 with the same pid and a monotonically increasing uptime value, indicating no restart or interruption occurred.",
+      "evidence_ids": [
+        "cmd-95dd172e11bd40f8"
+      ]
+    },
+    {
+      "id": "req-5-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on node1 (pre-restart baseline, acknowledged restart, changed boot identity, recovered service/OOM/data state)",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (7045e228...) and healthy service state were captured, the reboot command was acknowledged before the connection dropped, the post-restart boot_id (1a5c0035...) differs and matches the fixed after-executor snapshot, and after reconnecting the service had auto-started under a new pid with oom_score_adj reapplied and both endpoints responding correctly.",
+      "evidence_ids": [
+        "cmd-79b6940102ed438f",
+        "cmd-81080f3d0e8c43f6",
+        "cmd-564e5e263f314a6f",
+        "cmd-de7541d4e5d04954",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct, coherent evidence: inventory-api is a properly enabled and auto-starting OpenRC service, is hardened against the OOM killer via oom_score_adj=-1000, a genuine memory-hog process drove the node into a real kernel OOM event and was the sole process killed (confirmed in the kernel's own oom-kill log), and inventory-api continued serving uninterrupted with the same pid throughout. The independent mandatory restart protocol is also fully and consistently evidenced, with boot-identity change corroborated by the fixed lifecycle snapshots.",
+  "limitations": [
+    "No evidence was captured of memory pressure ramping incrementally (e.g., intermediate free-memory samples) beyond the single dmesg-based confirmation, though the dmesg OOM dump itself is authoritative for the kill event.",
+    "Leftover temporary files and the /opt/mem-hog test tool were not cleaned up after the demonstration, though this is low-risk and not explicitly required by the task."
+  ],
+  "command_stats": {
+    "total": 26,
+    "successful": 15,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.78,
+    "summary": "Most state-changing commands were necessary and purposeful: python3 install, service/user/app creation, a corrective fix for a log-permission failure that initially left the service crashed, hog tool creation, the OOM-inducing hog launch, and the mandated reboot. One troubleshooting mutation was not clearly necessary: an early hog launch via plain `nohup ... &` (cmd-5d12207df7d54add) spawned a process that self-terminated when the exec session ended rather than surviving as intended, before the executor corrected the approach with `setsid` in cmd-fc4bc82b0d744835 \u2014 a bounded, low-risk failed attempt that left no lasting residue. Several temporary log/pid files (/tmp/apk-install.log, /tmp/dmesg-pre.log, /tmp/hog.log, /tmp/hog.pid, /tmp/reboot.log) and the /opt/mem-hog test tool were left on disk after the task rather than cleaned up; these are low-risk residue but were not restored to the pre-task state.",
+    "evidence_ids": [
+      "cmd-5d12207df7d54add",
+      "cmd-fc4bc82b0d744835",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

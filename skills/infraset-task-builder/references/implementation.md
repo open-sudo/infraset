@@ -10,31 +10,26 @@
 
 ## Layout
 
-Choose a directory from the initial state and complexity:
+Place tasks directly under their scenario folder:
 
 ```text
-${HOME}/infraset/tasks/greenfield/<slug>/
-${HOME}/infraset/tasks/brownfield/<slug>/
-${HOME}/infraset/tasks/complex/greenfield/<slug>/
-${HOME}/infraset/tasks/complex/brownfield/<slug>/
-${HOME}/infraset/tasks/<matrix-category>/<os>/<slug>-<os>/
+${HOME}/infraset/tasks/<id>/<usecase>-<language>-<os>-<id>/
 ```
 
-Use a `<matrix-category>/` layout only for a controlled matrix in which the same
-public request is instantiated on multiple operating systems, such as
-`single-node-os-comparison/`, `multi-node-os-comparison/`, `clustered-services/`,
-`vyos-networking/`, or `openwrt-networking/`. A matrix category is generated from
-its own `catalog.toml` by a script under `scripts/`, so add task families to the
-catalog and regenerate rather than editing concrete task directories by hand. Keep
-each task family's `instruction.md` identical across the matrix and vary only the
-environment and any strictly necessary platform initialization. Include the OS ID in
-every concrete task directory name because task and job names are globally unique.
+Each collection has one persistent four-digit scenario ID. Reuse that ID for all
+its tasks, and assign an unused ID only when creating a new scenario. Execution parameters such as transport or model do not require another scenario.
+Use the same tasks and record those parameters in each batch execution.toml.
+Keep independently authored collections separate unless explicitly consolidated.
+Document the collection in `tasks/<id>/scenario.toml` and include the same `id`
+in every task's `variant.toml`. See `docs/variant-metadata.md` in the repository.
+Preparation settings and searchable metadata describe initial state and topology.
 
 Create:
 
 ```text
 instruction.md
 task.toml
+variant.toml
 environment/harbor_antrieb.toml
 tests/test.sh
 ```
@@ -140,7 +135,7 @@ Run a task through the repository runner:
 
 ```bash
 ${HOME}/infraset/run-task.sh \
-  ${HOME}/infraset/tasks/<category>/<slug>
+  ${HOME}/infraset/tasks/<id>/<usecase>-<language>-<os>-<id>
 ```
 
 The runner supplies models, agent, provider, verifier, credentials, lifecycle, and
@@ -154,7 +149,7 @@ Validate the evidence-based task artifacts:
 uv run --isolated --no-project \
   --with-editable "${HOME}/harbor-antrieb" \
   python "${HOME}/infraset/skills/infraset-task-builder/scripts/validate_example.py" \
-  --task-only --strict "${HOME}/infraset/tasks/<category>/<slug>"
+  --task-only --strict "${HOME}/infraset/tasks/<id>/<usecase>-<language>-<os>-<id>"
 git -C "${HOME}/infraset" diff --check
 ```
 

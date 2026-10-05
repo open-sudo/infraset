@@ -1,0 +1,86 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-api as an OOM-protected systemd service on node1 (RHEL 7.9) and proved, with a live kernel OOM event, that it keeps serving while the kernel kills the memory-hog process. Then completed the mandatory single-node restart/evidence protocol.",
+  "actions_performed": [
+    "Inspected node1 (RHEL 7.9, 2GB RAM/2GB swap, systemd 219, python2 only, firewalld active).",
+    "Wrote /opt/inventory-api/app.py (python2 HTTP JSON API on :8080 with /health) and installed it as inventory-api.service with OOMScoreAdjust=-1000, Restart=always, enabled+started; verified serving via curl.",
+    "Wrote /opt/memory-hog/hog.py (unbounded memory allocator) and installed as memory-hog.service with default high OOMScoreAdjust=900, Restart=no; opened firewalld port 8080.",
+    "Captured pre-test baseline: inventory-api active, MainPID oom_score_adj=-1000.",
+    "Disabled swap (swapoff -a) to force a deterministic system-wide OOM condition, started memory-hog.service, polled memory usage.",
+    "Kernel oom-killer fired and killed PID 2031 (memory-hog, oom_score_adj=900); confirmed via dmesg 'Killed process 2031 (python2)...' and memory-hog.service entering failed/signal=KILL state.",
+    "Confirmed inventory-api.service remained continuously active (same start timestamp/PID, no restart) and still answered /health and / after the OOM kill; restored swap (swapon -a).",
+    "Reset failed memory-hog unit, captured pre-restart boot_id and health baseline.",
+    "Issued systemctl reboot on node1 via backgrounded nohup so the ack returned before disconnect; polled until SSH/exec was available again.",
+    "Verified new boot_id differs from baseline, confirmed inventory-api auto-started on boot (enabled, active, oom_score_adj=-1000) and is serving again, and swap is restored to its original state."
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-api deployed as a managed (systemd) service and actively serving",
+      "command_ids": [
+        "cmd-6b3aa259865d41ab"
+      ],
+      "summary": "systemctl start/is-active=active and curl /health, / return valid JSON immediately after unit creation."
+    },
+    {
+      "requirement": "inventory-api protected from OOM killer via oom_score_adj",
+      "command_ids": [
+        "cmd-688b7edb39464e5c"
+      ],
+      "summary": "Main PID's /proc/<pid>/oom_score_adj reads -1000, sourced from OOMScoreAdjust=-1000 in the unit."
+    },
+    {
+      "requirement": "System driven out of memory by a memory-hungry process",
+      "command_ids": [
+        "cmd-1ba2d3258dca4325",
+        "cmd-f1ce0dda931e45d7"
+      ],
+      "summary": "Swap disabled, memory-hog.service started (oom_score_adj=900) and memory usage climbs toward exhaustion (779M used and rising)."
+    },
+    {
+      "requirement": "Kernel OOM-killer stops the memory hog, not inventory-api",
+      "command_ids": [
+        "cmd-a3bf7133a19e414d"
+      ],
+      "summary": "dmesg shows 'python2 invoked oom-killer... oom_score_adj=900' and 'Killed process 2031 (python2)' matching the hog's PID; free -h shows memory reclaimed."
+    },
+    {
+      "requirement": "inventory-api keeps serving through and after the OOM event",
+      "command_ids": [
+        "cmd-ab1dbaf95f3a42f2"
+      ],
+      "summary": "memory-hog.service shows failed/signal=KILL while inventory-api.service shows uninterrupted Active since original start time; curl /health and / succeed post-kill."
+    },
+    {
+      "requirement": "Pre-restart healthy baseline and boot identity",
+      "command_ids": [
+        "cmd-3ef0bb1658d84554"
+      ],
+      "summary": "Captured boot_id 325732f1-... plus inventory-api enabled/active and a working /health call before rebooting."
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-962d1acff00e4e3d"
+      ],
+      "summary": "Backgrounded systemctl reboot command returns its ack (connection then drops), confirming the reboot was issued non-blockingly."
+    },
+    {
+      "requirement": "Node restart proven via changed boot identity",
+      "command_ids": [
+        "cmd-d427e46b792b45ec",
+        "cmd-069a9d3efb254a63",
+        "cmd-de88722ee50f4e08",
+        "cmd-53b5d4b151ed451b",
+        "cmd-68ed8dfa350d479a"
+      ],
+      "summary": "Poll sequence shows connection down then recovering; new boot_id d91b039b-4acf-4baa-8deb-f26f4d15bd22 differs from the pre-restart baseline, and fresh uptime confirms a real reboot."
+    },
+    {
+      "requirement": "Post-restart recovery of inventory-api and system state",
+      "command_ids": [
+        "cmd-68ed8dfa350d479a"
+      ],
+      "summary": "inventory-api.service auto-started (enabled), active with fresh PID, oom_score_adj=-1000 intact, /health and / respond correctly, and swap is restored to its original 2GB configuration."
+    }
+  ]
+}

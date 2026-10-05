@@ -1,0 +1,95 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) as a transit router between lan-a (node2, 10.60.0.0/24 on eth1) and lan-b (node3, 10.60.1.0/24 on eth2), entirely via an Ansible playbook run from node4 (the control node with Ansible installed). No NAT/masquerade was configured, so original source addresses are preserved end-to-end; connectivity was proven on ICMP, SSH (22), and arbitrary TCP ports (5555, 6666) with tcpdump and HTTP server access logs confirming unmodified source IPs. Host firewalld on node2/node3 was opened via rich rules (in the same playbook) for the peer subnet since it was independently blocking non-allowlisted ports. The playbook is fully idempotent (second and later runs show changed=0 on all hosts). All 4 managed nodes (node1-node4) were then restarted one at a time via native reboot, boot_id changes were captured proving real restarts, and post-restart health/config/connectivity were re-verified for each. Note: node1's SSH key for the `vyos` user is regenerated from config.boot by VyOS's system_login.py reconciler on every boot, so the cluster key had to be committed via `set system login user vyos authentication public-keys` (native VyOS config) rather than left in the ephemeral authorized_keys file \u2014 this was necessary for Ansible SSH access to survive the restart and is not itself part of the lan-a/lan-b routing task.",
+  "actions_performed": [
+    "Inspected node1-node4 interfaces/routes to discover topology: node1 has eth0 (default network), eth1, eth2 (unconfigured); node2/node3 have enp1s0 (default network) + enp8s0 (unconfigured second NIC)",
+    "Empirically determined eth1<->node2 and eth2<->node3 pairing via temporary IP + ping test before committing to any config",
+    "Set up cluster SSH key (CLUSTER_SSH_PUBKEY/PRIVKEY) for passwordless root/vyos access from node4 to node1/node2/node3",
+    "Identified node4 as the pre-provisioned Ansible control node (ansible + ansible.netcommon/community.general/ansible.posix collections installed)",
+    "Wrote Ansible inventory.ini and playbook.yml on node4 under /root/ansible/lan-routing/",
+    "Playbook play 1 (vyos_routers/node1): verified ip_forward=1, set eth1=10.60.0.1/24 and eth2=10.60.1.1/24 via VyOS configure/commit/save (raw module with vbash envelope), verified via ip -br addr",
+    "Playbook play 2 (lan_hosts/node2,node3): configured static IPv4 (10.60.0.2/24, 10.60.1.2/24) and cross-subnet static routes via community.general.nmcli, added firewalld rich-rules (ansible.posix.firewalld) to allow all traffic from the peer subnet, verified via ping",
+    "Ran playbook twice to prove idempotency (second run changed=0 on all hosts)",
+    "Verified no-NAT behavior via tcpdump on node1 eth2 showing unmodified source 10.60.0.2, plus TCP tests on ports 22, 5555, 6666 including an HTTP server access log on node3 showing client source 10.60.0.2",
+    "Captured pre-restart boot_id and health baseline on all 4 nodes",
+    "Restarted node1, node2, node3, node4 one at a time via native reboot (backgrounded so ack returned before disconnect), polled each until reachable, confirmed changed boot_id each time",
+    "Re-verified post-restart: node1 interface config/forwarding persisted from VyOS saved config; node2/node3 static IP/routes/firewall rules persisted via NetworkManager+firewalld persistent config; re-ran full Ansible playbook post-restart with changed=0 confirming stable idempotent state; re-tested arbitrary-port TCP connectivity with preserved source IP after restarts",
+    "Fixed a reconciler issue where VyOS regenerates vyos user's authorized_keys from config.boot on every boot by committing the cluster SSH key via native VyOS config (system login public-keys) so Ansible access survives reboot",
+    "Cleaned up temporary test listeners/logs on node1 and node3"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 configured to route lan-a<->lan-b with source addresses preserved (no NAT)",
+      "command_ids": [
+        "cmd-855fc9c531c24378",
+        "cmd-1099383bda6c4b7f",
+        "cmd-54a872328b874860",
+        "cmd-51b8625bc5034e9a",
+        "cmd-2acdd3b4e1614775"
+      ],
+      "summary": "eth1/eth2 addressed 10.60.0.1/24 and 10.60.1.1/24 with no NAT rules configured; tcpdump on eth2 and the HTTP server access log both show unmodified source IP 10.60.0.2 for cross-subnet traffic"
+    },
+    {
+      "requirement": "node2 and node3 can reach each other directly on any port",
+      "command_ids": [
+        "cmd-02c2f9e343094f5a",
+        "cmd-ab953e8719fb4300",
+        "cmd-51b8625bc5034e9a",
+        "cmd-30c593f7c8ab4163",
+        "cmd-683e75051d6f4415"
+      ],
+      "summary": "TCP connectivity verified end-to-end on port 22 (SSH banner), 5555, and 6666 (HTTP 200) between node2 and node3 across node1's routing path"
+    },
+    {
+      "requirement": "Implementation done using Ansible",
+      "command_ids": [
+        "cmd-027895c3a21146e5",
+        "cmd-4b07124becd64a47",
+        "cmd-3a404145e9114676"
+      ],
+      "summary": "Ansible playbook run from control node node4 configures node1's VyOS interfaces and node2/node3's static IP/routes/firewall; two full runs before restarts and one after show changed=0 on repeat, proving declarative, idempotent implementation"
+    },
+    {
+      "requirement": "node1 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-7d724e9c64e04212",
+        "cmd-6409869fa60a4393",
+        "cmd-2e87fe15f51e4f05",
+        "cmd-774a033fc26f43ac",
+        "cmd-9ecdb2b053264a5f",
+        "cmd-c609ebf0c71847dc"
+      ],
+      "summary": "Baseline boot_id 01e92881...; reboot acknowledged before disconnect (confirmed by subsequent connection timeout); new boot_id 32b6a13e... after restart; eth1/eth2 addresses and ip_forward recovered from saved VyOS config; ping node2->node3 through node1 succeeded"
+    },
+    {
+      "requirement": "node2 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-fd51eadcb5e648c4",
+        "cmd-f402121f60cb47b2",
+        "cmd-89e1ee8209584c65",
+        "cmd-13c8e38a917f4eb8"
+      ],
+      "summary": "Baseline boot_id 254597f8...; reboot scheduled and acknowledged; new boot_id 2fcaacc0... confirms real restart; post-restart static IP, route, firewalld rich-rule, and ping to node3 all recovered"
+    },
+    {
+      "requirement": "node3 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-aa9077a9cd4740d7",
+        "cmd-b325d044018948c1",
+        "cmd-cc8a8e89137e49ea",
+        "cmd-2f3b56b63bd8475b"
+      ],
+      "summary": "Baseline boot_id 2b19e976...; reboot scheduled and acknowledged; new boot_id 4b6bf351... confirms real restart; post-restart static IP, route, firewalld rich-rule, and ping to node2 all recovered"
+    },
+    {
+      "requirement": "node4 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-89675b5ee935450b",
+        "cmd-4cc5b805b2764f22",
+        "cmd-185dc810fb7a4289",
+        "cmd-3a404145e9114676"
+      ],
+      "summary": "Baseline boot_id e796da36...; reboot scheduled and acknowledged; new boot_id 94c1336f... confirms real restart; Ansible control tooling (playbook, inventory, ssh key) intact and a full playbook re-run succeeded with changed=0, confirming node4's orchestration role recovered"
+    }
+  ]
+}

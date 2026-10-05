@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Run a containerized web application as the unprivileged account appsvc on node1",
+      "status": "satisfied",
+      "summary": "podman ps and process listing (cmd-f0c3964f31cf4bf5) show the container's conmon and python3 http.server processes running under uid appsvc, confirmed again post-reboot (cmd-3094e45c22e54fdd) with a fresh container instance still owned by appsvc.",
+      "evidence_ids": [
+        "cmd-f0c3964f31cf4bf5",
+        "cmd-3094e45c22e54fdd"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Application serves on port 8080",
+      "status": "satisfied",
+      "summary": "podman ps shows 0.0.0.0:8080->8080/tcp and curl to $NODE_IP:8080 returns HTTP 200 with page content, both pre-reboot (cmd-814cdef29b5c48de) and post-reboot (cmd-3094e45c22e54fdd); the after_executor listening-sockets snapshot independently confirms tcp LISTEN *:8080 bound by the rootless network helper.",
+      "evidence_ids": [
+        "cmd-814cdef29b5c48de",
+        "cmd-3094e45c22e54fdd",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Service starts automatically at boot",
+      "status": "satisfied",
+      "summary": "A healthy pre-reboot baseline was captured (cmd-087ebccd39614f1c: boot_id 151c4aa9..., service active/enabled, container up, HTTP 200), the node was rebooted with acknowledgement returned before disconnect (cmd-5b2c97ad69db4b88), a new boot_id was observed after reconnection (cmd-c42795837cd04192: 9f9c65b8...), and post-restart checks show appsvc-webapp.service active/enabled with a freshly started container (start time after the new boot) and HTTP 200 (cmd-3094e45c22e54fdd), corroborated by the independent after_executor boot-identity and listening-sockets snapshots.",
+      "evidence_ids": [
+        "cmd-087ebccd39614f1c",
+        "cmd-5b2c97ad69db4b88",
+        "cmd-c42795837cd04192",
+        "cmd-3094e45c22e54fdd",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Service runs while appsvc has no active login session",
+      "status": "satisfied",
+      "summary": "loginctl list-sessions shows only unrelated antrieb (and root) sessions and zero sessions for appsvc, both before reboot (cmd-02a100af91ea4447) and after reboot (cmd-3094e45c22e54fdd). The executor deliberately used a system-level systemd unit (User=appsvc) rather than user lingering, since RHEL7's systemd 219 build ships no user@.service template, avoiding any dependency on an active login session.",
+      "evidence_ids": [
+        "cmd-02a100af91ea4447",
+        "cmd-3094e45c22e54fdd"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task \u2014 a containerized web app running as the unprivileged appsvc account on port 8080, auto-starting at boot, without requiring an active login session \u2014 are directly and coherently demonstrated, including a full pre-reboot baseline, an acknowledged reboot, a changed boot identity, and confirmed post-reboot recovery of the service, container, and session-free state. Operational hygiene is good but not perfect: a couple of bounded, non-destructive troubleshooting mutations (a redundant systemd package reinstall and a superseded manual repo file edit) and some leftover diagnostic files/tooling were not cleaned up, though none caused lasting damage or left the system in a broken or insecure state.",
+  "limitations": [
+    "The after_prepare phase is an alias of before_prepare (prepare was disabled), so preparer-vs-executor state cannot be distinguished beyond the executor's own actions.",
+    "Command outputs are bounded/truncated in places (e.g., systemctl status, strace tail), so some intermediate diagnostic detail is not fully visible, though this does not affect the material outcome evidence.",
+    "The provider-wide restart protocol only applies to node1 as the sole managed node; no multi-node restart ordering could be assessed."
+  ],
+  "command_stats": {
+    "total": 98,
+    "successful": 38,
+    "failed": 59,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands were legitimate prerequisite work (podman/dependency install, sysctl for user namespaces, appsvc account and subuid/subgid, tmpfiles rule, systemd unit) or bounded troubleshooting that was cleaned up (test nginx container removed via cmd-2988f6ab04644161; storage wipes via podman unshare rm -rf during driver debugging were necessary to resolve a real overlay/vfs state conflict). Two minor unnecessary mutations stand out: (1) cmd-20524bea5b4441f3 reinstalled the systemd package solely to check for a user@.service template file that `rpm -ql` had already shown was absent \u2014 a low-risk, non-destructive action (reinstalled the same version) but not causally needed for the final solution; (2) cmd-c318b2ff939a4b1f directly sed-edited /etc/yum.repos.d/redhat.repo to enable the extras channel, which did not take effect and was superseded by the correct `subscription-manager repos --enable` (cmd-40b48e030be44a88), leaving a possibly-orphaned manual edit in a subscription-manager-controlled file. Diagnostic tooling (strace, installed via cmd-e27ef4564ea54cf3) and its output/log files (/tmp/strace2.out, /tmp/systemd_files.txt, /tmp/reboot.log) were left behind per the after_executor temp-files snapshot \u2014 minor, low-risk residue rather than damaging state. No failed or conflicting services, no unsafe exposure, and no damaged package state were observed in the final snapshot (failed-services list is empty both before and after).",
+    "evidence_ids": [
+      "cmd-20524bea5b4441f3",
+      "cmd-c318b2ff939a4b1f",
+      "cmd-40b48e030be44a88",
+      "cmd-e27ef4564ea54cf3",
+      "cmd-2988f6ab04644161",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "mirror-baseline-isolation",
+      "requirement": "Baseline confirms node3 does NOT see node1<->node2 traffic before mirroring (segment behaves as switch/L2 isolated)",
+      "status": "satisfied",
+      "summary": "tcpdump on node3's enp8s0 during a node1<->node2 ping captured 0 packets, confirming the shared segment does not naturally forward traffic to node3 before any mirroring change.",
+      "evidence_ids": [
+        "cmd-0c50c48917d545f1",
+        "cmd-f788847f17c347e1"
+      ]
+    },
+    {
+      "id": "mirror-delivered-to-node3",
+      "requirement": "A copy of traffic node1 exchanges with node2 is delivered to node3, visible in a capture on node3 despite being addressed to node1/node2",
+      "status": "satisfied",
+      "summary": "After configuring a GRETAP tunnel (node1<->node3) plus tc clsact/flower/mirred mirroring on node1's eth1, tcpdump on node3's gretap1 interface captured the exact ICMP echo request/reply pairs addressed to 192.168.50.1/192.168.50.2, both immediately after setup and again after the node1 firewall/NM fixes and after all three restarts.",
+      "evidence_ids": [
+        "cmd-9a1c02a821b043cb",
+        "cmd-813173da454f471d",
+        "cmd-d7f6ea8425774157",
+        "cmd-e7dbd7b342cf4ee0",
+        "cmd-b8fa5c7983194809"
+      ]
+    },
+    {
+      "id": "node1-node2-traffic-preserved",
+      "requirement": "Traffic between node1 and node2 keeps flowing as it did before mirroring was configured",
+      "status": "satisfied",
+      "summary": "Ping from node1 to node2 showed 0% loss before mirroring (cmd-0c50c48917d545f1) and immediately after tc mirroring was applied (cmd-32c6fe7fa5b04624). A self-inflicted regression appeared later (cmd-c8a24e0f28004465, cmd-b92237bf0c2b4d39, cmd-5791a3db4a5f4662) caused by node3's firewall sending 'admin-prohibited' ICMP errors back to node1 in response to the new GRE mirror packets; this was root-caused and fixed via a dedicated firewalld zone (cmd-f7630030a0e543d9), after which pings returned to 0% loss (cmd-ca9bb71f4af94403) and remained so through the full restart cycle (cmd-27e6cd4593354ede).",
+      "evidence_ids": [
+        "cmd-0c50c48917d545f1",
+        "cmd-32c6fe7fa5b04624",
+        "cmd-ca9bb71f4af94403",
+        "cmd-27e6cd4593354ede",
+        "cmd-f7630030a0e543d9"
+      ]
+    },
+    {
+      "id": "mirroring-persists-across-reboot",
+      "requirement": "Mirroring configuration and normal node1<->node2 flow both survive a reboot of the involved nodes (supporting persistence, not explicitly required by the instruction but demonstrated)",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id, backgrounded reboot ack, post-restart boot_id change, and full functional recovery (addressing, gretap1 tunnel, tc filter counters incrementing, live ping+tcpdump mirror test) were directly captured for node1, node2, and node3, including a carrier-wait fix applied and reverified after node1 came up with eth1 link-down.",
+      "evidence_ids": [
+        "cmd-a40fbc5b23054610",
+        "cmd-ed6f6f33d0664df5",
+        "cmd-4388efb0d6fb4856",
+        "cmd-5c2ebae6de7047aa",
+        "cmd-27e6cd4593354ede",
+        "cmd-d7f6ea8425774157",
+        "cmd-b8fa5c7983194809",
+        "cmd-a867ed35eedd4d4a",
+        "cmd-cf32f324157f4ad4",
+        "cmd-4f77ea96a391488d",
+        "cmd-1d2b56cb8b8f4a69",
+        "cmd-0bacf8e9e53f4b24",
+        "cmd-7e3fa7e8e8d14936",
+        "cmd-5839ebadb92d435c",
+        "cmd-7c606aa5fd1743ff"
+      ]
+    }
+  ],
+  "overall_summary": "The executor implemented traffic mirroring from the node1<->node2 segment to node3 using a GRETAP tunnel plus tc/flower/mirred, and directly demonstrated all three material outcomes from the instruction: node3 saw zero relevant traffic before the change, node3's gretap1 capture showed the exact node1<->node2 ICMP packets after the change, and node1<->node2 traffic returned to 0% loss in the final and post-reboot state (after a transient, self-caused, and self-resolved firewall-induced regression during setup). The executor additionally ran the full pre-restart/reboot/post-restart evidence protocol on all three nodes, with direct before/after boot-id, ack, and functional-recovery evidence, including a live mirror re-verification after node1's own reboot. Operational hygiene is good overall \u2014 the state-changing mutations map clearly to the task or corrective fixes \u2014 but the executor left several diagnostic log/pid files in /tmp on node2 and node3 uncleaned, and a new failed system-health.service unit appears on node1 post-restart whose cause could not be attributed from the trace.",
+  "limitations": [
+    "A new failed unit (system-health.service) appears on node1 in the after-executor snapshot that was absent in before-prepare; the executor timeline does not contain a command that clearly explains this, so causation (executor action vs. reboot/SONiC platform artifact) is indeterminate.",
+    "Diagnostic temporary files (tcpdump captures, pid files, reboot logs) were left in /tmp on node2 and node3 rather than cleaned up after use; low-risk but unrestored residue.",
+    "The transient node1<->node2 packet loss observed mid-task was caused by the executor's own mirror/firewall interaction and was resolved before task completion, but this means the 'keeps flowing as before' property was not continuously true throughout the change window, only at the start and the final/post-reboot state."
+  ],
+  "command_stats": {
+    "total": 87,
+    "successful": 76,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Core mutations (docker0/interfaces-config cleanup on node1, IPv4 addressing, gretap1 tunnels, tc clsact/flower/mirred filters, nmcli connection profiles, firewalld mirror-segment zone, systemd persistence units) are all directly tied to enabling and persisting the mirroring outcome or to the mandatory restart protocol, and are reasonably scoped (e.g. the firewalld zone only opens GRE on the dedicated segment interface rather than weakening the default zone). One state-changing action (cmd-f7630030a0e543d9, rebinding node3's enp8s0 to a new firewalld zone) was itself a corrective fix for a problem the executor's own mirror setup introduced (transient node1<->node2 ping loss from ICMP admin-prohibited replies) \u2014 this is an acceptable corrective action rather than an unnecessary mutation. Diagnostic tcpdump/arping/ping probes (cmd-4fd8169a8d3640dd, cmd-af96276ddc6b4a1b, cmd-592097fc5db34976, cmd-fe7d24e433a44c70, cmd-bdbcc6f7b0a442a2, cmd-9b4cdeacb2594f9c, cmd-9d30a91b41ee436d, cmd-4c9972d96712435b) were read-only or bounded/reverted and are not penalized. However, numerous temporary capture/log/pid files created during troubleshooting were left behind and not cleaned up (visible in the after_executor snapshot: /tmp/baseline_capture.log, /tmp/mirror_capture.log, /tmp/mirror_capture2.log, /tmp/mirror_capture3.log, /tmp/mirror_post_restart.log, /tmp/check_isolation.log, /tmp/arpcheck.log, /tmp/tcpdump.pid through tcpdump6.pid on node3, /tmp/reboot.log on node2/node3) \u2014 low-risk residue but unrestored. A new failed unit, system-health.service, appears on node1 in the after-executor snapshot that was not present in before-prepare; the trace does not show the executor causing this directly (it looks tied to reboot/SONiC boot behavior rather than an explicit executor command), so it is noted as a limitation rather than attributed with confidence.",
+    "evidence_ids": [
+      "cmd-f7630030a0e543d9",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:before_prepare:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

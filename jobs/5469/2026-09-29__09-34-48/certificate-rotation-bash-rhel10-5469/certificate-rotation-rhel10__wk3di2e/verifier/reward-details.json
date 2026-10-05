@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Serve HTTPS on port 8443 with a valid certificate on node1",
+      "status": "satisfied",
+      "summary": "nginx installed, enabled, and active, listening on 0.0.0.0:8443 and [::]:8443; curl over TLS returns 'ok' and openssl s_client confirms the served certificate with matching serial/validity dates. Post-reboot socket listing also confirms 8443 still bound to nginx.",
+      "evidence_ids": [
+        "cmd-25cd515167174c15",
+        "cmd-57006bf7bb064aca",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "cert-renew.timer (OnUnitActiveSec=5min) fires cert-renew.service, which regenerates a cert (1-day validity) well ahead of expiry. journalctl and repeated serial checks show the certificate serial changed automatically (2605D6...->03F916DF...) without manual intervention, and a further automatic renewal occurred after reboot (->12807F1E...).",
+      "evidence_ids": [
+        "cmd-6ff539bef0f34d48",
+        "cmd-8fe86c8b3a194668",
+        "cmd-c1ebc58607244ad3",
+        "cmd-c0cd5d5f95804646"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Service keeps answering requests while picking up each new certificate (no downtime during rotation)",
+      "status": "satisfied",
+      "summary": "A 60-second continuous curl probe loop spanning the exact window the renewal timer fired and nginx reloaded returned HTTP 200 for all 60 probes; the served certificate serial changed within that window, confirming the reload picked up the new cert without dropping requests. The renewal script uses systemctl reload (not restart), consistent with zero-downtime behavior.",
+      "evidence_ids": [
+        "cmd-8fe86c8b3a194668",
+        "cmd-c1ebc58607244ad3"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task \u2014 HTTPS on 8443 with a valid cert, automated renewal well before expiry, and zero-downtime cert pickup during rotation \u2014 are directly and coherently demonstrated with live before/after certificate serials, a bounded continuous probe loop across a live renewal, and journal logs of the automated renewal firing. The independently required node-restart evidence protocol is also well executed: a pre-restart baseline (boot_id, enabled units, live cert), a background reboot with acknowledgement, a changed post-restart boot_id corroborated by the fixed lifecycle snapshots, and full post-restart recovery of nginx, the timer, and continued automatic renewal. No unnecessary or unsafe mutations were found in the command trace.",
+  "limitations": [
+    "The fixed after_prepare snapshot is an alias of before_prepare (prepare stage disabled), so preparer-vs-executor separation relies entirely on the executor's own before/after captures rather than an independent preparer-authored baseline.",
+    "Certificate validity is set to only 1 day with 5-minute renewal cycles, which is far more aggressive than a typical real-world renew-before-expiry window; this was sufficient to observe renewal directly within the test window but is not representative of a production expiry margin."
+  ],
+  "command_stats": {
+    "total": 18,
+    "successful": 16,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.93,
+    "summary": "Reviewed all 18 executor commands chronologically. Package install (nginx/openssl), certificate directory/script creation, nginx config, systemd unit creation, and the enable/start actions are all directly tied to the task outcome. The first renew-cert.sh draft (cmd-12f1abcd7e7246e4) used a placeholder NODE_IP interpolation and was immediately superseded by a corrected version (cmd-836b59bad21546e5) before ever being executed \u2014 not a state-changing mutation with lasting effect, and a legitimate iterative correction rather than an abandoned experiment. The first invocation of the script (cmd-bfbce48ebb6e47b7) logged 'nginx.service is not active, cannot reload' because nginx was not yet started \u2014 expected sequencing (cert must exist before nginx config references it), not a failed troubleshooting attempt, and it produced the cert files needed for the subsequent nginx config step. The 60s probe loop and reboot were bounded, evidence-collection or protocol-required actions. Minor residue (/tmp/probe.log, /tmp/reboot.log) is small, low-risk, and tied to evidence collection rather than abandoned work. No unnecessary, destructive, or security-weakening mutations were found; failed-services and package-health checks show clean state after the executor's changes.",
+    "evidence_ids": [
+      "cmd-12f1abcd7e7246e4",
+      "cmd-836b59bad21546e5",
+      "cmd-bfbce48ebb6e47b7",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

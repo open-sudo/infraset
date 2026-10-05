@@ -1,0 +1,101 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) to route between lan-a (node2 on opt1/vtnet1, 10.0.10.0/24) and lan-b (node3 on opt2/vtnet2, 10.0.20.0/24). Created a single named port-alias object \"node3_svc_ports\" containing 8080, 8443, 9000, and added one firewall pass rule on opt1 referencing that alias to permit node2->node3 TCP traffic on those ports, instead of writing three separate port rules. Verified node2 can reach node3 on all three ports while a control port (2222) and the reverse direction remain blocked. Restarted node1, node2, and node3 one at a time using native safe reboot mechanisms, confirmed each node's boot identity changed, and re-verified interfaces, routes, firewalld ports, pf rules, and the alias-based firewall policy all recovered correctly post-restart.",
+  "actions_performed": [
+    "Inspected node1 OPNsense config.xml and pf ruleset; found opt1/opt2 (vtnet1/vtnet2) unconfigured and mapped them to node2/node3 via ARP/neighbor discovery",
+    "Added static IP interfaces LAN-A (opt1/vtnet1, 10.0.10.1/24) and LAN-B (opt2/vtnet2, 10.0.20.1/24) to node1 config.xml and applied via configctl interface reconfigure",
+    "Configured node2 eth1 (10.0.10.2/24) and node3 eth1 (10.0.20.2/24) via persistent nmcli connection profiles after discovering NetworkManager reconciled away raw 'ip addr' assignments",
+    "Added static cross-subnet routes on node2 and node3 via nmcli so node1 routes between them",
+    "Added a port-type firewall alias 'node3_svc_ports' (8080,8443,9000) and a single pass rule on opt1 referencing the alias for the destination port, then ran configctl filter reload",
+    "Discovered and opened matching ports in node3's local firewalld, which was independently rejecting inbound TCP even after the OPNsense pf rule passed the traffic",
+    "Verified via socat/python TCP listeners that node2 can reach node3 on 8080/8443/9000 but not on unlisted port 2222, and that node3->node2 traffic remains blocked",
+    "Captured pre-restart boot markers (kern.boottime on node1; boot_id and uptime -s on node2/node3) and confirmed healthy baseline state (pf rules, routes, listeners)",
+    "Restarted node2 via 'sudo reboot', polled until exec was available, confirmed boot_id and uptime -s changed, and verified eth1 IP/route persisted",
+    "Restarted node3 via 'sudo reboot', polled until exec was available, confirmed boot_id and uptime -s changed, and verified eth1 IP/route/firewalld ports persisted",
+    "Restarted node1 via 'sudo reboot' (SSH transport, ack via connection close), polled until SSH was available, confirmed kern.boottime changed, and verified vtnet1/vtnet2 IPs, pf pass rule, and ip forwarding recovered",
+    "Re-ran end-to-end TCP connectivity tests for 8080/8443/9000 from node2 to node3 after all three restarts to confirm the alias-based policy survived and functions correctly",
+    "Cleaned up all test listener processes and temporary log/pcap files created during verification"
+  ],
+  "evidence": [
+    {
+      "requirement": "Single named port-object (alias) created on node1 for ports 8080/8443/9000",
+      "command_ids": [
+        "cmd-9ae5f1b0a5a8434d",
+        "cmd-a062e68355614ff8"
+      ],
+      "summary": "Python config.xml edit added alias 'node3_svc_ports' (type=port, content=8080/8443/9000); post-restart dump confirms alias persisted with correct content."
+    },
+    {
+      "requirement": "Single firewall rule referencing the alias instead of one rule per port",
+      "command_ids": [
+        "cmd-f7b1a8e1e9094c53",
+        "cmd-ddd702a73aea4a0f"
+      ],
+      "summary": "pfctl -sr shows one rule (single label) expanded by pf into three port matches from the alias, both before and after node1's restart."
+    },
+    {
+      "requirement": "node2 permitted to reach node3 on TCP 8080, 8443, 9000",
+      "command_ids": [
+        "cmd-e98f8d9a0a414ed9",
+        "cmd-b0864393b0d74b47",
+        "cmd-c20c470911e74822",
+        "cmd-bbce7f7553174eef"
+      ],
+      "summary": "socat listeners started on node3; node2 connect attempts succeeded on 8080/8443/9000 only after also opening node3's local firewalld ports (a separate OS-level firewall)."
+    },
+    {
+      "requirement": "Rule scoped only to the specified ports (negative control)",
+      "command_ids": [
+        "cmd-bbce7f7553174eef",
+        "cmd-3bc6f307a5da4c63"
+      ],
+      "summary": "Connection to unlisted port 2222 timed out from node2->node3, and node3->node2 (reverse direction) also timed out, confirming default-deny still applies outside the alias."
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-0727741f9ae34f6f",
+        "cmd-ddd702a73aea4a0f"
+      ],
+      "summary": "Captured kern.boottime baseline; pf rules/interfaces verified healthy pre- and functionally re-verified post-restart."
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-fcef15ac0c144f27",
+        "cmd-c40ea20a21454670",
+        "cmd-43dcdc16eacd48be",
+        "cmd-ddd702a73aea4a0f"
+      ],
+      "summary": "SSH reboot command closed the connection (ack); subsequent poll timed out then succeeded with a new kern.boottime (16:24:15 -> 16:32:13); interfaces, pf rule, and ip forwarding confirmed recovered."
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-94fde0e0628a431a",
+        "cmd-d59a2e2af5ae4eb4",
+        "cmd-623593c770ae4631",
+        "cmd-0ec430c717984d81"
+      ],
+      "summary": "Reboot command dropped the exec stream (ack); poll timed out then returned a new boot_id/uptime -s; eth1 IP and routes confirmed persisted via nmcli."
+    },
+    {
+      "requirement": "node3 restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-6350d3cd4923475f",
+        "cmd-cc08bea3e7354477",
+        "cmd-747fb6a6e2ae48d7",
+        "cmd-55b777be701f442e"
+      ],
+      "summary": "Reboot command dropped the exec stream (ack); poll timed out then returned a new boot_id/uptime -s; eth1 IP, routes, and firewalld ports confirmed persisted."
+    },
+    {
+      "requirement": "Post-restart end-to-end functional re-verification of the alias-based policy",
+      "command_ids": [
+        "cmd-e5e4a90c01f8496c",
+        "cmd-690514570bac45d5"
+      ],
+      "summary": "After all three nodes restarted, fresh listeners on node3 and connect attempts from node2 confirmed 8080/8443/9000 still reachable end-to-end through the surviving alias/rule/routing configuration."
+    }
+  ]
+}

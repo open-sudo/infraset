@@ -1,0 +1,173 @@
+OpenAI Codex v0.153.2
+--------
+workdir: /[REDACTED_ENCODED_BLOB]
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a10368-18cb-7733-80fd-9718d79a623a
+--------
+user
+You are a postmortem evaluator for an infrastructure benchmark.
+The managed cluster from executor attempt 1 is unavailable or must be treated
+as unavailable. Analyze only the redacted evidence embedded below. You have no
+cluster access and must not use tools, inspect the host, or propose that the old
+cluster be queried. Distinguish observed facts from hypotheses, state when evidence
+is insufficient, and produce concise advice for an executor starting on an
+identically specified but completely fresh cluster.
+
+Task instruction:
+The HR directory needs field-level privacy. Load the supplied LDIF into LDAP on
+node1. The directory-reader identity must be able to search employee names and
+mail addresses from node2, but only the HR administrator may read or change the
+employeeNumber attribute. Anonymous users should see no employee records.
+Retain the supplied records in /srv/legacy2/ldap-attribute-privacy; provision
+dedicated demonstration credentials for the reader and administrator.
+
+Keep the installed operating-system release and kernel; use software compatible with this legacy platform.
+
+
+Provider-maintained platform references:
+<platform-reference fq_name='antrieb/primer'>
+## What this is
+
+Start-of-session primer for any LLM working with Antrieb. Read before your first `provision`. These are the platform's contracts — follow them and commands work; ignore them and you'll rediscover the same issues every session.
+
+## Research before theorizing
+
+Your mental model of the platform is probably wrong in subtle ways. Before proposing a cause, gather evidence:
+
+1. Run a diagnostic command on the actual VM.
+2. Paste the output.
+3. Let the evidence confirm or contradict your theory.
+
+Cheap high-value commands: `ip -4 addr`, `ip route`, `ip neigh`, `ss -tlnp`, `systemctl is-active <svc>`, `journalctl -u <svc> -n 30 --no-pager`, `curl -v localhost:<port>`, `tcpdump -i <iface> -nn -c 10 <filter>`.
+
+*"The platform is filtering my packets"* is a theory. *"Here is what `ip route` shows"* is evidence. Never propose an architectural fix before you've pasted the output that supports it.
+
+## Research the appliance — use web_search / WebFetch
+
+For specialized images (vyos, opnsense, sonic, helm-k3s, vault, terraform-aws, cloudformation-aws, ansible-controller), **fetch current docs before writing non-trivial commands**. Your training data is often 6–24 months behind. A 30-second doc fetch prevents a 10-turn debug loop of hallucinated CLI.
+
+Workflow: look at the image's `reference` field → `web_search` for the specific topic (*"VyOS 1.5 nat source rule"*) → `WebFetch` the top result → write commands grounded in what you read.
+
+Skip only for stable base Linux (ubuntu, alma, arch, centos, alpine). If you don't have web tools in this client, say so up front.
+
+## Falsify before committing
+
+When you add a rule (firewall, NAT, route, sysctl) because you think it fixes something, **prove it by removing it and confirming the issue returns**. If the problem doesn't come back without the rule, the rule was cargo-cult — delete it.
+
+- **Start with the minimum config** that could plausibly work.
+- When it doesn't work, debug with `tcpdump`/`ip route`/`conntrack -L` — don't stack more rules hoping one matches.
+- For every added rule, state *why* and what evidence proves it. If you can't, it shouldn't be there.
+
+## Fetch order for runbooks
+
+1. `@antrieb/primer` — always (this document, fetched at session start).
+2. `@antrieb/<category>-primer` — `@antrieb/networking-primer` for networking, future `@antrieb/database-primer` for DBs.
+3. `search type=runbook keywords=<task>` — apply any specific-scenario match.
+4. No specific match → `@antrieb/<image>-reference` for each specialized image in the topology. Won't be your exact scenario; will have current, correct syntax. **Adapt values, keep syntax.**
+
+When the task is to create or revise an image intentionally published in the `antrieb` namespace, also fetch `@antrieb/managed-image-contract`. It is a build-time standard, not a runtime fact about similarly named images.
+
+Never skip step 4 if step 3 matches. Never skip 1 or 2.
+
+## Shell is POSIX sh, not bash
+
+Every `exec` runs in `/bin/sh`. Bashisms fail, sometimes silently:
+
+- `. /path` — not `source /path`
+- `[ ... ]` — not `[[ ... ]]`
+- No arrays, `${var,,}`, process substitution `<(cmd)`, `$'...'`, `set -o pipefail`
+- `printf` over `echo -e`
+
+If you genuinely need bash, write to a tempfile and invoke `bash /tmp/script.sh` explicitly.
+
+## No TTY/PTTY
+
+`exec` does not allocate a TTY/PTTY. Do not run commands that require an interactive terminal or automate terminal prompts through stdin. Use non-interactive alternatives: `sudo -u USER -- COMMAND` instead of interactive `su`, `chpasswd` instead of `passwd`, and package-manager flags such as `DEBIAN_FRONTEND=noninteractive` and `-y`.
+
+Normal stdin use for pipes, heredocs, and base64 content transfer is supported.
+
+## Cluster env vars — already set
+
+Every exec pre-exports these. Don't re-discover:
+
+- `NODE_NAME`, `NODE_INDEX`, `NODE_IP`
+- `CLUSTER_HOSTS` — multiline `IP NAME` for every node. Drop into `/etc/hosts`:
+  `echo "$CLUSTER_HOSTS" | sudo tee -a /etc/hosts`
+- `CLUSTER_SSH_PUBKEY` / `CLUSTER_SSH_PRIVKEY` — per-cluster keypair for passwordless inter-node SSH:
+  ```
+  printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+  printf '%s\n' "$CLUSTER_SSH_PUBKEY" >> ~/.ssh/authorized_keys
+  ```
+
+## Image interfaces are exact-ANI facts
+
+Credential files, startup scripts, helper commands, execution privilege, predefined users, and passwords are **not universal platform facts**. They apply only when the exact image returned by `search type=image` declares them in `image_interface`.
+
+- Match the provisioned node's full ANI, including namespace and version.
+- If `image_interface.credentials` exists, load its declared `path` with POSIX `.` and use only the variables listed there. Do not print secret values.
+- If `image_interface.startup` exists, its declared path is the supported allocation-time helper.
+- If `image_interface.execution.privilegeEscalation` is `sudo-noninteractive`, use a trusted non-interactive sudo wrapper for privileged operations. Do not infer sudo support from the operating-system name.
+- If a field is absent, inspect the VM and its exact image description. Do not infer a path from a technology name such as MariaDB, PostgreSQL, Cassandra, or Vault.
+- `antrieb.managed-image/v1` is a **build-time contract** for creating managed images. Its conventions are not evidence that a user-owned or otherwise undeclared image implements them.
+
+Example: `antrieb:mariadb:v1` may declare `/etc/profile.d/antrieb-app.sh`; a user-created MariaDB image does not inherit that declaration merely because it also runs MariaDB.
+
+## Shipping long content through exec
+
+Anything beyond one line with quotes/newlines/metacharacters eventually breaks escaping. Use one of:
+
+1. **Base64** (preferred): `echo <BASE64> | base64 -d > /tmp/myfile`
+2. **Heredoc, unique delimiter**:
+   ```
+   cat > /tmp/cfg <<'ANTRIEB_EOF'
+   ...
+   ANTRIEB_EOF
+   ```
+3. **Serve between nodes**: one node runs `python3 -m http.server`, another `curl`s it.
+
+## Streaming / long-running commands
+
+`exec` is a synchronous await, capped at ~2 MB output. For commands that stream (`dhclient -v`, `tail -f`), run for minutes (`apt install`), or may hang, **redirect + background + poll** — the standard UNIX pattern:
+
+```
+# Launch, capture PID
+exec: cmd > /tmp/out.log 2>&1 & echo $! > /tmp/cmd.pid
+
+# Poll in subsequent exec calls (as often as you need to decide)
+exec: tail -30 /tmp/out.log
+
+# Stop early if you've seen enough
+exec: kill "$(cat /tmp/cmd.pid)" 2>/dev/null
+```
+
+Each call is small and fast. The LLM decides cadence and can act on partial output turn by turn. Don't treat this as a workaround — it's the supported streaming contract.
+
+## Small exec calls, not one huge script
+
+One logical step per exec, 
+...[TRUNCATED 28460 CHARACTERS]...
+c started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+codex
+{"status":"blocked","summary":"Node1 is currently unavailable after acknowledging its native recovery reboot. Direct managed execution returns connection resets, and node2 independently confirms node1’s IP and SSH port are unreachable. Because lifecycle controls are explicitly out of scope, I cannot safely force-restart or replace it.","actions_performed":["Confirmed node2 remains operational.","Tested node1 reachability from node2 after repeated managed-exec polling.","Stopped before using any prohibited lifecycle or alternate control surface."],"evidence":[{"requirement":"Node1 outage after reboot acknowledgement","command_ids":["cmd-cde39660644b453d","cmd-4870bc3ebd1a480b","cmd-5cd215706e3e4307"],"summary":"Node1 acknowledged the delayed native reboot, then remained unavailable through managed exec; node2 observed 100% packet loss and a closed/unreachable SSH port."},{"requirement":"Available preliminary state","command_ids":["cmd-e798ed0aebdf491b","cmd-f03f834a928d4b4b","cmd-0ec29c564d5f4396","cmd-8f5977312b6e40de"],"summary":"The initial state, supplied LDIF, OS/kernel, and successful node2 LDAP client installation were captured before the outage."}]}
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+codex
+{"status":"blocked","summary":"Node1 did not recover after acknowledging a native safe reboot. Managed execution still returns connection resets, while node2 confirms node1 is unreachable. LDAP configuration and mandatory restart verification could not be completed safely.","actions_performed":["Confirmed both nodes run CentOS Stream 10 with kernel 6.12.0-205.el10.x86_64.","Verified the supplied HR LDIF remains at /srv/legacy2/ldap-attribute-privacy/hr.ldif.","Installed OpenLDAP client 2.6.13 on node2.","Diagnosed multiple node1 package-manager processes blocked in uninterruptible I/O.","Scheduled a delayed native reboot of node1 and repeatedly polled for recovery.","Did not restart node2 because node1 had not recovered, as required by the sequential restart protocol."],"evidence":[{"requirement":"Initial platform and supplied-record state","command_ids":["cmd-e798ed0aebdf491b","cmd-0ec29c564d5f4396","cmd-f03f834a928d4b4b"],"summary":"Captured both initial boot identities, OS/kernel versions, and the supplied LDIF contents and location."},{"requirement":"LDAP client on node2","command_ids":["cmd-8f5977312b6e40de"],"summary":"OpenLDAP client 2.6.13 installed successfully on node2."},{"requirement":"Node1 failure diagnosis","command_ids":["cmd-8a3ee38ebd8840c4"],"summary":"Several dnf processes on node1 were blocked in D state, including provider health checks and the package query."},{"requirement":"Node1 restart acknowledgement","command_ids":["cmd-cde39660644b453d"],"summary":"Captured the pre-restart boot identity and acknowledgement that a delayed native reboot was scheduled."},{"requirement":"Node1 failed recovery","command_ids":["cmd-26c85de67d1a4e29","cmd-5cd215706e3e4307"],"summary":"After extended polling, managed execution still returned connection reset; node2 independently observed node1 unreachable by ICMP and TCP/22."},{"requirement":"Mandatory restart protocol limitation","command_ids":["cmd-cde39660644b453d","cmd-26c85de67d1a4e29"],"summary":"A changed node1 boot identity and post-restart service/data recovery could not be observed. Node2 was therefore not restarted, and restart persistence is not claimed for either node."}]}
+tokens used
+46,867
+
+
+codex
+{"summary":"Attempt 1 was legitimately blocked by a node1 infrastructure/OS failure before LDAP was configured. The evidence confirms the supplied LDIF existed and node2 received OpenLDAP client 2.6.13, but it does not demonstrate a running LDAP server, imported employee records, credentials, ACL enforcement, remote access, or restart persistence. Node1 had several dnf processes stuck in uninterruptible I/O and remained unreachable after acknowledging a reboot; the underlying I/O and reboot failure cannot be identified from the redacted evidence alone.","evidence":[{"source":"Node1 process audit","finding":"Several dnf processes, including health checks, repository inspection, and installation, were simultaneously in D state. At that point openldap-servers and openldap-clients were not installed on node1."},{"source":"Reboot acknowledgement","finding":"Node1 reported boot ID 8f258838-e1de-494d-9d99-e5113b2865db and acknowledged scheduling a native systemd reboot."},{"source":"Post-reboot managed checks","finding":"Repeated node1 commands returned connection reset, so no changed boot ID or recovered service state was observed."},{"source":"Independent node2 reachability test","finding":"Node2 received no ICMP replies from node1 and could not connect to TCP/22 after the reboot."},{"source":"Executor structured report","finding":"The supplied file remained at /srv/legacy2/ldap-attribute-privacy/hr.ldif, both nodes were reported as CentOS Stream 10 with kernel 6.12.0-205.el10.x86_64, and OpenLDAP client 2.6.13 was installed on node2."},{"source":"Missing completion evidence","finding":"There is no evidence of slapd installation or configuration, LDIF import, dedicated reader/admin credentials, ACLs, anonymous-access denial, employeeNumber protection, node2 LDAP queries, or persistence after restart."}],"likely_causes":[{"cause":"Node1's package-management path was blocked by underlying uninterruptible I/O, preventing OpenLDAP installation.","confidence":"high"},{"cause":"A broader node storage, kernel, virtualization, or provider lifecycle fault prevented node1 from completing or returning from reboot; the evidence cannot distinguish among these mechanisms.","confidence":"medium"},{"cause":"Concurrent dnf health checks, queries, and installation increased contention and complicated recovery, although they do not by themselves explain why the processes entered D state.","confidence":"medium"},{"cause":"LDAP configuration or ACL errors caused the failure.","confidence":"low"}],"next_attempt_guidance":["On the fresh cluster, first inspect the LDIF and host state with short, separate commands. Do not combine file inspection with repository operations, and do not start another dnf transaction while one is active.","Run a bounded package-manager preflight on node1. If dnf immediately enters persistent D state on the fresh node, stop and report the node unhealthy rather than stacking transactions or relying on an unverified reboot.","Preserve /srv/legacy2/ldap-attribute-privacy/hr.ldif in place. Install the CentOS Stream 10-compatible openldap-servers/openldap-clients packages on node1 and openldap-clients on node2 without changing the OS release or kernel.","Derive the suffix and employee subtree from the supplied LDIF. Configure slapd through cn=config, create dedicated reader and HR-admin credentials, import the supplied records, and protect stored credential material with root-only permissions.","Order ACLs from most specific to least specific: allow the HR administrator to manage employeeNumber, deny that attribute to every other identity, permit the reader only the entry/name/mail attributes needed for searches, and deny anonymous access to employee entries. Ensure password ACLs still permit authenticated binds without exposing password values.","Verify locally before changing firewall policy, then allow LDAP only as required for node2. Account for the observed SELinux and firewalld state rather than disabling security controls wholesale.","From node2, capture a complete test matrix: reader can search names and mail; reader cannot read or modify employeeNumber; HR administrator can read and change it; anonymous search returns no employee records. Restore any employeeNumber modified during testing.","Restart nodes sequentially. After each restart, record the changed boot ID and re-run service, data, credential, ACL, anonymous-access, and remote-search tests before restarting the next node. Do not claim persistence without those observations."]}
+tokens used
+30,521

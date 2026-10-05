@@ -1,0 +1,84 @@
+{
+  "status": "completed",
+  "summary": "Configured PostgreSQL 15 streaming replication across node1 (primary, writable) and node2/node3 (async physical standbys, read-only). Verified writes on node1 replicate to both standbys and that standbys reject writes. Performed the mandatory sequential restart of node2, node3, then node1, confirming changed boot identity and full recovery (postgresql-15 active, standbys re-streaming, replicated data intact) after each restart.",
+  "actions_performed": [
+    "Diagnosed and killed a stuck pre-existing 'yum -q check' process (spinning 1h+ at 99% CPU) that held the yum lock on all three nodes; repaired a corrupted RPM database on node3 caused by the interrupted transaction (removed __db.* and ran rpm --rebuilddb)",
+    "Installed the PGDG repo on all nodes; disabled dead pgdg12/13/14 sub-repos (upstream returns HTTP 410 Gone); sourced missing libicu (from CentOS 7.9 vault) and libzstd (from EPEL 7 archive) dependencies since no RHEL base repos were registered on these nodes",
+    "Installed postgresql15-server/postgresql15 on node1, node2, node3",
+    "Initialized the primary database on node1; configured wal_level=replica, max_wal_senders, max_replication_slots, hot_standby, wal_keep_size; added pg_hba.conf rules permitting replication and client connections from the cluster subnet",
+    "Generated a replicator role password on node1 via openssl rand, created the replicator REPLICATION role, opened firewalld's postgresql service on all three nodes",
+    "Wired cluster SSH keys and relayed the replication password from node1 to node2/node3 over SSH directly between nodes (never placed in tool-call literals or this report), then shredded the temp files afterward",
+    "Created physical replication slots node2_slot/node3_slot on the primary; ran pg_basebackup with -R on node2 and node3 to clone the primary and auto-generate standby.signal/primary_conninfo; started postgresql-15 on both standbys",
+    "Verified replication: created/inserted into repl_test on node1, confirmed visibility on both standbys, confirmed standbys reject CREATE TABLE as read-only",
+    "Captured pre-restart boot_id and health/replication baseline on all three nodes",
+    "Restarted node2 via systemctl reboot, polled until exec available, confirmed new boot_id, confirmed postgresql-15 active/in-recovery and streaming resumed with data intact",
+    "Restarted node3 via systemctl reboot, polled until exec available, confirmed new boot_id, confirmed postgresql-15 active/in-recovery and streaming resumed with data intact",
+    "Restarted node1 (primary) last via systemctl reboot, polled until exec available, confirmed new boot_id, confirmed postgresql-15 active/not-in-recovery, inserted a post-restart row, confirmed both standbys auto-reconnected and replicated the new row"
+  ],
+  "evidence": [
+    {
+      "requirement": "PostgreSQL streaming replication configured: node1 primary writable, node2/node3 read-only standbys",
+      "command_ids": [
+        "cmd-2fb39997ba114e2b",
+        "cmd-6249e9e364ea4719",
+        "cmd-3b70c5fdc20f4c01",
+        "cmd-4b94ff86351044ac",
+        "cmd-07f3084a41cf4a82",
+        "cmd-7594f63c172c40e9",
+        "cmd-37ff7c0108a04ee2",
+        "cmd-7e1ecc6f2dbd49fa",
+        "cmd-51f31241b79c4f28",
+        "cmd-5225ab506c9d4758",
+        "cmd-11fabaa007aa49c8",
+        "cmd-b5df33a0df444ba1",
+        "cmd-8338e5ad1e0a4345"
+      ],
+      "summary": "Primary initialized and configured with wal_level=replica/hot_standby/replication slots; both standbys built via pg_basebackup -R against node1 and started; pg_is_in_recovery()=t on node2/node3, f on node1; pg_stat_replication on node1 shows both standbys streaming."
+    },
+    {
+      "requirement": "Changes committed on the primary are visible on both standbys",
+      "command_ids": [
+        "cmd-33a48cc251964a9e",
+        "cmd-c8089c9922534ecf",
+        "cmd-3bbb94bb58d34e32"
+      ],
+      "summary": "Created repl_test table and inserted a row on node1; SELECT on node2 and node3 shows the row; both standbys reject CREATE TABLE with 'cannot execute ... in a read-only transaction'."
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-10aa5c41a7a04564",
+        "cmd-0537302ceaec4a54",
+        "cmd-99d23e8dcf3e4e8f",
+        "cmd-ccc7550cc2874559",
+        "cmd-81b1c1812559413e"
+      ],
+      "summary": "Baseline boot_id 95e2f83d.../active/in-recovery captured; systemctl reboot acknowledged; post-reboot boot_id 73c42012... (changed); postgresql-15 active, in-recovery, repl_test count intact, and node1 shows node2 streaming again."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b9b166224d604fbe",
+        "cmd-11b38b528d09475b",
+        "cmd-ea3e049a209040a8",
+        "cmd-6003af0f50b441b6",
+        "cmd-a88968d9569f453d"
+      ],
+      "summary": "Baseline boot_id 9294b73f.../active/in-recovery captured; systemctl reboot acknowledged; post-reboot boot_id 218e1f5d... (changed); postgresql-15 active, in-recovery, repl_test count intact, and node1 shows node3 streaming again."
+    },
+    {
+      "requirement": "node1 (primary) restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state, quorum/independent recovery path preserved",
+      "command_ids": [
+        "cmd-740dec7f60b24f10",
+        "cmd-9a681dfe8f5a4471",
+        "cmd-f45cf9f498734c86",
+        "cmd-81ab0ec951254d22",
+        "cmd-33d250ae4105495d",
+        "cmd-dad0a414de5d405f",
+        "cmd-4b99aafb98cc46a2",
+        "cmd-536cbd84fe0442d8"
+      ],
+      "summary": "Baseline boot_id 33b0e84c.../active/not-in-recovery with both standbys streaming captured; restarted node1 last (both standbys already healthy and independently serving reads during primary downtime); systemctl reboot acknowledged; post-reboot boot_id f44af3d4... (changed); postgresql-15 active/not-in-recovery, inserted new row, both standbys auto-reconnected within seconds and replicated the new row (count=2 confirmed on node2 and node3, streaming rows visible on node1)."
+    }
+  ]
+}

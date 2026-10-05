@@ -1,0 +1,51 @@
+---
+- name: Configure node1 as router between lan-a and lan-b
+  hosts: router
+  gather_facts: false
+  tasks:
+    - name: Set eth1 (lan-a) and eth2 (lan-b) addresses, commit and save
+      ansible.builtin.shell: |
+        source /opt/vyatta/etc/functions/script-template
+        configure
+        set interfaces ethernet eth1 address 10.50.10.254/24
+        set interfaces ethernet eth2 address 10.50.20.254/24
+        commit
+        save
+        exit
+      args:
+        executable: /bin/bash
+      register: vyos_config
+      changed_when: "'No configuration changes to commit' not in vyos_config.stdout"
+
+- name: Configure lan_hosts with static addressing and route to peer LAN
+  hosts: lan_hosts
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Write systemd-networkd config for the lan-facing interface
+      ansible.builtin.copy:
+        dest: /etc/systemd/network/10-lan.network
+        content: |
+          [Match]
+          Name=enp8s0
+
+          [Network]
+          Address={{ lan_ip }}
+
+          [Route]
+          Destination={{ peer_cidr }}
+          Gateway={{ lan_gateway }}
+        owner: root
+        group: root
+        mode: "0644"
+      register: netplan_file
+
+    - name: Apply networkd config
+      ansible.builtin.systemd:
+        name: systemd-networkd
+        state: restarted
+      when: netplan_file.changed
+
+    - name: Reconfigure the interface immediately
+      ansible.builtin.command: networkctl reload
+      changed_when: false

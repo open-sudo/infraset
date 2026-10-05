@@ -1,0 +1,130 @@
+{
+  "status": "completed",
+  "summary": "Created a \"Fleet Internal CA\" root CA on node1, issued a node2 TLS server certificate (CN=node2, SANs DNS:node2/IP:10.100.159.11) signed by that CA, deployed the cert+key to node2 and configured nginx to serve HTTPS on port 8443 with it, and installed the CA into the system trust store (update-ca-certificates) on both node1 and node2. Verified end-to-end trust (curl with no --cacert override returns \"SSL certificate verify ok\" / HTTP 200) from both nodes. Completed the mandatory one-at-a-time restart protocol on node1 then node2, confirming boot_id changes and full post-restart recovery of nginx/TLS/CA trust on both nodes.",
+  "actions_performed": [
+    "Inspected OS/tooling on node1 and node2 (Ubuntu 24.04, openssl, python3 present; no nginx initially)",
+    "Installed nginx on node2 via apt to serve HTTPS",
+    "Generated 4096-bit CA key and self-signed 'Fleet Internal CA' root cert on node1 (/root/fleet-ca)",
+    "Generated node2 key + CSR with SAN (DNS:node2, IP:10.100.159.11) and signed it with the CA (825-day cert)",
+    "Transferred ca.crt, node2.crt, node2.key from node1 to node2 via a temporary python3 http.server (SSH unavailable, no sshd running on node2), then tore down the transfer server and removed temp files",
+    "Configured nginx on node2 (/etc/nginx/sites-available/fleet-tls.conf) to listen on 8443 with ssl_certificate/ssl_certificate_key pointing at the issued cert/key; validated config and enabled+started nginx",
+    "Verified TLS handshake, SAN match, and cert chain from both node1 and node2 using --cacert against the new CA",
+    "Installed the CA cert into /usr/local/share/ca-certificates and ran update-ca-certificates on both node1 and node2",
+    "Re-verified HTTPS trust works via system trust store alone (no explicit --cacert) on both nodes, receiving 'SSL certificate verify ok' and HTTP 200",
+    "Captured baseline boot_id/uptime and service health on both nodes",
+    "Restarted node1 via native reboot, polled until reachable, confirmed changed boot_id, verified CA files/trust store and cross-node HTTPS still worked",
+    "Restarted node2 via native reboot, polled until reachable, confirmed changed boot_id, verified nginx auto-started, port 8443 listening, and HTTPS/CA trust fully recovered",
+    "Final cross-check from node1 confirming HTTP 200 and 'SSL certificate verify ok' against node2 post-restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "Create CA 'Fleet Internal CA' on node1",
+      "command_ids": [
+        "cmd-a5122e34ccae44a0"
+      ],
+      "summary": "openssl generated CA key and self-signed cert; subject/dates confirm CN=Fleet Internal CA, O=Fleet Internal CA, valid 2026-2036"
+    },
+    {
+      "requirement": "Issue TLS certificate for node2 signed by the CA",
+      "command_ids": [
+        "cmd-c5f23a5fe870483e"
+      ],
+      "summary": "CSR generated and signed by ca.crt/ca.key; resulting cert shows subject=CN=node2, issuer=Fleet Internal CA, SAN DNS:node2/IP:10.100.159.11"
+    },
+    {
+      "requirement": "Deploy cert/key to node2 and configure HTTPS on port 8443",
+      "command_ids": [
+        "cmd-d980ef1ac95e4040",
+        "cmd-d279cfd11d0e416f",
+        "cmd-fa28d8c0d34344a0",
+        "cmd-4fa2602062a04c6d"
+      ],
+      "summary": "Cert/key copied to /etc/ssl/fleet on node2; nginx config validated (nginx -t); nginx active and listening on 0.0.0.0:8443/[::]:8443; curl over HTTPS with CA trust returns served content"
+    },
+    {
+      "requirement": "Certificate served correctly over TLS (SAN/issuer match, chain trusted)",
+      "command_ids": [
+        "cmd-f088cebdef0b4d8a",
+        "cmd-66ab8427990348bf"
+      ],
+      "summary": "curl -v from node2 and node1 respectively show TLS1.3 handshake, subject=CN=node2, SAN IP match, issuer=Fleet Internal CA"
+    },
+    {
+      "requirement": "Install CA as trusted system CA on both node1 and node2",
+      "command_ids": [
+        "cmd-5d065ca57efb43b3",
+        "cmd-3a9da5563e9943e9"
+      ],
+      "summary": "update-ca-certificates run on both nodes, each reporting '1 added, 0 removed; done' after copying ca.crt to /usr/local/share/ca-certificates"
+    },
+    {
+      "requirement": "Prove system trust store (not just explicit --cacert) trusts the CA",
+      "command_ids": [
+        "cmd-2f25a6b934744257",
+        "cmd-c65a5dd3f907461f"
+      ],
+      "summary": "curl without --cacert from both node1 and node2 to https://10.100.159.11:8443 returns 'SSL certificate verify ok' and HTTP 200"
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-6d50f240d17c4959"
+      ],
+      "summary": "Captured boot_id 1e0cb179... and uptime start 20:15:28 prior to restart"
+    },
+    {
+      "requirement": "node1 restart acknowledgement",
+      "command_ids": [
+        "cmd-5c5260247ae34572"
+      ],
+      "summary": "Backgrounded reboot command acknowledged (pid returned) before disconnect"
+    },
+    {
+      "requirement": "node1 changed boot identity after restart",
+      "command_ids": [
+        "cmd-b9a16d88f4244708",
+        "cmd-4cf330baae344cc5"
+      ],
+      "summary": "uptime -s now shows 20:17:02 (new boot) and boot_id changed to 48142d03..., distinct from pre-restart 1e0cb179..."
+    },
+    {
+      "requirement": "node1 post-restart recovery of CA data and trust",
+      "command_ids": [
+        "cmd-4cf330baae344cc5",
+        "cmd-523e65d53f874dec"
+      ],
+      "summary": "CA files intact under /root/fleet-ca, fleet-internal-ca.pem present in trust store, and cross-node HTTPS to node2 returns HTTP 200 after node1 reboot"
+    },
+    {
+      "requirement": "node2 healthy baseline before restart",
+      "command_ids": [
+        "cmd-67941ddd970f4067"
+      ],
+      "summary": "Captured boot_id 901ef286..., uptime start 20:15:28, nginx active, and successful HTTPS content fetch prior to restart"
+    },
+    {
+      "requirement": "node2 restart acknowledgement",
+      "command_ids": [
+        "cmd-abca355ab1ea4ee1"
+      ],
+      "summary": "Backgrounded reboot command acknowledged (pid returned) before disconnect"
+    },
+    {
+      "requirement": "node2 changed boot identity after restart",
+      "command_ids": [
+        "cmd-40353e6df89e427a",
+        "cmd-5b7ee17debd4498e",
+        "cmd-4463747af113431b"
+      ],
+      "summary": "Connection timed out during reboot window, then reachable again with new uptime start 20:17:17 and boot_id changed to a579bf39..., distinct from pre-restart 901ef286..."
+    },
+    {
+      "requirement": "node2 post-restart recovery of TLS service, CA trust, and cluster reachability",
+      "command_ids": [
+        "cmd-4463747af113431b",
+        "cmd-0b0a16d02d214333"
+      ],
+      "summary": "nginx auto-active, port 8443 listening again, fleet-internal-ca.pem still in trust store, HTTPS returns 200, and node1 confirms full cert chain verify ok against node2 post-restart"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node2 and node3 are separated onto their own VLANs over the shared link (node2 on VLAN 10, node3 on VLAN 20)",
+      "status": "satisfied",
+      "summary": "node2's trunk NIC enp8s0 was configured with tagged VLAN sub-interface enp8s0.10 at 10.10.10.11/24 (VLAN 10), and node3 with enp8s0.20 at 10.10.20.12/24 (VLAN 20), both via community.general.nmcli. Confirmed by direct playbook output (cmd-b406533290cf44dc) and post-restart checks (cmd-f95083e1bc954acc, cmd-47114c495a6b4552) showing correct addressing persisted after reboot.",
+      "evidence_ids": [
+        "cmd-b406533290cf44dc",
+        "cmd-f95083e1bc954acc",
+        "cmd-47114c495a6b4552"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node1 routes between VLAN 10 and VLAN 20 so node2 and node3 can still reach each other (true routing, not bridging)",
+      "status": "satisfied",
+      "summary": "node1 (VyOS) configured with 802.1Q sub-interfaces eth1.10 (10.10.10.1/24) and eth1.20 (10.10.20.1/24) with ip_forward=1. tcpdump on node1's trunk interface eth1 (cmd-a4625d155fd341e0) directly shows ICMP packets ingress-tagged VLAN 10 from node2 and egress re-tagged VLAN 20 toward node3 (and vice versa for replies), confirming a real routing hop rather than a bridge. Successful pings with TTL=63 from node2->node3 (cmd-df75268254fb4f70) and node3->node2 (cmd-96b6a7add2bf4b59) corroborate one router hop via node1's gateways, using specific static routes rather than a default route override.",
+      "evidence_ids": [
+        "cmd-a4625d155fd341e0",
+        "cmd-df75268254fb4f70",
+        "cmd-96b6a7add2bf4b59"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Implementation is via Ansible",
+      "status": "satisfied",
+      "summary": "The solution was implemented and applied entirely via an Ansible playbook (playbook.yml) run from node4 (the designated control_node) using ansible-playbook -i inventory.ini, with tasks using ansible.builtin.raw for VyOS and community.general.nmcli for the Linux hosts, confirmed by ok/changed task results with no failures in the final successful run (cmd-b406533290cf44dc) and syntax-check (cmd-2e134849fe8a483b).",
+      "evidence_ids": [
+        "cmd-b406533290cf44dc",
+        "cmd-2e134849fe8a483b"
+      ]
+    }
+  ],
+  "overall_summary": "The task's core material outcomes are directly and well demonstrated: node2 is on VLAN 10 (10.10.10.11/24) and node3 on VLAN 20 (10.10.20.12/24) over the shared trunk link, node1 routes between the two VLANs (confirmed by a tcpdump packet capture showing genuine re-tagging/routing rather than bridging, plus TTL-decremented pings), and the entire configuration was applied via an Ansible playbook run from the designated control_node (node4). The independent provider-wide restart protocol was also executed on all four nodes with clear pre/post boot_id changes and recovered VLAN/routing/SSH state, cross-checked against the fixed lifecycle boot-identity snapshots (all four nodes show different after_executor vs before_prepare boot IDs, consistent with the claimed restarts). Hygiene is good overall; the only minor issues are leftover debug log files from iterative playbook runs and a stray /tmp/reboot.log, none of which represent damaged state or security regressions.",
+  "limitations": [
+    "The prepare phase was disabled/aliased to before_prepare in this run, so preparer-vs-executor state separation relies entirely on before_prepare vs after_executor comparison.",
+    "Full command outputs for the node4 restart verification (cmd-bf180db803914363) were truncated in places, though the key SSH connectivity and --check re-run results were visible and consistent.",
+    "Executor command statistics report 20 failed commands out of 90; the ones reviewed in the timeline were either expected discovery failures (e.g., initial SSH permission denials before key provisioning) or corrected mid-task shell/proxy issues, not indicative of a final broken state."
+  ],
+  "command_stats": {
+    "total": 90,
+    "successful": 69,
+    "failed": 20,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands were directly necessary: bootstrapping SSH access (creating 'antrieb' user with sudo NOPASSWD on node2/node3, adding node4's key to VyOS 'vyos' user) was a required prerequisite for Ansible connectivity since no ansible-reachable credentials pre-existed (cmd-ecc95a91e355473f, cmd-10d5899edd4f4e0e, cmd-645845c924074e0a), and the mandatory node-restart protocol on all four nodes was performed and evidenced with clear before/after boot_id transitions and recovery checks. Several early attempts at applying the VyOS VLAN config failed due to shell-alias expansion issues (cmd-bece1aae131d4ecd, rc=2) and required killing a hung/leftover ansible-playbook and ssh mux processes (cmd-dad5f3b88de044e6) after a proxy timeout truncated an earlier run (cmd-c401a0743e144868); these were corrective troubleshooting rather than unnecessary mutations, since the underlying playbook logic was refined and re-applied idempotently until convergence. One VLAN route configuration approach was revised mid-task (switching from gw4/default-route to routes4/never_default4 in the nmcli VLAN interface task) to avoid conflicting with the mgmt default route, which is a normal iterative fix rather than an unrelated mutation. Minor residue: several ansible run logs (run.log, run2.log, run3.log) and .pid files were left on node4's /root/vlan-segmentation directory, and node2/node3 retain a small /tmp/reboot.log file from the reboot redirection -- these are low-risk, bounded log artifacts of the executor's own iterative debugging rather than damage to managed services, but they were not cleaned up.",
+    "evidence_ids": [
+      "cmd-bece1aae131d4ecd",
+      "cmd-c401a0743e144868",
+      "cmd-dad5f3b88de044e6",
+      "cmd-ecc95a91e355473f",
+      "cmd-10d5899edd4f4e0e",
+      "cmd-645845c924074e0a",
+      "cmd-bf180db803914363"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

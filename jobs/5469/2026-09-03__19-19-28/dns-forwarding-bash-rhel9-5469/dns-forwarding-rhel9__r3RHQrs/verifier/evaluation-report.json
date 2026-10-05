@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 (VyOS) is configured as the DNS resolver on the shared private network (10.100.206.0/24)",
+      "status": "satisfied",
+      "summary": "PowerDNS Recursor on node1 was configured to listen on 10.100.206.10 with allow-from 10.100.206.0/24, committed and saved (cmd-297c09061348422f). Post-restart, the recursor is active and listening on that address (after_executor listening-sockets shows udp/tcp 10.100.206.10:53 owned by pdns_recursor), confirming the config persisted.",
+      "evidence_ids": [
+        "cmd-297c09061348422f",
+        "cmd-aab2a6b2a20a4121",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node1 answers queries for inventory.internal with node2's address (10.100.206.11)",
+      "status": "satisfied",
+      "summary": "A static-host-mapping (inventory.internal -> 10.100.206.11) was committed and saved on node1; dig @10.100.206.10 inventory.internal returns 10.100.206.11 both immediately after configuration and again after node1's reboot.",
+      "evidence_ids": [
+        "cmd-297c09061348422f",
+        "cmd-17c374684e3f4531",
+        "cmd-51f325997b294f30",
+        "cmd-14e3193ea8d9439c"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node1 forwards all other DNS queries upstream (to the platform gateway/upstream resolver)",
+      "status": "satisfied",
+      "summary": "dig @10.100.206.10 example.com returns real public IPs both before and after node1's reboot, confirming forwarding to the configured upstream name-server (10.100.206.1).",
+      "evidence_ids": [
+        "cmd-17c374684e3f4531",
+        "cmd-51f325997b294f30",
+        "cmd-14e3193ea8d9439c"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "node2 and node3 are configured to resolve through node1",
+      "status": "satisfied",
+      "summary": "nmcli set ipv4.dns=10.100.206.10 with ipv4.ignore-auto-dns=yes on both nodes; /etc/resolv.conf shows nameserver 10.100.206.10 on both; getent hosts resolves inventory.internal to 10.100.206.11 and example.com externally on both nodes, both immediately and after each node's reboot (confirming the NetworkManager connection profile change persisted).",
+      "evidence_ids": [
+        "cmd-ff5602f5f2814da1",
+        "cmd-c30cff497acc4a17",
+        "cmd-466a8b2a24d14a9b",
+        "cmd-dca0ce1c0c984978",
+        "cmd-10578847db96494d",
+        "cmd-1e3f82dd637c4e7e"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are directly satisfied: node1 (VyOS) runs PowerDNS Recursor bound to the shared LAN address, answers inventory.internal with node2's address via a static-host-mapping, and forwards all other queries to the upstream gateway; node2 and node3 are configured via NetworkManager to use node1 as their sole DNS resolver. Behavior was verified both before and after a full one-at-a-time reboot of all three nodes, with distinct pre/post boot_ids and recovered service/config/resolution state on every node, giving strong confidence the configuration is persistent and not just transiently applied. The only notable hygiene issue is a reverted mid-task experiment (authoritative-domain zone approach) that was fully superseded by the final static-host-mapping approach with no residue.",
+  "limitations": [
+    "Restart/reboot evidence, while not itself a stated task requirement, was executed per the mandatory provider-wide protocol and is coherent: pre-restart boot_id/health, restart acknowledgement, distinct post-restart boot_id, and recovered DNS service/config/resolution are all directly observed on node1, node2, and node3, matching the fixed after-executor boot-identity snapshots.",
+    "Command exit code 3 on cmd-b313789ee883422e (pdns-recursor 'inactive') and the transient connection-timeout/reset errors during each reboot are expected artifacts of the pre-configuration baseline and the reboot process itself, not evidence of failure."
+  ],
+  "command_stats": {
+    "total": 61,
+    "successful": 46,
+    "failed": 15,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "One bounded troubleshooting mutation was made and then reverted: the executor first configured node1's DNS forwarding using the VyOS 'authoritative-domain' zone approach (cmd-80ef6eb0284d4231, committed+saved), which turned out to return NXDOMAIN instead of resolving inventory.internal. This was undone in the final working configuration (cmd-297c09061348422f, which deletes 'authoritative-domain' and switches to a static-host-mapping) \u2014 an intermediate 'delete name-server' commit (cmd-239d3cbd8da64f78) was also part of this troubleshooting and was superseded. Both mutations were committed to the persistent VyOS config at the time but were fully reverted/superseded before the task concluded, so no residue remains (after_executor shows no failed services, no leftover authoritative-domain zone config, and only expected systemd-private/reboot.log temp artifacts). All other state-changing commands (dns forwarding setup, static-host-mapping, nmcli DNS changes, and the three node reboots) map directly to satisfying task requirements or the mandated restart-evidence protocol.",
+    "evidence_ids": [
+      "cmd-80ef6eb0284d4231",
+      "cmd-239d3cbd8da64f78",
+      "cmd-297c09061348422f",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

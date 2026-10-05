@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 13,
+    "successful": 11,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Rotate the application log daily",
+      "command_ids": [
+        "cmd-b8a05be6434049fd",
+        "cmd-8ed45d96eb8647d8"
+      ],
+      "summary": "Logrotate parsed the rule as daily; the enabled and active daily timer persisted after reboot."
+    },
+    {
+      "requirement": "Keep seven compressed rotations",
+      "command_ids": [
+        "cmd-2d6a948e1fd44035",
+        "cmd-8ed45d96eb8647d8"
+      ],
+      "summary": "Runtime testing retained exactly app.log.1.gz through app.log.7.gz, and every archive passed gzip integrity checks before and after reboot."
+    },
+    {
+      "requirement": "Allow continued application writes after rotation",
+      "command_ids": [
+        "cmd-5ac14c3c0bab44fc"
+      ],
+      "summary": "The active inode remained 262324 across rotation, and a held descriptor successfully wrote continuity-after-rotation to the active log."
+    },
+    {
+      "requirement": "Mandatory node1 restart and recovery",
+      "command_ids": [
+        "cmd-efa7d164d7994a09",
+        "cmd-ff3aedab91744a87",
+        "cmd-ce678a7693104fa5",
+        "cmd-8ed45d96eb8647d8"
+      ],
+      "summary": "Captured healthy baseline under boot c96a02ae-22aa-4530-8d57-ce64bf4629af, acknowledged the scheduled native reboot, observed new boot cc018432-76ac-4761-81db-18fba166608c, and verified recovered configuration, timer, archives, and post-reboot application writes."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-94b36bb748084b9e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:01.083679+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 374,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf '%s\\n' '--- log ---'\nsudo ls -ld /var/log/inventory\nsudo ls -l /var/log/inventory/app.log\nsudo stat -c 'inode=%i size=%s owner=%U group=%G mode=%a mtime=%y' /var/log/inventory/app.log\nprintf '%s\\n' '--- open writers ---'\nsudo lsof /var/log/inventory/app.log 2>/dev/null || true\nprintf '%s\\n' '--- recent data ---'\nsudo tail -n 5 /var/log/inventory/app.log\nprintf '%s\\n' '--- rotation facilities ---'\ncommand -v logrotate\nlogrotate --version | head -n 2\nsystemctl is-enabled logrotate.timer\nsystemctl is-active logrotate.timer\nsystemctl list-timers logrotate.timer --no-pager",
+      "stdout": "node=node1 ip=10.100.67.10\n--- log ---\ndrwxr-xr-x 2 root root 4096 Oct  1 22:52 /var/log/inventory\n-rw-r--r-- 1 root root 60 Oct  1 22:52 /var/log/inventory/app.log\ninode=262324 size=60 owner=root group=root mode=644 mtime=2026-10-01 22:52:45.394000000 -0400\n--- open writers ---\n--- recent data ---\ninventory service started\ninventory initial record count: 2\n--- rotation facilities ---\n/usr/sbin/logrotate\nlogrotate 3.21.0\n\nenabled\nactive\nNEXT                           LEFT LAST                         PASSED UNIT            ACTIVATES\nFri 2026-10-02 00:00:00 EDT 1h 6min Thu 2026-10-01 22:52:44 EDT 15s ago logrotate.timer logrotate.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too."
+    },
+    {
+      "command_id": "cmd-ca75fea48f654278",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:04.853080+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 87,
+      "command": "set -eu\nprintf '%s\\n' '--- inventory-related units/processes ---'\nsystemctl list-units --type=service --all --no-pager | grep -i inventory || true\nps -eo pid,ppid,user,lstart,args | grep -E '[i]nventory|[a]pp\\.log' || true\nprintf '%s\\n' '--- existing rotation config ---'\nsudo grep -R -n -F '/var/log/inventory/app.log' /etc/logrotate.conf /etc/logrotate.d 2>/dev/null || true\nprintf '%s\\n' '--- directory contents ---'\nsudo find /var/log/inventory -maxdepth 1 -printf '%f %y %s bytes\\n' | sort",
+      "stdout": "--- inventory-related units/processes ---\n   1377    1367 root     Thu Oct  1 22:53:04 2026 bash -c set -eu printf '%s\\n' '--- inventory-related units/processes ---' systemctl list-units --type=service --all --no-pager | grep -i inventory || true ps -eo pid,ppid,user,lstart,args | grep -E '[i]nventory|[a]pp\\.log' || true printf '%s\\n' '--- existing rotation config ---' sudo grep -R -n -F '/var/log/inventory/app.log' /etc/logrotate.conf /etc/logrotate.d 2>/dev/null || true printf '%s\\n' '--- directory contents ---' sudo find /var/log/inventory -maxdepth 1 -printf '%f %y %s bytes\\n' | sort\n--- existing rotation config ---\n--- directory contents ---\napp.log f 60 bytes\ninventory d 4096 bytes"
+    },
+    {
+      "command_id": "cmd-b8a05be6434049fd",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:21.754112+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 113,
+      "command": "set -eu\ncat > /tmp/inventory-app-logrotate <<'ANTRIEB_EOF'\n/var/log/inventory/app.log {\n    daily\n    rotate 7\n    compress\n    missingok\n    notifempty\n    copytruncate\n}\nANTRIEB_EOF\nsudo install -o root -g root -m 0644 /tmp/inventory-app-logrotate /etc/logrotate.d/inventory-app\nsudo logrotate --debug /etc/logrotate.d/inventory-app\nsudo stat -c 'config=%n owner=%U group=%G mode=%a' /etc/logrotate.d/inventory-app\nsudo sed -n '1,20p' /etc/logrotate.d/inventory-app",
+      "stdout": "warning: logrotate in debug mode does nothing except printing debug messages!  Consider using verbose mode (-v) instead if this is not what you want.\n\nreading config file /etc/logrotate.d/inventory-app\nReading state from file: /var/lib/logrotate/status\nAllocating hash table for state file, size 64 entries\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/inventory/app.log  after 1 days (7 rotations)\nempty log files are not rotated, old logs are removed\nconsidering log /var/log/inventory/app.log\nCreating new state\n  Now: 2026-10-01 22:53\n  Last rotated at 2026-10-01 22:00\n  log does not need rotating (log has already been rotated)\nconfig=/etc/logrotate.d/inventory-app owner=root group=root mode=644\n/var/log/inventory/app.log {\n    daily\n    rotate 7\n    compress\n    missingok\n    notifempty\n    copytruncate\n}"
+    },
+    {
+      "command_id": "cmd-5ac14c3c0bab44fc",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:28.146594+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 156,
+      "command": "set -eu\nsudo sh -c '\nexec 3>>/var/log/inventory/app.log\nbefore_inode=$(stat -c %i /var/log/inventory/app.log)\nprintf \"%s\\n\" continuity-before-rotation >&3\nlogrotate --force --state /tmp/inventory-logrotate-test.status /etc/logrotate.d/inventory-app\nafter_inode=$(stat -c %i /var/log/inventory/app.log)\nprintf \"%s\\n\" continuity-after-rotation >&3\nexec 3>&-\nprintf \"inode_before=%s inode_after=%s\\n\" \"$before_inode\" \"$after_inode\"\n'\nprintf '%s\\n' '--- active log after held-descriptor write ---'\nsudo stat -c 'file=%n inode=%i size=%s owner=%U group=%G mode=%a' /var/log/inventory/app.log\nsudo tail -n 5 /var/log/inventory/app.log\nprintf '%s\\n' '--- compressed rotation ---'\nsudo ls -l /var/log/inventory/app.log.1.gz\nsudo gzip -t /var/log/inventory/app.log.1.gz\nsudo zcat /var/log/inventory/app.log.1.gz",
+      "stdout": "inode_before=262324 inode_after=262324\n--- active log after held-descriptor write ---\nfile=/var/log/inventory/app.log inode=262324 size=26 owner=root group=root mode=644\ncontinuity-after-rotation\n--- compressed rotation ---\n-rw-r--r-- 1 root root 90 Oct  1 22:53 /var/log/inventory/app.log.1.gz\ninventory service started\ninventory initial record count: 2\ncontinuity-before-rotation"
+    },
+    {
+      "command_id": "cmd-2d6a948e1fd44035",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:37.005563+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 370,
+      "command": "set -eu\nsudo sh -c '\ni=2\nwhile [ \"$i\" -le 8 ]; do\n  printf \"retention-cycle-%s\\n\" \"$i\" >> /var/log/inventory/app.log\n  logrotate --force --state /tmp/inventory-logrotate-test.status /etc/logrotate.d/inventory-app\n  i=$((i + 1))\ndone\nprintf \"%s\\n\" inventory-log-ready >> /var/log/inventory/app.log\n'\nprintf '%s\\n' '--- retained files ---'\nsudo find /var/log/inventory -maxdepth 1 -type f -name 'app.log.*.gz' -printf '%f\\n' | sort -V\ncount=$(sudo find /var/log/inventory -maxdepth 1 -type f -name 'app.log.*.gz' | wc -l)\nprintf 'compressed_rotation_count=%s\\n' \"$count\"\n[ \"$count\" -eq 7 ]\n[ ! -e /var/log/inventory/app.log.8.gz ]\nfor f in /var/log/inventory/app.log.*.gz; do sudo gzip -t \"$f\"; done\nprintf '%s\\n' 'all_retained_rotations_gzip_valid=yes'\nprintf '%s\\n' '--- active log ---'\nsudo stat -c 'file=%n inode=%i size=%s owner=%U group=%G mode=%a' /var/log/inventory/app.log\nsudo cat /var/log/inventory/app.log",
+      "stdout": "--- retained files ---\napp.log.1.gz\napp.log.2.gz\napp.log.3.gz\napp.log.4.gz\napp.log.5.gz\napp.log.6.gz\napp.log.7.gz\ncompressed_rotation_count=7\nall_retained_rotations_gzip_valid=yes\n--- active log ---\nfile=/var/log/inventory/app.log inode=262324 size=20 owner=root group=root mode=644\ninventory-log-ready"
+    },
+    {
+      "command_id": "cmd-efa7d164d7994a09",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:46.710347+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 163,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime_seconds='; cut -d. -f1 /proc/uptime\nprintf 'logrotate_timer_enabled='; systemctl is-enabled logrotate.timer\nprintf 'logrotate_timer_active='; systemctl is-active logrotate.timer\nsudo logrotate --debug /etc/logrotate.d/inventory-app 2>&1 | grep -E 'rotating pattern:|considering log|does not need rotating|empty log'\nprintf 'config_sha256='; sudo sha256sum /etc/logrotate.d/inventory-app | awk '{print $1}'\nprintf 'active_log='; sudo tail -n 1 /var/log/inventory/app.log\ncount=$(sudo find /var/log/inventory -maxdepth 1 -type f -name 'app.log.*.gz' | wc -l)\nprintf 'compressed_rotation_count=%s\\n' \"$count\"\n[ \"$count\" -eq 7 ]\nfor f in /var/log/inventory/app.log.*.gz; do sudo gzip -t \"$f\"; done\nprintf '%s\\n' 'all_retained_rotations_gzip_valid=yes'",
+      "stdout": "boot_id=c96a02ae-22aa-4530-8d57-ce64bf4629af\nuptime_seconds=69\nlogrotate_timer_enabled=enabled\nlogrotate_timer_active=active\nrotating pattern: /var/log/inventory/app.log  after 1 days (7 rotations)\nempty log files are not rotated, old logs are removed\nconsidering log /var/log/inventory/app.log\n  log does not need rotating (log has already been rotated)\nconfig_sha256=206136c1bdc592d32dd9117487171b1ac31b2d5ebe56f806436691f53f85dd9d\nactive_log=inventory-log-ready\ncompressed_rotation_count=7\nall_retained_rotations_gzip_valid=yes"
+    },
+    {
+      "command_id": "cmd-ff3aedab91744a87",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:50.401133+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 76,
+      "command": "set -eu\nprintf 'pre_reboot_boot_id='; cat /proc/sys/kernel/random/boot_id\nsudo systemd-run --unit=[REDACTED] --on-active=3s /usr/bin/systemctl reboot\nprintf '%s\\n' 'reboot_scheduled=yes'",
+      "stdout": "pre_reboot_boot_id=c96a02ae-22aa-4530-8d57-ce64bf4629af\nRunning timer as unit: [REDACTED].timer\nWill run service as unit: [REDACTED].service\nreboot_scheduled=yes"
+    },
+    {
+      "command_id": "cmd-98b13fb6970346f7",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:53.254604+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 118,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; printf 'uptime_seconds='; cut -d. -f1 /proc/uptime",
+      "stdout": "boot_id=c96a02ae-22aa-4530-8d57-ce64bf4629af\nuptime_seconds=75"
+    },
+    {
+      "command_id": "cmd-e4011f2c2df44f25",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:56.164096+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 51,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; printf 'uptime_seconds='; cut -d. -f1 /proc/uptime",
+      "stdout": "boot_id=c96a02ae-22aa-4530-8d57-ce64bf4629af\nuptime_seconds=78"
+    },
+    {
+      "command_id": "cmd-51d3c75224e94878",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:53:58.797454+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 116,
+      "command": "systemctl status [REDACTED].timer [REDACTED].service --no-pager || true\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-f7cd86b25e994001",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:54:02.631690+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 1480,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; printf 'uptime_seconds='; cut -d. -f1 /proc/uptime",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-ce678a7693104fa5",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:54:04.936153+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 88,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; printf 'uptime_seconds='; cut -d. -f1 /proc/uptime",
+      "stdout": "boot_id=cc018432-76ac-4761-81db-18fba166608c\nuptime_seconds=4"
+    },
+    {
+      "command_id": "cmd-8ed45d96eb8647d8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:54:15.552615+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 163,
+      "command": "set -eu\nprintf 'post_reboot_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime_seconds='; cut -d. -f1 /proc/uptime\nprintf 'logrotate_timer_enabled='; systemctl is-enabled logrotate.timer\nprintf 'logrotate_timer_active='; systemctl is-active logrotate.timer\nsystemctl list-timers logrotate.timer --no-pager\nsudo logrotate --debug /etc/logrotate.d/inventory-app 2>&1 | grep -E 'rotating pattern:|considering log|does not need rotating|empty log'\nprintf 'config_sha256='; sudo sha256sum /etc/logrotate.d/inventory-app | awk '{print $1}'\nsudo sh -c 'printf \"%s\\n\" post-reboot-application-write >> /var/log/inventory/app.log'\nprintf '%s\\n' '--- persisted active data ---'\nsudo stat -c 'file=%n inode=%i size=%s owner=%U group=%G mode=%a' /var/log/inventory/app.log\nsudo tail -n 3 /var/log/inventory/app.log\ncount=$(sudo find /var/log/inventory -maxdepth 1 -type f -name 'app.log.*.gz' | wc -l)\nprintf 'compressed_rotation_count=%s\\n' \"$count\"\n[ \"$count\" -eq 7 ]\nfor f in /var/log/inventory/app.log.*.gz; do sudo gzip -t \"$f\"; done\nprintf '%s\\n' 'all_retained_rotations_gzip_valid=yes'\nprintf '%s\\n' 'restart_recovery_verified=yes'",
+      "stdout": "post_reboot_boot_id=cc018432-76ac-4761-81db-18fba166608c\nuptime_seconds=15\nlogrotate_timer_enabled=enabled\nlogrotate_timer_active=active\nNEXT                           LEFT LAST                        PASSED UNIT            ACTIVATES\nFri 2026-10-02 00:00:00 EDT 1h 5min Thu 2026-10-01 22:52:44 EDT      - logrotate.timer logrotate.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too.\nrotating pattern: /var/log/inventory/app.log  after 1 days (7 rotations)\nempty log files are not rotated, old logs are removed\nconsidering log /var/log/inventory/app.log\n  log does not need rotating (log has already been rotated)\nconfig_sha256=206136c1bdc592d32dd9117487171b1ac31b2d5ebe56f806436691f53f85dd9d\n--- persisted active data ---\nfile=/var/log/inventory/app.log inode=262324 size=50 owner=root group=root mode=644\ninventory-log-ready\npost-reboot-application-write\ncompressed_rotation_count=7\nall_retained_rotations_gzip_valid=yes\nrestart_recovery_verified=yes"
+    }
+  ]
+}

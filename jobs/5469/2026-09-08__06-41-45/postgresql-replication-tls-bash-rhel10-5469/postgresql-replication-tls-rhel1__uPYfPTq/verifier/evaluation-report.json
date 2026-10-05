@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-topology",
+      "requirement": "Configure PostgreSQL streaming replication across node1, node2, node3 with node1 as the writable primary",
+      "status": "satisfied",
+      "summary": "node1 initialized as primary (wal_level=replica, max_wal_senders, hot_standby, replicator role created) and confirmed pg_is_in_recovery=false with two active streaming replicas post-restart. node2 and node3 built via pg_basebackup -R and confirmed pg_is_in_recovery=true both before and after their restarts, streaming continuously from node1. Data written on node1 (repl_test rows) observed identically on both standbys before and after the full restart cycle.",
+      "evidence_ids": [
+        "cmd-c16d526559e24703",
+        "cmd-d0d3c7d2ae0a4bef",
+        "cmd-f1717d4b54ad43a7",
+        "cmd-7bca66830e0e4060",
+        "cmd-4bad63cc11e9439f",
+        "cmd-ca1501fa4b0a4958",
+        "cmd-11ab52ca33db4a58",
+        "cmd-deb0fd7adeb64019",
+        "cmd-117216b4bdbc44b4",
+        "cmd-5474a24148514c75",
+        "cmd-b04cead12b9b4cb3",
+        "cmd-450b5156b79d4fb5",
+        "cmd-3fe55bcae1ab41f6",
+        "cmd-aa6bc68395f74d52"
+      ]
+    },
+    {
+      "id": "req-2-tls-ca",
+      "requirement": "Carry replication traffic over TLS using a certificate authority created specifically for this cluster",
+      "status": "satisfied",
+      "summary": "A self-signed CA (CN=pg-repl-cluster-ca) was generated on node1 (openssl genrsa + req -x509), and per-node server certs (node1/node2/node3) plus a replicator client cert were issued from that CA (openssl x509 -req -CA ca.crt -CAkey ca.key). All three nodes have ssl=on with ssl_cert_file/ssl_key_file/ssl_ca_file pointing to these CA-issued materials, and pg_stat_replication joined with pg_stat_ssl shows ssl=t for both standby connections both before and after the full restart cycle.",
+      "evidence_ids": [
+        "cmd-116cc494e2414652",
+        "cmd-9e12314833d94f93",
+        "cmd-53bf498d8e3a4132",
+        "cmd-d0d3c7d2ae0a4bef",
+        "cmd-4bad63cc11e9439f",
+        "cmd-ca1501fa4b0a4958",
+        "cmd-11ab52ca33db4a58",
+        "cmd-b04cead12b9b4cb3",
+        "cmd-953f1bc5a56847d6",
+        "cmd-d0632afd79f74a1e",
+        "cmd-450b5156b79d4fb5"
+      ]
+    },
+    {
+      "id": "req-3-cert-only-access",
+      "requirement": "Accept replication connections only from peers presenting a certificate issued by that CA",
+      "status": "satisfied",
+      "summary": "pg_hba.conf on all three nodes uses 'hostssl replication replicator <peer-ip>/32 cert' restricted to the specific peer IPs, which requires TLS client-certificate authentication verified against the CA in ssl_ca_file. A directly observed negative test (no client cert supplied, PGSSLCERT/PGSSLKEY unset) was rejected with 'FATAL: connection requires a valid client certificate', and the positive path (replicator cert signed by the same CA) succeeded for both standbys' pg_basebackup and ongoing streaming. This demonstrates enforcement in both directions, though no test explicitly attempted a certificate signed by a different/foreign CA.",
+      "evidence_ids": [
+        "cmd-06497b9f0705441f",
+        "cmd-a9bb2535274c4e08",
+        "cmd-f1717d4b54ad43a7",
+        "cmd-7bca66830e0e4060",
+        "cmd-4bad63cc11e9439f"
+      ]
+    },
+    {
+      "id": "req-4-restart-protocol",
+      "requirement": "Independent provider-wide node-restart evidence protocol: pre-restart boot identity/health, restart, changed boot identity, recovered service/data/cluster state for every managed node",
+      "status": "satisfied",
+      "summary": "All three nodes show pre-restart boot_id captured with healthy state, an explicit systemctl reboot issuance, polling through connection failures until reachable, a confirmed different post-restart boot_id, and recovered PostgreSQL/replication/TLS/data state per node. A final full-cluster check after all three restarts confirms both standbys still streaming over SSL and a newly inserted row replicated to both. Boot-identity values in the fixed after_prepare/after_executor global snapshots match the executor's own before/after values for each node, providing an independent cross-check.",
+      "evidence_ids": [
+        "cmd-2fe4c31c3d124a17",
+        "cmd-78c278038f0b42b0",
+        "cmd-b1b710c5c44b484d",
+        "cmd-b04cead12b9b4cb3",
+        "cmd-e0550197d45b42fd",
+        "cmd-243942696a3d4350",
+        "cmd-68ec40ad5d804311",
+        "cmd-953f1bc5a56847d6",
+        "cmd-0c229cbc2a35466b",
+        "cmd-95c6fa242ba446c9",
+        "cmd-e1e1f8d63a9e467a",
+        "cmd-d0632afd79f74a1e",
+        "cmd-450b5156b79d4fb5",
+        "cmd-3fe55bcae1ab41f6",
+        "cmd-aa6bc68395f74d52",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established a working TLS-secured, cert-authenticated PostgreSQL streaming replication cluster with node1 as primary and node2/node3 as standbys, using a dedicated CA it created. Enforcement of client-certificate-only access was directly demonstrated (rejection without a cert; success with the CA-issued replicator cert). The mandatory node-restart evidence protocol was completed for all three nodes with clear pre/post boot-identity changes and confirmed recovery, cross-validated against the fixed global snapshots. No unnecessary or unresolved mutations were found in the executor's command trace.",
+  "limitations": [
+    "The executor's evidence list for the cert-only-access requirement cited command_id cmd-a9bb2935274c4e08, which does not exist in the captured timeline; the actual matching command is cmd-a9bb2535274c4e08 (likely a transcription typo), which was used instead.",
+    "The negative test for certificate enforcement only verified rejection when no client certificate was presented; no test was captured presenting a certificate signed by a different (non-cluster) CA, so cross-CA rejection is inferred from the standard PostgreSQL 'cert' hostssl mechanism rather than directly observed.",
+    "Pre-restart baseline snapshots for node2 and node3 already reflect standby/recovery state (post pg_basebackup), so the 'healthy baseline' for the restart protocol is the already-configured replication state rather than a separate untouched baseline; this is expected sequencing, not a gap.",
+    "Executor evidence item 3 referenced unknown command IDs: cmd-a9bb2935274c4e08"
+  ],
+  "command_stats": {
+    "total": 69,
+    "successful": 56,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.93,
+    "summary": "Reviewed the full 69-command timeline. All state-changing commands trace to a clear purpose: package installs, CA/cert generation, /etc/hosts append and SSH key distribution (prerequisite for cross-node file transfer), data-directory wipe on node2/node3 (required before pg_basebackup rebuild), firewalld port opening (required for replication traffic), and the three reboots (required by the fixed restart protocol). One command (cmd-981f1d4eb69f48a7) failed due to an invalid pg_basebackup flag, but the certificate files it copied into /var/lib/pgsql beforehand were reused successfully by the corrected retry (cmd-f1717d4b54ad43a7) and remain load-bearing (referenced in primary_conninfo), so this is a corrected mis-attempt rather than unnecessary residue. No abandoned files, no failed systemd units, and no unnecessary broad/destructive mutations were found in the after_executor snapshot versus after_prepare; only expected additions (postgres socket files, reboot.log, listening port 5432) appear.",
+    "evidence_ids": [
+      "cmd-981f1d4eb69f48a7",
+      "cmd-f1717d4b54ad43a7",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

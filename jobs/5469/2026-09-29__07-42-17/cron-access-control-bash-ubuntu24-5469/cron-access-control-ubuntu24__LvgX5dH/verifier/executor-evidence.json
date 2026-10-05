@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 9,
+    "successful": 8,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Baseline: no pre-existing cron.allow/cron.deny, opsadmin absent",
+      "command_ids": [
+        "cmd-97a26faa3e8a40f3"
+      ],
+      "summary": "Confirmed /etc/cron.allow and /etc/cron.deny did not exist and opsadmin user did not exist prior to changes"
+    },
+    {
+      "requirement": "Only root and opsadmin can schedule cron jobs",
+      "command_ids": [
+        "cmd-277f88d872df42bd",
+        "cmd-7db37a932bf1403e"
+      ],
+      "summary": "Created /etc/cron.allow with root and opsadmin; demonstrated root and opsadmin can use crontab (list/install job) while a non-listed test user (crontest) is explicitly denied with 'You (crontest) are not allowed to use this program (crontab)'; cleaned up test user and temp job"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline (boot identity + service health) for node1",
+      "command_ids": [
+        "cmd-c1f2c0009ce34831"
+      ],
+      "summary": "Captured boot_id f9bf293d-1eb8-423e-b185-84e94db646f3, cron service active, cron.allow contents, and opsadmin existence before restart"
+    },
+    {
+      "requirement": "Node1 restart acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-47a4b27c28c94cd9"
+      ],
+      "summary": "Issued native 'reboot' via backgrounded sudo command; 'reboot-acknowledged' returned to the caller before the node disconnected"
+    },
+    {
+      "requirement": "Proof of actual restart via changed boot identity",
+      "command_ids": [
+        "cmd-8070961b414649b2",
+        "cmd-3c66ada1cbf744d3"
+      ],
+      "summary": "Connection reset confirmed the node went down; subsequent poll succeeded with boot_id changed to 72810ce8-b39f-4307-a33a-450cd2387bf3 and new uptime, proving a real reboot occurred"
+    },
+    {
+      "requirement": "Post-restart recovery of cron service, cron.allow restriction, and opsadmin account",
+      "command_ids": [
+        "cmd-8f6f813b43564c24"
+      ],
+      "summary": "After restart, cron service active, /etc/cron.allow still contains root/opsadmin, opsadmin account persists and can use crontab, and a freshly created ephemeral test user is still denied by crontab (then removed), confirming the restriction survived the restart"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-97a26faa3e8a40f3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:18:22.880860+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 220,
+      "command": "set -Eeuo pipefail\necho \"== os ==\"; cat /etc/os-release | head -3\necho \"== cron pkg ==\"; dpkg -l | grep -i cron || true\necho \"== cron service ==\"; systemctl is-active cron 2>/dev/null || systemctl is-active crond 2>/dev/null || true\necho \"== cron.allow ==\"; sudo -n cat /etc/cron.allow 2>&1 || true\necho \"== cron.deny ==\"; sudo -n cat /etc/cron.deny 2>&1 || true\necho \"== opsadmin user ==\"; id opsadmin 2>&1 || true\necho \"== existing crontabs ==\"; sudo -n ls -la /var/spool/cron/crontabs 2>&1 || sudo -n ls -la /var/spool/cron 2>&1 || true\n",
+      "stdout": "== os ==\nPRETTY_NAME=\"Ubuntu 24.04.3 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\n== cron pkg ==\nii  cron                            3.0pl1-184ubuntu2                       amd64        process scheduling daemon\nii  cron-daemon-common              3.0pl1-184ubuntu2                       all          process scheduling daemon's configuration files\n== cron service ==\nactive\n== cron.allow ==\ncat: /etc/cron.allow: No such file or directory\n== cron.deny ==\ncat: /etc/cron.deny: No such file or directory\n== opsadmin user ==\nid: \u2018opsadmin\u2019: no such user\n== existing crontabs ==\ntotal 8\ndrwx-wx--T 2 root crontab 4096 Mar 30  2024 .\ndrwxr-xr-x 3 root root    4096 Aug  5  2025 .."
+    },
+    {
+      "command_id": "cmd-a2bb2b1f91954fcf",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:18:28.968108+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 136,
+      "command": "set -Eeuo pipefail\necho \"== users with home dirs ==\"; awk -F: '$3>=1000 && $3<60000 {print $1,$3,$6,$7}' /etc/passwd\necho \"== current user ==\"; whoami; echo \"SUDO_USER=${SUDO_USER:-none}\"\n",
+      "stdout": "== users with home dirs ==\n== current user ==\nroot\nSUDO_USER=none"
+    },
+    {
+      "command_id": "cmd-277f88d872df42bd",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:18:44.480178+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 476,
+      "command": "set -Eeuo pipefail\n\necho \"STEP: create opsadmin user\"\nif ! id opsadmin >/dev/null 2>&1; then\n  useradd -m -s /bin/bash opsadmin\n  passwd -l opsadmin >/dev/null\nfi\nid opsadmin\n\necho \"STEP: create temp low-priv test user\"\nif ! id crontest >/dev/null 2>&1; then\n  useradd -m -s /bin/bash crontest\n  passwd -l crontest >/dev/null\nfi\nid crontest\n\necho \"STEP: write /etc/cron.allow\"\nprintf 'root\\nopsadmin\\n' > /etc/cron.allow\nchown root:root /etc/cron.allow\nchmod 644 /etc/cron.allow\ncat /etc/cron.allow\n\necho \"STEP: remove stray cron.deny if present (allow list takes precedence but keep clean)\"\nrm -f /etc/cron.deny\n\necho \"STEP: verify root can use cron\"\ncrontab -l 2>&1 || true\n\necho \"STEP: verify opsadmin can use cron\"\nsu -s /bin/sh opsadmin -c 'crontab -l' 2>&1 || true\n\necho \"STEP: verify crontest is denied\"\nsu -s /bin/sh crontest -c 'crontab -l' 2>&1 || true\n\necho \"STEP: verify opsadmin can actually install a cron job\"\nsu -s /bin/sh opsadmin -c 'echo \"* * * * * /bin/true\" | crontab -' 2>&1\nsu -s /bin/sh opsadmin -c 'crontab -l' 2>&1\n\necho \"STEP: verify crontest cannot install a cron job\"\nsu -s /bin/sh crontest -c 'echo \"* * * * * /bin/true\" | crontab -' 2>&1 || true\n\necho \"STEP: cleanup opsadmin crontab (avoid leaving stray job) - keep user, remove job\"\nsu -s /bin/sh opsadmin -c 'crontab -r' 2>&1 || true\n\necho \"STEP: cleanup temp test user\"\nuserdel -r crontest 2>&1 || true\n\necho \"DONE\"\n",
+      "stdout": "STEP: create opsadmin user\nuid=1000(opsadmin) gid=1000(opsadmin) groups=1000(opsadmin)\nSTEP: create temp low-priv test user\nuid=1001(crontest) gid=1001(crontest) groups=1001(crontest)\nSTEP: write /etc/cron.allow\nroot\nopsadmin\nSTEP: remove stray cron.deny if present (allow list takes precedence but keep clean)\nSTEP: verify root can use cron\nno crontab for root\nSTEP: verify opsadmin can use cron\nno crontab for opsadmin\nSTEP: verify crontest is denied\nYou (crontest) are not allowed to use this program (crontab)\nSee crontab(1) for more information\nSTEP: verify opsadmin can actually install a cron job\n* * * * * /bin/true\nSTEP: verify crontest cannot install a cron job\nYou (crontest) are not allowed to use this program (crontab)\nSee crontab(1) for more information\nSTEP: cleanup opsadmin crontab (avoid leaving stray job) - keep user, remove job\nSTEP: cleanup temp test user\nuserdel: user crontest is currently used by process 1284\nDONE"
+    },
+    {
+      "command_id": "cmd-7db37a932bf1403e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:18:48.814022+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1154,
+      "command": "set -Eeuo pipefail\npkill -u crontest 2>/dev/null || true\nsleep 1\nuserdel -r crontest\nid crontest 2>&1 || echo \"crontest removed\"\ncat /etc/cron.allow\n",
+      "stdout": "userdel: crontest mail spool (/var/mail/crontest) not found\nid: \u2018crontest\u2019: no such user\ncrontest removed\nroot\nopsadmin"
+    },
+    {
+      "command_id": "cmd-c1f2c0009ce34831",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:18:52.006708+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 72,
+      "command": "set -Eeuo pipefail\necho \"== boot id ==\"; cat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"; uptime -s\necho \"== cron active ==\"; systemctl is-active cron\necho \"== cron.allow ==\"; cat /etc/cron.allow\necho \"== opsadmin exists ==\"; id opsadmin\n",
+      "stdout": "== boot id ==\nf9bf293d-1eb8-423e-b185-84e94db646f3\n== uptime ==\n2026-09-29 09:18:04\n== cron active ==\nactive\n== cron.allow ==\nroot\nopsadmin\n== opsadmin exists ==\nuid=1000(opsadmin) gid=1000(opsadmin) groups=1000(opsadmin)"
+    },
+    {
+      "command_id": "cmd-47a4b27c28c94cd9",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:18:55.482146+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 76,
+      "command": "sudo -n sh -c 'nohup reboot >/dev/null 2>&1 &' ; echo \"reboot-acknowledged\"",
+      "stdout": "reboot-acknowledged"
+    },
+    {
+      "command_id": "cmd-8070961b414649b2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:18:59.411019+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 1561,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-3c66ada1cbf744d3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:19:01.830486+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 70,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stdout": "72810ce8-b39f-4307-a33a-450cd2387bf3\n2026-09-29 09:18:57"
+    },
+    {
+      "command_id": "cmd-8f6f813b43564c24",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:19:07.571631+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1407,
+      "command": "set -Eeuo pipefail\necho \"== cron active ==\"; systemctl is-active cron\necho \"== cron.allow persisted ==\"; cat /etc/cron.allow\necho \"== opsadmin persisted ==\"; id opsadmin\necho \"== opsadmin can use cron ==\"; su -s /bin/sh opsadmin -c 'crontab -l' 2>&1 || true\necho \"== random user denied (recreate ephemeral test user) ==\"\nuseradd -m -s /bin/bash verifytest\nsu -s /bin/sh verifytest -c 'crontab -l' 2>&1 || true\npkill -u verifytest 2>/dev/null || true\nsleep 1\nuserdel -r verifytest\necho \"cleanup done\"\n",
+      "stdout": "== cron active ==\nactive\n== cron.allow persisted ==\nroot\nopsadmin\n== opsadmin persisted ==\nuid=1000(opsadmin) gid=1000(opsadmin) groups=1000(opsadmin)\n== opsadmin can use cron ==\nno crontab for opsadmin\n== random user denied (recreate ephemeral test user) ==\nYou (verifytest) are not allowed to use this program (crontab)\nSee crontab(1) for more information\nuserdel: verifytest mail spool (/var/mail/verifytest) not found\ncleanup done"
+    }
+  ]
+}

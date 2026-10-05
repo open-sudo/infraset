@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Configure daily rotation for /var/log/inventory/app.log",
+      "status": "satisfied",
+      "summary": "Created /etc/logrotate.d/inventory with a 'daily' stanza; logrotate -d dry-run confirms 'rotating pattern: /var/log/inventory/app.log after 1 days'.",
+      "evidence_ids": [
+        "cmd-d4a7402791124f81"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Keep seven compressed rotations",
+      "status": "satisfied",
+      "summary": "Config specifies 'rotate 7' and 'compress'; forced rotation produced app.log-20260929.gz whose content was verified via zcat to match the pre-rotation log.",
+      "evidence_ids": [
+        "cmd-d4a7402791124f81",
+        "cmd-ca1186c144f240cd",
+        "cmd-d7637bc1d22c4422"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Application can continue writing to the log after rotation without restart/signal",
+      "status": "satisfied",
+      "summary": "copytruncate strategy used; inode of app.log (65543) was identical before and immediately after the forced rotation, and a write issued right after rotation landed successfully in the fresh app.log. Post-reboot write also succeeded, confirming durability of the behavior.",
+      "evidence_ids": [
+        "cmd-ca1186c144f240cd",
+        "cmd-10ae4b9e8b324351"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Rotation actually runs automatically on a daily cadence (not just configured on paper)",
+      "status": "satisfied",
+      "summary": "crond was stopped at discovery; executor enabled it in the default runlevel and started it, confirmed still enabled/started after reboot. /etc/periodic/daily/logrotate (from the logrotate-openrc package) invokes logrotate against /etc/logrotate.conf, which includes /etc/logrotate.d. No literal midnight firing was observed (not practical within the session), but the scheduling mechanism and forced-run behavior were both directly verified.",
+      "evidence_ids": [
+        "cmd-6af2fde52ea04a4a",
+        "cmd-48e8e1ae71e54339",
+        "cmd-01a7eba9bdfe4d7a",
+        "cmd-76d3265a22594553"
+      ]
+    },
+    {
+      "id": "R5",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured (boot_id a7ca5ddf..., crond started, config/log state) at cmd-01a7eba9bdfe4d7a; reboot acknowledged at cmd-a03e4ea2dbe04365; post-restart boot_id (71fabf0a..., uptime 17s) differs at cmd-77790d47ec184020; recovered service/config/data state confirmed at cmd-76d3265a22594553 and cmd-10ae4b9e8b324351. Corroborated by the fixed global boot-identity snapshots (after_prepare a7ca5ddf... -> after_executor 71fabf0a...).",
+      "evidence_ids": [
+        "cmd-01a7eba9bdfe4d7a",
+        "cmd-a03e4ea2dbe04365",
+        "cmd-77790d47ec184020",
+        "cmd-76d3265a22594553",
+        "cmd-10ae4b9e8b324351",
+        "global:after_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material parts of the task: /var/log/inventory/app.log is configured in /etc/logrotate.d/inventory with daily rotation, 7 compressed rotations, and copytruncate so the application keeps writing to the same inode after rotation. A forced rotation directly demonstrated correct compressed-archive creation and uninterrupted writes, and crond (previously stopped) was enabled and started so the daily periodic job actually fires. The independent node-restart evidence protocol was also executed cleanly for node1, showing a healthy pre-restart baseline, an acknowledged reboot, a distinct post-restart boot identity, and full recovery of crond, the logrotate config, the rotated archive, and log writability \u2014 corroborated by the fixed global boot-identity snapshots. Hygiene is good but not perfect: verification writes overwrote the live log's original content with test strings, and a small /tmp/reboot.log artifact was left behind.",
+  "limitations": [
+    "No observation of an actual scheduled (midnight) logrotate firing via crond; automatic scheduling is inferred from crond being enabled/started plus the existing /etc/periodic/daily/logrotate hook, not from a real daily execution.",
+    "The live app.log content was overwritten with synthetic test strings during verification, so the pre-existing production log content is only recoverable from the rotated .gz archive, not the live file."
+  ],
+  "command_stats": {
+    "total": 28,
+    "successful": 14,
+    "failed": 14,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most actions were necessary and appropriately scoped: package install, logrotate.d config creation, crond enable/start, dry-run validation, and a bounded forced-rotation test. Two minor residue items remain uncleaned: (1) the forced-rotation and post-reboot verification writes (cmd-ca1186c144f240cd, cmd-10ae4b9e8b324351) replaced the original application log content ('inventory service started...') with synthetic test strings ('pre-rotate write', 'post-rotate write', 'post-reboot write') that were never restored, so the live app.log now only contains test data rather than original application output (original content is preserved only inside the rotated .gz archive); (2) /tmp/reboot.log, created by the backgrounded reboot command (cmd-a03e4ea2dbe04365), was left on disk and shows up as new residue in the after_executor temporary-files snapshot versus after_prepare. Both are low-risk, non-destructive, and plausibly necessary for evidence collection, but neither was cleaned up afterward. No failed/conflicting services, no unsafe exposure changes (only an expected SSH PID/DHCP lease change from the reboot), and package health (apk check) is unchanged from baseline.",
+    "evidence_ids": [
+      "cmd-ca1186c144f240cd",
+      "cmd-10ae4b9e8b324351",
+      "cmd-a03e4ea2dbe04365",
+      "global:after_prepare:node1:temporary-files",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:package-health",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

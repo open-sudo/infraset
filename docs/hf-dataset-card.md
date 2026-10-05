@@ -43,24 +43,12 @@ source tree, including every raw artifact, is at
 
 ## Results
 
-Start with **[single-node-os-comparison.md](metrics/single-node-os-comparison.md)**.
-It is the widest comparison in the set: the same 30 tasks executed on all eight
-releases, with command success and failure counts, completion time and operational
-hygiene side by side, and every cell linking to the analysis for that run.
-
-The remaining categories are summarised the same way.
-
-| Category | Summary |
-|---|---|
-| Single-host administration | [single-node-os-comparison.md](metrics/single-node-os-comparison.md) |
-| Multi-node services | [multi-node-os-comparison.md](metrics/multi-node-os-comparison.md) |
-| Stateful clusters | [clustered-services.md](metrics/clustered-services.md) |
-| VyOS | [vyos-networking.md](metrics/vyos-networking.md) |
-| OpenWrt | [openwrt-networking.md](metrics/openwrt-networking.md) |
-| SONiC | [sonic-networking.md](metrics/sonic-networking.md) |
-| OPNsense | [opnsense-networking.md](metrics/opnsense-networking.md) |
-| VyOS and OPNsense cross-vendor | [vyos-opnsense-networking.md](metrics/vyos-opnsense-networking.md) |
-| Cluster provisioning | [cluster-provisioning-performance.md](metrics/cluster-provisioning-performance.md) |
+Browse the [metrics index](https://github.com/open-sudo/infraset/tree/main/metrics)
+and select a scenario and execution timestamp. Each batch contains category
+reports for its tasks and a provisioning report when observations are available.
+Reports include command success and failure counts, completion time, and
+operational hygiene, with links to the source jobs. Comparisons across executions
+live at the scenario level.
 
 ## Tables
 

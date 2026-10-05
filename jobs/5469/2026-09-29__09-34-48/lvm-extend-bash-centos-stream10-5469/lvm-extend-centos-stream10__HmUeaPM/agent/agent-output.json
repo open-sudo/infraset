@@ -1,0 +1,68 @@
+{
+  "status": "completed",
+  "summary": "Created an LVM volume group (datavg) and logical volume (datalv) on node1 backed by a file-backed loop device (since the node's single disk had no free space/spare disk), formatted it XFS, mounted at /srv/data, then grew it online from 1000M to <2.15GiB (>2GB) via pvresize + lvextend -r while it stayed mounted, preserving contents (verified by checksum before/after). Made the setup persistent across reboot with a systemd oneshot service that reattaches the loop device and activates the VG before local-fs mounting, referenced from /etc/fstab via x-systemd.requires. Completed the mandatory single-node restart: captured boot_id baseline, rebooted node1, confirmed boot_id changed, and verified the LV, mount, and file checksums all recovered correctly post-reboot.",
+  "actions_performed": [
+    "Inspected node1 disk layout (single 20G disk, no free space/no spare block device)",
+    "Created 1200M sparse file /var/lib/lvm-backing/disk1.img and attached as /dev/loop0",
+    "pvcreate/vgcreate/lvcreate: datavg VG and datalv LV (1000M), mkfs.xfs",
+    "Mounted datalv at /srv/data",
+    "Wrote marker.txt and 50MB payload.bin with recorded sha256 checksums",
+    "Grew backing file to 2400M, losetup -c to refresh loop size, pvresize /dev/loop0",
+    "lvextend -L 2200M -r /dev/datavg/datalv (online resize to <2.15GiB) while mounted",
+    "Verified checksums intact after grow",
+    "Created /usr/local/sbin/setup-datavg-loop.sh and systemd unit setup-datavg-loop.service (enabled, ordered before lvm2-activation/local-fs-pre)",
+    "Added /etc/fstab entry for /srv/data with x-systemd.requires=setup-datavg-loop.service",
+    "Captured pre-restart baseline: boot_id, lvs, df, checksums",
+    "Issued systemctl reboot on node1, polled until reachable",
+    "Verified new boot_id, service active, LV size, mount, and checksums all match post-reboot"
+  ],
+  "evidence": [
+    {
+      "requirement": "LV mounted at /srv/data (initial creation)",
+      "command_ids": [
+        "cmd-ccca5c26a3dd4181"
+      ],
+      "summary": "mount /dev/datavg/datalv /srv/data succeeded; df shows 936M mounted at /srv/data"
+    },
+    {
+      "requirement": "Grow LV to >=2GB while mounted, contents intact",
+      "command_ids": [
+        "cmd-fca2e54ff3b74ec9",
+        "cmd-e0d3c8ae5ab84c12",
+        "cmd-ad4743c9d01a4d8e",
+        "cmd-558b48fdc3b8456b"
+      ],
+      "summary": "Wrote marker.txt/payload.bin with checksums, resized backing file+PV, then lvextend -r grew LV to <2.15GiB (>2GB) with fs still mounted; post-grow sha256sum -c confirms both files OK"
+    },
+    {
+      "requirement": "Baseline health/boot identity before restart",
+      "command_ids": [
+        "cmd-43e0e67633884315"
+      ],
+      "summary": "Captured boot_id 96974ac3..., LV size <2.15g, mount, and verified checksums OK prior to reboot"
+    },
+    {
+      "requirement": "Restart acknowledgement and node unreachable during reboot",
+      "command_ids": [
+        "cmd-2daee8149c1441eb",
+        "cmd-2c98a90c9f9a40d0",
+        "cmd-ff97ca4c083a485e"
+      ],
+      "summary": "systemctl reboot issued in background (ack returned before disconnect); subsequent polls show connection timeout/reset confirming the node went down"
+    },
+    {
+      "requirement": "Changed boot identity after restart",
+      "command_ids": [
+        "cmd-e92c892252a84721"
+      ],
+      "summary": "Post-reboot boot_id is d1a4a2fc..., different from pre-reboot 96974ac3..., proving an actual restart occurred"
+    },
+    {
+      "requirement": "Post-restart recovery of LV, mount, and data",
+      "command_ids": [
+        "cmd-2371b9f0022e4933"
+      ],
+      "summary": "After reboot: setup-datavg-loop.service active, loop0 reattached, LV still <2.15g, /srv/data mounted via datavg-datalv, and sha256sum -c confirms marker.txt and payload.bin unchanged"
+    }
+  ]
+}

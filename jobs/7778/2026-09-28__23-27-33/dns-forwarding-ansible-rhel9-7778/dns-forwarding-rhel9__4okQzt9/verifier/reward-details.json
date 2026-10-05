@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 configured as DNS resolver for the shared lan network, answering authoritatively for inventory.internal with node2's lan address",
+      "status": "satisfied",
+      "summary": "config.boot on node1 (cmd-9d1de5f29f7c4c71) shows eth1=10.10.10.1/24, service dns forwarding authoritative-domain inventory.internal record a @ -> 10.10.10.2, persisted via commit+save. pdns-recursor confirmed active and listening on 10.10.10.1:53 (cmd-9730a075a1b146cc). getent hosts inventory.internal on node2 and node3 returns 10.10.10.2 (cmd-77643ed365404a0f, cmd-a817393e01e947b6).",
+      "evidence_ids": [
+        "cmd-9d1de5f29f7c4c71",
+        "cmd-9730a075a1b146cc",
+        "cmd-77643ed365404a0f",
+        "cmd-a817393e01e947b6"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node1 forwards all other (non-inventory.internal) DNS queries upstream",
+      "status": "satisfied",
+      "summary": "config.boot shows name-server 1.1.1.1 as catch-all forwarder. getent hosts example.com and google.com resolved successfully from node2/node3 via node1 (cmd-45544b6ff31c455b, cmd-ec21aed92e964453), and again after node1's restart (cmd-de64549cf926445e, cmd-2bb2eeab57664ced).",
+      "evidence_ids": [
+        "cmd-9d1de5f29f7c4c71",
+        "cmd-45544b6ff31c455b",
+        "cmd-ec21aed92e964453",
+        "cmd-de64549cf926445e",
+        "cmd-2bb2eeab57664ced"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node2 and node3 configured to resolve through node1",
+      "status": "satisfied",
+      "summary": "Post-playbook /etc/resolv.conf on both node2 and node3 shows only nameserver 10.10.10.1 and search inventory.internal (cmd-af77469e04be4ae5), with the mgmt DHCP-supplied nameserver removed. Confirmed again post-restart on both nodes (cmd-a7d1192d51a749d5, cmd-0e41fc6f4e0c4aba).",
+      "evidence_ids": [
+        "cmd-af77469e04be4ae5",
+        "cmd-a7d1192d51a749d5",
+        "cmd-0e41fc6f4e0c4aba"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Implementation delivered via Ansible from the designated control_node (node4)",
+      "status": "satisfied",
+      "summary": "Inventory (inventory.ini) and playbook (site.yml) created on node4 under /root/dns-lab, executed via ansible-playbook from node4 (cmd-c7d0e3f938124636), targeting node1 via ansible.builtin.script and node2/node3 via community.general.nmcli. Re-run confirmed idempotency: VyOS reported 'No configuration changes to commit' and RHEL tasks showed ok/no-change on config tasks (cmd-aa9aa23426404c5d).",
+      "evidence_ids": [
+        "cmd-52e75639df4544b0",
+        "cmd-e92516e3d5734562",
+        "cmd-49229ae7c62e46fd",
+        "cmd-c7d0e3f938124636",
+        "cmd-aa9aa23426404c5d"
+      ]
+    }
+  ],
+  "overall_summary": "The task's core contract \u2014 making node1 an Ansible-configured DNS resolver on the shared lan network that authoritatively answers inventory.internal with node2's address and forwards everything else upstream, with node2/node3 pointed at it \u2014 is directly and coherently demonstrated: config.boot persistence, active pdns-recursor listening on the lan address, correct resolution for both the authoritative domain and upstream lookups from both clients, and confirmed idempotent Ansible re-runs. The independent node-restart evidence protocol was also completed for all four nodes with pre-restart baseline, reboot acknowledgement, changed boot_id, and post-restart functional recovery (including DNS answering correctly and RHEL network/resolv.conf state persisting through reboot). A VyOS login-reconciler quirk broke node4->node1 SSH after node1's restart, but the executor diagnosed and durably fixed it via VyOS-native config, then re-verified full Ansible connectivity and playbook idempotency.",
+  "limitations": [
+    "dig was unavailable on node2/node3 so DNS verification relied on getent hosts rather than direct dig queries against node1:53, though getent results are still a valid, authoritative confirmation of resolution behavior.",
+    "No evidence was provided of a bounded network disruption specifically to the DNS service (e.g., killing pdns-recursor) to test resolver-level failover; only full node reboots were used to demonstrate recovery, which satisfies the fixed restart protocol but does not test finer-grained DNS service resilience.",
+    "The preparation_comparison lifecycle diff shows no changes, and after_prepare is an alias of before_prepare (prepare was disabled), so all state changes are correctly attributable to the executor."
+  ],
+  "command_stats": {
+    "total": 98,
+    "successful": 76,
+    "failed": 22,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Executor's mutating commands were almost all tied to the task: SSH key bootstrapping for Ansible connectivity (cmd-9835b91e55a54995, cmd-45ebb2f5765a4807, cmd-e7a088bf22834e0f, cmd-e6609849b7604720), the DNS/network configuration playbook runs (cmd-c7d0e3f938124636, cmd-aa9aa23426404c5d), and the mandated per-node restart protocol (reboot commands on all 4 nodes). One early configuration attempt directly on node1 (cmd-953934328a234425, set authoritative-domain record without listen-address) failed and was not committed ('Commit failed'), so it left no residue \u2014 a bounded, reverted discovery attempt, not unnecessary mutation of persisted state. The node1 login-reconciler wiping the manually appended authorized_keys (a VyOS platform behavior, not an executor action) was fixed durably via native VyOS config (cmd-ff98169606064e31), which is a necessary corrective action to restore control-node connectivity broken by the restart. No abandoned files, unnecessary packages, or unrelated exposure changes were found in the lifecycle diff; observed additions (systemd-private tmp dirs, reboot.log) are normal reboot artifacts, not created by the executor's task logic.",
+    "evidence_ids": [
+      "cmd-953934328a234425",
+      "cmd-9835b91e55a54995",
+      "cmd-c7d0e3f938124636",
+      "cmd-aa9aa23426404c5d",
+      "cmd-ff98169606064e31",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,119 @@
+# Compatible with Python 2.4+, including the two managed legacy images.
+import os
+import sys
+import stat
+import binascii
+import tempfile
+
+os.umask(18)  # 0022, using syntax supported by Python 2.4 and Python 3.
+
+ROOT = __ROOT__
+FILES = __FILES__
+LINKS = __LINKS__
+SPECIAL = __SPECIAL__
+
+
+def native(encoded):
+    raw = binascii.a2b_base64(encoded)
+    if sys.version_info[0] >= 3:
+        return os.fsdecode(raw)
+    return raw
+
+
+def mkdir(path):
+    if os.path.lexists(path):
+        if os.path.islink(path) or not os.path.isdir(path):
+            raise RuntimeError('Unsafe preparation directory: ' + repr(path))
+        return
+    parent = os.path.dirname(path)
+    if parent != path:
+        mkdir(parent)
+    os.mkdir(path, 493)
+
+
+def target(encoded):
+    relative = native(encoded)
+    if os.path.isabs(relative) or '..' in relative.split('/'):
+        raise RuntimeError('Unsafe fixture pathname')
+    path = os.path.join(ROOT, relative)
+    mkdir(os.path.dirname(path))
+    if os.path.realpath(os.path.dirname(path)) != os.path.dirname(path):
+        raise RuntimeError('Symlink in preparation path')
+    return path
+
+
+def regular_destination(path):
+    if os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode):
+        raise RuntimeError('Refusing to overwrite nonregular file: ' + repr(path))
+
+
+mkdir(ROOT)
+for encoded, payload, mode, epoch in FILES:
+    path = target(encoded)
+    regular_destination(path)
+    data = binascii.a2b_base64(payload)
+    fd, staging = tempfile.mkstemp(prefix='.seed-', dir=os.path.dirname(path))
+    try:
+        f = os.fdopen(fd, 'wb')
+        try:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        finally:
+            f.close()
+        os.chmod(staging, mode)
+        os.utime(staging, (epoch, epoch))
+        os.rename(staging, path)
+    finally:
+        if os.path.exists(staging):
+            os.unlink(staging)
+    f = open(path, 'rb')
+    actual = f.read()
+    f.close()
+    if actual != data or stat.S_IMODE(os.stat(path).st_mode) != mode:
+        raise RuntimeError('Fixture readback mismatch: ' + repr(path))
+
+for encoded, encoded_target in LINKS:
+    path = target(encoded)
+    link = native(encoded_target)
+    if os.path.lexists(path):
+        if not os.path.islink(path):
+            raise RuntimeError('Expected a symlink fixture: ' + repr(path))
+        if os.readlink(path) != link:
+            os.unlink(path)
+            os.symlink(link, path)
+    else:
+        os.symlink(link, path)
+    if os.readlink(path) != link:
+        raise RuntimeError('Symlink readback mismatch')
+
+for kind, encoded in SPECIAL:
+    path = target(encoded)
+    if kind == 'fifo':
+        if not os.path.lexists(path):
+            os.mkfifo(path, 384)
+        if not stat.S_ISFIFO(os.lstat(path).st_mode):
+            raise RuntimeError('Expected a FIFO')
+    elif kind == 'sparse':
+        regular_destination(path)
+        fd, staging = tempfile.mkstemp(prefix='.seed-', dir=os.path.dirname(path))
+        try:
+            f = os.fdopen(fd, 'wb')
+            f.write(binascii.a2b_base64('QlJBTkNILUlNQUdFCg=='))
+            f.seek(67108864 - 4)
+            f.write(binascii.a2b_base64('RU5ECg=='))
+            f.close()
+            os.chmod(staging, 420)
+            os.utime(staging, (1700000000, 1700000000))
+            os.rename(staging, path)
+        finally:
+            if os.path.exists(staging):
+                os.unlink(staging)
+        info = os.stat(path)
+        if info.st_size != 67108864 or info.st_blocks * 512 >= 2097152:
+            raise RuntimeError('Sparse fixture geometry is wrong')
+    else:
+        raise RuntimeError('Unknown special fixture')
+
+sys.stdout.write('Prepared and checked %d files, %d links, %d special files\n' %
+                 (len(FILES), len(LINKS), len(SPECIAL)))

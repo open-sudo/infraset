@@ -1,0 +1,120 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense, running Unbound as the LAN resolver at 10.100.146.10) to block the domain blocked.example and all its subdomains via Unbound's DNSBL blocklist mechanism, returning NXDOMAIN, while all other names resolve normally. Verified from both node2 and node3 that blocked.example and its subdomains fail to resolve while unrelated domains resolve fine. Completed the mandatory restart protocol on all three nodes one at a time, confirming boot identity changes and full recovery of DNS blocking/resolution after each restart.",
+  "actions_performed": [
+    "Inspected node1 and identified it as an OPNsense appliance running Unbound (port 53) as the actual LAN DNS resolver (dnsmasq only handles DHCP)",
+    "Edited /conf/config.xml on node1 to add an Unbound DNSBL blocklist policy blocking 'blocked.example' both as an exact-match entry and a wildcard entry (covers all subdomains), with nxdomain=1, description 'antrieb: block blocked.example and subdomains'",
+    "Applied the change via `configctl unbound dnsbl` (regenerate blocklist data) and `configctl unbound restart`",
+    "Used a temporary canary host-override (added then removed) plus the dnsbl_match.py policy-test tool to rigorously prove the DNSBL module -- not incidental NXDOMAIN from the reserved .example TLD -- is the actual mechanism intercepting blocked.example and its subdomains",
+    "Verified via drill directly on node1 (127.0.0.1) that blocked.example/subdomains return NXDOMAIN with no upstream authority section (module-generated) while www.google.com resolves normally",
+    "Verified from node2 and node3 clients that blocked.example, sub.blocked.example, deep.sub.blocked.example, a.b.c.blocked.example all fail to resolve (gaierror) while www.google.com and www.wikipedia.org resolve correctly",
+    "Captured pre-restart healthy baselines: node1 kern.boottime and unbound/dnsmasq process state plus dnsbl.json content; node2/node3 boot_id",
+    "Restarted node1 via `shutdown -r now`, polled until SSH/exec access returned, confirmed kern.boottime changed (1788627526 -> 1788627874), and confirmed unbound running, DNSBL config intact, and blocking/normal resolution both working post-restart",
+    "Restarted node2 via `sudo reboot`, polled until exec access returned, confirmed boot_id changed (2b19e976... -> db18605f...), and confirmed blocked.example fails while google.com resolves",
+    "Restarted node3 via `sudo reboot`, polled until exec access returned, confirmed boot_id changed (254597f8... -> f55f8a2e...), and confirmed blocked.example fails while wikipedia.org resolves",
+    "Cleaned up temporary python scripts used for config.xml edits; kept a config.xml.bak-dnsblock backup on node1"
+  ],
+  "evidence": [
+    {
+      "requirement": "blocked.example and all subdomains resolve to nothing usable from node2 and node3",
+      "command_ids": [
+        "cmd-25fc8c2266c44bff",
+        "cmd-d3bef65b62574914",
+        "cmd-39d73813ad884643",
+        "cmd-575bf37096d241b6"
+      ],
+      "summary": "dnsbl_match.py confirms blocked.example/sub.blocked.example/deep.sub.blocked.example match the Block policy; drill on node1 shows NXDOMAIN with no upstream authority (module-generated, not incidental TLD NXDOMAIN); node2 and node3 both fail to resolve blocked.example and subdomains via gethostbyname"
+    },
+    {
+      "requirement": "normal names still resolve for both hosts",
+      "command_ids": [
+        "cmd-b775504218aa4dc8",
+        "cmd-365aacbf3b164b4f",
+        "cmd-39d73813ad884643",
+        "cmd-575bf37096d241b6",
+        "cmd-d3bef65b62574914"
+      ],
+      "summary": "node2 and node3 successfully resolve google.com and wikipedia.org both before and after the block was applied and after restarts"
+    },
+    {
+      "requirement": "block mechanism proven to be the actual cause, not coincidental NXDOMAIN for the .example TLD",
+      "command_ids": [
+        "cmd-2313b07eb0bf4f59",
+        "cmd-76aded04713340ba",
+        "cmd-909e7c39f1f54946",
+        "cmd-25fc8c2266c44bff"
+      ],
+      "summary": "Canary host-override test showed a synthetic A-record under blocked.example resolved before the DNSBL data file was populated, then dnsbl.json was confirmed populated with our policy and dnsbl_match.py explicitly reported Block for blocked.example/subdomains and Pass for unrelated domains"
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-f6111a9821da4117"
+      ],
+      "summary": "Captured kern.boottime, unbound/dnsmasq process listing, and dnsbl.json content prior to reboot"
+    },
+    {
+      "requirement": "node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-645362f01af14d4b",
+        "cmd-adfebd32f3294bae",
+        "cmd-2ef78cfeeb694be7"
+      ],
+      "summary": "Issued `shutdown -r now` in background (ack returned before disconnect), confirmed connection timeout mid-reboot, then confirmed kern.boottime changed from 1788627526 to 1788627874"
+    },
+    {
+      "requirement": "node1 recovered state and data after restart",
+      "command_ids": [
+        "cmd-b21dc2ba5b4d45cc",
+        "cmd-e2c4885e792949cc"
+      ],
+      "summary": "Post-restart: unbound running, dnsbl.json intact with our policy, drill on node1 blocks blocked.example/subdomains and resolves google.com; node2 confirms blocked.example fails and google.com resolves against restarted node1"
+    },
+    {
+      "requirement": "node2 healthy baseline before restart",
+      "command_ids": [
+        "cmd-cf80b095e7064493"
+      ],
+      "summary": "Captured node2 boot_id (2b19e976-dee2-4700-9045-90d61b6dcffe) prior to reboot"
+    },
+    {
+      "requirement": "node2 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-69ec0b15c17c4cef",
+        "cmd-2fdb320dcf2c4057",
+        "cmd-448beff2e7c74f97"
+      ],
+      "summary": "Issued `sudo reboot` in background, confirmed connection drop mid-reboot, then confirmed boot_id changed to db18605f-09e9-4cbd-9726-6a170a7bd938"
+    },
+    {
+      "requirement": "node2 recovered state after restart",
+      "command_ids": [
+        "cmd-7f812bc47da34248"
+      ],
+      "summary": "Post-restart node2 confirms blocked.example/sub.blocked.example fail to resolve while google.com resolves"
+    },
+    {
+      "requirement": "node3 healthy baseline before restart",
+      "command_ids": [
+        "cmd-206bd68d05e44002"
+      ],
+      "summary": "Captured node3 boot_id (254597f8-4ac9-4062-8be8-44eba1f6d2e9) prior to reboot"
+    },
+    {
+      "requirement": "node3 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-cfe44d00ece84149",
+        "cmd-f04ad667f24d4c07",
+        "cmd-2854637da8c14cbe"
+      ],
+      "summary": "Issued `sudo reboot` in background, confirmed connection timeout mid-reboot, then confirmed boot_id changed to f55f8a2e-9969-4446-bf45-5139629017a0"
+    },
+    {
+      "requirement": "node3 recovered state after restart",
+      "command_ids": [
+        "cmd-01135a39de1344f4"
+      ],
+      "summary": "Post-restart node3 confirms blocked.example/deep.sub.blocked.example fail to resolve while wikipedia.org resolves"
+    }
+  ]
+}

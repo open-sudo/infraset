@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 13,
+    "successful": 12,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "inventory-api is a managed service listening on TCP 8080",
+      "command_ids": [
+        "cmd-bd64fdbb22c24989",
+        "cmd-8077d1f7ea664b40"
+      ],
+      "summary": "Before and after reboot, systemd reported enabled and active; ss showed python3 listening on 0.0.0.0:8080; /health and /inventory returned valid JSON."
+    },
+    {
+      "requirement": "batchworker is limited to 128 MB virtual memory per process without interrupting the API",
+      "command_ids": [
+        "cmd-f622218d25254841",
+        "cmd-51235168b30e4b57",
+        "cmd-8077d1f7ea664b40"
+      ],
+      "summary": "Fresh batchworker sessions reported soft and hard limits of 131072 KiB. A 256 MiB allocation failed with MemoryError while the inventory-api PID remained unchanged and its health endpoint continued responding."
+    },
+    {
+      "requirement": "Installed operating-system release and kernel were retained",
+      "command_ids": [
+        "cmd-ad6fea991b5343ee",
+        "cmd-8077d1f7ea664b40"
+      ],
+      "summary": "AlmaLinux 9.6 and kernel 5.14.0-570.12.1.el9_6.x86_64 were observed both initially and after the completed work and reboot."
+    },
+    {
+      "requirement": "Mandatory node1 restart persistence and recovery",
+      "command_ids": [
+        "cmd-bd64fdbb22c24989",
+        "cmd-2492d03ad0994808",
+        "cmd-ea9b96f8a4a44715",
+        "cmd-8077d1f7ea664b40"
+      ],
+      "summary": "Healthy baseline boot ID was 989aa755-a0e5-4673-a1b8-346d64301fd2; the safe reboot was acknowledged; post-restart boot ID changed to 42fc39a7-f6ee-45db-a008-8662ff640f4b; the enabled service, listener, API data, memory limits, and allocation isolation all recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-ad6fea991b5343ee",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:57:04.125436+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2296,
+      "command": "id; cat /etc/os-release; uname -r; cat /proc/sys/kernel/random/boot_id; command -v python3 || true; systemctl list-unit-files 'inventory-api.service' --no-pager; getent passwd batchworker || true; ss -ltnp | grep ':8080 ' || true",
+      "stdout": "uid=0(root) gid=0(root) groups=0(root) context=system_u:system_r:unconfined_service_t:s0\nNAME=\"AlmaLinux\"\nVERSION=\"9.6 (Sage Margay)\"\nID=\"almalinux\"\nID_LIKE=\"rhel centos fedora\"\nVERSION_ID=\"9.6\"\nPLATFORM_ID=\"platform:el9\"\nPRETTY_NAME=\"AlmaLinux 9.6 (Sage Margay)\"\nANSI_COLOR=\"0;34\"\nLOGO=\"fedora-logo-icon\"\nCPE_NAME=\"cpe:/o:almalinux:almalinux:9::baseos\"\nHOME_URL=\"https://almalinux.org/\"\nDOCUMENTATION_URL=\"https://wiki.almalinux.org/\"\nBUG_REPORT_URL=\"https://bugs.almalinux.org/\"\n\nALMALINUX_MANTISBT_PROJECT=\"AlmaLinux-9\"\nALMALINUX_MANTISBT_PROJECT_VERSION=\"9.6\"\nREDHAT_SUPPORT_PRODUCT=\"AlmaLinux\"\nREDHAT_SUPPORT_PRODUCT_VERSION=\"9.6\"\nSUPPORT_END=2032-06-01\n5.14.0-570.12.1.el9_6.x86_64\n989aa755-a0e5-4673-a1b8-346d64301fd2\n/usr/bin/python3\nUNIT FILE STATE PRESET\n\n0 unit files listed."
+    },
+    {
+      "command_id": "cmd-4fefe720fcd44bb1",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:57:11.627629+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1567,
+      "command": "getent passwd inventory-api || useradd --system --home-dir /opt/inventory-api --shell /sbin/nologin inventory-api; getent passwd batchworker || useradd --create-home --shell /bin/bash batchworker; install -d -o inventory-api -g inventory-api -m 0755 /opt/inventory-api; getent passwd inventory-api; getent passwd batchworker",
+      "stdout": "inventory-api:x:995:995::/opt/inventory-api:/sbin/nologin\nbatchworker:x:1000:1000::/home/batchworker:/bin/bash"
+    },
+    {
+      "command_id": "cmd-6701fa4eea1349bf",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:57:19.121895+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 376,
+      "command": "cat > /opt/inventory-api/inventory_api.py <<'ANTRIEB_EOF'\n#!/usr/bin/python3\nimport json\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nINVENTORY = [\n    {\"sku\": \"widget-001\", \"name\": \"Legacy Widget\", \"quantity\": 100},\n    {\"sku\": \"part-042\", \"name\": \"Service Part\", \"quantity\": 25}\n]\n\nclass Handler(BaseHTTPRequestHandler):\n    def send_json(self, status, payload):\n        body = json.dumps(payload, separators=(\",\", \":\")).encode(\"utf-8\")\n        self.send_response(status)\n        self.send_header(\"Content-Type\", \"application/json\")\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\n\n    def do_GET(self):\n        if self.path == \"/health\":\n            self.send_json(200, {\"status\": \"ok\", \"service\": \"inventory-api\"})\n        elif self.path == \"/inventory\":\n            self.send_json(200, {\"items\": INVENTORY})\n        else:\n            self.send_json(404, {\"error\": \"not found\"})\n\n    def log_message(self, fmt, *args):\n        return\n\nThreadingHTTPServer((\"0.0.0.0\", 8080), Handler).serve_forever()\nANTRIEB_EOF\nchown inventory-api:inventory-api /opt/inventory-api/inventory_api.py\nchmod 0755 /opt/inventory-api/inventory_api.py\n/usr/bin/python3 -m py_compile /opt/inventory-api/inventory_api.py"
+    },
+    {
+      "command_id": "cmd-9418a50b72e94b72",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:57:23.944991+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 534,
+      "command": "cat > /etc/systemd/system/inventory-api.service <<'ANTRIEB_EOF'\n[Unit]\nDescription=Inventory API\nAfter=network.target\n\n[Service]\nType=simple\nUser=inventory-api\nGroup=inventory-api\nWorkingDirectory=/opt/inventory-api\nExecStart=/usr/bin/python3 /opt/inventory-api/inventory_api.py\nRestart=on-failure\nRestartSec=2\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nProtectHome=true\n\n[Install]\nWantedBy=multi-user.target\nANTRIEB_EOF\nsystemctl daemon-reload\nsystemctl enable --now inventory-api.service\nsystemctl is-enabled inventory-api.service\nsystemctl is-active inventory-api.service",
+      "stdout": "Created symlink /etc/systemd/system/multi-user.target.wants/inventory-api.service \u2192 /etc/systemd/system/inventory-api.service.\nenabled\nactive"
+    },
+    {
+      "command_id": "cmd-f622218d25254841",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:57:29.100794+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1362,
+      "command": "cat > /etc/security/limits.d/90-batchworker.conf <<'ANTRIEB_EOF'\n# Per-process virtual address-space ceiling: 128 MiB (128 * 1024 KiB)\nbatchworker soft as 131072\nbatchworker hard as 131072\nANTRIEB_EOF\nchmod 0644 /etc/security/limits.d/90-batchworker.conf\nsu - batchworker -c 'printf \"soft_kib=%s hard_kib=%s\\n\" \"$(ulimit -Sv)\" \"$(ulimit -Hv)\"'",
+      "stdout": "soft_kib=131072 hard_kib=131072"
+    },
+    {
+      "command_id": "cmd-15728a0e5d9d46ab",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:57:41.597503+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1807,
+      "command": "api_pid_before=$(systemctl show -p MainPID --value inventory-api.service)\nprintf 'api_pid_before=%s\\n' \"$api_pid_before\"\nsystemctl is-active inventory-api.service\nss -ltnp | grep ':8080 '\ncurl --fail --silent --show-error \"http://$NODE_IP:8080/health\"\nprintf '\\n'\nsu - batchworker -c '/usr/bin/python3 -c \"import sys; print(\\\\\"allocation_attempt_mib=256\\\\\"); exec(\\\\\"try:\\\\\\\\n bytearray(256*1024*1024)\\\\\\\\n print(chr(85)+chr(78)+chr(69)+chr(88)+chr(80)+chr(69)+chr(67)+chr(84)+chr(69)+chr(68))\\\\\\\\nexcept MemoryError:\\\\\\\\n print(chr(77)+chr(69)+chr(77)+chr(79)+chr(82)+chr(89)+chr(95)+chr(76)+chr(73)+chr(77)+chr(73)+chr(84)+chr(95)+chr(69)+chr(78)+chr(70)+chr(79)+chr(82)+chr(67)+chr(69)+chr(68))\\\\\")\"'\napi_pid_after=$(systemctl show -p MainPID --value inventory-api.service)\nprintf 'api_pid_after=%s\\n' \"$api_pid_after\"\ncurl --fail --silent --show-error \"http://$NODE_IP:8080/inventory\"\nprintf '\\n'",
+      "stdout": "api_pid_before=1319\nactive\nLISTEN 0      5            0.0.0.0:8080      0.0.0.0:*    users:((\"python3\",pid=1319,fd=3))\n{\"status\":\"ok\",\"service\":\"inventory-api\"}\n-bash: -c: line 1: syntax error near unexpected token `('\n-bash: -c: line 1: `/usr/bin/python3 -c \"import sys; print(\\\\\"allocation_attempt_mib=256\\\\\"); exec(\\\\\"try:\\\\\\\\n bytearray(256*1024*1024)\\\\\\\\n print(chr(85)+chr(78)+chr(69)+chr(88)+chr(80)+chr(69)+chr(67)+chr(84)+chr(69)+chr(68))\\\\\\\\nexcept MemoryError:\\\\\\\\n print(chr(77)+chr(69)+chr(77)+chr(79)+chr(82)+chr(89)+chr(95)+chr(76)+chr(73)+chr(77)+chr(73)+chr(84)+chr(95)+chr(69)+chr(78)+chr(70)+chr(79)+chr(82)+chr(67)+chr(69)+chr(68))\\\\\")\"'\napi_pid_after=1319\n{\"items\":[{\"sku\":\"widget-001\",\"name\":\"Legacy Widget\",\"quantity\":100},{\"sku\":\"part-042\",\"name\":\"Service Part\",\"quantity\":25}]}"
+    },
+    {
+      "command_id": "cmd-51235168b30e4b57",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:57:48.717975+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1622,
+      "command": "api_pid_before=$(systemctl show -p MainPID --value inventory-api.service)\nprintf 'api_pid_before=%s\\n' \"$api_pid_before\"\nsu - batchworker -c \"ulimit -v; /usr/bin/python3 -c 'bytearray(256*1024*1024)'\" >/tmp/batch-allocation.out 2>&1\nalloc_rc=$?\nprintf 'allocation_exit=%s\\n' \"$alloc_rc\"\ntail -n 5 /tmp/batch-allocation.out\napi_pid_after=$(systemctl show -p MainPID --value inventory-api.service)\nprintf 'api_pid_after=%s\\n' \"$api_pid_after\"\nsystemctl is-active inventory-api.service\ncurl --fail --silent --show-error \"http://$NODE_IP:8080/health\"\nprintf '\\n'",
+      "stdout": "api_pid_before=1319\nallocation_exit=1\n131072\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nMemoryError\napi_pid_after=1319\nactive\n{\"status\":\"ok\",\"service\":\"inventory-api\"}"
+    },
+    {
+      "command_id": "cmd-bd64fdbb22c24989",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:57:55.131418+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1388,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'enabled='; systemctl is-enabled inventory-api.service\nprintf 'active='; systemctl is-active inventory-api.service\nss -ltnp | grep ':8080 '\nprintf 'health='; curl --fail --silent --show-error \"http://$NODE_IP:8080/health\"; printf '\\n'\nprintf 'inventory='; curl --fail --silent --show-error \"http://$NODE_IP:8080/inventory\"; printf '\\n'\nsu - batchworker -c 'printf \"batchworker_as_soft_kib=%s batchworker_as_hard_kib=%s\\n\" \"$(ulimit -Sv)\" \"$(ulimit -Hv)\"'",
+      "stdout": "boot_id=989aa755-a0e5-4673-a1b8-346d64301fd2\nenabled=enabled\nactive=active\nLISTEN 0      5            0.0.0.0:8080      0.0.0.0:*    users:((\"python3\",pid=1319,fd=3))\nhealth={\"status\":\"ok\",\"service\":\"inventory-api\"}\ninventory={\"items\":[{\"sku\":\"widget-001\",\"name\":\"Legacy Widget\",\"quantity\":100},{\"sku\":\"part-042\",\"name\":\"Service Part\",\"quantity\":25}]}\nbatchworker_as_soft_kib=131072 batchworker_as_hard_kib=131072"
+    },
+    {
+      "command_id": "cmd-2492d03ad0994808",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:57:58.113660+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 661,
+      "command": "systemd-run --unit=benchmark-node-reboot --on-active=2s /usr/bin/systemctl reboot; printf 'reboot_scheduled_for=%s\\n' \"$NODE_NAME\"",
+      "stdout": "Running timer as unit: benchmark-node-reboot.timer\nWill run service as unit: benchmark-node-reboot.service\nreboot_scheduled_for=node1"
+    },
+    {
+      "command_id": "cmd-69e129700db249ff",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:58:02.165790+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1470,
+      "command": "cat /proc/sys/kernel/random/boot_id; systemctl is-system-running --wait",
+      "stdout": "989aa755-a0e5-4673-a1b8-346d64301fd2\nrunning"
+    },
+    {
+      "command_id": "cmd-7411eb3eaf9b4078",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:58:05.596880+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 382,
+      "command": "cat /proc/sys/kernel/random/boot_id; systemctl is-system-running || true",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-ea9b96f8a4a44715",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:58:08.924307+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1268,
+      "command": "cat /proc/sys/kernel/random/boot_id; systemctl is-system-running || true",
+      "stdout": "42fc39a7-f6ee-45db-a008-8662ff640f4b\nrunning"
+    },
+    {
+      "command_id": "cmd-8077d1f7ea664b40",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T13:58:17.990114+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1927,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\n. /etc/os-release\nprintf 'os=%s kernel=%s\\n' \"$PRETTY_NAME\" \"$(uname -r)\"\nprintf 'enabled='; systemctl is-enabled inventory-api.service\nprintf 'active='; systemctl is-active inventory-api.service\napi_pid_before=$(systemctl show -p MainPID --value inventory-api.service)\nprintf 'api_pid_before_test=%s\\n' \"$api_pid_before\"\nss -ltnp | grep ':8080 '\nprintf 'health='; curl --fail --silent --show-error \"http://$NODE_IP:8080/health\"; printf '\\n'\nprintf 'inventory='; curl --fail --silent --show-error \"http://$NODE_IP:8080/inventory\"; printf '\\n'\nsu - batchworker -c 'printf \"batchworker_as_soft_kib=%s batchworker_as_hard_kib=%s\\n\" \"$(ulimit -Sv)\" \"$(ulimit -Hv)\"'\nsu - batchworker -c \"/usr/bin/python3 -c 'bytearray(256*1024*1024)'\" >/tmp/post-reboot-allocation.out 2>&1\nalloc_rc=$?\nprintf 'allocation_exit=%s\\n' \"$alloc_rc\"\ntail -n 3 /tmp/post-reboot-allocation.out\napi_pid_after=$(systemctl show -p MainPID --value inventory-api.service)\nprintf 'api_pid_after_test=%s\\n' \"$api_pid_after\"\nprintf 'health_after_failed_allocation='; curl --fail --silent --show-error \"http://$NODE_IP:8080/health\"; printf '\\n'",
+      "stdout": "boot_id=42fc39a7-f6ee-45db-a008-8662ff640f4b\nos=AlmaLinux 9.6 (Sage Margay) kernel=5.14.0-570.12.1.el9_6.x86_64\nenabled=enabled\nactive=active\napi_pid_before_test=734\nLISTEN 0      5            0.0.0.0:8080      0.0.0.0:*    users:((\"python3\",pid=734,fd=3))\nhealth={\"status\":\"ok\",\"service\":\"inventory-api\"}\ninventory={\"items\":[{\"sku\":\"widget-001\",\"name\":\"Legacy Widget\",\"quantity\":100},{\"sku\":\"part-042\",\"name\":\"Service Part\",\"quantity\":25}]}\nbatchworker_as_soft_kib=131072 batchworker_as_hard_kib=131072\nallocation_exit=1\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nMemoryError\napi_pid_after_test=734\nhealth_after_failed_allocation={\"status\":\"ok\",\"service\":\"inventory-api\"}"
+    }
+  ]
+}

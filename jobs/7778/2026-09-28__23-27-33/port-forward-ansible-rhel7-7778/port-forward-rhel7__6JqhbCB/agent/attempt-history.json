@@ -1,0 +1,89 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-29T04:43:44.905211+00:00",
+      "outcome": "cluster_expired",
+      "finished_at": "2026-09-29T05:22:28.945043+00:00",
+      "error": "The Antrieb managed cluster lease expired at 2026-09-29T05:22:28.850000+00:00",
+      "diagnosis": {
+        "evidence": [
+          {
+            "source": "executor command audit 05:01\u201305:13 (node1, node4)",
+            "finding": "Executor ran ad hoc interactive VyOS config attempts before using Ansible: a paramiko script failed ('No module named paramiko'), followed by a raw pty/ssh scripted session against node1 that entered configure mode, set forward-filter rules, and ran commit \u2014 which returned 'Aborted' (commit failed, config not saved)."
+          },
+          {
+            "source": "executor command audit 05:14 (node2)",
+            "finding": "A parallel attempt to add policy routing on node2 via `ip rule add ...` / `ip route add ... table 100` failed with 'ip: command not found', indicating iproute2/PATH was not available in that shell context on node2."
+          },
+          {
+            "source": "executor command audit 05:18\u201305:20 (node1, node2, node3, node4)",
+            "finding": "`sudo systemctl reboot` (or `reboot`) was issued against all four nodes within about two minutes of each other; each node became SSH-unreachable (connection timed out / reset) for the following minutes, and node1's boot_id changed, confirming an actual reboot occurred."
+          },
+          {
+            "source": "executor command audit 05:20:50 (first ansible-playbook run)",
+            "finding": "First `ansible-playbook` run: node2 tasks (app deploy, firewalld, NetworkManager dispatcher for private-route policy) completed, but the play targeting node1 (VyOS) failed entirely (failed=1)."
+          },
+          {
+            "source": "executor command audit 05:20:55 (-vvv run limited to node1)",
+            "finding": "The failure was an SSH auth error: 'Failed to authenticate public key: Access denied for publickey' when the vyos_config module tried to reach node1."
+          },
+          {
+            "source": "executor command audit 05:21:02",
+            "finding": "`cat /home/vyos/.ssh/authorized_keys` on node1 showed only the auto-generated header comment, no keys present \u2014 the VyOS box's `vyos` user had no authorized key material after the reboot, unlike Antrieb's normal automatic CLUSTER_SSH_PUBKEY injection into other Linux nodes."
+          },
+          {
+            "source": "executor command audit 05:21:07",
+            "finding": "Executor manually added the cluster SSH public key to VyOS via `configure`/`set system login user vyos authentication public-keys ...`/`commit`/`save`, and confirmed the key appeared in `authorized_keys` and in `/config/config.boot`."
+          },
+          {
+            "source": "executor command audit 05:21:32 (second ansible-playbook run)",
+            "finding": "Second `ansible-playbook` run succeeded on both hosts: VyOS DNAT rule (eth0:8080 \u2192 10.50.50.2:8080) and a locked-down forward filter (default-action drop, plus an accept rule scoped to tcp/8080 to 10.50.50.2, plus established/related) were applied, changed=2 on node1, ok=7 failed=0."
+          },
+          {
+            "source": "executor command audit 05:21:36",
+            "finding": "`nft list table ip vyos_filter`/`vyos_nat` on node1 confirmed the intended rules were live: forward filter chain had exactly an established/related accept, a `ip daddr 10.50.50.2 tcp dport 8080 accept`, and a default drop; the NAT table had a DNAT rule `iifname eth0 tcp dport 8080 dnat to 10.50.50.2:8080`."
+          },
+          {
+            "source": "executor command audit 05:21:40 (node3)",
+            "finding": "From node3, `curl http://10.100.24.10:8080/` (node1's address) returned the app's response 'node2 application on port 8080 (private network)' with EXIT=0; a direct `curl http://10.50.50.2:8080/` (node2's private IP) from node3 timed out with EXIT=28 \u2014 consistent with the requested outcome (published via node1, direct private access still unreachable)."
+          },
+          {
+            "source": "attempt termination metadata",
+            "finding": "Cluster lease expired at 2026-09-29T05:22:28Z, roughly 48 seconds after the successful verification curl at 05:21:40, and the executor's structured report was never returned."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "The task was functionally completed (VyOS DNAT + scoped forward-filter deployed via the second Ansible run, verified end-to-end from node3) but the run ran out of lease time before the executor could produce its structured report, so the attempt was recorded as cluster_expired rather than success.",
+            "confidence": "high"
+          },
+          {
+            "cause": "Significant time was lost early on to manual, non-Ansible debugging on node1: a missing-dependency paramiko script, then an interactive pty/ssh session that left VyOS with an aborted (uncommitted) config change, plus an unrelated and abandoned parallel attempt at client-side policy routing on node2. This pre-Ansible exploration consumed a large share of the available lease time before the working DNAT/firewall approach was even attempted via the playbook.",
+            "confidence": "high"
+          },
+          {
+            "cause": "A near-simultaneous reboot of all four cluster nodes (apparently issued to clear the aborted VyOS commit state) caused an extended, risky outage across the whole cluster and, combined with VyOS not automatically receiving the platform's CLUSTER_SSH_PUBKEY the way ordinary Linux nodes do, required an unplanned manual step to re-authorize the `vyos` user before Ansible could proceed \u2014 this consumed additional time that likely contributed to the lease running out.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "The Ansible playbook's SSH connectivity to VyOS depends on the `vyos` user's public-keys being set, committed, and saved in VyOS's own config store; if this isn't done idempotently as part of the playbook itself (rather than as a manual one-off), a fresh cluster will hit the same 'Failed to authenticate public key' failure on the first VyOS-targeting play.",
+            "confidence": "medium"
+          }
+        ],
+        "next_attempt_guidance": [
+          "Drive all VyOS configuration through the Ansible playbook (vyos_config module) from the start; avoid ad hoc pty/paramiko interactive SSH sessions against VyOS \u2014 the one used here left an aborted/uncommitted config change and cost significant time without producing a usable result.",
+          "Add a bootstrap task to the playbook (or a pre-task run once) that sets `system login user vyos authentication public-keys` for the cluster's Ansible key, then commits and saves, before any other vyos_config task runs \u2014 VyOS does not automatically receive CLUSTER_SSH_PUBKEY the way standard Linux nodes do, so this must be handled explicitly rather than assumed.",
+          "Skip attempting a parallel client-side policy-routing approach (ip rule/ip route on node2) \u2014 the working and verified solution is router-side: a VyOS destination NAT rule (WAN iface tcp/8080 \u2192 node2 private IP:8080) plus a forward-filter with default-action drop, an established/related accept, and a single accept rule scoped to tcp/8080 destined for node2's private IP.",
+          "Do not reboot all cluster nodes at once to recover from a failed/aborted commit; reboot only the affected node, and verify via `show system commit` / `/config/config.boot` that any config you need survives before rebooting.",
+          "Verify the deployment the same way this run did: from node3, confirm the app is reachable via node1's public/WAN IP on 8080, and confirm the private IP of node2 stays unreachable from node3.",
+          "Finish verification early and submit the structured report with buffer time before the lease is expected to expire \u2014 this run's fix worked but the report never got submitted because the lease ran out ~48 seconds after the successful test."
+        ],
+        "summary": "Redacted evidence shows the task was very likely accomplished: a second Ansible run configured VyOS on node1 with a destination-NAT rule (WAN:8080 \u2192 node2 private IP:8080) and a locked-down forward filter (default drop + established/related + a single accept scoped to tcp/8080 for node2's IP), confirmed live via `nft list`, and end-to-end verified by a successful curl from node3 to node1's public IP:8080 while direct access to node2's private IP from node3 still timed out. However, the attempt was recorded as `cluster_expired` about 48 seconds after that successful verification, with no structured report returned \u2014 the lease appears to have run out before the executor could finalize, likely because a large amount of earlier time was spent on manual/interactive VyOS debugging (a failed paramiko attempt, an aborted pty-driven commit, an abandoned client-side policy-routing experiment on node2, and an all-nodes reboot that then required manually re-authorizing the `vyos` user's SSH key) rather than going straight to the Ansible-driven fix that ultimately worked."
+      }
+    }
+  ]
+}

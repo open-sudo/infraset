@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 (VyOS) is authoritative for inventory.internal, answering with node2's address",
+      "status": "satisfied",
+      "summary": "dig against 10.100.187.10 for inventory.internal consistently returns 10.100.187.11 (node2), configured via `service dns forwarding authoritative-domain inventory.internal records a @ address 10.100.187.11` and confirmed both pre- and post-restart.",
+      "evidence_ids": [
+        "cmd-8ec1f0b277e74c0f",
+        "cmd-bf27240e208f40ce",
+        "cmd-381cee6d549f4811",
+        "cmd-bec28fa883db44a8",
+        "cmd-dc1a4c1a9ce64146"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node1 forwards all other queries upstream",
+      "status": "satisfied",
+      "summary": "google.com, example.com and other external names resolve correctly through 10.100.187.10 via the configured 1.1.1.1/9.9.9.9 name-servers, verified both before and after node1's restart.",
+      "evidence_ids": [
+        "cmd-bf27240e208f40ce",
+        "cmd-bec28fa883db44a8",
+        "cmd-dc1a4c1a9ce64146"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node2 and node3 configured to resolve through node1",
+      "status": "satisfied",
+      "summary": "resolv.conf on node2/node3 shows nameserver 10.100.187.10 (set via NetworkManager/nmcli), and getent hosts confirms both inventory.internal and external names resolve correctly through node1, before and after their restarts.",
+      "evidence_ids": [
+        "cmd-db645e26f3534582",
+        "cmd-a99fb5cc669340b5",
+        "cmd-e9581eb568ec446c",
+        "cmd-10715eec32c543e7",
+        "cmd-a0763171d08347e3",
+        "cmd-d7b5a07de5884dab"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Implementation done via Ansible",
+      "status": "satisfied",
+      "summary": "An Ansible playbook (dns.yml) run from the node4 control node configures node1's VyOS DNS forwarding (via become+shell to work around VyOS's non-interactive configure-session quirks) and node2/node3's DNS via community.general.nmcli; the final run is clean, idempotent, and re-verified after a control-node restart.",
+      "evidence_ids": [
+        "cmd-83aba4900eb04dd9",
+        "cmd-fb774e3e7bf542ae",
+        "cmd-6ca6695ec25b4fcf",
+        "cmd-9975b04810f74a93",
+        "cmd-0a36f67949a44d26"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "VyOS DNS configuration persists across restart (save/config.boot)",
+      "status": "satisfied",
+      "summary": "config.boot on node1 contains the full `service dns forwarding` block including the authoritative-domain and name-server entries, and the configuration and DNS service were confirmed intact and functioning after node1's reboot.",
+      "evidence_ids": [
+        "cmd-11fe538a94e44b9b",
+        "cmd-34cc8353ae074bd5",
+        "cmd-dc1a4c1a9ce64146"
+      ]
+    }
+  ],
+  "overall_summary": "The material outcomes of the task were fully achieved and directly verified: node1 (VyOS) authoritatively answers inventory.internal with node2's address and forwards all other queries upstream, node2 and node3 are configured (via Ansible/nmcli) to resolve through node1, the implementation is delivered as an idempotent Ansible playbook, and the VyOS configuration persists in config.boot. The mandatory node-restart evidence protocol was completed for all four nodes with clear pre-restart baselines, changed boot identities, and confirmed post-restart recovery, including DNS functionality and playbook idempotency/control-plane connectivity after node4's own reboot. The main blemish is a failed NetworkManager-wait-online.service on node2 and node3 that appeared only after the restart (absent in the baseline), likely linked to the DNS/nmcli configuration change, plus a small unreverted, low-risk leftover SSH key file on node1 that has no practical effect since root password/pubkey login is disabled there.",
+  "limitations": [
+    "NetworkManager-wait-online.service failing on node2 and node3 post-restart is visible only in the fixed lifecycle snapshots, not diagnosed or explained in the executor's own command trace, so its root cause (likely the ignore_auto_dns4 nmcli setting) is inferred rather than directly confirmed.",
+    "It is not confirmed from the trace whether the second copy of /root/.ssh/authorized_keys on node1 (added at cmd-f5f80ef25dcc400c) was ever cleaned up, though it appears functionally inert given PermitRootLogin is disabled."
+  ],
+  "command_stats": {
+    "total": 120,
+    "successful": 99,
+    "failed": 21,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.6,
+    "summary": "Most state-changing commands map cleanly to prerequisites (SSH key setup), the manual VyOS DNS probing needed to discover correct syntax, or the final Ansible-applied configuration. The manual test config on node1 (cmd-6934b250ea89449e, cmd-bb619907d0d145da, cmd-70d4565cecff4a89, cmd-8ec1f0b277e74c0f) was fully reverted (cmd-1fc29940e8fd4229) before the Ansible-managed config was applied, which is acceptable troubleshooting. However, node1's /root/.ssh/authorized_keys was populated twice (cmd-10fead80dfd14a4d, then again at cmd-f5f80ef25dcc400c) based on a mistaken assumption that root SSH would work; the first copy was removed (cmd-6cc8cf67948f47a9) but the second was left in place with no evidence of cleanup \u2014 low risk since PermitRootLogin is disabled on node1, making the key inert, but it is unreverted residue with no functional purpose in the final solution. More significantly, the after-executor lifecycle snapshot shows NetworkManager-wait-online.service moved to a failed state on both node2 and node3 after their restarts, which was not present in the before-prepare baseline; this is plausibly a side effect of the nmcli dns4_ignore_auto configuration and was not diagnosed or remediated by the executor.",
+    "evidence_ids": [
+      "cmd-10fead80dfd14a4d",
+      "cmd-f5f80ef25dcc400c",
+      "cmd-6cc8cf67948f47a9",
+      "cmd-1fc29940e8fd4229",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:before_prepare:node2:failed-services",
+      "global:before_prepare:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

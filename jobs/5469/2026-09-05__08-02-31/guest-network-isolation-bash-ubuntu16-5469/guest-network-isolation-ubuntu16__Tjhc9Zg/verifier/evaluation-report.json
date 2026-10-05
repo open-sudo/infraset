@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "topology",
+      "requirement": "Topology built with node2 on lan-a (trusted), node3 on lan-b (guest), node1 as router between them",
+      "status": "satisfied",
+      "summary": "node1's eth1/eth2 were configured as lana (192.168.10.1/24) and lanb (192.168.20.1/24); node2's ens7 set to 192.168.10.11/24 and node3's ens7 set to 192.168.20.12/24, confirmed by direct ip addr output on all three nodes, with connectivity tests (ping/TCP) validating the wiring in both directions.",
+      "evidence_ids": [
+        "cmd-f65afcee3ad542f2",
+        "cmd-9e14141afef84d5b",
+        "cmd-e8babe90ec7e4dcf",
+        "cmd-1893c99e46da458e",
+        "cmd-577fe9a0b1bd476f"
+      ]
+    },
+    {
+      "id": "guest-dns",
+      "requirement": "Guests (lan-b) must be able to reach services node1 itself offers, such as DNS",
+      "status": "satisfied",
+      "summary": "dnsmasq was bound to 192.168.20.1:53 via dhcp.lanb config (verified by netstat showing the UDP/TCP listener). node3 successfully resolved openwrt.org via 192.168.20.1 before node1's restart (cmd-8ff2556195b14a27), immediately after node1's restart (cmd-de05646c5c174133), and in the final end-to-end check (cmd-bd86ca31a3f04306).",
+      "evidence_ids": [
+        "cmd-dd746d448b394e5b",
+        "cmd-8ff2556195b14a27",
+        "cmd-de05646c5c174133",
+        "cmd-bd86ca31a3f04306"
+      ]
+    },
+    {
+      "id": "guest-no-lan-a",
+      "requirement": "No host on lan-b may open a connection to any host on lan-a",
+      "status": "satisfied",
+      "summary": "The 'lanb' firewall zone was set to forward=REJECT with no lanb->lana forwarding rule. node3's ping and explicit TCP connect attempts (port 22) to node2's lan-a IP (192.168.10.11) were both rejected ('Connection refused'/ICMP port-unreachable) before node1's restart (cmd-8ff2556195b14a27, cmd-3c091d06be7e491a) and after it (cmd-bd86ca31a3f04306), demonstrating the block held across the disruption.",
+      "evidence_ids": [
+        "cmd-8ff2556195b14a27",
+        "cmd-3c091d06be7e491a",
+        "cmd-bd86ca31a3f04306"
+      ]
+    },
+    {
+      "id": "trusted-full-access",
+      "requirement": "Trusted hosts (lan-a) keep full access to lan-b hosts in the other direction",
+      "status": "satisfied",
+      "summary": "An explicit lana->lanb forwarding rule plus routes on node2 were added. node2 successfully pinged and TCP-connected (port 22) to node3's lan-b IP (192.168.20.12) before node1's restart (cmd-7a7ee257a47c4adc), after node2's own restart (cmd-5cfc875a9ba2480f), and in the final post-all-restarts check (cmd-463c5126d1894e6a).",
+      "evidence_ids": [
+        "cmd-7a7ee257a47c4adc",
+        "cmd-5cfc875a9ba2480f",
+        "cmd-463c5126d1894e6a"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes from the task instruction \u2014 building the lan-a/lan-b topology through node1, guest access to node1's own DNS, blocking any lan-b-to-lan-a connection, and preserving full lan-a-to-lan-b access \u2014 are directly demonstrated with pre-restart, mid-disruption (post node1/node2/node3 reboot), and final end-to-end evidence. The self-imposed node-restart protocol succeeded cleanly for node2 and node3 (boot_id changed and state recovered), but node1's boot_id was identical before and after its reboot in both the executor's own capture and the fixed before/after-executor snapshots; the executor substituted btime/uptime/dmesg as an alternate proof of a fresh boot. This is contradictory restart evidence for node1 specifically, though restart/persistence is not itself part of the public task contract, so it does not reduce satisfaction of the isolation requirements themselves.",
+  "limitations": [
+    "node1's boot_id (f07802fe-100f-461d-9d02-e01090c8300c) is identical in the before-prepare and after-executor fixed snapshots despite a reboot being issued and a short uptime (336s) being observed afterward; this is contradictory boot-identity evidence for the restart protocol on the OpenWrt node, even though the executor's uptime/btime/dmesg substitute is plausible corroborating evidence of a genuine restart.",
+    "The uptime figure captured pre-restart on node1 (cmd-e07f940bc0e84935, 'UPTIME_EPOCH: 1.78861e+09') is not a genuine uptime value (it looks like an epoch-time computation artifact), so the pre/post comparison for node1 rests mainly on the post-restart short uptime and dmesg kernel-boot line rather than a clean before/after uptime pair.",
+    "TCP-connect tests against 'lana' hosts targeted port 22 (SSH), which was not independently confirmed to be listening; a REJECT response to a closed port cannot be distinguished from a REJECT due to firewall policy from the transcript alone, though the paired ping-based REJECT results and the explicit firewall zone/forwarding configuration make the isolation conclusion solid regardless."
+  ],
+  "command_stats": {
+    "total": 47,
+    "successful": 41,
+    "failed": 6,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Nearly every state-changing command traces directly to the required network/firewall/dnsmasq configuration or to the mandatory restart-evidence protocol; no unnecessary or unexplained mutations were found. Two early attempts to write /etc/network/interfaces.d/ens7.cfg without sudo failed with 'Permission denied' (cmd-468e775bca78401b, cmd-f2b6d23f7aa44727) and left no state change, corrected immediately using sudo. The three node reboots (node2, node3, node1) are part of the independently-mandated provider-wide restart-evidence protocol, not the public task contract, and were bounded, sequenced, and each followed by re-verification; no leftover diagnostic residue or broadened exposure was observed in the after-executor snapshot (the added /tmp entries on node1 are normal service-restart artifacts, not executor debris).",
+    "evidence_ids": [
+      "cmd-468e775bca78401b",
+      "cmd-f2b6d23f7aa44727",
+      "cmd-9e14141afef84d5b",
+      "cmd-e8babe90ec7e4dcf",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

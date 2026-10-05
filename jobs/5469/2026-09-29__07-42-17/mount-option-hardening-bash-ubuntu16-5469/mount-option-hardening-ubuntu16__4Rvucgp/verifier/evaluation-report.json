@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "/tmp mounted as tmpfs with noexec, nosuid, nodev enforced",
+      "status": "satisfied",
+      "summary": "cmd-87d1e201e86f4ac2 shows /tmp remounted with findmnt reporting rw,nosuid,nodev,noexec,relatime, and a functional exec test in /tmp failed with Permission denied. Post-reboot re-verification (cmd-6c0ea0d0518c40d9) confirms the same options and blocked exec after a genuine reboot (boot id changed from 8336c3a1... to 51d306f6...).",
+      "evidence_ids": [
+        "cmd-fe4f859552174395",
+        "cmd-87d1e201e86f4ac2",
+        "cmd-82c1c3d5a4ae403d",
+        "cmd-6d7327fd7f684eb2",
+        "cmd-8bed84dd313b4b34",
+        "cmd-d30647ae28a74130",
+        "cmd-6c0ea0d0518c40d9",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "/dev/shm mounted as tmpfs with noexec, nosuid, nodev enforced",
+      "status": "satisfied",
+      "summary": "Baseline showed /dev/shm mounted rw,nosuid,nodev without noexec. After remediation, findmnt shows rw,nosuid,nodev,noexec,relatime and a functional exec test failed with Permission denied, both before and after the reboot (cmd-87d1e201e86f4ac2, cmd-6c0ea0d0518c40d9).",
+      "evidence_ids": [
+        "cmd-fe4f859552174395",
+        "cmd-87d1e201e86f4ac2",
+        "cmd-6c0ea0d0518c40d9"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Settings persist across reboot (fstab-backed, survives restart)",
+      "status": "satisfied",
+      "summary": "fstab entries for /tmp and /dev/shm with the hardened options were added (cmd-87d1e201e86f4ac2). A reboot was issued and acknowledged (cmd-6d7327fd7f684eb2), the node became unreachable (cmd-8bed84dd313b4b34, connection refused) and then returned with a new boot id (cmd-d30647ae28a74130, 51d306f6... vs pre-restart 8336c3a1..., corroborated by the fixed before_prepare/after_executor boot-identity snapshots). Post-reboot findmnt and fstab checks (cmd-6c0ea0d0518c40d9) confirm both mounts still carry noexec,nosuid,nodev and functional exec tests were blocked again, directly demonstrating the disruption-and-recovery cycle required for a persistence claim.",
+      "evidence_ids": [
+        "cmd-82c1c3d5a4ae403d",
+        "cmd-6d7327fd7f684eb2",
+        "cmd-8bed84dd313b4b34",
+        "cmd-d30647ae28a74130",
+        "cmd-6c0ea0d0518c40d9",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "nodev enforcement (device node creation ignored) on both mounts",
+      "status": "partially_satisfied",
+      "summary": "The nodev option is confirmed present in findmnt output for both /tmp and /dev/shm before and after reboot, but no functional test (e.g. mknod) was performed to directly demonstrate device-node creation being ignored; only the mount-option string was inspected, and setuid was similarly only checked via file mode bits (chmod 4755), not an actual privilege-escalation attempt, since noexec already blocked execution.",
+      "evidence_ids": [
+        "cmd-87d1e201e86f4ac2",
+        "cmd-6c0ea0d0518c40d9"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly hardened both /tmp and /dev/shm on node1 with noexec,nosuid,nodev via persistent /etc/fstab entries, verified the mount options and blocked-execution behavior both before and after a real, observed reboot (boot id changed from 8336c3a1... to 51d306f6..., corroborated by the fixed lifecycle snapshots). This directly satisfies the reboot-survival requirement with a genuine baseline \u2192 disruption \u2192 recovery transition rather than configuration alone. The only weakness is that nodev and nosuid enforcement were confirmed via mount-option inspection rather than a direct functional test (e.g., mknod or actual setuid execution), since noexec already prevented running any test binary. Hygiene is good, with only a minor leftover fstab backup file as residue.",
+  "limitations": [
+    "nodev/nosuid were verified via findmnt option strings and file-mode inspection, not via a direct functional test (mknod, actual setuid privilege check), since noexec blocking made such tests impractical to run.",
+    "A timestamped /etc/fstab.bak.<epoch> file was left on node1; it is a low-risk safety backup rather than task residue but was not explicitly cleaned up or confirmed in final evidence."
+  ],
+  "command_stats": {
+    "total": 7,
+    "successful": 6,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.875,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Executor actions were tightly scoped to the task: backing up /etc/fstab before editing (cmd-87d1e201e86f4ac2), removing stale /tmp or /dev/shm lines, adding the two hardened fstab entries, remounting, and running bounded functional tests that were cleaned up in the same command (exec_test.sh, exec_test.err, suid_test all removed in the cleanup step of cmd-87d1e201e86f4ac2; exec_test2.sh, exec_test2.err, and reboot.log removed in cmd-6c0ea0d0518c40d9). The one residual artifact is the timestamped /etc/fstab.bak.<epoch> backup file created in cmd-87d1e201e86f4ac2, which was never removed \u2014 a low-risk, standard safety practice but technically leftover residue. The reboot itself was a necessary, task-required mutation for the persistence check, not an unnecessary one. No failed services, listening-socket, or package-health regressions appear in the after_executor snapshot versus before_prepare, aside from the expected boot-id change and transient systemd-private tmp directories tied to the new boot.",
+    "evidence_ids": [
+      "cmd-87d1e201e86f4ac2",
+      "cmd-6c0ea0d0518c40d9",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 0.875,
+  "provisional_reward": 0.875
+}

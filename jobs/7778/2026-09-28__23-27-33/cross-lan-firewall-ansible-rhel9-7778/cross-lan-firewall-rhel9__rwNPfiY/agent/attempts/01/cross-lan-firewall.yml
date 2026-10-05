@@ -1,0 +1,127 @@
+---
+# Topology:
+#   node2 (lan-a, 10.50.10.0/24) -- eth1 [node1/VyOS router] eth2 -- node3 (lan-b, 10.50.20.0/24)
+# Goal: node2 -> node3 tcp/5432 allowed; all other lan-a <-> lan-b traffic rejected.
+
+- name: Address the lan-a interface on node2
+  hosts: lan_a
+  gather_facts: false
+  vars:
+    lan_iface: enp8s0
+    lan_conn: "Wired connection 2"
+    local_addr: "10.50.10.11/24"
+    gateway: "10.50.10.254"
+    peer_cidr: "10.50.20.0/24"
+    postgres_port: 5432
+    lan_a_cidr: "10.50.10.0/24"
+  tasks:
+    - name: Configure static address on {{ lan_iface }}
+      ansible.builtin.command:
+        cmd: >
+          nmcli con mod "{{ lan_conn }}"
+          ipv4.method manual
+          ipv4.addresses {{ local_addr }}
+          ipv4.gateway ""
+          ipv4.routes "{{ peer_cidr }} {{ gateway }}"
+      changed_when: true
+
+    - name: Bring the connection up
+      ansible.builtin.command:
+        cmd: nmcli con up "{{ lan_conn }}"
+      changed_when: true
+
+    - name: Verify address is present
+      ansible.builtin.command:
+        cmd: ip -4 addr show dev {{ lan_iface }}
+      register: node2_addr
+      changed_when: false
+      failed_when: local_addr.split('/')[0] not in node2_addr.stdout
+
+- name: Address the lan-b interface on node3 and allow inbound postgres
+  hosts: lan_b
+  gather_facts: false
+  vars:
+    lan_iface: enp8s0
+    lan_conn: "Wired connection 2"
+    local_addr: "10.50.20.12/24"
+    gateway: "10.50.20.254"
+    peer_cidr: "10.50.10.0/24"
+    postgres_port: 5432
+    lan_a_cidr: "10.50.10.0/24"
+  tasks:
+    - name: Configure static address on {{ lan_iface }}
+      ansible.builtin.command:
+        cmd: >
+          nmcli con mod "{{ lan_conn }}"
+          ipv4.method manual
+          ipv4.addresses {{ local_addr }}
+          ipv4.gateway ""
+          ipv4.routes "{{ peer_cidr }} {{ gateway }}"
+      changed_when: true
+
+    - name: Bring the connection up
+      ansible.builtin.command:
+        cmd: nmcli con up "{{ lan_conn }}"
+      changed_when: true
+
+    - name: Verify address is present
+      ansible.builtin.command:
+        cmd: ip -4 addr show dev {{ lan_iface }}
+      register: node3_addr
+      changed_when: false
+      failed_when: local_addr.split('/')[0] not in node3_addr.stdout
+
+    - name: Check whether the postgres firewalld rich rule already exists
+      ansible.builtin.shell: >
+        firewall-cmd --permanent --zone=public
+        --query-rich-rule='rule family="ipv4" source address="{{ lan_a_cidr }}" port port="{{ postgres_port }}" protocol="tcp" accept'
+      register: rich_rule_check
+      changed_when: false
+      failed_when: false
+
+    - name: Allow tcp/{{ postgres_port }} from lan-a in the host firewall
+      ansible.builtin.shell: >
+        firewall-cmd --permanent --zone=public
+        --add-rich-rule='rule family="ipv4" source address="{{ lan_a_cidr }}" port port="{{ postgres_port }}" protocol="tcp" accept'
+      when: rich_rule_check.rc != 0
+
+    - name: Reload firewalld
+      ansible.builtin.command:
+        cmd: firewall-cmd --reload
+      when: rich_rule_check.rc != 0
+
+- name: Configure VyOS router (node1) addressing and cross-lan firewall
+  hosts: router
+  gather_facts: false
+  vars:
+    eth_lan_a: eth1
+    eth_lan_b: eth2
+    lan_a_gw: "10.50.10.254/24"
+    lan_b_gw: "10.50.20.254/24"
+    postgres_port: 5432
+  tasks:
+    - name: Apply VyOS configuration
+      ansible.builtin.shell: |
+        source /opt/vyatta/etc/functions/script-template
+        configure
+        set interfaces ethernet {{ eth_lan_a }} address {{ lan_a_gw }}
+        set interfaces ethernet {{ eth_lan_b }} address {{ lan_b_gw }}
+        set firewall ipv4 forward filter rule 10 action accept
+        set firewall ipv4 forward filter rule 10 state established
+        set firewall ipv4 forward filter rule 10 state related
+        set firewall ipv4 forward filter rule 20 action accept
+        set firewall ipv4 forward filter rule 20 inbound-interface name {{ eth_lan_a }}
+        set firewall ipv4 forward filter rule 20 outbound-interface name {{ eth_lan_b }}
+        set firewall ipv4 forward filter rule 20 protocol tcp
+        set firewall ipv4 forward filter rule 20 destination port {{ postgres_port }}
+        set firewall ipv4 forward filter default-action drop
+        commit
+        save
+        exit
+      args:
+        executable: /bin/bash
+      become: true
+      become_method: sudo
+      register: vyos_apply
+      changed_when: "'Set failed' not in vyos_apply.stdout"
+      failed_when: "'Set failed' in vyos_apply.stdout or 'Commit failed' in vyos_apply.stdout"

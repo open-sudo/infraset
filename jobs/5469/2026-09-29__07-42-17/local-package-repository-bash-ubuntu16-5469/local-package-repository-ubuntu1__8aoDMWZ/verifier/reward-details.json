@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "local-repo-served",
+      "requirement": "Serve a package repository from local storage on node1",
+      "status": "satisfied",
+      "summary": "Executor built /srv/localrepo from downloaded .deb files, generated Packages/Packages.gz with dpkg-scanpackages, and served it via python3 http.server bound to 0.0.0.0:8080. A curl to http://$NODE_IP:8080/Packages.gz returned HTTP 200, and apt successfully fetched Packages from that address during the update step, directly confirming the repo was served from local disk storage.",
+      "evidence_ids": [
+        "cmd-f4b960a672ca41d7",
+        "cmd-873c62267c8e40e3",
+        "cmd-c63225866e8145d7"
+      ]
+    },
+    {
+      "id": "install-while-remote-unreachable",
+      "requirement": "Install a package from the local repo while the usual remote repositories are unreachable",
+      "status": "satisfied",
+      "summary": "With /etc/hosts redirecting archive.ubuntu.com/security.ubuntu.com to 127.0.0.1 and apt sources pointed solely at the local repo, apt-get update/install succeeded and cowsay (plus cowsay-off) installed with dpkg -l and apt-cache policy confirming the local repo as the install source. A direct curl to archive.ubuntu.com during the same window returned 'Connection refused', and /var/log/apt/history.log records the Install: cowsay event at the matching timestamp, giving a direct, time-correlated demonstration of the required condition.",
+      "evidence_ids": [
+        "cmd-c63225866e8145d7",
+        "cmd-22b3a78a84bf4f11"
+      ]
+    },
+    {
+      "id": "config-restoration",
+      "requirement": "Restore original system configuration after the demonstration",
+      "status": "satisfied",
+      "summary": "Executor restored /etc/hosts and /etc/apt/sources.list from backups, removed the temporary localrepo.list source, and confirmed the remote mirror was reachable again (HTTP 200) while cowsay remained installed.",
+      "evidence_ids": [
+        "cmd-ccb2093724c24a9a"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on node1 (independent of the public task)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 2f708738-... and healthy state (server listening, cowsay installed). 'sudo shutdown -r now' was acknowledged before disconnect; SSH was refused immediately after, then succeeded again with a new boot_id 0c5473bf-... and new boot time, directly proving a real restart. Post-restart checks show cowsay still installed and functional, repo files intact on disk, and apt sources/remote reachability restored to normal. The fixed after-prepare and after-executor global snapshots independently corroborate the same boot_id transition, cross-validating the executor's restart evidence.",
+      "evidence_ids": [
+        "cmd-df042a6869ff41df",
+        "cmd-a489a26ee7a94f3b",
+        "cmd-fd2ae7ab22144eac",
+        "cmd-edd2e0aac3294350",
+        "cmd-9ca71f123c804ad8",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built and served a local apt repository from /srv/localrepo on node1, blocked the remote Ubuntu mirrors via /etc/hosts, pointed apt exclusively at the local repo, and installed cowsay successfully while direct proof (connection-refused curl, apt history) shows the remote repos were unreachable during that window. Original hosts/apt configuration was restored afterward. The independent node-restart evidence protocol was completed with a directly observed boot_id change (cross-checked against fixed global snapshots) and confirmed post-restart recovery of the installed package, repo data, and normal apt/network state. Minor hygiene issues include a terminated first attempt at starting the server/lockdown sequence, an unscoped download of build-toolchain packages into the repo directory, and a local http server left running (unauthenticated but low-risk) after task completion.",
+  "limitations": [
+    "No visibility into whether the orphaned nohup http.server process from the terminated cmd-252432f1d1bf4c2b attempt was cleanly terminated or left as a zombie prior to the successful server start in cmd-873c62267c8e40e3.",
+    "The local repo directory (/srv/localrepo) and its contents, including the unscoped build-toolchain .deb files, were not confirmed removed at the end of the task; final state of this residue after the restart is only partially checked (only Packages.gz and cowsay .deb were explicitly verified post-restart).",
+    "No evidence that the python3 http.server on port 8080 was stopped after the demonstration; it was still listening at the last observed point (post-restart)."
+  ],
+  "command_stats": {
+    "total": 13,
+    "successful": 10,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Commands were mostly discovery, bounded temporary mutations (etc/hosts, apt sources) that were properly backed up and fully restored, and read-only verification. Two minor issues: (1) cmd-252432f1d1bf4c2b was a first attempt at starting the http server/hosts-block/install sequence that got terminated after 304ms (SIGTERM/timeout) before it modified /etc/hosts or apt sources, leaving only a possibly-orphaned nohup python3 http.server process; the next command (cmd-873c62267c8e40e3) started a fresh server on the same port without issue, so no persistent conflict resulted, but the aborted attempt itself is an unnecessary, non-contributing mutation. (2) The apt-get --download-only --reinstall cowsay step in cmd-f4b960a672ca41d7 pulled a large, unscoped set of build-toolchain packages (binutils, gcc, g++, build-essential, libc6-dev, etc.) into /srv/localrepo beyond the target cowsay/cowsay-off packages; this residue was never cleaned up and remains on disk after the task, though it is low-risk (inert .deb files, not installed). (3) The local http.server on port 8080 (0.0.0.0-bound, unauthenticated) was left running after the task and survived the reboot verification without being stopped; this is a bounded, low-risk residual exposure limited to serving package files, not a security-sensitive service.",
+    "evidence_ids": [
+      "cmd-252432f1d1bf4c2b",
+      "cmd-873c62267c8e40e3",
+      "cmd-f4b960a672ca41d7",
+      "cmd-9ca71f123c804ad8"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

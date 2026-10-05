@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarise Antrieb cluster-provisioning time across every recorded job.
+"""Summarise Antrieb cluster-provisioning time for one scenario execution scope.
 
 Provisioning is a platform property rather than a per-task result, so it is
 grouped by cluster shape (node count and network count) rather than by task
@@ -7,14 +7,17 @@ or operating system: within a single image the spread is wider than the
 spread between images, so a per-OS table would present scheduling jitter as
 though it were a comparison.
 
-Writes metrics/cluster-provisioning-performance.md.
+Writes metrics/<scenario-id>/<timestamp>/cluster-provisioning-performance.md.
+Explicit aggregates use metrics/<scenario-id>/aggregate-cluster-provisioning-performance.md.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import statistics
+import sys
 import tomllib
 from collections import defaultdict
 from datetime import datetime
@@ -23,9 +26,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 JOBS = ROOT / "jobs"
-OUTPUT = ROOT / "metrics" / "cluster-provisioning-performance.md"
-JOB_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}__\d{2}-\d{2}-\d{2}$")
 COUNT_SUFFIX = re.compile(r"^(?P<image>\S+)\s+x(?P<count>\d+)$")
+sys.path.insert(0, str(Path(__file__).parent))
+from job_layout import RUN_NAME, iter_job_dirs, job_location  # noqa: E402
+from scenario_layout import collection_root
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
@@ -93,10 +97,15 @@ def cluster_shape(job_dir: Path) -> tuple[int, int] | None:
     return nodes, network_count
 
 
-def samples() -> list[tuple[int, int, float]]:
+def samples(
+    jobs_root: Path = JOBS, *, runner: str | None = None, run_name: str | None = None
+) -> list[tuple[int, int, float]]:
     values: list[tuple[int, int, float]] = []
-    for job_dir in JOBS.rglob("*"):
-        if not job_dir.is_dir() or not JOB_NAME.fullmatch(job_dir.name):
+    for job_dir in iter_job_dirs(jobs_root):
+        location = job_location(job_dir, JOBS)
+        if runner is not None and location.runner != runner:
+            continue
+        if run_name is not None and location.run_name != run_name:
             continue
         shape = cluster_shape(job_dir)
         if shape is None:
@@ -110,11 +119,16 @@ def samples() -> list[tuple[int, int, float]]:
     return values
 
 
-def trial_share() -> float | None:
+def trial_share(
+    jobs_root: Path = JOBS, *, runner: str | None = None, run_name: str | None = None
+) -> float | None:
     """Median provisioning time as a percentage of total trial wall clock."""
     shares: list[float] = []
-    for job_dir in JOBS.rglob("*"):
-        if not job_dir.is_dir() or not JOB_NAME.fullmatch(job_dir.name):
+    for job_dir in iter_job_dirs(jobs_root):
+        location = job_location(job_dir, JOBS)
+        if runner is not None and location.runner != runner:
+            continue
+        if run_name is not None and location.run_name != run_name:
             continue
         for trial_dir in sorted(job_dir.iterdir()):
             if not trial_dir.is_dir():
@@ -144,8 +158,14 @@ def percentile(values: list[float], fraction: float) -> float:
     return ordered[index]
 
 
-def build() -> str:
-    values = samples()
+def build(
+    jobs_root: Path = JOBS,
+    scope_label: str | None = None,
+    *,
+    runner: str | None = None,
+    run_name: str | None = None,
+) -> str:
+    values = samples(jobs_root, runner=runner, run_name=run_name)
     if not values:
         raise SystemExit("no provisioning samples found under jobs/")
 
@@ -153,25 +173,29 @@ def build() -> str:
     for nodes, networks, elapsed in values:
         by_shape[(nodes, networks)].append(elapsed)
     everything = [elapsed for _, _, elapsed in values]
-    share = trial_share()
+    share = trial_share(jobs_root, runner=runner, run_name=run_name)
     sub_second = sum(1 for value in everything if value < 1000)
 
-    lines = [
-        "# Cluster provisioning performance\n",
-        "Every task in this dataset runs on a disposable cluster that "
-        "[Antrieb](https://antrieb.sh/) provisions on demand. This page reports "
-        "how long that takes, measured from the provider's own "
-        "`provision_time_ms` for each cluster actually created during a "
-        "recorded job.\n",
-        f"Across **{len(everything)} clusters**: median "
-        f"**{statistics.median(everything):.0f} ms**, 95th percentile "
-        f"**{percentile(everything, 0.95):.0f} ms**, slowest "
-        f"**{max(everything):.0f} ms**. "
-        f"{sub_second} of {len(everything)} "
-        f"({100 * sub_second / len(everything):.0f}%) completed in under a "
-        f"second, and every one completed in under "
-        f"{max(everything) / 1000:.1f} seconds.\n",
-    ]
+    lines = ["# Cluster provisioning performance\n"]
+    if scope_label is not None:
+        lines.append(f"Scope: `{scope_label}`.\n")
+    lines.extend(
+        [
+            "Every task in this dataset runs on a disposable cluster that "
+            "[Antrieb](https://antrieb.sh/) provisions on demand. This page reports "
+            "how long that takes, measured from the provider's own "
+            "`provision_time_ms` for each cluster actually created during a "
+            "recorded job.\n",
+            f"Across **{len(everything)} clusters**: median "
+            f"**{statistics.median(everything):.0f} ms**, 95th percentile "
+            f"**{percentile(everything, 0.95):.0f} ms**, slowest "
+            f"**{max(everything):.0f} ms**. "
+            f"{sub_second} of {len(everything)} "
+            f"({100 * sub_second / len(everything):.0f}%) completed in under a "
+            f"second, and every one completed in under "
+            f"{max(everything) / 1000:.1f} seconds.\n",
+        ]
+    )
     if share is not None:
         lines.append(
             f"Provisioning accounts for a median of **{share:.2f}%** of a "
@@ -208,9 +232,64 @@ def build() -> str:
 
 
 def main() -> int:
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(build())
-    print(f"wrote {OUTPUT.relative_to(ROOT)}")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--scenario", "--runner",
+        dest="runner",
+        default="5782",
+        help="Scenario ID (default: 5782); --runner remains a compatibility alias.",
+    )
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
+        "--run",
+        dest="run_name",
+        help="Timestamped run to summarize (default: latest for the scenario).",
+    )
+    scope.add_argument(
+        "--aggregate",
+        action="store_true",
+        help="Summarize every recorded run for this scenario (explicitly combines execution settings).",
+    )
+    args = parser.parse_args()
+
+    args.runner = collection_root(args.runner).name
+    runner_root = JOBS / args.runner
+    if not runner_root.is_dir():
+        raise SystemExit(f"no recorded runs for runner {args.runner!r}")
+
+    if args.aggregate:
+        jobs_root = runner_root
+        scope_name = "aggregate"
+    else:
+        available_runs = sorted(
+            {
+                job_location(job_dir, JOBS).run_name
+                for job_dir in iter_job_dirs(runner_root)
+            }
+        )
+        run_name = args.run_name or (available_runs[-1] if available_runs else "")
+        if not RUN_NAME.fullmatch(run_name):
+            raise SystemExit(f"no recorded runs for runner {args.runner!r}")
+        jobs_root = runner_root / run_name
+        if run_name not in available_runs:
+            raise SystemExit(f"run not found: {args.runner}/{run_name}")
+        scope_name = run_name
+
+    output_dir = ROOT / "metrics" / args.runner
+    if not args.aggregate:
+        output_dir /= scope_name
+    output = output_dir / ("aggregate-cluster-provisioning-performance.md" if args.aggregate
+                           else "cluster-provisioning-performance.md")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        build(
+            jobs_root,
+            f"{args.runner}/{scope_name}",
+            runner=args.runner,
+            run_name=None if args.aggregate else scope_name,
+        )
+    )
+    print(f"wrote {output.relative_to(ROOT)}")
     return 0
 
 

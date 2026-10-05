@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cron-access-restriction",
+      "requirement": "Only root and opsadmin can schedule cron jobs on node1",
+      "status": "satisfied",
+      "summary": "opsadmin user was created and /etc/cron.allow was written containing exactly root and opsadmin (cmd-a1968e2c3aa942be), verified via cat and file listing. The pre-existing empty /etc/cron.deny was removed to avoid ambiguity (cron.allow takes precedence regardless, so this is a safe, low-risk choice, not a requirement violation). An initial test using `crontab -u testuser1` run as root incorrectly showed 'ALLOWED' because invoking crontab with -u as root bypasses the allow/deny check entirely (a cronie behavior, not a misconfiguration) \u2014 the executor correctly diagnosed this via journalctl/PAM/SELinux inspection (cmd-9d45a8c835ca45dc) and re-tested using `sudo -u testuser1 -- crontab` (proper identity switch), which correctly showed testuser1 DENIED with the standard cronie message, while opsadmin and root were ALLOWED (cmd-0163748d42a448e9). This is credible, methodologically sound evidence that the restriction works as intended.",
+      "evidence_ids": [
+        "cmd-a1968e2c3aa942be",
+        "cmd-9d45a8c835ca45dc",
+        "cmd-0163748d42a448e9",
+        "cmd-37e755ec80e44d9e"
+      ]
+    },
+    {
+      "id": "provider-wide-node-restart-protocol",
+      "requirement": "Independent node-restart evidence protocol: pre-restart boot identity and healthy state, restart acknowledgement, changed post-restart boot identity, and recovered service/config state",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id d9f8550d... with crond active and cron.allow intact (cmd-389b708fa4024daf), matching the fixed global before-prepare boot-identity observation. `sudo systemctl reboot` was acknowledged (cmd-89e5465e3f184823), the connection dropped and then recovered (cmd-446a7255344b4a89, cmd-8230c7b9c79c49a2, cmd-f9253dc22f2b4de0), and a new boot_id ec0e2e57... was observed (cmd-f0b5ab194fda46be), matching the fixed global after-executor boot-identity cross-check. Post-restart, crond was confirmed active, /etc/cron.allow persisted with root/opsadmin, and a freshly created testuser2 was correctly denied cron access, with opsadmin/root still allowed (cmd-c5033b2b7b8f4e64, cmd-82d2ebee4cfa4d2d) \u2014 demonstrating a full bounded disruption-and-recovery cycle with the access-control configuration intact.",
+      "evidence_ids": [
+        "cmd-389b708fa4024daf",
+        "cmd-89e5465e3f184823",
+        "cmd-446a7255344b4a89",
+        "cmd-8230c7b9c79c49a2",
+        "cmd-f9253dc22f2b4de0",
+        "cmd-f0b5ab194fda46be",
+        "cmd-c5033b2b7b8f4e64",
+        "cmd-82d2ebee4cfa4d2d"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly restricted cron scheduling on node1 to root and opsadmin via /etc/cron.allow, diagnosed and corrected a flawed initial test methodology (root -u bypasses allow/deny), and produced sound before/after evidence that only root and opsadmin can use crontab while other users are denied. The mandatory node-restart evidence protocol was fully and correctly executed with matching pre/post boot identities and confirmed post-reboot persistence of the cron restriction. The only shortcoming is a handful of small, non-sensitive leftover stderr files in /tmp that were not cleaned up.",
+  "limitations": [
+    "Verification relied on sudo -u identity switching rather than direct interactive login as each test user, though this is a standard and adequate method to invoke crontab as a non-root user.",
+    "The /tmp/*.err residue files' exact contents were not directly inspected beyond their creation via stderr redirection in the verification commands; they are inferred to be non-sensitive denial-message captures based on the commands that produced them."
+  ],
+  "command_stats": {
+    "total": 13,
+    "successful": 9,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewing the chronological command trace: cmd-2ab136d135634521 is read-only baseline discovery. cmd-a1968e2c3aa942be creates opsadmin and writes cron.allow (required for the task), removes the pre-existing empty cron.deny (a low-risk, justified simplification since cron.allow takes precedence), creates testuser1 for verification, and runs verification crontab commands, cleaning up the root/opsadmin test crontab entries within the same command. cmd-9d45a8c835ca45dc is entirely read-only diagnostics (getenforce, ls -Z, rpm -q, strings, pam config, journalctl) used to correctly diagnose a testing-methodology issue, not a system change \u2014 appropriately not penalized. cmd-0163748d42a448e9 re-verifies correctly and cleans up the test crontabs (userdel for testuser1 fails here due to a running process, but is retried and succeeds in cmd-37e755ec80e44d9e, confirmed by getent). All bounded state-changing actions (user creation for testuser1/testuser2, temporary crontab entries) map clearly to necessary verification of the access-control requirement and were reverted. The one residue is a set of small stderr-capture files left in /tmp (ops.err, root.err, testuser1.err, tu1.err, tu2.err), visible in the after-executor temporary-files snapshot; these contain only routine 'not allowed to use this program (crontab)' denial messages, are low-risk and non-sensitive, but were not cleaned up despite the executor's stated intent to leave no test artifacts behind. This is a minor, non-security-impacting hygiene gap.",
+    "evidence_ids": [
+      "cmd-a1968e2c3aa942be",
+      "cmd-9d45a8c835ca45dc",
+      "cmd-0163748d42a448e9",
+      "cmd-37e755ec80e44d9e",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

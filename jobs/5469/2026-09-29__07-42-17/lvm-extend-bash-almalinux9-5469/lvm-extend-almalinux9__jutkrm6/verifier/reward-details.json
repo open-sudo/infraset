@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "initial-lv-mounted",
+      "requirement": "Provide a logical volume mounted at /srv/data on node1",
+      "status": "satisfied",
+      "summary": "Executor created PV/VG(datavg)/LV(datalv) on a loop-backed device (no native free space existed on the single fully-partitioned disk), formatted xfs, and mounted it at /srv/data at ~1.2GB, then wrote test data with recorded sha256 checksums.",
+      "evidence_ids": [
+        "cmd-d9768189e4984b13"
+      ]
+    },
+    {
+      "id": "grow-to-2gb-while-mounted",
+      "requirement": "Grow the volume to at least 2GB while it stays mounted",
+      "status": "satisfied",
+      "summary": "A second loop-backed PV was added via vgextend, the LV was extended to <2.34GiB, and xfs_growfs was run online against the still-mounted /srv/data (mount confirmed active immediately before growfs). Post-growth lsblk shows exact size 2,508,193,792 bytes (~2.34GB), confirmed again in the pre-restart and post-restart checks.",
+      "evidence_ids": [
+        "cmd-9331c353aef84b05",
+        "cmd-58663e6f19804b70",
+        "cmd-183594b7baeb4a15"
+      ]
+    },
+    {
+      "id": "contents-intact",
+      "requirement": "Contents stay intact through the resize",
+      "status": "satisfied",
+      "summary": "sha256sum -c against the pre-growth checksum manifest reported both testfile.bin and marker.txt OK immediately after the grow operation, and again after the subsequent node restart.",
+      "evidence_ids": [
+        "cmd-9331c353aef84b05",
+        "cmd-183594b7baeb4a15"
+      ]
+    },
+    {
+      "id": "node-restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (node1) after task completion",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured healthy state (boot_id 1b0321bf..., vgs/lvs/pvs active, mount present, checksums OK). systemctl reboot was issued and acknowledged (stream closed as expected), connection dropped during the down window, and reconnection confirmed a different boot_id (b4e91734...), matching the fixed after_executor boot-identity snapshot. Post-restart checks show datavg/datalv active with both PVs, /srv/data mounted at the grown 2.34GB size via the new systemd unit + fstab entry, and checksums still passing \u2014 a full pre/restart/post transition was directly observed for the single managed node.",
+      "evidence_ids": [
+        "cmd-58663e6f19804b70",
+        "cmd-d96c1fd097bf47c9",
+        "cmd-6bcb2737ab794bed",
+        "cmd-17a8d389f1114186",
+        "cmd-001fa78af5054812",
+        "cmd-183594b7baeb4a15",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material outcomes: an LVM logical volume was created and mounted at /srv/data (<2GB initially), then grown live to ~2.34GB while remaining mounted, with data integrity verified via checksums both immediately after growth and after a full node restart. The independent node-restart evidence protocol was also completed cleanly for node1, with directly observed pre-restart baseline, restart acknowledgement, changed boot identity, and full post-restart recovery of the LVM stack, mount, and data. The use of loop-backed devices was a reasonable adaptation given the disk had no free space for a native PV, and hygiene is clean apart from two minor log files left in /tmp.",
+  "limitations": [
+    "No independent verification tool was available beyond the captured evidence; all conclusions rely on the executor's own command outputs, though they are consistent with the fixed lifecycle snapshots.",
+    "The volume backing store is two sparse loop-device-backed files rather than a native block device, since the disk was fully partitioned with no free space; this is a reasonable engineering workaround given the constraint but differs from a typical dedicated-disk LVM setup."
+  ],
+  "command_stats": {
+    "total": 12,
+    "successful": 9,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All state-changing commands map clearly to task prerequisites (installing lvm2), core deliverables (loop-backed PV/VG/LV creation, mount, grow), or persistence/restart-evidence needs (systemd unit + fstab entry to survive reboot, which was necessary since the volume depends on loop devices that must be reattached at boot). No abandoned experiments, failed services, or security-control weakening were found; failed-services and package-health observations are empty/clean in both before_prepare and after_executor snapshots. Minor residue: /tmp/dnf-lvm2.log and /tmp/reboot.log were left in /tmp (visible in the after_executor temporary-files diff) but are low-risk, bounded log artifacts from legitimate install/reboot actions, not evidence of unnecessary or destructive mutation.",
+    "evidence_ids": [
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node1:temporary-files",
+      "cmd-9f13cef81b3e4dc2"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

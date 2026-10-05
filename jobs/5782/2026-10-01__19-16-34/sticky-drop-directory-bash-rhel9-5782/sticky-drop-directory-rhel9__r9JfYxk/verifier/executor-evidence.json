@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 10,
+    "successful": 9,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "`/srv/drop` is shared writable with sticky-bit protection",
+      "command_ids": [
+        "cmd-4e0e3df6944a4f0b",
+        "cmd-e18a24f55bd34350",
+        "cmd-1c54ec296e2f45e0"
+      ],
+      "summary": "Stat showed mode 1777 and root:root ownership; separate users wrote files, owner deletion succeeded, and cross-user deletion failed with `Operation not permitted`. Final cleanup retained the required directory configuration."
+    },
+    {
+      "requirement": "node1 restart persistence and recovery",
+      "command_ids": [
+        "cmd-f9832f83c1274d2d",
+        "cmd-53c45ea0ef324c16",
+        "cmd-c4242fc87c7940e6",
+        "cmd-965c84b267e14448"
+      ],
+      "summary": "Captured healthy baseline boot ID `437b338f-0902-4c11-86df-0a6ea6308b8e`, received reboot acknowledgement, observed changed boot ID `967f2df1-9f3f-4182-b1b9-b500e16f863e`, and proved system recovery, unchanged data hash, mode 1777, successful shared writes, and blocked cross-user deletion."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-524cf11f431542e2",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:33:46.162407+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 185,
+      "command": "id; cat /etc/os-release | sed -n '1,6p'; if [ -e /srv/drop ]; then stat -c 'path=%n type=%F mode=%a perms=%A owner=%U group=%G' /srv/drop; findmnt -T /srv/drop -o TARGET,SOURCE,FSTYPE,OPTIONS -n; else printf 'absent: /srv/drop\\n'; fi",
+      "stdout": "uid=0(root) gid=0(root) groups=0(root) context=system_u:system_r:unconfined_service_t:s0\nNAME=\"Red Hat Enterprise Linux\"\nVERSION=\"9.8 (Plow)\"\nID=\"rhel\"\nID_LIKE=\"fedora\"\nVERSION_ID=\"9.8\"\nPLATFORM_ID=\"platform:el9\"\nabsent: /srv/drop"
+    },
+    {
+      "command_id": "cmd-4e0e3df6944a4f0b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:33:51.800718+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 132,
+      "command": "install -d -o root -g root -m 1777 /srv/drop; stat -c 'path=%n type=%F mode=%a perms=%A owner=%U group=%G' /srv/drop; test -d /srv/drop && test \"$(stat -c %a /srv/drop)\" = 1777",
+      "stdout": "path=/srv/drop type=directory mode=1777 perms=drwxrwxrwt owner=root group=root"
+    },
+    {
+      "command_id": "cmd-e18a24f55bd34350",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:34:03.720303+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 282,
+      "command": "useradd -M -s /sbin/nologin dropcheck_a; useradd -M -s /sbin/nologin dropcheck_b; runuser -u dropcheck_a -- sh -c 'umask 022; printf owner-a-persistence-test > /srv/drop/owned-by-a'; runuser -u dropcheck_b -- sh -c 'umask 022; printf owner-b-write-test > /srv/drop/owned-by-b'; printf 'created files:\\n'; stat -c '%n mode=%a owner=%U group=%G size=%s' /srv/drop/owned-by-a /srv/drop/owned-by-b; if runuser -u dropcheck_b -- rm /srv/drop/owned-by-a 2>/tmp/drop-cross-delete.err; then printf 'ERROR: cross-user deletion unexpectedly succeeded\\n'; exit 1; else printf 'cross-user deletion blocked: '; sed -n '1p' /tmp/drop-cross-delete.err; fi; test -f /srv/drop/owned-by-a; runuser -u dropcheck_b -- rm /srv/drop/owned-by-b; printf 'owner deletion succeeded; remaining file content='; cat /srv/drop/owned-by-a",
+      "stdout": "created files:\n/srv/drop/owned-by-a mode=644 owner=dropcheck_a group=dropcheck_a size=24\n/srv/drop/owned-by-b mode=644 owner=dropcheck_b group=dropcheck_b size=18\ncross-user deletion blocked: rm: cannot remove '/srv/drop/owned-by-a': Operation not permitted\nowner deletion succeeded; remaining file content=owner-a-persistence-test"
+    },
+    {
+      "command_id": "cmd-f9832f83c1274d2d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:34:14.294527+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 173,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; printf 'system_state='; systemctl is-system-running; stat -c 'drop path=%n mode=%a perms=%A owner=%U group=%G' /srv/drop; sha256sum /srv/drop/owned-by-a; runuser -u dropcheck_b -- sh -c 'printf baseline-write-ok > /srv/drop/baseline-write && rm /srv/drop/baseline-write'; if runuser -u dropcheck_b -- rm /srv/drop/owned-by-a 2>/tmp/drop-baseline-delete.err; then printf 'ERROR cross-delete succeeded\\n'; exit 1; else printf 'sticky_check=blocked '; sed -n '1p' /tmp/drop-baseline-delete.err; fi; test -f /srv/drop/owned-by-a",
+      "stdout": "boot_id=437b338f-0902-4c11-86df-0a6ea6308b8e\nsystem_state=running\ndrop path=/srv/drop mode=1777 perms=drwxrwxrwt owner=root group=root\ndc0145b9a634175e02d37852abea8c2ee9d431fcfdd098314b11f84a836d0073  /srv/drop/owned-by-a\nsticky_check=blocked rm: cannot remove '/srv/drop/owned-by-a': Operation not permitted"
+    },
+    {
+      "command_id": "cmd-53c45ea0ef324c16",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:34:20.884763+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 105,
+      "command": "systemd-run --unit=harbor-reboot-once --on-active=2s /usr/bin/systemctl reboot; printf 'reboot_acknowledged for %s\\n' \"$NODE_NAME\"",
+      "stdout": "Running timer as unit: harbor-reboot-once.timer\nWill run service as unit: harbor-reboot-once.service\nreboot_acknowledged for node1"
+    },
+    {
+      "command_id": "cmd-9ea2514c2c6b4947",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:34:24.215332+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 75,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; systemctl is-system-running",
+      "stdout": "boot_id=437b338f-0902-4c11-86df-0a6ea6308b8e\nrunning"
+    },
+    {
+      "command_id": "cmd-96339ae970a449a5",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:34:31.427022+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2156,
+      "command": "sleep 3; printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; systemctl is-system-running",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-c4242fc87c7940e6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:34:36.332355+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 83,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; printf 'system_state='; systemctl is-system-running",
+      "stdout": "boot_id=967f2df1-9f3f-4182-b1b9-b500e16f863e\nsystem_state=running"
+    },
+    {
+      "command_id": "cmd-965c84b267e14448",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:34:45.475209+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 152,
+      "command": "printf 'post_boot_id='; cat /proc/sys/kernel/random/boot_id; printf 'system_state='; systemctl is-system-running; stat -c 'drop path=%n mode=%a perms=%A owner=%U group=%G' /srv/drop; sha256sum /srv/drop/owned-by-a; printf 'persisted_content='; cat /srv/drop/owned-by-a; runuser -u dropcheck_b -- sh -c 'printf post-restart-write-ok > /srv/drop/post-restart-write && rm /srv/drop/post-restart-write'; if runuser -u dropcheck_b -- rm /srv/drop/owned-by-a 2>/tmp/drop-post-delete.err; then printf 'ERROR cross-delete succeeded\\n'; exit 1; else printf 'post_restart_sticky_check=blocked '; sed -n '1p' /tmp/drop-post-delete.err; fi; test -f /srv/drop/owned-by-a; printf 'post_restart_health=PASS\\n'",
+      "stdout": "post_boot_id=967f2df1-9f3f-4182-b1b9-b500e16f863e\nsystem_state=running\ndrop path=/srv/drop mode=1777 perms=drwxrwxrwt owner=root group=root\ndc0145b9a634175e02d37852abea8c2ee9d431fcfdd098314b11f84a836d0073  /srv/drop/owned-by-a\npersisted_content=owner-a-persistence-testpost_restart_sticky_check=blocked rm: cannot remove '/srv/drop/owned-by-a': Operation not permitted\npost_restart_health=PASS"
+    },
+    {
+      "command_id": "cmd-1c54ec296e2f45e0",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T02:34:54.465432+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 260,
+      "command": "runuser -u dropcheck_a -- rm /srv/drop/owned-by-a; userdel dropcheck_b; userdel dropcheck_a; rm -f /tmp/drop-cross-delete.err /tmp/drop-baseline-delete.err /tmp/drop-post-delete.err; stat -c 'final path=%n mode=%a perms=%A owner=%U group=%G' /srv/drop; find /srv/drop -mindepth 1 -maxdepth 1 -printf '%f\\n'; if getent passwd dropcheck_a >/dev/null || getent passwd dropcheck_b >/dev/null; then printf 'ERROR test users remain\\n'; exit 1; fi; test -d /srv/drop && test \"$(stat -c %a /srv/drop)\" = 1777; printf 'cleanup=PASS directory_ready=PASS\\n'",
+      "stdout": "final path=/srv/drop mode=1777 perms=drwxrwxrwt owner=root group=root\ncleanup=PASS directory_ready=PASS"
+    }
+  ]
+}

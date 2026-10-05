@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Limit traffic from node2 toward node3 to 1 Mbit/s",
+      "status": "satisfied",
+      "summary": "VyOS HTB shaper policy (bandwidth/ceiling 1mbit) applied as egress on node1's node3-facing interface (eth2), confirmed via 'tc class show' showing rate/ceil 1Mbit, and directly validated with iperf3 showing node2->node3 throughput dropping from ~21.7 Gbit/s baseline to ~1.13 Mbit/s after shaping, and ~1.27 Mbit/s after all three nodes were rebooted, confirming persistence.",
+      "evidence_ids": [
+        "cmd-f8e306b816df4193",
+        "cmd-463728a543ef49dc",
+        "cmd-88f6b291540047b1",
+        "cmd-5b44e670aece43a5"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Leave traffic from node3 toward node2 unrestricted",
+      "status": "satisfied",
+      "summary": "iperf3 measurements in the reverse direction after shaping was applied showed ~1.54 Gbit/s (vs ~21.6 Gbit/s baseline, consistent with normal iperf3 variance/no artificial cap), and ~1.17 Gbit/s after the restart cycle, confirming the shaper did not restrict node3->node2 traffic.",
+      "evidence_ids": [
+        "cmd-bdebfff8b8a84904",
+        "cmd-fa9aaf17d69e4f0f",
+        "cmd-f2f4723c61c44d23"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node2 and node3 communicate through node1 across their separate private networks (topology prerequisite for directional shaping to be meaningful)",
+      "status": "satisfied",
+      "summary": "Static addressing was assigned on node1's eth1/eth2 (10.10.12.1, 10.10.13.1) and on node2/node3's eth1 interfaces with static routes via node1, and a ping from node2 to node3 showed TTL=63 (one hop lower than a direct TTL=64), confirming traffic transits node1 rather than a flat shared network.",
+      "evidence_ids": [
+        "cmd-818da2a9680a4289",
+        "cmd-34f4226c385743df",
+        "cmd-fd4a47155c52454e",
+        "cmd-d9020ba59781448d",
+        "cmd-2cd1e75f7b0f4c32",
+        "cmd-af123df2cdbc4389"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly discovered the real topology (node1 with two private-facing NICs to node2 and node3), configured static addressing/routing so traffic transits node1, applied a VyOS HTB QoS shaper limiting node2->node3 to 1 Mbit/s on node1's node3-facing egress interface while leaving node3->node2 unshaped, and directly validated the asymmetric behavior with iperf3 both before and after applying the shaper. All three nodes were then rebooted with clear boot-id evidence of restart and post-restart confirmation that addressing, routing, firewall zones, the QoS shaper, and the required 1 Mbit/s asymmetric throughput all persisted. Hygiene is good overall with a few bounded, mostly-reverted diagnostic mutations and some leftover log files as minor residue.",
+  "limitations": [
+    "Reverse-direction (node3->node2) 'unrestricted' throughput after shaping (~1.5 Gbit/s and ~1.17 Gbit/s) is noticeably lower than the pre-shaping baseline (~21.6 Gbit/s) in both runs, which is consistent with normal iperf3/virtual-NIC variance and TCP retransmit noise (retr counts visible in the traces) rather than evidence of an unintended cap, but the trace does not include a definitive isolation of that variance.",
+    "Firewalld zone changes moved eth1 on node2/node3 from 'public' to 'trusted', which is a broad permissive zone; this was necessary to unblock forwarded traffic but was not scoped to a minimal rule, a hygiene tradeoff rather than a task-outcome issue.",
+    "Diagnostic log files left in /tmp on node2/node3 were not cleaned up after troubleshooting, though this is low-severity residue."
+  ],
+  "command_stats": {
+    "total": 92,
+    "successful": 75,
+    "failed": 17,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.78,
+    "summary": "Most state-changing commands were either necessary prerequisites (static addressing/routing, firewalld zone changes required to unblock the private-link traffic that public zone's REJECT rule was blocking, iperf3 installation for verification, the QoS shaper itself) or bounded final-evidence collection (iperf3 tests, reboots). A few unnecessary/diagnostic mutations occurred during troubleshooting: a temporary python http.server was started on node3 (cmd-1e851ad012c94b92) purely to debug connectivity and was later killed (cmd-148209f54b774e9f), a loopback iperf3 self-test was run on node2 (cmd-03bcec85af9e41be) that had no bearing on the final solution, and an initial nmcli route configuration on node2/node3 mistakenly set a gateway that produced a duplicate default route (cmd-d9020ba59781448d, cmd-463737bf6dd14d4b), which was promptly corrected (cmd-d5e46328126849b7, cmd-2cd1e75f7b0f4c32) \u2014 a legitimate corrective action, not penalized. Minor residue remains: diagnostic log files (iperf_srv*.log, loopsrv.log, http.log, reboot.log, iperf3_install.log) were left in /tmp on node2 and node3, and the firewalld zone for eth1 was broadened to 'trusted' (unrestricted) rather than a narrower custom rule, which is a reasonable but somewhat permissive choice on an isolated private link. Post-restart package-health and failed-services checks show no damaged state on any node.",
+    "evidence_ids": [
+      "cmd-1e851ad012c94b92",
+      "cmd-148209f54b774e9f",
+      "cmd-03bcec85af9e41be",
+      "cmd-d9020ba59781448d",
+      "cmd-463737bf6dd14d4b",
+      "cmd-d5e46328126849b7",
+      "cmd-2cd1e75f7b0f4c32",
+      "cmd-f20f76b54874426f",
+      "cmd-125326dd3f394fa2",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

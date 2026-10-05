@@ -1,0 +1,80 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-api on node1 as a systemd-managed service (Restart=always, OOMScoreAdjust=-1000, OOMPolicy=continue) serving JSON on :8080. Verified the OOM protection empirically: launched an unprotected memory hog (default oom_score_adj=0) that drove the system out of memory (no swap present); the kernel OOM killer selected and killed the hog while inventory-api kept running uninterrupted and continued serving requests. Cleaned up test artifacts, then completed the mandatory single-node restart protocol: captured pre-restart boot id and healthy service state, issued a native reboot, polled until reachable, confirmed the boot id changed, and verified inventory-api came back enabled/active with OOMScoreAdjust=-1000 intact and the API responding.",
+  "actions_performed": [
+    "Created /opt/inventory-api/app.py: a ThreadingHTTPServer exposing GET /health and GET /inventory",
+    "Created dedicated system user inventoryapi and set ownership on /opt/inventory-api",
+    "Created /etc/systemd/system/inventory-api.service with Restart=always, OOMScoreAdjust=-1000, OOMPolicy=continue; ran daemon-reload and enabled --now",
+    "Verified baseline: service active/enabled, MainPID oom_score_adj=-1000, API responding via curl to $NODE_IP:8080",
+    "Built and launched an unprotected memory-hog Python process (default oom_score_adj=0) allocating/touching memory in 20MB increments on a node with no swap",
+    "Polled until the hog process died; confirmed via dmesg that the kernel OOM killer selected pid 2532 (the hog, oom_score_adj=0, total-vm 1.5GB) and killed it, while inventory-api (pid 2466) was untouched and still answering /health and /inventory throughout",
+    "Cleaned up hog script, log, and pid file; confirmed memory reclaimed (1.4Gi free) and service still healthy",
+    "Captured pre-restart boot_id (71f12f87...) and service health, then issued a non-blocking `systemctl reboot` on node1",
+    "Polled node1 until it reconnected (two timeouts, then success)",
+    "Confirmed boot_id changed to 80c9f19c..., proving an actual restart occurred",
+    "Verified post-restart recovery: inventory-api auto-started via enabled unit, MainPID changed (new process), OOMScoreAdjust=-1000 preserved, API responding correctly"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-api runs as a managed (systemd) service",
+      "command_ids": [
+        "cmd-20bc22bace8c4e42"
+      ],
+      "summary": "systemctl enable --now inventory-api succeeded; systemctl status shows active/enabled with the unit's OOMScoreAdjust=-1000 config; curl confirms API responds on $NODE_IP:8080"
+    },
+    {
+      "requirement": "Service keeps serving through a system-wide OOM event",
+      "command_ids": [
+        "cmd-a3d0aecc6ef14502",
+        "cmd-a0afb042ab484c23"
+      ],
+      "summary": "Memory hog launched with default oom_score_adj=0; polling loop shows hog process exiting after iteration 4; inventory-api remained active and answered /health (uptime continuous at 17.0s, same PID 2466) immediately after the OOM event"
+    },
+    {
+      "requirement": "Kernel OOM killer stops the memory hog, not inventory-api",
+      "command_ids": [
+        "cmd-a0afb042ab484c23"
+      ],
+      "summary": "dmesg shows 'Out of memory: Killed process 2532 (python3) ... oom_score_adj:0' \u2014 matching the hog's PID and score, distinct from inventory-api's protected PID 2466 (oom_score_adj -1000), which stayed up"
+    },
+    {
+      "requirement": "Post-disruption cleanup and continued healthy service state",
+      "command_ids": [
+        "cmd-80fcfa5ded22402a"
+      ],
+      "summary": "Hog artifacts removed, memory reclaimed to 1.4Gi free, inventory-api status active with original PID 2466 and uptime 21.3s (uninterrupted), API endpoints still returning correct data"
+    },
+    {
+      "requirement": "Mandatory restart protocol: healthy baseline before restart",
+      "command_ids": [
+        "cmd-e0212b129f354a6c"
+      ],
+      "summary": "Captured pre-restart boot_id 71f12f87-337d-4ff3-b414-9680244c2694, service active/enabled, and working /health and /inventory responses immediately before issuing reboot"
+    },
+    {
+      "requirement": "Mandatory restart protocol: restart acknowledged and node returns",
+      "command_ids": [
+        "cmd-e0212b129f354a6c",
+        "cmd-8c641dbca19042bc",
+        "cmd-7a9837fa19294390",
+        "cmd-5d34a92b045e4c76"
+      ],
+      "summary": "systemctl reboot issued non-blocking (ack returned before disconnect); two subsequent polls timed out (node down); third poll succeeded, node reachable again"
+    },
+    {
+      "requirement": "Mandatory restart protocol: proof of changed boot identity",
+      "command_ids": [
+        "cmd-5d34a92b045e4c76",
+        "cmd-85bdf36aa4494895"
+      ],
+      "summary": "boot_id changed from 71f12f87-337d-4ff3-b414-9680244c2694 to 80c9f19c-c352-44cd-8459-67a942024182, and uptime -s shows a fresh boot time, confirming an actual restart occurred"
+    },
+    {
+      "requirement": "Mandatory restart protocol: post-restart recovery of required service and data",
+      "command_ids": [
+        "cmd-85bdf36aa4494895"
+      ],
+      "summary": "inventory-api is active/enabled with a new MainPID (939, fresh invocation ID), OOMScoreAdjust=-1000 preserved on the new process, and /health and /inventory endpoints respond correctly with original inventory data"
+    }
+  ]
+}

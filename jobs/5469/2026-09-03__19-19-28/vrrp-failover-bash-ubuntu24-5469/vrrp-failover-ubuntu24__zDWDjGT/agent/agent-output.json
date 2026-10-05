@@ -1,0 +1,99 @@
+{
+  "status": "completed",
+  "summary": "Configured VRRP-based HA gateway on node1/node2 so node3 has a single, stable gateway address (172.31.31.1) to reach node4 that survives either router going down and prefers node1 while healthy. Then performed the mandatory one-at-a-time restart of all four nodes with boot-identity proof and post-restart health verification.",
+  "actions_performed": [
+    "Mapped topology via tcpdump on node1/node2 eth1/eth2: node1.eth1 + node2.eth1 + node3.enp8s0 form one L2 segment; node1.eth2 + node2.eth2 + node4.enp8s0 form the other.",
+    "Configured VyOS interfaces and VRRP groups on node1 (priority 200, preferred MASTER) and node2 (priority 100, BACKUP) on both segments: VIP 172.31.31.1/24 (vrid 31, SEG-A toward node3) and VIP 172.31.32.1/24 (vrid 32, SEG-B toward node4); set firewall ipv4 forward filter default-action accept; committed and saved on both routers.",
+    "Configured static addressing on node3 (172.31.31.10/24) and node4 (172.31.32.10/24) via /etc/systemd/network/10-enp8s0.network (sorted ahead of the reconciling 50-all-interfaces.network) plus a static route to the far LAN via the local VRRP VIP, giving node3 a single gateway address (172.31.31.1) for reaching node4.",
+    "Verified healthy baseline: node1 MASTER on both VRRP groups; node3 pinged/traced to node4 via 172.31.31.1, routed through node1's real interface IP.",
+    "Disruption test: brought node1's eth1/eth2 down (kept eth0/exec reachable), observed node2 promote to MASTER on both VRRP groups within seconds; continuous ping from node3 to node4 showed only 2 dropped probes then recovered through the same gateway address; restored node1's interfaces and confirmed it preempted back to MASTER.",
+    "Mandatory restart protocol: captured boot_id baseline on all 4 nodes; rebooted node1, node2, node3, node4 one at a time via backgrounded 'sudo reboot' so the ack returned before disconnect; polled each node until exec was available again and confirmed a changed boot_id; verified VRRP state, interface/route persistence, and end-to-end ping recovery after each restart, waiting for full health before moving to the next node."
+  ],
+  "evidence": [
+    {
+      "requirement": "node3 has a single gateway address to reach node4",
+      "command_ids": [
+        "cmd-f8e824219d6f49bb",
+        "cmd-0dcae4131f88439a",
+        "cmd-16e6235c12af4480"
+      ],
+      "summary": "node3's route table shows 172.31.32.0/24 via 172.31.31.1 dev enp8s0; ping/traceroute to node4 (172.31.32.10) succeeds through that single gateway address both at baseline and after all restarts."
+    },
+    {
+      "requirement": "Gateway prefers node1 while it is healthy",
+      "command_ids": [
+        "cmd-6196dfe6b63b4b79",
+        "cmd-798860ebaa55460d",
+        "cmd-e20bfbbef3cd4759"
+      ],
+      "summary": "show vrrp confirms node1 (priority 200) is MASTER on both VRRP groups (vrid 31/32) while node2 (priority 100) is BACKUP, both at initial setup and after full restart cycle."
+    },
+    {
+      "requirement": "Gateway stays available when node1 (preferred router) is down - failover",
+      "command_ids": [
+        "cmd-2daa495cf3cc4efd",
+        "cmd-beba299f3c364cb3",
+        "cmd-cb52b5a7f8974618"
+      ],
+      "summary": "With node1's eth1/eth2 forced down, node2 promoted to MASTER on both segments within seconds; continuous ping log from node3 to node4 shows only 2 dropped probes (seq 25-26) before recovering via the same gateway IP."
+    },
+    {
+      "requirement": "Gateway preempts back to node1 after recovery",
+      "command_ids": [
+        "cmd-40ae489307914940",
+        "cmd-8e78d4971fad4290",
+        "cmd-892aeaceb8aa4cd0",
+        "cmd-5b31b360df734a80"
+      ],
+      "summary": "After re-enabling node1's interfaces, node1 reclaimed MASTER (priority 200) on both VRRP groups within seconds and node2 returned to BACKUP; node3-to-node4 ping fully healthy again via the same gateway address."
+    },
+    {
+      "requirement": "Real reboot failover proof (not just interface down)",
+      "command_ids": [
+        "cmd-8f1c6ea4c35b43bf",
+        "cmd-00d02d3fc34d41d6"
+      ],
+      "summary": "During node1's actual 'sudo reboot', node2 show vrrp reports MASTER on both segments, and node3 continues pinging node4 successfully through the still-available gateway address."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-aab70ec4029c48f1",
+        "cmd-40f18629e4ea4047",
+        "cmd-c916c09bc0904980",
+        "cmd-dd1464e997c34db6"
+      ],
+      "summary": "Baseline boot_id 7668189d...; reboot command acknowledged and returned before disconnect (subsequent poll got connection errors); new boot_id e2de6b13... confirms restart; post-restart show vrrp/show interfaces confirm VRRP MASTER role and IPs restored from saved config."
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-859e87ff7f5c42d2",
+        "cmd-375d29343afe432d",
+        "cmd-57b4dcf6365c4513",
+        "cmd-72d6fb066c434746"
+      ],
+      "summary": "Baseline boot_id 50503c5d...; reboot acknowledged and node became unreachable; new boot_id 840631f8... confirms restart; post-restart show vrrp/show interfaces confirm BACKUP role and saved config (VIP, addresses) restored."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-8b13104cc4884b6f",
+        "cmd-1ed77d2f21ae431d",
+        "cmd-f0588bc8d7c54b5e",
+        "cmd-36eb627c74d24a6d"
+      ],
+      "summary": "Baseline boot_id 29011044...; reboot acknowledged and node became unreachable; new boot_id 56570059... confirms restart; post-restart ip addr/ip route show static 172.31.31.10 address and route to node4-net persisted, and ping to node4 succeeded."
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-2908ef713dc049b2",
+        "cmd-f694e676091242b7",
+        "cmd-fa40ae77b151416f",
+        "cmd-a47245a222e04d56"
+      ],
+      "summary": "Baseline boot_id 1e0cb179...; reboot acknowledged and node became unreachable; new boot_id 0e4eeb33... confirms restart; post-restart ip addr/ip route show static 172.31.32.10 address and route to node3-net persisted, and ping to node3 succeeded."
+    }
+  ]
+}

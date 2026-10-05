@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "On node1, keep /srv/data recoverable through filesystem snapshots (implement a snapshot mechanism)",
+      "status": "satisfied",
+      "summary": "An Ansible playbook (playbook.yml on node2) was authored and successfully run against node1, creating timestamped tar.gz snapshots of /srv/data under /srv/snapshots with a LATEST pointer. Because node1 (RHEL7, Python 2.7 only) is incompatible with Ansible core 2.20's AnsiballZ Python-3 module wrapper, the executor diagnosed this and implemented tasks using Ansible's `raw` module, which is still an Ansible-driven mechanism. The snapshot play ran successfully and produced a verifiable archive.",
+      "evidence_ids": [
+        "cmd-b0ab91162e2848cb",
+        "cmd-f5009ee215e2469f",
+        "cmd-ecca6ea0f8da4f7a",
+        "cmd-c099290f2d0e4755"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "After the directory is modified, restore the exact content captured by an earlier snapshot",
+      "status": "satisfied",
+      "summary": "After taking a baseline snapshot, the executor modified /srv/data (edited app.conf, deleted records/002.txt, added records/003.txt and rogue.txt), then ran the Ansible restore play, which wiped /srv/data and extracted the earlier snapshot. Post-restore sha256sums of all 4 files exactly matched the pre-modification baseline hashes, directly demonstrating exact content restoration.",
+      "evidence_ids": [
+        "cmd-904d31b3617348a3",
+        "cmd-603813b98ef64ace",
+        "cmd-cd4a52375af241ef",
+        "cmd-a7ccc325b99e4b03",
+        "cmd-a6345cd4d02a48a0"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Implement using Ansible",
+      "status": "satisfied",
+      "summary": "The mechanism is driven entirely through ansible-playbook runs from node2 (the Ansible-capable control node) against node1, using an inventory, ansible.cfg, and a tagged playbook (setup/snapshot/restore plays). The use of `raw` tasks instead of higher-level modules was a necessary, well-diagnosed adaptation to node1's Python 2-only environment, not an abandonment of Ansible.",
+      "evidence_ids": [
+        "cmd-1fc93c14de5145de",
+        "cmd-b45a338b2bed4d29",
+        "cmd-b0ab91162e2848cb",
+        "cmd-81adbdff15aa4285",
+        "cmd-f5009ee215e2469f"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "(Independent protocol) node1 restart: pre-restart baseline, acknowledgement, changed boot identity, recovered data/service state",
+      "status": "satisfied",
+      "summary": "node1 boot_id 0d6209e2... was captured healthy pre-restart (data checksums, snapshot file). Reboot was acknowledged (ACK_REBOOT_SENT) before the SSH connection dropped/timed out, and a subsequent poll returned a new boot_id 600b34a0..., matching the fixed after_executor boot-identity snapshot. Post-restart, data checksums and the snapshot archive were confirmed unchanged, and the Ansible control path from node2 was re-verified functional.",
+      "evidence_ids": [
+        "cmd-f8625ba1004d4739",
+        "cmd-3e5688151a024d48",
+        "cmd-b00254b9263d4af2",
+        "cmd-c0e4ac3cddbb471f",
+        "cmd-1404d881763b4129",
+        "cmd-925d53627ccc42f4"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "(Independent protocol) node2 restart: pre-restart baseline, acknowledgement, changed boot identity, recovered tooling/control path",
+      "status": "satisfied",
+      "summary": "node2 boot_id 416c5cf5... was captured healthy pre-restart (Ansible tooling present). Reboot was acknowledged before the connection reset, and a subsequent poll returned a new boot_id f6aec494..., matching the fixed after_executor snapshot. Post-restart, Ansible binary, playbook files, and SSH key were confirmed intact, and the snapshot play was successfully re-run end-to-end against node1, proving full control-path recovery.",
+      "evidence_ids": [
+        "cmd-dad16817cb7e41db",
+        "cmd-4442ed6c8e3b458b",
+        "cmd-2c1854fe184f47cc",
+        "cmd-a7a6281948ad4253",
+        "cmd-b19adbce11624156",
+        "cmd-9cadc7e30b2844ce",
+        "cmd-f8e9294782fe4c25"
+      ]
+    }
+  ],
+  "overall_summary": "The executor implemented an Ansible-driven snapshot/restore mechanism for /srv/data on node1, working around node1's Python 2.7/Ansible-core-2.20 incompatibility by using `raw` tasks in an ansible-playbook run from node2. The full cycle \u2014 baseline snapshot, directory modification, and restore \u2014 was demonstrated with byte-exact sha256sum verification. The independently required node-restart evidence protocol was completed and cleanly demonstrated on both node1 and node2, with matching boot-identity baselines and recovered state, cross-checked against the fixed lifecycle snapshots. A single minor, low-risk troubleshooting residue (an unused test script) was left on node2, which lightly dings operational hygiene but does not affect task functionality.",
+  "limitations": [
+    "node1 package-health checks were unavailable (timed out) both before and after the executor's work, so native package consistency could not be directly verified, though this appears to be an environmental limitation rather than executor-caused damage.",
+    "The preparation_comparison shows no distinct after_prepare phase (prepare was disabled and aliased to before_prepare), so preparer-vs-executor state could not be separately distinguished; all changes are attributed to the executor by default."
+  ],
+  "command_stats": {
+    "total": 43,
+    "successful": 33,
+    "failed": 10,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "The command trace shows mostly legitimate discovery, prerequisite-setup, and evidence-collection steps: SSH key exchange (cmd-b10d2efc05c04eaa, cmd-0aba411d79034cde), diagnosing node1's Python2/Ansible-core-2.20 incompatibility, and iterating the playbook to use `raw` tasks. One minor unnecessary mutation: cmd-9a52e4b106ee418d created /tmp/t.sh on node2 and executed it via the ansible `script` module purely as a connectivity/module test; this was not part of the final raw-task-based solution and the file was not shown to be cleaned up afterward, leaving small, low-risk residue on node2. A yum install attempt for python3 (cmd-1cef0687f6374179) failed with no repos enabled and did not mutate package state, so it does not count against hygiene. No destructive actions, no retained failed services, no weakened security controls, and no damaged package state were observed; failed-services and listening-socket differences in the lifecycle comparison are attributable to normal reboots, not executor misconfiguration.",
+    "evidence_ids": [
+      "cmd-9a52e4b106ee418d",
+      "cmd-1cef0687f6374179",
+      "global:after_executor:node2:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

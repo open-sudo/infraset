@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "lv-mounted",
+      "requirement": "Provide a logical volume mounted at /srv/data on node1",
+      "status": "satisfied",
+      "summary": "Ansible playbook run (cmd-be612a7b394d449d) created vg_data/lv_data on a loop-backed PV and mounted it at /srv/data via ansible.posix.mount; confirmed by df/mount output showing /dev/mapper/vg_data-lv_data mounted at /srv/data (966M initially, then 2.1G after growth in cmd-7dc25f3cfaab4ccd and post-reboot in cmd-53c1b1292f2048a8).",
+      "evidence_ids": [
+        "cmd-be612a7b394d449d",
+        "cmd-7dc25f3cfaab4ccd",
+        "cmd-53c1b1292f2048a8"
+      ]
+    },
+    {
+      "id": "lv-grown-2gb-mounted",
+      "requirement": "Grow the LV to at least 2 GB while it stays mounted",
+      "status": "satisfied",
+      "summary": "Second playbook run (cmd-162d98bc275947b7) grew the backing file/PV/LV to 2200M (LV shows 2.15g) using community.general.lvol with resizefs, and the ansible.posix.mount task remained idempotent (no unmount performed). Immediately after, cmd-7dc25f3cfaab4ccd confirms /srv/data still mounted with filesystem now 2.1G. No command in the trace shows an unmount step during the grow.",
+      "evidence_ids": [
+        "cmd-162d98bc275947b7",
+        "cmd-7dc25f3cfaab4ccd"
+      ]
+    },
+    {
+      "id": "contents-intact",
+      "requirement": "Contents stay intact through the resize",
+      "status": "satisfied",
+      "summary": "marker.txt and a 50MB testfile.bin were written and sha256sum recorded before growth (cmd-cb2a945922184f4a); sha256sum -c passed immediately after growth (cmd-7dc25f3cfaab4ccd) and again after node1's reboot (cmd-53c1b1292f2048a8), directly demonstrating byte-for-byte integrity across the resize.",
+      "evidence_ids": [
+        "cmd-cb2a945922184f4a",
+        "cmd-7dc25f3cfaab4ccd",
+        "cmd-53c1b1292f2048a8"
+      ]
+    },
+    {
+      "id": "implemented-via-ansible",
+      "requirement": "Implement using Ansible",
+      "status": "satisfied",
+      "summary": "All provisioning and growth was performed via an Ansible playbook (playbook.yml) executed with ansible-playbook from node2 using community.general.lvg/lvol/filesystem and ansible.posix.mount modules (cmd-d9fd079e9f954e4e authored the playbook; cmd-be612a7b394d449d and cmd-162d98bc275947b7 ran it).",
+      "evidence_ids": [
+        "cmd-d9fd079e9f954e4e",
+        "cmd-be612a7b394d449d",
+        "cmd-162d98bc275947b7"
+      ]
+    },
+    {
+      "id": "provider-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (node1, node2), independent of the public task",
+      "status": "satisfied",
+      "summary": "For both nodes, pre-restart boot id and healthy state were captured (node1: cmd-44f36dad2d344709 boot_id 3fad4432... matching global before_prepare; node2: cmd-beaacb9d24154b22 boot_id adba3716... matching global before_prepare), a restart was acknowledged (cmd-deb985d30e4f4325, cmd-396b31a102f14121), a different post-restart boot id was observed (node1: cmd-801efb51c2eb40ae 8a5b8306..., matching global after_executor; node2: cmd-820a3e1e4ebe46ae 4e221991..., matching global after_executor), and recovered service/data/cluster state was confirmed (node1: cmd-53c1b1292f2048a8 shows lvm-data-loop.service active, mount and checksums intact; node2: cmd-8b6bb15b682045be shows Ansible control-plane function restored via successful ping to node1). All four boot-id values are cross-checked and consistent with the fixed lifecycle snapshots.",
+      "evidence_ids": [
+        "cmd-44f36dad2d344709",
+        "cmd-beaacb9d24154b22",
+        "cmd-deb985d30e4f4325",
+        "cmd-396b31a102f14121",
+        "cmd-801efb51c2eb40ae",
+        "cmd-820a3e1e4ebe46ae",
+        "cmd-53c1b1292f2048a8",
+        "cmd-8b6bb15b682045be"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material outcomes of the task: an LVM logical volume was created and mounted at /srv/data on node1 via an Ansible playbook run from the control node (node2), grown from ~1000M to ~2.15G while remaining mounted, and file contents (verified via sha256sum) remained intact across the resize and a subsequent reboot. The independently-required provider-wide restart protocol was also fully and consistently demonstrated on both nodes, with boot-identity transitions cross-checked against the fixed lifecycle snapshots. Minor, low-risk residue (test files, playbook artifacts) was left behind but does not affect task functionality.",
+  "limitations": [
+    "The loop-device-over-sparse-file approach for LVM was necessitated by node1 having no spare block device; this is a reasonable environment-driven implementation choice, not evidence of a shortcut, but it does mean the underlying block device is virtual rather than a real disk.",
+    "No command explicitly shows a continuous mount check during the exact moment of the resize (only before/after snapshots); absence of an intervening unmount step and the idempotent mount task are used as indirect evidence of continuous mount.",
+    "Persistence/reboot survival is not explicitly required by the public task contract, so the restart protocol evidence was scored only under the independent provider-wide requirement and did not factor into task-functionality scoring."
+  ],
+  "command_stats": {
+    "total": 40,
+    "successful": 30,
+    "failed": 10,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewed all state-changing executor commands chronologically. sshd repair on node1 (cmd-ff4836cef1c84fb8: ssh-keygen -A + service restart) was a necessary corrective action to enable Ansible SSH access, not an unnecessary mutation. Adding node2's pubkey to node1 root authorized_keys (cmd-c1cdc7c1b4384299) and /etc/hosts entries on node2 (cmd-d96e645baf534e1c) were necessary prerequisites for the Ansible connection and were retained, which is appropriate and low-risk (root SSH key trust between the two managed nodes in a single-cluster lab topology). One playbook run failed with a Jinja type-comparison error (cmd-73d9d162338f43d2, rc=2) and was immediately corrected with a sed fix (cmd-4b01debeff254811) and a successful re-run (cmd-162d98bc275947b7); this is a corrected failed attempt, not residue. Verification artifacts (marker.txt, testfile.bin inside /srv/data; /root/pre-grow.sha256 and /root/lvm-ansible/ on node2) were left in place \u2014 low-risk, non-destructive, and reasonable for evidence of contents-intact verification, but technically minor residue not required by the task. No destructive, broad, or security-weakening mutations were observed; reboots were bounded and fully recovered.",
+    "evidence_ids": [
+      "cmd-ff4836cef1c84fb8",
+      "cmd-c1cdc7c1b4384299",
+      "cmd-d96e645baf534e1c",
+      "cmd-73d9d162338f43d2",
+      "cmd-4b01debeff254811",
+      "cmd-cb2a945922184f4a",
+      "cmd-1f92dd3f258c4517"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

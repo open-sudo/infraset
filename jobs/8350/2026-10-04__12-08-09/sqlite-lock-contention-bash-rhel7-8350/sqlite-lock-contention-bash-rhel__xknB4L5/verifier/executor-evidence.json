@@ -1,0 +1,240 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 16,
+    "successful": 12,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Atomic exactly-once reservations with nonnegative stock under competition",
+      "command_ids": [
+        "cmd-72472113420a45c3"
+      ],
+      "summary": "Two simultaneous 4-unit requests against stock=5 produced one success and one insufficient-stock rejection; remaining stock was 1 and integrity_check was ok."
+    },
+    {
+      "requirement": "Successful request ID replay returns its earlier result without another decrement",
+      "command_ids": [
+        "cmd-72472113420a45c3",
+        "cmd-d03470b9ce31468f"
+      ],
+      "summary": "Retry output matched the original result, only one reservation row existed, and stock remained unchanged; live previous-request replay also returned stored quantity 2 with stock still 5."
+    },
+    {
+      "requirement": "Positive quantity validation and insufficient-stock rejection",
+      "command_ids": [
+        "cmd-72472113420a45c3"
+      ],
+      "summary": "Zero and negative quantities returned validation errors without changing reservations; the competing request exceeding remaining stock was rejected."
+    },
+    {
+      "requirement": "Bounded lock waits",
+      "command_ids": [
+        "cmd-27e6fbf41d6a48b3"
+      ],
+      "summary": "A deliberately held write lock caused a controlled rc=4 failure after five seconds, with no reservation or stock mutation."
+    },
+    {
+      "requirement": "Repair installed compatibly while preserving existing data",
+      "command_ids": [
+        "cmd-ef0d9bd28fab4306",
+        "cmd-26021bdc27bf4ca5"
+      ],
+      "summary": "The installed Python 2-compatible implementation compiled successfully; database integrity remained ok and previous-request quantity=2 was preserved."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-89f0955df52e4012",
+        "cmd-d03470b9ce31468f",
+        "cmd-547e105fcecd446a",
+        "cmd-c0257b0860d047b7",
+        "cmd-f65c1360a4c24b62"
+      ],
+      "summary": "Healthy baseline boot ID 809708f3-1c5f-4e37-ad6a-8bcbae408799 was captured; reboot was acknowledged; post-restart boot ID changed to df1448c7-7d5a-481e-8a84-e70d46fd5646; system returned running, the repair checksum persisted, integrity_check was ok, and stock/reservation data remained intact."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-8be0d9ecd61443db",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:26:15.787466+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2246,
+      "command": "cd /srv/legacy2/sqlite-lock-contention && printf '%s\n' '--- system ---' && uname -a && cat /etc/redhat-release && printf '%s\n' '--- files ---' && find . -maxdepth 3 -type f -printf '%p\n' | sort && printf '%s\n' '--- reserve.py ---' && sed -n '1,240p' bin/reserve.py && printf '%s\n' '--- status/data ---' && ls -l . bin 2>/dev/null && find . -maxdepth 2 -type f \\( -name '*.db' -o -name '*.sqlite*' \\) -exec ls -l {} \\;",
+      "stdout": "--- system ---\nLinux node1 3.10.0-1160.el7.x86_64 #1 SMP Tue Aug 18 14:50:17 EDT 2020 x86_64 x86_64 x86_64 GNU/Linux\nRed Hat Enterprise Linux Server release 7.9 (Maipo)\n--- files ---\n./bin/reserve.py\n./schema.sql\n./stock.db\n--- reserve.py ---\n#!/usr/bin/python\nimport os, sys, sqlite3, time\nbase = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\ndb = sqlite3.connect(os.path.join(base, 'stock.db'), timeout=0)\nremaining = db.execute('SELECT remaining FROM stock WHERE id=1').fetchone()[0]\nquantity = int(sys.argv[2])\ntime.sleep(1)\ndb.execute('UPDATE stock SET remaining=? WHERE id=1', (remaining-quantity,))\ndb.execute('INSERT INTO reservations VALUES (?,?)', (sys.argv[1], quantity))\ndb.commit()\ndb.close()\n--- status/data ---\n.:\ntotal 8\ndrwxr-xr-x. 2 root root   24 Aug 26 10:35 bin\n-rw-r--r--. 1 root root  245 Nov 14  2023 schema.sql\n-rw-r--r--. 1 root root 4096 Nov 14  2023 stock.db\n\nbin:\ntotal 4\n-rwxr-xr-x. 1 root root 477 Nov 14  2023 reserve.py\n-rw-r--r--. 1 root root 4096 Nov 14  2023 ./stock.db\n"
+    },
+    {
+      "command_id": "cmd-26021bdc27bf4ca5",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:26:22.102080+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2517,
+      "command": "cd /srv/legacy2/sqlite-lock-contention && printf '%s\n' '--- schema ---' && cat schema.sql && printf '%s\n' '--- live schema ---' && sqlite3 stock.db '.schema' && printf '%s\n' '--- current data ---' && sqlite3 -header -column stock.db 'SELECT * FROM stock; SELECT * FROM reservations ORDER BY rowid;' && printf '%s\n' '--- versions ---' && /usr/bin/python --version 2>&1 && sqlite3 --version && /usr/bin/python -c 'import sqlite3; print(sqlite3.sqlite_version)' && printf '%s\n' '--- permissions/mount ---' && stat -c '%U:%G %a %n' . bin bin/reserve.py stock.db && findmnt -T stock.db -o TARGET,SOURCE,FSTYPE,OPTIONS",
+      "stdout": "--- schema ---\nCREATE TABLE stock (id INTEGER PRIMARY KEY, remaining INTEGER NOT NULL);\nINSERT INTO stock VALUES (1,5);\nCREATE TABLE reservations (request_id TEXT PRIMARY KEY, quantity INTEGER NOT NULL);\nINSERT INTO reservations VALUES ('previous-request',2);\n--- live schema ---\nCREATE TABLE stock (id INTEGER PRIMARY KEY, remaining INTEGER NOT NULL);\nCREATE TABLE reservations (request_id TEXT PRIMARY KEY, quantity INTEGER NOT NULL);\n--- current data ---\nid          remaining \n----------  ----------\n1           5         \nrequest_id        quantity  \n----------------  ----------\nprevious-request  2         \n--- versions ---\nPython 2.7.5\n3.7.17 2013-05-20 00:56:22 118a3b35693b134d56ebd780123b7fd6f1497668\n3.7.17\n--- permissions/mount ---\nroot:root 755 .\nroot:root 755 bin\nroot:root 755 bin/reserve.py\nroot:root 644 stock.db\nTARGET SOURCE    FSTYPE OPTIONS\n/      /dev/vda3 xfs    rw,relatime,seclabel,attr2,inode64,noquota\n"
+    },
+    {
+      "command_id": "cmd-37e76f416cec4928",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:26:41.991091+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 1774,
+      "command": "set -eu\nrm -rf /tmp/reserve-precheck\nmkdir -p /tmp/reserve-precheck/bin\ncp /srv/legacy2/sqlite-lock-contention/bin/reserve.py /tmp/reserve-precheck/bin/\ncp /srv/legacy2/sqlite-lock-contention/stock.db /tmp/reserve-precheck/\n(/tmp/reserve-precheck/bin/reserve.py race-a 4 > /tmp/race-a.out 2>&1; printf '%s' \"$?\" > /tmp/race-a.rc) &\npa=$!\n(/tmp/reserve-precheck/bin/reserve.py race-b 4 > /tmp/race-b.out 2>&1; printf '%s' \"$?\" > /tmp/race-b.rc) &\npb=$!\nwait \"$pa\"\nwait \"$pb\"\nprintf '%s\n' '--- original concurrent behavior on isolated copy ---'\nprintf 'race-a rc=%s output=' \"$(cat /tmp/race-a.rc)\"; cat /tmp/race-a.out\nprintf 'race-b rc=%s output=' \"$(cat /tmp/race-b.rc)\"; cat /tmp/race-b.out\nsqlite3 -header -column /tmp/reserve-precheck/stock.db 'SELECT * FROM stock; SELECT * FROM reservations ORDER BY request_id;'"
+    },
+    {
+      "command_id": "cmd-0176c3e930d54efb",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:26:46.923608+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1703,
+      "command": "printf '%s\n' '--- original concurrent behavior on isolated copy ---'\nprintf 'race-a rc=%s output=' \"$(cat /tmp/race-a.rc 2>/dev/null || printf missing)\"; cat /tmp/race-a.out 2>/dev/null || true\nprintf 'race-b rc=%s output=' \"$(cat /tmp/race-b.rc 2>/dev/null || printf missing)\"; cat /tmp/race-b.out 2>/dev/null || true\nsqlite3 -header -column /tmp/reserve-precheck/stock.db 'SELECT * FROM stock; SELECT * FROM reservations ORDER BY request_id;'",
+      "stdout": "--- original concurrent behavior on isolated copy ---\nrace-a rc=missing output=Traceback (most recent call last):\n  File \"/tmp/reserve-precheck/bin/reserve.py\", line 8, in <module>\n    db.execute('UPDATE stock SET remaining=? WHERE id=1', (remaining-quantity,))\nsqlite3.OperationalError: database is locked\nrace-b rc=0 output=id          remaining \n----------  ----------\n1           1         \nrequest_id        quantity  \n----------------  ----------\nprevious-request  2         \nrace-b            4         \n"
+    },
+    {
+      "command_id": "cmd-799fd858aeec4ae3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:27:05.291074+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 1612,
+      "command": "set -eu\ncd /srv/legacy2/sqlite-lock-contention\ncp bin/reserve.py /tmp/reserve.py.before-repair\ncat > bin/reserve.py <<'ANTRIEB_RESERVE_EOF'\n#!/usr/bin/python\nfrom __future__ import print_function\n\nimport os\nimport sqlite3\nimport sys\n\nLOCK_WAIT_SECONDS = 5\n\n\ndef fail(message, status):\n    sys.stderr.write('ERROR: %s\\n' % message)\n    return status\n\n\ndef main(argv):\n    if len(argv) != 3:\n        return fail('usage: reserve.py REQUEST_ID POSITIVE_QUANTITY', 2)\n\n    request_id = argv[1]\n    if not request_id:\n        return fail('request ID must not be empty', 2)\n\n    try:\n        quantity = int(argv[2], 10)\n    except ValueError:\n        return fail('quantity must be a positive integer', 2)\n    if quantity <= 0:\n        return fail('quantity must be a positive integer', 2)\n\n    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n    db_path = os.path.join(base, 'stock.db')\n    db = None\n    in_transaction = False\n\n    try:\n        db = sqlite3.connect(db_path, timeout=LOCK_WAIT_SECONDS,\n                             isolation_level=None)\n        db.execute('PRAGMA busy_timeout=%d' % (LOCK_WAIT_SECONDS * 1000))\n\n        # Take the write reservation before reading either table.  This makes\n        # the idempotency check and stock decrement one serialized operation.\n        db.execute('BEGIN IMMEDIATE')\n        in_transaction = True\n\n        previous = db.execute(\n            'SELECT quantity FROM reservations WHERE request_id=?',\n            (request_id,)).fetchone()\n        if previous is not None:\n            db.execute('COMMIT')\n            in_transaction = False\n            print('RESERVED %s %d' % (request_id, previous[0]))\n            return 0\n\n        cursor = db.execute(\n            'UPDATE stock SET remaining=remaining-? '\n            'WHERE id=1 AND remaining>=?',\n            (quantity, quantity))\n        if cursor.rowcount != 1:\n            db.execute('ROLLBACK')\n            in_transaction = False\n            return fail('insufficient stock', 3)\n\n        db.execute(\n            'INSERT INTO reservations (request_id, quantity) VALUES (?, ?)',\n            (request_id, quantity))\n        db.execute('COMMIT')\n        in_transaction = False\n        print('RESERVED %s %d' % (request_id, quantity))\n        return 0\n    except sqlite3.OperationalError as error:\n        if in_transaction and db is not None:\n            try:\n                db.execute('ROLLBACK')\n            except sqlite3.Error:\n                pass\n        if 'locked' in str(error).lower() or 'busy' in str(error).lower():\n            return fail('database remained busy for %d seconds' %\n                        LOCK_WAIT_SECONDS, 4)\n        return fail('database error: %s' % error, 4)\n    except sqlite3.Error as error:\n        if in_transaction and db is not None:\n            try:\n                db.execute('ROLLBACK')\n            except sqlite3.Error:\n                pass\n        return fail('database error: %s' % error, 4)\n    finally:\n        if db is not None:\n            db.close()\n\n\nif __name__ == '__main__':\n    sys.exit(main(sys.argv))\nANTRIEB_RESERVE_EOF\nchmod 755 bin/reserve.py\n/usr/bin/python -m py_compile bin/reserve.py\nprintf '%s\n' '--- installed repair ---'\nsed -n '1,240p' bin/reserve.py\nprintf '%s\n' '--- live data unchanged ---'\nsqlite3 -header -column stock.db 'PRAGMA integrity_check; SELECT * FROM stock; SELECT * FROM reservations ORDER BY request_id;'",
+      "stderr": "bash: line 3: bin/reserve.py: Permission denied\n"
+    },
+    {
+      "command_id": "cmd-f540588bdfd34f8b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:27:08.710885+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1554,
+      "command": "id && command -v sudo && sudo -n true && printf '%s\n' sudo-ready",
+      "stdout": "uid=1000(antrieb) gid=1000(antrieb) groups=1000(antrieb) context=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023\n/usr/bin/sudo\nsudo-ready\n"
+    },
+    {
+      "command_id": "cmd-ef0d9bd28fab4306",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:27:24.910209+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3078,
+      "command": "set -eu\ncd /srv/legacy2/sqlite-lock-contention\ncp bin/reserve.py /tmp/reserve.py.before-repair\ncat > /tmp/reserve.py.repaired <<'ANTRIEB_RESERVE_EOF'\n#!/usr/bin/python\nfrom __future__ import print_function\n\nimport os\nimport sqlite3\nimport sys\n\nLOCK_WAIT_SECONDS = 5\n\n\ndef fail(message, status):\n    sys.stderr.write('ERROR: %s\\n' % message)\n    return status\n\n\ndef main(argv):\n    if len(argv) != 3:\n        return fail('usage: reserve.py REQUEST_ID POSITIVE_QUANTITY', 2)\n\n    request_id = argv[1]\n    if not request_id:\n        return fail('request ID must not be empty', 2)\n\n    try:\n        quantity = int(argv[2], 10)\n    except ValueError:\n        return fail('quantity must be a positive integer', 2)\n    if quantity <= 0:\n        return fail('quantity must be a positive integer', 2)\n\n    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n    db_path = os.path.join(base, 'stock.db')\n    db = None\n    in_transaction = False\n\n    try:\n        db = sqlite3.connect(db_path, timeout=LOCK_WAIT_SECONDS,\n                             isolation_level=None)\n        db.execute('PRAGMA busy_timeout=%d' % (LOCK_WAIT_SECONDS * 1000))\n\n        # Take the write reservation before reading either table.  This makes\n        # the idempotency check and stock decrement one serialized operation.\n        db.execute('BEGIN IMMEDIATE')\n        in_transaction = True\n\n        previous = db.execute(\n            'SELECT quantity FROM reservations WHERE request_id=?',\n            (request_id,)).fetchone()\n        if previous is not None:\n            db.execute('COMMIT')\n            in_transaction = False\n            print('RESERVED %s %d' % (request_id, previous[0]))\n            return 0\n\n        cursor = db.execute(\n            'UPDATE stock SET remaining=remaining-? '\n            'WHERE id=1 AND remaining>=?',\n            (quantity, quantity))\n        if cursor.rowcount != 1:\n            db.execute('ROLLBACK')\n            in_transaction = False\n            return fail('insufficient stock', 3)\n\n        db.execute(\n            'INSERT INTO reservations (request_id, quantity) VALUES (?, ?)',\n            (request_id, quantity))\n        db.execute('COMMIT')\n        in_transaction = False\n        print('RESERVED %s %d' % (request_id, quantity))\n        return 0\n    except sqlite3.OperationalError as error:\n        if in_transaction and db is not None:\n            try:\n                db.execute('ROLLBACK')\n            except sqlite3.Error:\n                pass\n        if 'locked' in str(error).lower() or 'busy' in str(error).lower():\n            return fail('database remained busy for %d seconds' %\n                        LOCK_WAIT_SECONDS, 4)\n        return fail('database error: %s' % error, 4)\n    except sqlite3.Error as error:\n        if in_transaction and db is not None:\n            try:\n                db.execute('ROLLBACK')\n            except sqlite3.Error:\n                pass\n        return fail('database error: %s' % error, 4)\n    finally:\n        if db is not None:\n            db.close()\n\n\nif __name__ == '__main__':\n    sys.exit(main(sys.argv))\nANTRIEB_RESERVE_EOF\n/usr/bin/python -m py_compile /tmp/reserve.py.repaired\nsudo -n install -o root -g root -m 755 /tmp/reserve.py.repaired bin/reserve.py\nprintf '%s\n' '--- installed repair ---'\nsed -n '1,240p' bin/reserve.py\nprintf '%s\n' '--- live data unchanged ---'\nsqlite3 -header -column stock.db 'PRAGMA integrity_check; SELECT * FROM stock; SELECT * FROM reservations ORDER BY request_id;'",
+      "stdout": "--- installed repair ---\n#!/usr/bin/python\nfrom __future__ import print_function\n\nimport os\nimport sqlite3\nimport sys\n\nLOCK_WAIT_SECONDS = 5\n\n\ndef fail(message, status):\n    sys.stderr.write('ERROR: %s\\n' % message)\n    return status\n\n\ndef main(argv):\n    if len(argv) != 3:\n        return fail('usage: reserve.py REQUEST_ID POSITIVE_QUANTITY', 2)\n\n    request_id = argv[1]\n    if not request_id:\n        return fail('request ID must not be empty', 2)\n\n    try:\n        quantity = int(argv[2], 10)\n    except ValueError:\n        return fail('quantity must be a positive integer', 2)\n    if quantity <= 0:\n        return fail('quantity must be a positive integer', 2)\n\n    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n    db_path = os.path.join(base, 'stock.db')\n    db = None\n    in_transaction = False\n\n    try:\n        db = sqlite3.connect(db_path, timeout=LOCK_WAIT_SECONDS,\n                             isolation_level=None)\n        db.execute('PRAGMA busy_timeout=%d' % (LOCK_WAIT_SECONDS * 1000))\n\n        # Take the write reservation before reading either table.  This makes\n        # the idempotency check and stock decrement one serialized operation.\n        db.execute('BEGIN IMMEDIATE')\n        in_transaction = True\n\n        previous = db.execute(\n            'SELECT quantity FROM reservations WHERE request_id=?',\n            (request_id,)).fetchone()\n        if previous is not None:\n            db.execute('COMMIT')\n            in_transaction = False\n            print('RESERVED %s %d' % (request_id, previous[0]))\n            return 0\n\n        cursor = db.execute(\n            'UPDATE stock SET remaining=remaining-? '\n            'WHERE id=1 AND remaining>=?',\n            (quantity, quantity))\n        if cursor.rowcount != 1:\n            db.execute('ROLLBACK')\n            in_transaction = False\n            return fail('insufficient stock', 3)\n\n        db.execute(\n            'INSERT INTO reservations (request_id, quantity) VALUES (?, ?)',\n            (request_id, quantity))\n        db.execute('COMMIT')\n        in_transaction = False\n        print('RESERVED %s %d' % (request_id, quantity))\n        return 0\n    except sqlite3.OperationalError as error:\n        if in_transaction and db is not None:\n            try:\n                db.execute('ROLLBACK')\n            except sqlite3.Error:\n                pass\n        if 'locked' in str(error).lower() or 'busy' in str(error).lower():\n            return fail('database remained busy for %d seconds' %\n                        LOCK_WAIT_SECONDS, 4)\n        return fail('database error: %s' % error, 4)\n    except sqlite3.Error as error:\n        if in_transaction and db is not None:\n            try:\n                db.execute('ROLLBACK')\n            except sqlite3.Error:\n                pass\n        return fail('database error: %s' % error, 4)\n    finally:\n        if db is not None:\n            db.close()\n\n\nif __name__ == '__main__':\n    sys.exit(main(sys.argv))\n--- live data unchanged ---\nintegrity_check\n---------------\nok             \nid          remaining \n----------  ----------\n1           5         \nrequest_id        quantity  \n----------------  ----------\nprevious-request  2         \n"
+    },
+    {
+      "command_id": "cmd-72472113420a45c3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:27:43.747185+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2465,
+      "command": "rm -rf /tmp/reserve-verify\nmkdir -p /tmp/reserve-verify/bin\ncp /srv/legacy2/sqlite-lock-contention/bin/reserve.py /tmp/reserve-verify/bin/\ncp /srv/legacy2/sqlite-lock-contention/stock.db /tmp/reserve-verify/\n(/tmp/reserve-verify/bin/reserve.py concurrent-a 4 > /tmp/concurrent-a.out 2>&1; printf '%s' \"$?\" > /tmp/concurrent-a.rc) &\npa=$!\n(/tmp/reserve-verify/bin/reserve.py concurrent-b 4 > /tmp/concurrent-b.out 2>&1; printf '%s' \"$?\" > /tmp/concurrent-b.rc) &\npb=$!\nwait \"$pa\"\nwait \"$pb\"\nprintf '%s\n' '--- competing requests against stock=5 ---'\nprintf 'concurrent-a rc=%s output=' \"$(cat /tmp/concurrent-a.rc)\"; cat /tmp/concurrent-a.out\nprintf 'concurrent-b rc=%s output=' \"$(cat /tmp/concurrent-b.rc)\"; cat /tmp/concurrent-b.out\nprintf '%s\n' '--- database after competition ---'\nsqlite3 -header -column /tmp/reserve-verify/stock.db 'PRAGMA integrity_check; SELECT * FROM stock; SELECT * FROM reservations ORDER BY request_id; SELECT CASE WHEN remaining >= 0 THEN \"nonnegative\" ELSE \"negative\" END AS stock_invariant FROM stock WHERE id=1;'\nwinner=$(sqlite3 /tmp/reserve-verify/stock.db \"SELECT request_id FROM reservations WHERE request_id LIKE 'concurrent-%';\")\nbefore=$(sqlite3 /tmp/reserve-verify/stock.db 'SELECT remaining FROM stock WHERE id=1;')\nfirst_out=$(cat \"/tmp/${winner}.out\")\nretry_out=$(/tmp/reserve-verify/bin/reserve.py \"$winner\" 99)\nretry_rc=$?\nafter=$(sqlite3 /tmp/reserve-verify/stock.db 'SELECT remaining FROM stock WHERE id=1;')\nrows=$(sqlite3 /tmp/reserve-verify/stock.db \"SELECT count(*) FROM reservations WHERE request_id='$winner';\")\nprintf '%s\n' '--- successful ID replay with conflicting quantity ---'\nprintf 'winner=%s first_output=%s retry_rc=%s retry_output=%s stock_before=%s stock_after=%s matching_rows=%s\\n' \"$winner\" \"$first_out\" \"$retry_rc\" \"$retry_out\" \"$before\" \"$after\" \"$rows\"\nprintf '%s\n' '--- invalid quantities leave data unchanged ---'\ncount_before=$(sqlite3 /tmp/reserve-verify/stock.db 'SELECT count(*) FROM reservations;')\n/tmp/reserve-verify/bin/reserve.py invalid-zero 0 > /tmp/invalid-zero.out 2>&1; zero_rc=$?\n/tmp/reserve-verify/bin/reserve.py invalid-negative -2 > /tmp/invalid-negative.out 2>&1; negative_rc=$?\ncount_after=$(sqlite3 /tmp/reserve-verify/stock.db 'SELECT count(*) FROM reservations;')\nprintf 'zero_rc=%s output=' \"$zero_rc\"; cat /tmp/invalid-zero.out\nprintf 'negative_rc=%s output=' \"$negative_rc\"; cat /tmp/invalid-negative.out\nprintf 'reservation_count_before=%s reservation_count_after=%s remaining=%s\\n' \"$count_before\" \"$count_after\" \"$(sqlite3 /tmp/reserve-verify/stock.db 'SELECT remaining FROM stock WHERE id=1;')\"",
+      "stdout": "--- competing requests against stock=5 ---\nconcurrent-a rc=3 output=ERROR: insufficient stock\nconcurrent-b rc=0 output=RESERVED concurrent-b 4\n--- database after competition ---\nintegrity_check\n---------------\nok             \nid          remaining \n----------  ----------\n1           1         \nrequest_id    quantity  \n------------  ----------\nconcurrent-b  4         \nprevious-req  2         \nstock_invariant\n---------------\nnonnegative    \n--- successful ID replay with conflicting quantity ---\nwinner=concurrent-b first_output=RESERVED concurrent-b 4 retry_rc=0 retry_output=RESERVED concurrent-b 4 stock_before=1 stock_after=1 matching_rows=1\n--- invalid quantities leave data unchanged ---\nzero_rc=2 output=ERROR: quantity must be a positive integer\nnegative_rc=2 output=ERROR: quantity must be a positive integer\nreservation_count_before=2 reservation_count_after=2 remaining=1\n"
+    },
+    {
+      "command_id": "cmd-27e6fbf41d6a48b3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:27:57.439259+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 6867,
+      "command": "rm -f /tmp/lock-ready /tmp/lock-holder.log\n/usr/bin/python -c \"import sqlite3,time; d=sqlite3.connect('/tmp/reserve-verify/stock.db', isolation_level=None); d.execute('BEGIN IMMEDIATE'); open('/tmp/lock-ready','w').write('ready'); time.sleep(8); d.execute('ROLLBACK'); d.close()\" > /tmp/lock-holder.log 2>&1 &\nholder=$!\nfor i in $(seq 1 30); do [ -f /tmp/lock-ready ] && break; sleep 0.1; done\nstart=$(date +%s)\n/tmp/reserve-verify/bin/reserve.py bounded-wait 1 > /tmp/bounded-wait.out 2>&1\nreserve_rc=$?\nend=$(date +%s)\nkill \"$holder\" 2>/dev/null || true\nwait \"$holder\" 2>/dev/null || true\nprintf '%s\n' '--- bounded contention wait ---'\nprintf 'rc=%s elapsed_seconds=%s output=' \"$reserve_rc\" \"$((end-start))\"; cat /tmp/bounded-wait.out\nprintf '%s\n' '--- data unchanged by timed-out request ---'\nsqlite3 -header -column /tmp/reserve-verify/stock.db \"PRAGMA integrity_check; SELECT remaining FROM stock WHERE id=1; SELECT count(*) AS bounded_wait_rows FROM reservations WHERE request_id='bounded-wait';\"",
+      "stdout": "--- bounded contention wait ---\nrc=4 elapsed_seconds=5 output=ERROR: database remained busy for 5 seconds\n--- data unchanged by timed-out request ---\nintegrity_check\n---------------\nok             \nremaining \n----------\n1         \nbounded_wait_rows\n-----------------\n0                \n"
+    },
+    {
+      "command_id": "cmd-89f0955df52e4012",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:28:15.137073+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2000,
+      "command": "cd /srv/legacy2/sqlite-lock-contention\nprintf '%s\n' '--- pre-restart boot identity ---'\ncat /proc/sys/kernel/random/boot_id\nprintf '%s\n' '--- platform and installed utility ---'\ncat /etc/redhat-release\nuname -r\nstat -c '%U:%G %a %s %n' bin/reserve.py stock.db\nsha256sum bin/reserve.py\nprintf '%s\n' '--- direct live idempotency check ---'\nbefore=$(sqlite3 stock.db 'SELECT remaining FROM stock WHERE id=1;')\noutput=$(bin/reserve.py previous-request 999)\nrc=$?\nafter=$(sqlite3 stock.db 'SELECT remaining FROM stock WHERE id=1;')\nprintf 'rc=%s output=%s stock_before=%s stock_after=%s\\n' \"$rc\" \"$output\" \"$before\" \"$after\"\nprintf '%s\n' '--- live database health/data ---'\nsqlite3 -header -column stock.db 'PRAGMA integrity_check; SELECT * FROM stock; SELECT * FROM reservations ORDER BY request_id;'\nprintf '%s\n' '--- filesystem and process health ---'\nfindmnt -T stock.db -o TARGET,SOURCE,FSTYPE,OPTIONS\ndf -h .\nsystemctl is-system-running || true",
+      "stdout": "--- pre-restart boot identity ---\n809708f3-1c5f-4e37-ad6a-8bcbae408799\n--- platform and installed utility ---\nRed Hat Enterprise Linux Server release 7.9 (Maipo)\n3.10.0-1160.el7.x86_64\nroot:root 755 2939 bin/reserve.py\nroot:root 644 4096 stock.db\ned4086a88c40c0dbf4826a5ad10c69b2f4ec888f994bf7120219573de65db401  bin/reserve.py\n--- direct live idempotency check ---\nrc=4 output= stock_before=5 stock_after=5\n--- live database health/data ---\nintegrity_check\n---------------\nok             \nid          remaining \n----------  ----------\n1           5         \nrequest_id        quantity  \n----------------  ----------\nprevious-request  2         \n--- filesystem and process health ---\nTARGET SOURCE    FSTYPE OPTIONS\n/      /dev/vda3 xfs    rw,relatime,seclabel,attr2,inode64,noquota\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/vda3        17G  1.3G   16G   8% /\nrunning\n",
+      "stderr": "ERROR: database error: attempt to write a readonly database\n"
+    },
+    {
+      "command_id": "cmd-d03470b9ce31468f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:28:25.091261+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1761,
+      "command": "cd /srv/legacy2/sqlite-lock-contention\nprintf '%s\n' '--- corrected privileged live utility check ---'\nbefore=$(sudo -n sqlite3 stock.db 'SELECT remaining FROM stock WHERE id=1;')\noutput=$(sudo -n bin/reserve.py previous-request 999 2>&1)\nrc=$?\nafter=$(sudo -n sqlite3 stock.db 'SELECT remaining FROM stock WHERE id=1;')\nprintf 'rc=%s output=%s stock_before=%s stock_after=%s\\n' \"$rc\" \"$output\" \"$before\" \"$after\"\nprintf '%s\n' '--- direct live database proof ---'\nsudo -n sqlite3 -header -column stock.db 'PRAGMA integrity_check; SELECT * FROM stock; SELECT * FROM reservations ORDER BY request_id;'",
+      "stdout": "--- corrected privileged live utility check ---\nrc=0 output=RESERVED previous-request 2 stock_before=5 stock_after=5\n--- direct live database proof ---\nintegrity_check\n---------------\nok             \nid          remaining \n----------  ----------\n1           5         \nrequest_id        quantity  \n----------------  ----------\nprevious-request  2         \n"
+    },
+    {
+      "command_id": "cmd-547e105fcecd446a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:28:40.536339+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1523,
+      "command": "sudo -n sh -c 'nohup sh -c \"sleep 2; /sbin/shutdown -r now\" >/tmp/benchmark-reboot.log 2>&1 &' && printf '%s\n' 'restart-scheduled node1' && date -u +%Y-%m-%dT%H:%M:%SZ",
+      "stdout": "restart-scheduled node1\n2026-08-26T14:39:23Z\n"
+    },
+    {
+      "command_id": "cmd-019b4e858c66406e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:28:48.936902+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 6486,
+      "command": "cat /proc/sys/kernel/random/boot_id && uptime",
+      "stderr": "ssh: connect to host 10.100.108.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-999c2c330d0541a9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:28:56.558733+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 3565,
+      "command": "printf '%s\n' '--- boot identity poll ---' && cat /proc/sys/kernel/random/boot_id && uptime",
+      "stderr": "ssh: connect to host 10.100.108.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-c0257b0860d047b7",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:28:59.830849+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1684,
+      "command": "printf '%s\n' '--- boot identity poll ---' && cat /proc/sys/kernel/random/boot_id && uptime",
+      "stdout": "--- boot identity poll ---\ndf1448c7-7d5a-481e-8a84-e70d46fd5646\n 13:28:58 up 0 min,  0 users,  load average: 0.00, 0.00, 0.00\n"
+    },
+    {
+      "command_id": "cmd-f65c1360a4c24b62",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T17:29:07.679532+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1945,
+      "command": "cd /srv/legacy2/sqlite-lock-contention\nprintf '%s\n' '--- post-restart identity and system health ---'\ncat /proc/sys/kernel/random/boot_id\ncat /etc/redhat-release\nuname -r\nsystemctl is-system-running || true\nprintf '%s\n' '--- persisted repair ---'\nstat -c '%U:%G %a %s %n' bin/reserve.py stock.db\nsha256sum bin/reserve.py\nprintf '%s\n' '--- post-restart live replay and data health ---'\nbefore=$(sudo -n sqlite3 stock.db 'SELECT remaining FROM stock WHERE id=1;')\noutput=$(sudo -n bin/reserve.py previous-request 777 2>&1)\nrc=$?\nafter=$(sudo -n sqlite3 stock.db 'SELECT remaining FROM stock WHERE id=1;')\nprintf 'rc=%s output=%s stock_before=%s stock_after=%s\\n' \"$rc\" \"$output\" \"$before\" \"$after\"\nsudo -n sqlite3 -header -column stock.db 'PRAGMA integrity_check; SELECT * FROM stock; SELECT * FROM reservations ORDER BY request_id;'\nprintf '%s\n' '--- storage health ---'\nfindmnt -T stock.db -o TARGET,SOURCE,FSTYPE,OPTIONS\ndf -h .",
+      "stdout": "--- post-restart identity and system health ---\ndf1448c7-7d5a-481e-8a84-e70d46fd5646\nRed Hat Enterprise Linux Server release 7.9 (Maipo)\n3.10.0-1160.el7.x86_64\nrunning\n--- persisted repair ---\nroot:root 755 2939 bin/reserve.py\nroot:root 644 4096 stock.db\ned4086a88c40c0dbf4826a5ad10c69b2f4ec888f994bf7120219573de65db401  bin/reserve.py\n--- post-restart live replay and data health ---\nrc=0 output=RESERVED previous-request 2 stock_before=5 stock_after=5\nintegrity_check\n---------------\nok             \nid          remaining \n----------  ----------\n1           5         \nrequest_id        quantity  \n----------------  ----------\nprevious-request  2         \n--- storage health ---\nTARGET SOURCE    FSTYPE OPTIONS\n/      /dev/vda3 xfs    rw,relatime,seclabel,attr2,inode64,noquota\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/vda3        17G  1.3G   16G   8% /\n"
+    }
+  ]
+}

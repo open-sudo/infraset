@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 11,
+    "successful": 9,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Only root and opsadmin may schedule cron jobs",
+      "command_ids": [
+        "cmd-4c1556025b4f45f9",
+        "cmd-0eca3800672c4ce2",
+        "cmd-c850f6936b8d45f6"
+      ],
+      "summary": "The allowlist contains exactly root and opsadmin. Before and after restart, both allowed users successfully installed test crontabs, nobody was rejected, and temporary entries were removed."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-98062a13d9eb4b73",
+        "cmd-0f1b8d51d5734fd0",
+        "cmd-12ff824be41b49e8",
+        "cmd-c850f6936b8d45f6"
+      ],
+      "summary": "Captured healthy baseline boot ID 6bb7e004-1e2e-46ac-bfd7-fafa248a4e76, acknowledged the scheduled safe reboot, observed new boot ID 67dac07c-0966-407c-bb9e-c1bf317f7c56, and proved crond, accounts, allowlist, permissions, and authorization behavior recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-b671b13c9e274eca",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:50:26.718188+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1660,
+      "command": "set -eu\nprintf '%s\\n' '--- identity ---'\nid\nprintf '%s\\n' '--- boot id ---'\ncat /proc/sys/kernel/random/boot_id\nprintf '%s\\n' '--- cron service ---'\nsystemctl is-active crond\nsystemctl is-enabled crond\nprintf '%s\\n' '--- cron access files ---'\nfor f in /etc/cron.allow /etc/cron.deny; do if [ -e \"$f\" ]; then ls -lZ \"$f\"; sed -n '1,120p' \"$f\"; else printf '%s missing\\n' \"$f\"; fi; done\nprintf '%s\\n' '--- users ---'\ngetent passwd root opsadmin || true\nprintf '%s\\n' '--- root crontab ---'\ncrontab -l 2>&1 || true",
+      "stdout": "--- identity ---\nuid=0(root) gid=0(root) groups=0(root) context=system_u:system_r:unconfined_service_t:s0\n--- boot id ---\n6bb7e004-1e2e-46ac-bfd7-fafa248a4e76\n--- cron service ---\nactive\nenabled\n--- cron access files ---\n/etc/cron.allow missing\n-rw-r--r--. 1 root root system_u:object_r:etc_t:s0 0 Dec 17  2025 /etc/cron.deny\n--- users ---\nroot:x:0:0:root:/root:/bin/bash\n--- root crontab ---\nno crontab for root"
+    },
+    {
+      "command_id": "cmd-7cebe12f110c4481",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:50:37.303696+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1524,
+      "command": "set -eu\nif getent passwd opsadmin >/dev/null; then\n  printf '%s\\n' 'opsadmin already exists'\nelse\n  useradd --create-home --shell /bin/bash opsadmin\n  printf '%s\\n' 'created opsadmin'\nfi\ngetent passwd opsadmin\nid opsadmin",
+      "stdout": "created opsadmin\nopsadmin:x:1000:1000::/home/opsadmin:/bin/bash\nuid=1000(opsadmin) gid=1000(opsadmin) groups=1000(opsadmin)"
+    },
+    {
+      "command_id": "cmd-4c1556025b4f45f9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:50:41.830938+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1426,
+      "command": "set -eu\ntmpfile=$(mktemp /etc/cron.allow.XXXXXX)\nprintf '%s\\n' root opsadmin > \"$tmpfile\"\nchown root:root \"$tmpfile\"\nchmod 0600 \"$tmpfile\"\nrestorecon \"$tmpfile\"\nmv -f \"$tmpfile\" /etc/cron.allow\nrestorecon /etc/cron.allow\nls -lZ /etc/cron.allow\nod -An -tc /etc/cron.allow",
+      "stdout": "-rw-------. 1 root root system_u:object_r:etc_t:s0 14 Oct  2 11:50 /etc/cron.allow\n   r   o   o   t  \\n   o   p   s   a   d   m   i   n  \\n"
+    },
+    {
+      "command_id": "cmd-0eca3800672c4ce2",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:50:53.090898+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1634,
+      "command": "set -u\ntestfile=$(mktemp /tmp/cron-access-test.XXXXXX)\nprintf '%s\\n' '0 0 1 1 * /bin/true' > \"$testfile\"\nchmod 0644 \"$testfile\"\nprintf '%s\\n' '--- root install ---'\ncrontab \"$testfile\"; root_rc=$?; printf 'root_rc=%s\\n' \"$root_rc\"\ncrontab -l 2>&1\nprintf '%s\\n' '--- opsadmin install ---'\nrunuser -u opsadmin -- crontab \"$testfile\"; ops_rc=$?; printf 'opsadmin_rc=%s\\n' \"$ops_rc\"\nrunuser -u opsadmin -- crontab -l 2>&1\nprintf '%s\\n' '--- nobody install (must fail) ---'\nrunuser -u nobody -- crontab \"$testfile\" 2>&1; nobody_rc=$?; printf 'nobody_rc=%s\\n' \"$nobody_rc\"\ncrontab -r 2>/dev/null || true\nrunuser -u opsadmin -- crontab -r 2>/dev/null || true\nrm -f \"$testfile\"\nprintf '%s\\n' '--- cleanup and service state ---'\ncrontab -l 2>&1 || true\nrunuser -u opsadmin -- crontab -l 2>&1 || true\nsystemctl is-active crond\n[ \"$root_rc\" -eq 0 ] && [ \"$ops_rc\" -eq 0 ] && [ \"$nobody_rc\" -ne 0 ]",
+      "stdout": "--- root install ---\nroot_rc=0\n0 0 1 1 * /bin/true\n--- opsadmin install ---\nopsadmin_rc=0\n0 0 1 1 * /bin/true\n--- nobody install (must fail) ---\nYou (nobody) are not allowed to use this program (crontab)\nSee crontab(1) for more information\nnobody_rc=1\n--- cleanup and service state ---\nno crontab for root\nno crontab for opsadmin\nactive"
+    },
+    {
+      "command_id": "cmd-98062a13d9eb4b73",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:05.198925+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1686,
+      "command": "set -eu\nprintf 'boot_id='\ncat /proc/sys/kernel/random/boot_id\nprintf 'crond_active='\nsystemctl is-active crond\nprintf 'crond_enabled='\nsystemctl is-enabled crond\nprintf '%s\\n' 'cron_allow_begin'\ncat /etc/cron.allow\nprintf '%s\\n' 'cron_allow_end'\nprintf 'allowlist_entry_count='\nawk 'NF {n++} END {print n+0}' /etc/cron.allow\ngetent passwd root opsadmin\nstat -c 'cron_allow_mode=%a owner=%U group=%G' /etc/cron.allow\n[ \"$(awk 'NF {print}' /etc/cron.allow)\" = \"root\nopsadmin\" ]",
+      "stdout": "boot_id=6bb7e004-1e2e-46ac-bfd7-fafa248a4e76\ncrond_active=active\ncrond_enabled=enabled\ncron_allow_begin\nroot\nopsadmin\ncron_allow_end\nallowlist_entry_count=2\nroot:x:0:0:root:/root:/bin/bash\nopsadmin:x:1000:1000::/home/opsadmin:/bin/bash\ncron_allow_mode=600 owner=root group=root"
+    },
+    {
+      "command_id": "cmd-0f1b8d51d5734fd0",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:10.367784+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1553,
+      "command": "set -eu\nsystemd-run --unit=[REDACTED] --on-active=3s /usr/bin/systemctl reboot\nprintf '%s\\n' 'safe reboot scheduled for node1 in 3 seconds'\nsystemctl status [REDACTED].timer --no-pager | sed -n '1,8p'",
+      "stdout": "Running timer as unit: [REDACTED].timer\nWill run service as unit: [REDACTED].service\nsafe reboot scheduled for node1 in 3 seconds\n\u25cf [REDACTED].timer - /usr/bin/systemctl reboot\n     Loaded: loaded (/run/systemd/transient/[REDACTED].timer; transient)\n  Transient: yes\n     Active: active (waiting) since Fri 2026-10-02 11:51:09 EDT; 8ms ago\n      Until: Fri 2026-10-02 11:51:09 EDT; 8ms ago\n    Trigger: Fri 2026-10-02 11:51:12 EDT; 2s left\n   Triggers: \u25cf [REDACTED].service"
+    },
+    {
+      "command_id": "cmd-2f3a4c9efc8c4896",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:14.391550+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1437,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "reachable boot_id=6bb7e004-1e2e-46ac-bfd7-fafa248a4e76"
+    },
+    {
+      "command_id": "cmd-e9df812c4a8b404c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:19.781929+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2529,
+      "command": "sleep 5\nprintf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-e165cf35163e4bf3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:23.649901+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 1577,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-12ff824be41b49e8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:27.309335+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1508,
+      "command": "printf 'reachable boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "reachable boot_id=67dac07c-0966-407c-bb9e-c1bf317f7c56"
+    },
+    {
+      "command_id": "cmd-c850f6936b8d45f6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:41.148643+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1595,
+      "command": "set -u\nprintf 'boot_id='\ncat /proc/sys/kernel/random/boot_id\nprintf 'crond_active='\nsystemctl is-active crond\nprintf 'crond_enabled='\nsystemctl is-enabled crond\nprintf '%s\\n' 'cron_allow_begin'\ncat /etc/cron.allow\nprintf '%s\\n' 'cron_allow_end'\ngetent passwd root opsadmin\nstat -c 'cron_allow_mode=%a owner=%U group=%G' /etc/cron.allow\nexact_rc=0\n[ \"$(awk 'NF {print}' /etc/cron.allow)\" = \"root\nopsadmin\" ] || exact_rc=$?\ntestfile=$(mktemp /tmp/cron-post-reboot.XXXXXX)\nprintf '%s\\n' '0 0 1 1 * /bin/true' > \"$testfile\"\nchmod 0644 \"$testfile\"\ncrontab \"$testfile\"; root_rc=$?\nrunuser -u opsadmin -- crontab \"$testfile\"; ops_rc=$?\nrunuser -u nobody -- crontab \"$testfile\" 2>&1; nobody_rc=$?\nprintf 'authorization_results root=%s opsadmin=%s nobody=%s\\n' \"$root_rc\" \"$ops_rc\" \"$nobody_rc\"\nprintf 'root_crontab='; crontab -l\nprintf 'opsadmin_crontab='; runuser -u opsadmin -- crontab -l\ncrontab -r 2>/dev/null || true\nrunuser -u opsadmin -- crontab -r 2>/dev/null || true\nrm -f \"$testfile\"\nprintf '%s\\n' 'temporary test crontabs removed'\n[ \"$exact_rc\" -eq 0 ] && [ \"$root_rc\" -eq 0 ] && [ \"$ops_rc\" -eq 0 ] && [ \"$nobody_rc\" -ne 0 ] && [ \"$(systemctl is-active crond)\" = active ]",
+      "stdout": "boot_id=67dac07c-0966-407c-bb9e-c1bf317f7c56\ncrond_active=active\ncrond_enabled=enabled\ncron_allow_begin\nroot\nopsadmin\ncron_allow_end\nroot:x:0:0:root:/root:/bin/bash\nopsadmin:x:1000:1000::/home/opsadmin:/bin/bash\ncron_allow_mode=600 owner=root group=root\nYou (nobody) are not allowed to use this program (crontab)\nSee crontab(1) for more information\nauthorization_results root=0 opsadmin=0 nobody=1\nroot_crontab=0 0 1 1 * /bin/true\nopsadmin_crontab=0 0 1 1 * /bin/true\ntemporary test crontabs removed"
+    }
+  ]
+}

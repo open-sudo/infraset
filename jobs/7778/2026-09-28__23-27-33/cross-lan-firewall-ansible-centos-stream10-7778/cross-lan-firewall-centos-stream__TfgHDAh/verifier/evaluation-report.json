@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-allow-5432",
+      "requirement": "Allow node2 (lan-a) to reach node3 (lan-b) on TCP port 5432",
+      "status": "satisfied",
+      "summary": "Direct TCP connect tests from node2 to 10.50.20.12:5432 succeed both before (cmd-4abbfc5f5b864d35, cmd-71b87d794caa4330) and after a full restart cycle of all four nodes (cmd-51842d2c38e7400d, cmd-97ab8e1cd0d14490), including a real psql auth prompt confirming protocol-level reachability (cmd-42d2ee8c84814af3). The underlying VyOS firewall config is confirmed present in config.boot (cmd-c7d5b69179f54caa) and survives reboot (cmd-45a55c1911e94115).",
+      "evidence_ids": [
+        "cmd-4abbfc5f5b864d35",
+        "cmd-71b87d794caa4330",
+        "cmd-42d2ee8c84814af3",
+        "cmd-51842d2c38e7400d",
+        "cmd-97ab8e1cd0d14490",
+        "cmd-c7d5b69179f54caa",
+        "cmd-45a55c1911e94115"
+      ]
+    },
+    {
+      "id": "req-2-reject-other",
+      "requirement": "Reject all other traffic between lan-a and lan-b",
+      "status": "satisfied",
+      "summary": "TCP/22 and ICMP are explicitly rejected in both directions (node2->node3 via cmd-71b87d794caa4330; node3->node2 via cmd-e21c888e97994ee1), and the same rejection behavior is reconfirmed after the full restart cycle (cmd-2c25f77b3c1e4cd5, cmd-97ab8e1cd0d14490). The forward filter ruleset (state-policy established/related accept, rule 900/910 reject) is visible in the saved VyOS config (cmd-bbad05cb197d484a, cmd-31f56fae84034a40 post-restart).",
+      "evidence_ids": [
+        "cmd-71b87d794caa4330",
+        "cmd-e21c888e97994ee1",
+        "cmd-2c25f77b3c1e4cd5",
+        "cmd-97ab8e1cd0d14490",
+        "cmd-bbad05cb197d484a",
+        "cmd-31f56fae84034a40"
+      ]
+    },
+    {
+      "id": "req-3-ansible",
+      "requirement": "Implemented using Ansible",
+      "status": "satisfied",
+      "summary": "A single site.yml is run from control node4 via ansible-playbook and configures node2/node3 addressing+routing+PostgreSQL and node1's VyOS firewall. Final runs complete with failed=0 across all hosts (cmd-7c4680c94c724387) and rerun idempotently with no changes after the restart cycle (cmd-31f56fae84034a40). Because the vyos.vyos.vyos_config module could not commit config on this image, the VyOS play uses ansible.builtin.raw invoking 'sudo vbash' \u2014 still fully driven by the Ansible playbook, so the outcome is Ansible-implemented despite deviating from the typical network_cli/vyos_config pattern.",
+      "evidence_ids": [
+        "cmd-7c4680c94c724387",
+        "cmd-31f56fae84034a40",
+        "cmd-8b223c179bfc4a8e",
+        "cmd-643dd7fd36344d20"
+      ]
+    },
+    {
+      "id": "req-4-mgmt-egress",
+      "requirement": "Management network and internet egress unaffected by the LAN firewall",
+      "status": "satisfied",
+      "summary": "node2 still reaches node1's management IP and the public internet (HTTPS 301) after the firewall is applied (cmd-cec65a5b16404f0c), and node4 still reaches node2 over the management network (cmd-2b5d4bc5048546eb), showing the firewall changes are scoped to the inter-LAN forward path only.",
+      "evidence_ids": [
+        "cmd-cec65a5b16404f0c",
+        "cmd-2b5d4bc5048546eb"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct, pre- and post-restart evidence: node2 can reach node3 on TCP 5432 only, all other inter-LAN traffic (TCP/22, ICMP) is rejected in both directions, the solution is driven end-to-end by an Ansible playbook (site.yml) run from the designated control node, and management/egress connectivity is unaffected. The provider-wide restart protocol was executed on all four nodes with baseline boot IDs, restart acknowledgements, changed post-restart boot IDs, and recovered interface/firewall/PostgreSQL/Ansible state, cross-checked consistently against the fixed after-prepare/after-executor lifecycle snapshots. Hygiene is moderate: the VyOS automation path required extensive live trial-and-error to work around module/sudo limitations (mostly reconciled to the final state), and one unused root SSH key was added to node1 and never cleaned up.",
+  "limitations": [
+    "Rejection of 'all other traffic' was verified via TCP/22 and ICMP only, not an exhaustive protocol/port sweep, though this is a reasonable proxy given the observed default-drop-plus-explicit-reject firewall structure.",
+    "It cannot be confirmed from the trace whether the ad-hoc test playbooks and debug log files created on node4 during troubleshooting were removed, since the after-executor temporary-files snapshot is a bounded listing and does not show them either way.",
+    "The root-level SSH key added to node1 (/root/.ssh/authorized_keys) during a troubleshooting detour appears to remain in place; no follow-up command in the trace removes it."
+  ],
+  "command_stats": {
+    "total": 213,
+    "successful": 185,
+    "failed": 28,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.6,
+    "summary": "Chronological review of state-changing commands shows a long troubleshooting phase (~04:06\u201304:29) discovering that VyOS's vyos_config module cannot commit on this image and that the operator account needs sudo, involving many live commit/delete cycles directly on node1's firewall config outside of Ansible (e.g. cmd-129da2b0025d4b91 set 'state-policy invalid action drop' then reverted at cmd-2686230827884035; cmd-7d505922479c4c05 set then cmd-2932441c5ba94eea failed re-apply; cmd-fa7ff1efe2354a1a set then cmd-a3b0676c50d148f5 attempted delete). These were bounded, low-risk, and eventually reconciled to the final correct config (validated by cmd-0a9829ccc98e4d4a and the idempotent final playbook run cmd-7c4680c94c724387), so they are treated as legitimate discovery toward a genuine platform blocker rather than unnecessary mutations, though the volume of live-firewall trial-and-error is notable. One residue was not reverted: cmd-1cc9edf2eaaa435e created /root/.ssh/authorized_keys on node1 with the cluster public key while diagnosing root SSH access; that root-level key was never removed after the executor abandoned the root-login approach in favor of vyos+sudo (confirmed working at cmd-0a9829ccc98e4d4a), leaving an unused but live root SSH trust path on node1. Several ad-hoc test playbooks and debug logs were created on node4 (/tmp/test_two.yml, test_cli.yml, test_raw*.yml, test_hostname.yml, /tmp/full3.log, /tmp/ansible_full.log via cmd-764c1bd7b4064258, cmd-3d004ff5a2464607, cmd-f447f092bcc9407f, cmd-ddffa6a20a154666) without explicit cleanup commands in the trace; the after-executor /tmp snapshot for node4 does not list them, but the snapshot is a bounded inventory so this cannot be confirmed as cleanup versus a listing limitation. No failed services, broken package state, or other unsafe exposure was observed in the before/after comparisons.",
+    "evidence_ids": [
+      "cmd-129da2b0025d4b91",
+      "cmd-2686230827884035",
+      "cmd-7d505922479c4c05",
+      "cmd-2932441c5ba94eea",
+      "cmd-fa7ff1efe2354a1a",
+      "cmd-a3b0676c50d148f5",
+      "cmd-0a9829ccc98e4d4a",
+      "cmd-1cc9edf2eaaa435e",
+      "cmd-764c1bd7b4064258",
+      "cmd-3d004ff5a2464607",
+      "cmd-f447f092bcc9407f",
+      "cmd-ddffa6a20a154666"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

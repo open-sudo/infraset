@@ -1,0 +1,58 @@
+{
+  "status": "completed",
+  "summary": "Set up a LUKS2-encrypted XFS volume on node1, backed by a 2G sparse file loop-mounted at a fixed /dev/loop0, keyed by a root-only keyfile, that automatically unlocks and mounts at /srv/secure on every boot via systemd (secure-loop-setup.service -> systemd-cryptsetup@secure.service -> srv-secure.mount, pulled in by local-fs.target). Verified end-to-end across an actual node restart.",
+  "actions_performed": [
+    "Installed cryptsetup package on node1",
+    "Generated a 2KB random keyfile at /etc/secure-keys/secure.key (mode 400, root:root)",
+    "Created a 2G sparse backing image at /var/lib/secure-volume/secure.img",
+    "Created systemd unit secure-loop-setup.service to deterministically attach the image to /dev/loop0 before cryptsetup runs, ordered Before=cryptsetup.target/systemd-cryptsetup@secure.service, enabled it",
+    "luksFormat'd /dev/loop0 with the keyfile (LUKS2, aes-xts-plain64), opened it as mapper device 'secure', formatted XFS",
+    "Added /etc/crypttab entry (secure /dev/loop0 /etc/secure-keys/secure.key luks,nofail,x-systemd.device-timeout=10) and a drop-in override making systemd-cryptsetup@secure.service depend on secure-loop-setup.service",
+    "Added /etc/fstab entry mounting /dev/mapper/secure at /srv/secure (xfs, nofail)",
+    "Manually tore down and re-triggered the full unit chain to validate ordering before reboot; wrote a test file to /srv/secure for persistence verification",
+    "Captured pre-restart boot_id, restarted node1 via systemctl reboot, polled until reachable, confirmed boot_id changed",
+    "Verified post-reboot: /srv/secure auto-mounted, LUKS mapper active, all three units active, and the pre-restart test file was intact"
+  ],
+  "evidence": [
+    {
+      "requirement": "Encrypted volume created, formatted, and mounted at /srv/secure",
+      "command_ids": [
+        "cmd-9bccf650140f45d0",
+        "cmd-31012eb80c5f4169"
+      ],
+      "summary": "luksFormat/luksOpen/mkfs.xfs performed on /dev/loop0; volume manually mounted at /srv/secure, test file written and read back successfully"
+    },
+    {
+      "requirement": "Boot-time auto-unlock and auto-mount configured and validated pre-reboot",
+      "command_ids": [
+        "cmd-bfb88f79f0e74def",
+        "cmd-31012eb80c5f4169",
+        "cmd-70a8c3e1936847a4"
+      ],
+      "summary": "crypttab entry, secure-loop-setup.service, and systemd override created; full unit chain (secure-loop-setup -> systemd-cryptsetup@secure -> srv-secure.mount) manually triggered from cold state and succeeded, recovering the test file; confirmed local-fs.target/cryptsetup.target dependency wiring and enabled state"
+    },
+    {
+      "requirement": "Healthy baseline captured before restart",
+      "command_ids": [
+        "cmd-70a8c3e1936847a4"
+      ],
+      "summary": "Captured boot_id 15443601-befc-4fc4-aa76-b417968ad3f9 and confirmed /srv/secure mounted, test file present, and all three units active immediately before reboot"
+    },
+    {
+      "requirement": "Node restart acknowledged and boot identity changed",
+      "command_ids": [
+        "cmd-6543951e236d43db",
+        "cmd-444a7ae9e8d54a75",
+        "cmd-301d714980ae4830"
+      ],
+      "summary": "systemctl reboot issued and acknowledged (connection dropped); after reconnect, boot_id changed to fa9e5fdb-2e09-47c8-8aa6-6dc1d988c5df, proving an actual restart occurred"
+    },
+    {
+      "requirement": "Post-restart recovery verified: encrypted volume auto-unlocked, mounted, and data intact",
+      "command_ids": [
+        "cmd-583b4169eec543d6"
+      ],
+      "summary": "Post-reboot: /srv/secure mounted automatically via fstab-driven unit, all three systemd units active, cryptsetup status shows LUKS2 device active on /dev/loop0, and the pre-restart test file content was read back unchanged"
+    }
+  ]
+}

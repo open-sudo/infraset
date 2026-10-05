@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node3 obtains its DHCP address from node2's DHCP service despite being on a different broadcast segment (relay across node1)",
+      "status": "satisfied",
+      "summary": "Kea DHCPv4 was installed and configured on node2 (subnet 172.20.2.0/24, relay ip-addresses 172.20.2.1) and isc-dhcp-relay (dhcrelay) installed and running on node1 bridging eth1 (172.20.1.0/24, node2 side) and eth2 (172.20.2.0/24, node3 side). tcpdump captures on node1's eth2 and eth1 show node3's DHCPDISCOVER broadcast being relayed with giaddr 172.20.2.1 to node2, and kea-dhcp4 logs confirm DHCPDISCOVER received and DHCPOFFER sent back through the relay. node3 ultimately shows a live lease 172.20.2.124/24 with gateway 172.20.2.1 via 'ip addr show' and NetworkManager 'connected' state, and node2's kea-leases4.csv records the corresponding lease bound to node3's MAC/hostname. A direct ping from node3 to 172.20.2.1 succeeded after lease acquisition.",
+      "evidence_ids": [
+        "cmd-daa860ca94e44637",
+        "cmd-db6e691f40394445",
+        "cmd-14a465c6bb03493f",
+        "cmd-267a29b5d17e450b",
+        "cmd-9d66de9b2e574531",
+        "cmd-76ef1164050d4b21"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Root-cause fixes applied so the relay path works end-to-end (package/dependency, firewall, routing)",
+      "status": "satisfied",
+      "summary": "Executor diagnosed and fixed a kea-dhcp4 startup failure caused by an outdated openssl-libs (symbol lookup error), opened firewalld's 'dhcp' service (UDP/67) on node2's public zone which was blocking inbound relayed traffic, and added a static return route on node2 (172.20.2.0/24 via 172.20.1.1) so DHCPOFFER packets destined for the relay's giaddr were correctly routed back out enp8s0 instead of the management interface. Each fix is followed by confirming command output showing the corrected state (service active, firewall rule present, route present) and by the eventual successful lease.",
+      "evidence_ids": [
+        "cmd-2da79731bd794e87",
+        "cmd-f3c599fef08543c0",
+        "cmd-9957f1f9a7c54c96",
+        "cmd-6df804c3baa3425d",
+        "cmd-da63748203a14c34",
+        "cmd-50bb5f8ca6a44696"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Configuration persists across restarts of all three nodes (relay, DHCP server, addressing, firewall, lease data recovered after reboot)",
+      "status": "satisfied",
+      "summary": "Each node was rebooted individually with a captured pre-reboot boot_id, a native reboot command, connection-loss/timeout evidence during the outage, a distinct post-reboot boot_id, and recovery checks: node1 shows isc-dhcp-relay active with eth1/eth2 addressing and IP forwarding sysctls restored; node2 shows kea-dhcp4 active with static IP/route/firewall rule/lease data intact; node3 automatically re-acquired its 172.20.2.124/24 lease from node2 via the relay without manual intervention. A final consolidated check after all three reboots re-confirms the relay is active on node1 and the lease is intact in node2's lease file. This matches the fixed after-prepare/after-executor boot-identity snapshots (node1 e85bf011->cb0e4dce, node2 2db46909->263c0f86, node3 21972395->ef762460), providing an independent cross-check.",
+      "evidence_ids": [
+        "cmd-5eb3f34d56df4d79",
+        "cmd-4d56d05d626e4d16",
+        "cmd-df207a07faab4e6d",
+        "cmd-e71e905737044e2c",
+        "cmd-dc9818cbc3394ed0",
+        "cmd-d8000c068e0b47af",
+        "cmd-2c344a601e584efc",
+        "cmd-a5b2b94789b74f1c",
+        "cmd-e3fa701cc5a845d4",
+        "cmd-feeb151e8e974031",
+        "cmd-0c38305c947044dc",
+        "cmd-4024ca74b7d84dc0",
+        "cmd-0e4339025685437a",
+        "cmd-10e7f8d0de5b4361",
+        "cmd-25f9a4d7d2d544bd",
+        "cmd-5c7d1132c4254a3f",
+        "cmd-202947d715554824"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully arranged for node3 to obtain a DHCP lease from node2's Kea DHCPv4 service across node1's two isolated segments by installing and configuring a DHCP relay (isc-dhcp-relay/dhcrelay) on node1 and Kea on node2, then fixed several root-cause blockers (a broken openssl-libs dependency preventing kea-dhcp4 from starting, a firewalld rule blocking UDP/67, and a missing return route for the relay's giaddr). The full DISCOVER\u2192relay\u2192OFFER\u2192lease flow was directly observed via tcpdump and Kea's logs, and node3 ended up with a real, working lease (172.20.2.124/24, gateway 172.20.2.1) confirmed via ip addr, NetworkManager state, ping, and node2's lease file. The mandatory node-restart protocol was completed for all three nodes with boot-ID proof of restart and recovery, including a live DHCP renewal on node3 after all reboots, corroborated by the fixed lifecycle boot-identity snapshots. Hygiene is reasonable but not perfect: an unrelated docker0 address deletion on node1 was left in place without explanation, and some troubleshooting artifacts (temporary debug logging, a manual dhcrelay test, and several log files) were either only partially cleaned up or left as residue.",
+  "limitations": [
+    "The docker0 address removal on node1 (cmd-e71e905737044e2c) has no stated task rationale; its downstream effects were not independently verified beyond the fact that docker0 was unused in the observed topology.",
+    "Full node1/node2/node3 boot-loss windows were only observed indirectly via connection-timeout/reset errors and later successful reconnection, not via a continuous liveness probe during the entire outage.",
+    "Some diagnostic tcpdump captures returned truncated or empty windows due to timing races with NetworkManager's DHCP retries, requiring several retries before a clean end-to-end capture was obtained; this reflects normal trial-and-error rather than a functional gap."
+  ],
+  "command_stats": {
+    "total": 167,
+    "successful": 144,
+    "failed": 23,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.6,
+    "summary": "Overall hygiene is acceptable but has several unnecessary or unexplained mutations. (1) During post-node1-reboot verification, the executor ran 'ip addr del 240.127.1.1/24 dev docker0' (cmd-e71e905737044e2c), removing a pre-existing docker0 address that was present in the original baseline and had no stated connection to the DHCP-relay task; this mutation was not reverted and is not explained in the executor's report. (2) The executor temporarily raised kea-dhcp4 logging to DEBUG/99 for troubleshooting (cmd-e70cd434990d4aa1) and later reverted it back to INFO/0 (cmd-bd8256e6cc904c6b) - a bounded, fully-restored diagnostic mutation, but still an unnecessary state change with two extra service restarts. (3) A manual foreground dhcrelay process was started outside systemd for a one-off test (cmd-25ea05ff4f2b40cc) and then killed and replaced with the systemd-managed instance (cmd-a265cc7d7572482b) - bounded and corrected, but an unnecessary experimental mutation. (4) Several diagnostic artifacts (/tmp/td2.log, /tmp/td2.pid, /tmp/reboot.log on node2; /tmp/nmup.log, /tmp/nmup2.log, /tmp/nmup3.log, /tmp/reboot.log, /tmp/td3.log on node3) were left behind per the after-executor snapshot rather than cleaned up, unlike node1 where tcpdump logs were removed. None of these are destructive or security-weakening, and the core relay/DHCP state was left correct and healthy, but the docker0 deletion and the residue point to imperfect scoping and cleanup discipline.",
+    "evidence_ids": [
+      "cmd-e71e905737044e2c",
+      "cmd-e70cd434990d4aa1",
+      "cmd-bd8256e6cc904c6b",
+      "cmd-25ea05ff4f2b40cc",
+      "cmd-a265cc7d7572482b",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

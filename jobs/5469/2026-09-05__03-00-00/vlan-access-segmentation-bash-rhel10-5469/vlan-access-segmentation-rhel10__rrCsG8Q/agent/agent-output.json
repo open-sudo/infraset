@@ -1,0 +1,96 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 as a VLAN-segmenting switch: eth1 (link to node2) is an untagged access port on VLAN 50, eth2 (link to node3) is an untagged access port on VLAN 60, implemented via a vlan-filtering Linux bridge (br-access) with per-VLAN SVIs (br-access.50=192.168.50.1, br-access.60=192.168.60.1). node2 (192.168.50.2) and node3 (192.168.60.3) each keep a working link to node1 in their own VLAN, but cannot reach each other (separate broadcast domains plus IPv4 forwarding disabled on node1). Configuration persisted via a systemd oneshot unit (vlan-access.service) + sysctl.d entry on node1, and NetworkManager connection profiles on node2/node3. Performed the mandatory one-at-a-time restart of all three nodes, proving changed boot IDs and full post-restart recovery of VLAN config and connectivity.",
+  "actions_performed": [
+    "Inventoried node1/node2/node3 interfaces and identified eth1->node2, eth2->node3 physical links via temporary IP/ping test",
+    "Stopped SONiC's interfaces-config.service/networking.service on node1 to avoid config clobbering during setup",
+    "Built a vlan_filtering bridge br-access on node1, made eth1 an untagged access port on VLAN 50 and eth2 an untagged access port on VLAN 60",
+    "Created br-access.50 (192.168.50.1/24) and br-access.60 (192.168.60.1/24) SVIs on node1 for per-VLAN L3 presence",
+    "Disabled net.ipv4.conf.all.forwarding on node1 to prevent inter-VLAN routing between node2 and node3",
+    "Configured node2 (192.168.50.2/24) and node3 (192.168.60.3/24) enp8s0 addresses via nmcli connection profiles (RHEL10 NetworkManager) after discovering raw `ip addr add` was reverted by NetworkManager",
+    "Verified node1<->node2 and node1<->node3 connectivity, and confirmed node2<->node3 isolation (no route/unreachable)",
+    "Persisted VLAN/bridge setup via /usr/local/sbin/vlan-access-setup.sh + vlan-access.service (enabled, runs at boot) and /etc/sysctl.d/99-vlan-access.conf on node1",
+    "Captured pre-restart boot_id baseline and health evidence on all three nodes",
+    "Restarted node1, node2, node3 one at a time (reboot backgrounded so ack returned before disconnect), polled until each came back, and verified changed boot_id plus restored VLAN membership, IP config, and connectivity/isolation on each"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 eth1 (node2 segment) configured as untagged access port on its own VLAN (50)",
+      "command_ids": [
+        "cmd-86e53da478664ada",
+        "cmd-df112d5b6f4f4d76"
+      ],
+      "summary": "bridge vlan show confirms eth1 has vlan-id 50 PVID Egress Untagged, both immediately after setup and after node1's restart"
+    },
+    {
+      "requirement": "node1 eth2 (node3 segment) configured as untagged access port on its own VLAN (60)",
+      "command_ids": [
+        "cmd-86e53da478664ada",
+        "cmd-df112d5b6f4f4d76"
+      ],
+      "summary": "bridge vlan show confirms eth2 has vlan-id 60 PVID Egress Untagged, both immediately after setup and after node1's restart"
+    },
+    {
+      "requirement": "node2 keeps a working link to node1 inside its own VLAN",
+      "command_ids": [
+        "cmd-0632a04fc5f64b6f",
+        "cmd-c34fc21a3de8466d",
+        "cmd-d74b0cb463de4216",
+        "cmd-df112d5b6f4f4d76"
+      ],
+      "summary": "node2 (192.168.50.2) configured via nmcli; ping 192.168.50.1<->192.168.50.2 succeeds before and after node2's and node1's restarts"
+    },
+    {
+      "requirement": "node3 keeps a working link to node1 inside its own VLAN",
+      "command_ids": [
+        "cmd-ca6df100a1e64367",
+        "cmd-c34fc21a3de8466d",
+        "cmd-15465e36c5b14ab7",
+        "cmd-df112d5b6f4f4d76"
+      ],
+      "summary": "node3 (192.168.60.3) configured via nmcli; ping 192.168.60.1<->192.168.60.3 succeeds before and after node3's and node1's restarts"
+    },
+    {
+      "requirement": "node2 and node3 stay separated from one another (VLAN isolation)",
+      "command_ids": [
+        "cmd-cccd3560bd3b4350",
+        "cmd-665d9028b0e94d5d",
+        "cmd-2a12a8ad777c482e"
+      ],
+      "summary": "node2 cannot ping node3 even with an explicit static route via node1 (forwarding disabled); bridge fdb on node1 shows eth1 only ever learns VLAN 50 MACs and eth2 only VLAN 60 MACs; post-restart re-test shows 'Destination Net Unreachable' confirming continued isolation"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-1230b4e83b924174",
+        "cmd-9f7ba4c7fa034e0e",
+        "cmd-b2b53c03c8be45c9",
+        "cmd-479ceab1c6774e71",
+        "cmd-18eda3da25224377",
+        "cmd-64911d96462d403f",
+        "cmd-2fe5baf0213341bb"
+      ],
+      "summary": "Baseline boot_id 8e8823ec captured; reboot acknowledged before disconnect; command execution failed mid-reboot then returned with boot_id 19d06c8a (changed); VLAN bridge, SVIs, and forwarding=0 confirmed restored via the persisted systemd unit; ping to node2 and node3 both succeed post-restart"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-be08a2231d554bc9",
+        "cmd-078bfeead7ce448b",
+        "cmd-65d0314057454683",
+        "cmd-d74b0cb463de4216"
+      ],
+      "summary": "Baseline boot_id 19062a82 and working ping to node1 captured; reboot triggered; boot_id changed to e8bc5843; enp8s0 IP 192.168.50.2 persisted via NetworkManager profile and ping to node1 (192.168.50.1) succeeds post-restart"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-39340120a223420b",
+        "cmd-1707948a594545e6",
+        "cmd-6e9985bd054e4b60",
+        "cmd-15465e36c5b14ab7"
+      ],
+      "summary": "Baseline boot_id b17495e3 and working ping to node1 captured; reboot triggered; boot_id changed to a2fa76ac; enp8s0 IP 192.168.60.3 persisted via NetworkManager profile and ping to node1 (192.168.60.1) succeeds post-restart"
+    }
+  ]
+}

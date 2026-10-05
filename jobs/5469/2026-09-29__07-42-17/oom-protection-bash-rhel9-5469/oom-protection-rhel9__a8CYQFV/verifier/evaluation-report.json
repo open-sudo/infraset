@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "managed-service",
+      "requirement": "inventory-api runs on node1 as a managed (systemd) service",
+      "status": "satisfied",
+      "summary": "systemd unit /etc/systemd/system/inventory-api.service created with ExecStart, Restart=always, OOMScoreAdjust=-1000, enabled and started; systemctl reports active, MainPID present, and /health and /inventory return valid JSON.",
+      "evidence_ids": [
+        "cmd-050ae5809da84227"
+      ]
+    },
+    {
+      "id": "oom-event-triggered",
+      "requirement": "A memory-hungry process drives the system out of memory",
+      "status": "satisfied",
+      "summary": "An unprotected memhog.py process (oom_score_adj=0) was launched and allowed to allocate memory until swap and RAM were nearly exhausted (used memory 1.9Gi/1.9Gi, swap used 1.2Gi at peak); dmesg subsequently recorded a genuine kernel OOM-killer invocation.",
+      "evidence_ids": [
+        "cmd-99690ae594fc4bdb",
+        "cmd-7cc55a08d6f04bf1",
+        "cmd-230e6ad129034012"
+      ]
+    },
+    {
+      "id": "hog-is-victim",
+      "requirement": "The kernel OOM killer stops the memory hog, not inventory-api",
+      "status": "satisfied",
+      "summary": "dmesg directly shows 'Out of memory: Killed process 1644 (python3) ... oom_score_adj:0', matching the hog's PID and score; inventory-api's PID (1596, score -1000) is distinct and unaffected.",
+      "evidence_ids": [
+        "cmd-230e6ad129034012"
+      ]
+    },
+    {
+      "id": "service-keeps-serving",
+      "requirement": "inventory-api keeps serving throughout and after the OOM event, without restart",
+      "status": "satisfied",
+      "summary": "Post-OOM systemctl show reports NRestarts=0 and unchanged MainPID=1596 matching the pre-OOM baseline; /health and /inventory both returned valid, incrementing-request-count JSON responses before, during, and after the OOM event.",
+      "evidence_ids": [
+        "cmd-050ae5809da84227",
+        "cmd-7cc55a08d6f04bf1",
+        "cmd-230e6ad129034012",
+        "cmd-4827e9a64d4c4c7c"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Independent provider-wide node-restart evidence protocol executed for node1",
+      "status": "satisfied",
+      "summary": "Pre-restart healthy baseline (boot_id 6aa805ba..., service active/enabled, working /health) was captured; a native systemctl reboot was issued with ack returned before disconnect; polling showed connection timeouts while down, then a changed boot_id (65a20cb6-af63...) confirming an actual restart; post-restart state shows the service active/enabled, auto-started, retaining OOMScoreAdjust=-1000, with NRestarts=0 and working endpoints. The fixed lifecycle snapshots independently corroborate the same boot_id transition (before_prepare vs after_executor).",
+      "evidence_ids": [
+        "cmd-f61d64cce4c9434c",
+        "cmd-174c9c71bdf84c35",
+        "cmd-b7009895c0654d3e",
+        "cmd-49a505e96a954928",
+        "cmd-6b6aa00534f647b2",
+        "cmd-e5469e3d18cf4d9e",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor deployed inventory-api as a systemd-managed service on node1 with OOMScoreAdjust=-1000, then directly demonstrated the required behavior: an unprotected memory-hog process drove the system into a genuine kernel OOM event (confirmed via dmesg), the kernel killed the hog (oom_score_adj=0) rather than inventory-api (oom_score_adj=-1000), and inventory-api continued serving /health and /inventory with zero restarts throughout. The independent node-restart evidence protocol was also completed for node1, with a directly observed pre-restart baseline, restart acknowledgement, changed boot identity, and full post-restart recovery of the service, corroborated by the fixed lifecycle boot-identity snapshots. All material outcomes are satisfied with direct, bounded evidence.",
+  "limitations": [
+    "The evidence bundle relies on executor-selected command excerpts rather than full raw logs; underlying command outputs were trusted as presented.",
+    "Temp files /tmp/oom_test_start_epoch and /tmp/reboot.log were left on node1 after the run per the after-executor snapshot diff, a very minor hygiene gap not otherwise corroborated beyond the diff."
+  ],
+  "command_stats": {
+    "total": 13,
+    "successful": 10,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All executor commands trace clearly to task goals: service deployment, the required OOM demonstration (bounded, later cleaned up), and the mandated restart protocol. Hog artifacts (/root/memhog.py, .pid, .log) were explicitly removed after the test (cmd-4827e9a64d4c4c7c). No failed or conflicting services, no unsafe exposure beyond the intended service port 8080, and package health remained consistent (manager=dnf) before and after. Minor residue: two small temp files (/tmp/oom_test_start_epoch, /tmp/reboot.log) created during the test/reboot process were left behind per the after-executor snapshot diff, though these are harmless bookkeeping artifacts rather than functional residue.",
+    "evidence_ids": [
+      "cmd-99690ae594fc4bdb",
+      "cmd-4827e9a64d4c4c7c",
+      "cmd-174c9c71bdf84c35",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

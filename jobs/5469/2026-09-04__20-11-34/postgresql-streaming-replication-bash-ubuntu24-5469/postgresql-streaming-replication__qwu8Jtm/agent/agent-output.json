@@ -1,0 +1,109 @@
+{
+  "status": "completed",
+  "summary": "Configured PostgreSQL 16 streaming replication across the three-node cluster: node1 is the writable primary, node2 and node3 are read-only physical standbys using dedicated replication slots (node2_slot, node3_slot) and a dedicated `replicator` role. node3 required a workaround (its apt path to the internet was hanging) \u2014 resolved by copying the .deb packages already cached on node1 to node3 over the cluster's internal network via SSH (host keys were missing on node3's sshd, generated with ssh-keygen -A) and installing locally. Verified writes on the primary propagate to both standbys, and standbys correctly reject writes. Completed the mandatory node-restart protocol: for each node (standbys node2, node3 first, primary node1 last) captured a boot_id baseline and healthy-service/data proof, issued `systemctl reboot`, polled until the node's boot_id changed, and confirmed PostgreSQL and replication fully recovered \u2014 including a final post-restart write on node1 that was confirmed present on both node2 and node3.",
+  "actions_performed": [
+    "Installed PostgreSQL 16 + contrib on node1 and node2 via apt",
+    "Installed PostgreSQL 16 + contrib on node3 by transferring node1's cached .deb packages over internal SSH after node3's apt path to the internet repeatedly hung",
+    "Generated missing SSH host keys and started sshd on node3 to enable internal package transfer",
+    "Created replication role 'replicator' with a generated password on node1 (primary)",
+    "Configured postgresql.conf on node1: listen_addresses='*', wal_level=replica, max_wal_senders=10, max_replication_slots=10, hot_standby=on",
+    "Added pg_hba.conf entries allowing scram-sha-256 replication connections from node2 and node3",
+    "Created physical replication slots node2_slot and node3_slot on node1",
+    "Wiped node2/node3 data directories and ran pg_basebackup with -R to build standbys and auto-configure primary_conninfo/standby.signal",
+    "Started PostgreSQL on node2 and node3 and confirmed pg_is_in_recovery()=true and streaming state on the primary",
+    "Verified data written on node1 (CREATE TABLE + INSERTs) appeared on node2 and node3, and that INSERTs on standbys are rejected as read-only",
+    "Captured boot_id + service/data baselines on all three nodes",
+    "Restarted node2, node3, then node1 one at a time via systemctl reboot, polling each until reachable again",
+    "Confirmed changed boot_id and full PostgreSQL/replication recovery after each restart, including reconnection of both standbys after the primary's restart",
+    "Performed a final post-restart write on the primary and confirmed it replicated to both standbys"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 configured as writable primary with replication enabled",
+      "command_ids": [
+        "cmd-27413b0d1ad94fc4",
+        "cmd-337bbe7df2fc4795",
+        "cmd-0959eb3d016f44c7",
+        "cmd-dfad5d3f1fe84a5f"
+      ],
+      "summary": "Created replicator role, set listen_addresses/wal_level/max_wal_senders/max_replication_slots/hot_standby, restarted and confirmed settings, created two physical replication slots"
+    },
+    {
+      "requirement": "node2 and node3 configured as read-only standbys via pg_basebackup",
+      "command_ids": [
+        "cmd-a598c86b79124d25",
+        "cmd-c23c2f6780d94c50",
+        "cmd-a5b9b07a239d43fa",
+        "cmd-a80b0649501d4f72",
+        "cmd-e27e64e38db1437b",
+        "cmd-151f471cda9c4887"
+      ],
+      "summary": "pg_basebackup with -R succeeded on both nodes, standby.signal and primary_conninfo present, both report pg_is_in_recovery=true after starting"
+    },
+    {
+      "requirement": "Primary sees both standbys streaming",
+      "command_ids": [
+        "cmd-ad5fe315f6054ea3"
+      ],
+      "summary": "pg_stat_replication shows both 10.100.109.11 and 10.100.109.12 in 'streaming' state"
+    },
+    {
+      "requirement": "Changes committed on primary are visible on both standbys",
+      "command_ids": [
+        "cmd-8b919d632a1d4943",
+        "cmd-37c4b1851a714b1a",
+        "cmd-a87b77830f2841b4"
+      ],
+      "summary": "Created table and inserted 2 rows on node1; identical rows immediately visible via SELECT on node2 and node3"
+    },
+    {
+      "requirement": "Standbys are enforced read-only",
+      "command_ids": [
+        "cmd-214b025fd4b542f3"
+      ],
+      "summary": "INSERT attempt on node2 fails with 'cannot execute INSERT in a read-only transaction'"
+    },
+    {
+      "requirement": "node1 (primary) restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-87646dd0feb643da",
+        "cmd-3f36752b68434d91",
+        "cmd-8ba2a67b86a04aa3",
+        "cmd-b83b1959ec48407e",
+        "cmd-1f2502ace28f4715"
+      ],
+      "summary": "Baseline boot_id e8afb731...; reboot acknowledged (stream closed); post-restart boot_id 6379280f... (changed); postgresql active, pg_is_in_recovery=false, data intact; both standbys reconnected streaming"
+    },
+    {
+      "requirement": "node2 (standby) restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-86eef314867240f7",
+        "cmd-2bf59376aa874733",
+        "cmd-bc0618e9de804455",
+        "cmd-cb6620068b2e47ca",
+        "cmd-680d005f31734d63"
+      ],
+      "summary": "Baseline boot_id a0c36ad2...; reboot acknowledged; post-restart boot_id a62572b4... (changed); postgresql active and back in recovery mode with data intact; primary confirms node2 streaming again"
+    },
+    {
+      "requirement": "node3 (standby) restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-f3f1fc0595ee4364",
+        "cmd-766aac8423cd4b7c",
+        "cmd-30e1916ef03e43dd",
+        "cmd-264f726df5624edc",
+        "cmd-1f663b17afc946a7"
+      ],
+      "summary": "Baseline boot_id 01c87a03...; reboot acknowledged; post-restart boot_id 98a6f5dc... (changed); postgresql active and back in recovery mode with data intact; primary confirms both standbys streaming before node1's own restart"
+    },
+    {
+      "requirement": "Full cluster health verified after all three restarts (end-to-end replication)",
+      "command_ids": [
+        "cmd-05ad4fc56b174c76",
+        "cmd-f3e33805c114486a",
+        "cmd-70d8fffb01f44896"
+      ],
+      "summary": "New row inserted on node1 post-restart-cycle is immediately visible on both node2 and node3, confirming replication fully functional after all nodes were restarted"
+    }
+  ]
+}

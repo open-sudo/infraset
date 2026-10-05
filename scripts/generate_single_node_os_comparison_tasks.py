@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the single-node-os-comparison task matrix from its catalog.
 
-Single-node administration requests issued against eight general-purpose Linux
+Single-node administration requests issued against two legacy Linux
 operating systems. One node, the same public instruction on every operating
 system, and only the image varies.
 
@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
+from scenario_layout import resolve_task_path, collection_asset
+from variant_metadata import dumps, initial_metadata
 
 try:
     import tomllib
@@ -25,10 +27,11 @@ except ModuleNotFoundError:  # Python 3.10 and earlier
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-MATRIX_ROOT = REPOSITORY / "tasks" / "single-node-os-comparison"
-CATALOG_PATH = MATRIX_ROOT / "catalog.toml"
+MATRIX_ROOT = REPOSITORY / "tasks"
+GROUP = "single-node-os-comparison"
+CATALOG_PATH = REPOSITORY / "scripts" / "legacy2" / "catalogs" / (GROUP + ".toml")
 
-EXPECTED_SYSTEMS = 8
+EXPECTED_SYSTEMS = 2
 EXPECTED_TASKS = 30
 
 SENTINEL = """#!/bin/sh
@@ -120,7 +123,7 @@ def environment_text(system: dict, task: dict) -> str:
         lines.append('initialize = ["rhsm"]')
     lines.extend(
         [
-            'base_runbooks = ["antrieb/primer"]',
+            'base_runbooks = ["antrieb/primer", "antrieb/networking-primer"]',
             'control_node = "node1"',
             'endpoint = "https://antrieb.sh/mcp"',
         ]
@@ -137,10 +140,9 @@ def generate() -> int:
 
     generated = 0
     for system in systems:
-        os_root = MATRIX_ROOT / system["id"]
-        os_root.mkdir(parents=True, exist_ok=True)
+        os_root = MATRIX_ROOT / ("bash-" + system["id"]) / GROUP
         for task in tasks:
-            task_root = os_root / f'{task["slug"]}-{system["id"]}'
+            task_root = resolve_task_path(os_root / f'{task["slug"]}-{system["id"]}')
             task_root.mkdir(parents=True, exist_ok=True)
 
             write(task_root / "instruction.md", clean_block(task["instruction"]))
@@ -157,6 +159,7 @@ def generate() -> int:
                 environment_text(system, task),
             )
             write(task_root / "tests" / "test.sh", SENTINEL, 0o755)
+            write(task_root / "variant.toml", dumps(initial_metadata(task_root)))
             generated += 1
 
     print(

@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 7,
+    "successful": 6,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Local CA 'OS Comparison Root CA' created",
+      "command_ids": [
+        "cmd-117c686bd08f4fbb"
+      ],
+      "summary": "openssl req generated self-signed cert with subject/issuer CN=OS Comparison Root CA"
+    },
+    {
+      "requirement": "CA installed as trusted system CA",
+      "command_ids": [
+        "cmd-117c686bd08f4fbb"
+      ],
+      "summary": "Cert copied to /usr/local/share/ca-certificates/, update-ca-certificates run, cert found in /etc/ssl/certs/ca-certificates.crt, and a leaf cert signed by the CA verified successfully against the system bundle"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline",
+      "command_ids": [
+        "cmd-c73b731b093140d5"
+      ],
+      "summary": "Captured boot_id 31b36710-... and confirmed CA file present and leaf cert still verifies before restart"
+    },
+    {
+      "requirement": "Restart acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-23413a7d57b14a11",
+        "cmd-33ed40c4909546e6"
+      ],
+      "summary": "Reboot command backgrounded and acknowledged; subsequent probe found connection reset, confirming the node was mid-restart"
+    },
+    {
+      "requirement": "Changed boot identity proving restart",
+      "command_ids": [
+        "cmd-f536171aa0c148e3"
+      ],
+      "summary": "boot_id changed from 31b36710-da23-4101-b6e1-a8780a8fc43f to 251fea18-2eab-4b38-bf6e-491e31ce1957"
+    },
+    {
+      "requirement": "Post-restart recovery of CA trust",
+      "command_ids": [
+        "cmd-d8318ab62c4b4952"
+      ],
+      "summary": "After reboot, CA cert file still present, still found in system trust bundle, and leaf cert still verifies OK"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-2db42e4c31894fae",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T11:53:45.905532+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 188,
+      "command": "cat /etc/os-release; echo ---; which openssl update-ca-certificates; echo ---; cat /proc/sys/kernel/random/boot_id; echo ---; uptime -s 2>/dev/null || true; echo ---; ls /usr/local/share/ca-certificates/ 2>/dev/null; echo ---; sudo -n true && echo SUDO_OK",
+      "stdout": "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.23.3\nPRETTY_NAME=\"Alpine Linux v3.23\"\nHOME_URL=\"https://alpinelinux.org/\"\nBUG_REPORT_URL=\"https://gitlab.alpinelinux.org/alpine/aports/-/issues\"\n---\n---\n31b36710-da23-4101-b6e1-a8780a8fc43f\n---\n2026-09-29 07:53:14\n---\n---\nSUDO_OK"
+    },
+    {
+      "command_id": "cmd-117c686bd08f4fbb",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T11:53:55.772447+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1497,
+      "command": "cat <<'SCRIPT' > /tmp/setup_ca.sh\nset -Eeuo pipefail\n\necho \"== STEP 1: install packages ==\"\nsudo -n apk update\nsudo -n apk add --no-cache openssl ca-certificates\n\necho \"== STEP 2: create CA directory ==\"\nsudo -n mkdir -p /etc/ssl/os-comparison-ca\ncd /etc/ssl/os-comparison-ca\n\necho \"== STEP 3: generate CA private key ==\"\nsudo -n openssl genrsa -out ca.key 4096\n\necho \"== STEP 4: generate self-signed CA certificate ==\"\nsudo -n openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 \\\n  -subj \"/CN=OS Comparison Root CA\" \\\n  -out ca.crt\n\necho \"== STEP 5: verify generated cert subject ==\"\nsudo -n openssl x509 -in ca.crt -noout -subject -issuer -dates\n\necho \"== STEP 6: install into system trust store ==\"\nsudo -n cp ca.crt /usr/local/share/ca-certificates/os-comparison-root-ca.crt\nsudo -n update-ca-certificates\n\necho \"== STEP 7: verify installed in system bundle ==\"\ngrep -c \"OS Comparison Root CA\" /etc/ca-certificates.conf || true\nawk 'BEGIN{c=0} /BEGIN CERTIFICATE/{c++} END{print \"cert_count_in_bundle=\"c}' /etc/ssl/certs/ca-certificates.crt\nopenssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt | openssl pkcs7 -print_certs -noout | grep -A1 \"subject=\" | grep \"OS Comparison Root CA\" && echo FOUND_IN_TRUST_STORE\n\necho \"== STEP 8: verify trust works against a cert signed by this CA ==\"\nsudo -n openssl genrsa -out /tmp/leaf.key 2048\nsudo -n openssl req -new -key /tmp/leaf.key -subj \"/CN=test.oscomparison.local\" -out /tmp/leaf.csr\nsudo -n openssl x509 -req -in /tmp/leaf.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out /tmp/leaf.crt -days 365 -sha256\nopenssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /tmp/leaf.crt\n\necho \"== DONE ==\"\nSCRIPT\nchmod +x /tmp/setup_ca.sh\n/tmp/setup_ca.sh",
+      "stdout": "== STEP 1: install packages ==\nv3.23.6-25-gd883cfb51fc [https://dl-cdn.alpinelinux.org/alpine/v3.23/main]\nv3.23.6-24-g62acd39de12 [https://dl-cdn.alpinelinux.org/alpine/v3.23/community]\nOK: 27646 distinct packages available\n(1/4) Upgrading libcrypto3 (3.5.5-r0 -> 3.5.8-r0)\n(2/4) Upgrading libssl3 (3.5.5-r0 -> 3.5.8-r0)\n(3/4) Installing ca-certificates (20260909-r0)\n(4/4) Installing openssl (3.5.8-r0)\nExecuting busybox-1.37.0-r30.trigger\nExecuting ca-certificates-20260909-r0.trigger\nOK: 190.9 MiB in 135 packages\n== STEP 2: create CA directory ==\n== STEP 3: generate CA private key ==\n== STEP 4: generate self-signed CA certificate ==\n== STEP 5: verify generated cert subject ==\nsubject=CN=OS Comparison Root CA\nissuer=CN=OS Comparison Root CA\nnotBefore=Sep 29 11:53:55 2026 GMT\nnotAfter=Sep 26 11:53:55 2036 GMT\n== STEP 6: install into system trust store ==\n== STEP 7: verify installed in system bundle ==\n0\ncert_count_in_bundle=122\nsubject=CN=OS Comparison Root CA\nissuer=CN=OS Comparison Root CA\nFOUND_IN_TRUST_STORE\n== STEP 8: verify trust works against a cert signed by this CA ==\nCertificate request self-signature ok\nsubject=CN=test.oscomparison.local\n/tmp/leaf.crt: OK\n== DONE =="
+    },
+    {
+      "command_id": "cmd-c73b731b093140d5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T11:54:00.180316+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 78,
+      "command": "echo \"boot_id_before=$(cat /proc/sys/kernel/random/boot_id)\"; echo \"ca_present=$(test -f /usr/local/share/ca-certificates/os-comparison-root-ca.crt && echo yes)\"; openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /tmp/leaf.crt; ls -l /etc/ssl/os-comparison-ca/ca.crt",
+      "stdout": "boot_id_before=31b36710-da23-4101-b6e1-a8780a8fc43f\nca_present=yes\n/tmp/leaf.crt: OK\n-rw-r--r--    1 root     root          1838 Sep 29 07:53 /etc/ssl/os-comparison-ca/ca.crt"
+    },
+    {
+      "command_id": "cmd-23413a7d57b14a11",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T11:54:02.034051+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 67,
+      "command": "nohup sh -c 'sleep 1; sudo -n reboot' >/tmp/reboot.log 2>&1 & echo \"reboot scheduled, pid=$!\"",
+      "stdout": "reboot scheduled, pid=2796"
+    },
+    {
+      "command_id": "cmd-33ed40c4909546e6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T11:54:23.450100+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 103,
+      "command": "echo \"boot_id_now=$(cat /proc/sys/kernel/random/boot_id)\"; uptime -s",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-f536171aa0c148e3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T11:54:46.245219+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 112,
+      "command": "echo \"boot_id_now=$(cat /proc/sys/kernel/random/boot_id)\"; uptime -s",
+      "stdout": "boot_id_now=251fea18-2eab-4b38-bf6e-491e31ce1957\n2026-09-29 07:54:16"
+    },
+    {
+      "command_id": "cmd-d8318ab62c4b4952",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T11:54:50.072082+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 91,
+      "command": "set -Eeuo pipefail\necho \"== ca file present ==\"\nls -l /usr/local/share/ca-certificates/os-comparison-root-ca.crt\necho \"== subject in system bundle ==\"\nawk 'BEGIN{c=0} /BEGIN CERTIFICATE/{c++} END{print \"cert_count_in_bundle=\"c}' /etc/ssl/certs/ca-certificates.crt\nopenssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt | openssl pkcs7 -print_certs -noout | grep \"OS Comparison Root CA\" && echo FOUND_AFTER_REBOOT\necho \"== verify leaf cert still trusted ==\"\nopenssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /tmp/leaf.crt",
+      "stdout": "== ca file present ==\n-rw-r--r--    1 root     root          1838 Sep 29 07:53 /usr/local/share/ca-certificates/os-comparison-root-ca.crt\n== subject in system bundle ==\ncert_count_in_bundle=122\nsubject=CN=OS Comparison Root CA\nissuer=CN=OS Comparison Root CA\nFOUND_AFTER_REBOOT\n== verify leaf cert still trusted ==\n/tmp/leaf.crt: OK"
+    }
+  ]
+}

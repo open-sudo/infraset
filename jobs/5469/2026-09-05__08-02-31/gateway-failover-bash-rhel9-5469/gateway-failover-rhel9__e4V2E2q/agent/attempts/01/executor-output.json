@@ -1,0 +1,109 @@
+{
+  "status": "completed",
+  "summary": "Configured keepalived (VRRP) on node1 and node2 (both OpenWrt 25.12.2) to share virtual IP 10.100.166.253/24 on br-lan: node1 priority 150 (MASTER), node2 priority 100 (BACKUP), virtual_router_id 51, advert_int 1s. Demonstrated automatic failover by stopping/rebooting the active MASTER while node3 (RHEL9) ran a continuous ping to the VIP \u2014 node2 took over the address with zero packet loss (62/62 and 91/91 sequence numbers received across two separate transitions), and node1 preempted back to MASTER once it recovered due to its higher priority. Completed the mandatory node-restart evidence protocol: restarted node1, node2, and node3 one at a time via native reboot mechanisms, captured pre/post boot_id changes proving each actually rebooted (not just a service restart), and confirmed VRRP/VIP ownership, keepalived service state, and node3 connectivity to the VIP recovered fully after each restart.",
+  "actions_performed": [
+    "Installed keepalived via apk on node1 and node2 after apk update",
+    "Configured UCI keepalived.globals, vrrp_instance VI_1 (with required 'name' option for the OpenWrt config generator to emit the block), and an ipaddress section for the VIP referenced by virtual_ipaddress",
+    "Committed UCI config and enabled/restarted keepalived on both nodes; verified generated /tmp/keepalived.conf contained a proper vrrp_instance block",
+    "Captured healthy baseline: VIP 10.100.166.253 present on node1 (MASTER), absent on node2 (BACKUP), pingable from node3",
+    "Started continuous ping from node3 to the VIP, stopped keepalived on node1 to force failover, confirmed node2 acquired the VIP and node3's ping continued with zero loss",
+    "Restarted keepalived on node1, confirmed it preempted back to MASTER (higher priority) and node2 returned to BACKUP; re-verified node3 connectivity",
+    "Captured pre-restart boot_id/uptime/service state for node1, node2, node3",
+    "Restarted node2 (BACKUP, non-disruptive) via `reboot &`, polled until reachable, confirmed changed boot_id and keepalived auto-started as BACKUP",
+    "Restarted node1 (MASTER) via `reboot &` while a second continuous ping ran from node3; confirmed node2 took over the VIP during the outage, polled node1 until reachable, confirmed changed boot_id, keepalived auto-started, and node1 preempted back to MASTER; confirmed zero ping loss (91/91 sequences) across the whole cycle",
+    "Restarted node3 via `systemctl reboot &`, polled until reachable, confirmed changed boot_id and restored connectivity to the VIP",
+    "Performed final cluster-wide health check confirming node1=MASTER+VIP, node2=BACKUP, node3 pings VIP successfully"
+  ],
+  "evidence": [
+    {
+      "requirement": "Shared VIP configured on node1/node2 private network, answered by one at a time",
+      "command_ids": [
+        "cmd-a9d9ae61c3064d86",
+        "cmd-f97a39e2b5d54813",
+        "cmd-77bcec8567724b79",
+        "cmd-81be8cc971b04cc0"
+      ],
+      "summary": "Generated keepalived.conf shows vrrp_instance VI_1 on br-lan for both nodes; node1 (priority 150, MASTER) holds 10.100.166.253/24 as secondary on br-lan, node2 (priority 100, BACKUP) does not."
+    },
+    {
+      "requirement": "node3 reaches the shared VIP in steady state (baseline)",
+      "command_ids": [
+        "cmd-28420ff6fc354580"
+      ],
+      "summary": "4/4 ping packets from node3 to 10.100.166.253 succeed, 0% loss, while node1 holds the VIP."
+    },
+    {
+      "requirement": "Automatic takeover when the active node stops serving, with node3 continuity across the transition",
+      "command_ids": [
+        "cmd-0d39dfe1b11c4b38",
+        "cmd-82ec506d6d2a406c",
+        "cmd-a1c65f26d5a742f2",
+        "cmd-c1793423f318499a",
+        "cmd-3cc318bd12f54db3",
+        "cmd-8397df9242fd4777"
+      ],
+      "summary": "node1's keepalived stopped and it dropped the VIP; node2 acquired 10.100.166.253 within ~3s; node3's continuous ping log shows all 62 sequence numbers (1-62) received with zero gaps, only a brief RTT bump during the VRRP handover, proving uninterrupted reachability through the failover."
+    },
+    {
+      "requirement": "Recovery / failback after the disrupted node returns (redundancy restored)",
+      "command_ids": [
+        "cmd-80a3581079684ca0",
+        "cmd-28383fde3cda4d97",
+        "cmd-6237e29bd118430c",
+        "cmd-9b230e3805484b3e"
+      ],
+      "summary": "node1's keepalived restarted, it preempted back to MASTER (VIP returned to node1), node2 reverted to BACKUP without the VIP, and node3 pings the VIP successfully afterward \u2014 confirming full pair redundancy restored."
+    },
+    {
+      "requirement": "Mandatory restart evidence: node1 baseline boot identity + service health",
+      "command_ids": [
+        "cmd-6a026067daa64961"
+      ],
+      "summary": "Captured node1 boot_id 3ca6f53e-81da-46b4-a718-fbdf857a242c, uptime, VIP present, keepalived running, prior to any restart of node1."
+    },
+    {
+      "requirement": "Mandatory restart evidence: node1 restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-798dc8f6fa254c8a",
+        "cmd-807aa381560a49bb",
+        "cmd-91be5d629e2d4764",
+        "cmd-78201bb588e947bc",
+        "cmd-1dba0e98c87a407d",
+        "cmd-97be9f0b307f4e0c"
+      ],
+      "summary": "Reboot acknowledged (connection closed by remote host) on node1's prior boot_id 3ca6f53e...; node stayed unreachable during the window; boot_id changed to 2b839074-7c83-4964-8397-7e7b5db0230a on recovery; keepalived running with VIP re-acquired; node3's second continuous ping log confirms 91/91 sequences received with zero gaps across node1's outage/recovery (node2 covering during the gap)."
+    },
+    {
+      "requirement": "Mandatory restart evidence: node2 baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-6a026067daa64961",
+        "cmd-65d52f8e03dd4685",
+        "cmd-a1fbef0535644b48",
+        "cmd-54817a2f20754033",
+        "cmd-08265a7166ca484d",
+        "cmd-8aff6831d19e4c56"
+      ],
+      "summary": "Baseline boot_id ee4e2a22-7029-444d-a21e-5dec40f1bb24 captured; reboot issued and acknowledged; node timed out during restart; boot_id changed to 95f9e65b-d01f-42b6-b925-58478185a06d on return; keepalived auto-started and rejoined as BACKUP."
+    },
+    {
+      "requirement": "Mandatory restart evidence: node3 baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-e6eae323676846eb",
+        "cmd-12ad1312ea5647d2",
+        "cmd-a4c80d20add641ba",
+        "cmd-26387926af7146b3",
+        "cmd-6d1fabc3282b49d1"
+      ],
+      "summary": "Baseline boot_id 31949c21-52ad-47af-bdbe-893352fd509b captured; systemctl reboot issued (stream closed as expected); node timed out during restart; boot_id changed to d0d7b7b6-04a1-4c8f-a407-280a987b87a2 on return; node3 network restored and successfully pinged the shared VIP (0% loss) post-restart."
+    },
+    {
+      "requirement": "Final full-cluster health after all three restarts",
+      "command_ids": [
+        "cmd-618ada04a8d14b0e",
+        "cmd-015f845aeaf84518",
+        "cmd-6d1fabc3282b49d1"
+      ],
+      "summary": "node1 is MASTER holding the VIP with keepalived running and enabled, node2 is BACKUP with keepalived running and enabled, and node3 successfully pings the VIP \u2014 confirming the pair and the client are all healthy after the full restart cycle."
+    }
+  ]
+}

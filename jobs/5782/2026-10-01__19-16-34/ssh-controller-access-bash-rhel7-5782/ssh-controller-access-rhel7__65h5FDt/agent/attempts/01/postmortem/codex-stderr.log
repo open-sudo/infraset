@@ -1,0 +1,181 @@
+OpenAI Codex v0.153.2
+--------
+workdir: /[REDACTED_ENCODED_BLOB]
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a0fa08-4502-76a1-9384-6d16f3f8c718
+--------
+user
+You are a postmortem evaluator for an infrastructure benchmark.
+The managed cluster from executor attempt 1 is unavailable or must be treated
+as unavailable. Analyze only the redacted evidence embedded below. You have no
+cluster access and must not use tools, inspect the host, or propose that the old
+cluster be queried. Distinguish observed facts from hypotheses, state when evidence
+is insufficient, and produce concise advice for an executor starting on an
+identically specified but completely fresh cluster.
+
+Task instruction:
+On `node1`, create an `opsbot` account and give it SSH key-based access to run
+commands as `opsbot` on `node2`. Require key-based authentication for `opsbot` on
+both systems.
+
+
+Provider-maintained platform references:
+<platform-reference fq_name='antrieb/primer'>
+## What this is
+
+Start-of-session primer for any LLM working with Antrieb. Read before your first `provision`. These are the platform's contracts — follow them and commands work; ignore them and you'll rediscover the same issues every session.
+
+## Research before theorizing
+
+Your mental model of the platform is probably wrong in subtle ways. Before proposing a cause, gather evidence:
+
+1. Run a diagnostic command on the actual VM.
+2. Paste the output.
+3. Let the evidence confirm or contradict your theory.
+
+Cheap high-value commands: `ip -4 addr`, `ip route`, `ip neigh`, `ss -tlnp`, `systemctl is-active <svc>`, `journalctl -u <svc> -n 30 --no-pager`, `curl -v localhost:<port>`, `tcpdump -i <iface> -nn -c 10 <filter>`.
+
+*"The platform is filtering my packets"* is a theory. *"Here is what `ip route` shows"* is evidence. Never propose an architectural fix before you've pasted the output that supports it.
+
+## Research the appliance — use web_search / WebFetch
+
+For specialized images (vyos, opnsense, sonic, helm-k3s, vault, terraform-aws, cloudformation-aws, ansible-controller), **fetch current docs before writing non-trivial commands**. Your training data is often 6–24 months behind. A 30-second doc fetch prevents a 10-turn debug loop of hallucinated CLI.
+
+Workflow: look at the image's `reference` field → `web_search` for the specific topic (*"VyOS 1.5 nat source rule"*) → `WebFetch` the top result → write commands grounded in what you read.
+
+Skip only for stable base Linux (ubuntu, alma, arch, centos, alpine). If you don't have web tools in this client, say so up front.
+
+## Falsify before committing
+
+When you add a rule (firewall, NAT, route, sysctl) because you think it fixes something, **prove it by removing it and confirming the issue returns**. If the problem doesn't come back without the rule, the rule was cargo-cult — delete it.
+
+- **Start with the minimum config** that could plausibly work.
+- When it doesn't work, debug with `tcpdump`/`ip route`/`conntrack -L` — don't stack more rules hoping one matches.
+- For every added rule, state *why* and what evidence proves it. If you can't, it shouldn't be there.
+
+## Fetch order for runbooks
+
+1. `@antrieb/primer` — always (this document, fetched at session start).
+2. `@antrieb/<category>-primer` — `@antrieb/networking-primer` for networking, future `@antrieb/database-primer` for DBs.
+3. `search type=runbook keywords=<task>` — apply any specific-scenario match.
+4. No specific match → `@antrieb/<image>-reference` for each specialized image in the topology. Won't be your exact scenario; will have current, correct syntax. **Adapt values, keep syntax.**
+
+When the task is to create or revise an image intentionally published in the `antrieb` namespace, also fetch `@antrieb/managed-image-contract`. It is a build-time standard, not a runtime fact about similarly named images.
+
+Never skip step 4 if step 3 matches. Never skip 1 or 2.
+
+## Shell is POSIX sh, not bash
+
+Every `exec` runs in `/bin/sh`. Bashisms fail, sometimes silently:
+
+- `. /path` — not `source /path`
+- `[ ... ]` — not `[[ ... ]]`
+- No arrays, `${var,,}`, process substitution `<(cmd)`, `$'...'`, `set -o pipefail`
+- `printf` over `echo -e`
+
+If you genuinely need bash, write to a tempfile and invoke `bash /tmp/script.sh` explicitly.
+
+## No TTY/PTTY
+
+`exec` does not allocate a TTY/PTTY. Do not run commands that require an interactive terminal or automate terminal prompts through stdin. Use non-interactive alternatives: `sudo -u USER -- COMMAND` instead of interactive `su`, `chpasswd` instead of `passwd`, and package-manager flags such as `DEBIAN_FRONTEND=noninteractive` and `-y`.
+
+Normal stdin use for pipes, heredocs, and base64 content transfer is supported.
+
+## Cluster env vars — already set
+
+Every exec pre-exports these. Don't re-discover:
+
+- `NODE_NAME`, `NODE_INDEX`, `NODE_IP`
+- `CLUSTER_HOSTS` — multiline `IP NAME` for every node. Drop into `/etc/hosts`:
+  `echo "$CLUSTER_HOSTS" | sudo tee -a /etc/hosts`
+- `CLUSTER_SSH_PUBKEY` / `CLUSTER_SSH_PRIVKEY` — per-cluster keypair for passwordless inter-node SSH:
+  ```
+  printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+  printf '%s\n' "$CLUSTER_SSH_PUBKEY" >> ~/.ssh/authorized_keys
+  ```
+
+## Image interfaces are exact-ANI facts
+
+Credential files, startup scripts, helper commands, execution privilege, predefined users, and passwords are **not universal platform facts**. They apply only when the exact image returned by `search type=image` declares them in `image_interface`.
+
+- Match the provisioned node's full ANI, including namespace and version.
+- If `image_interface.credentials` exists, load its declared `path` with POSIX `.` and use only the variables listed there. Do not print secret values.
+- If `image_interface.startup` exists, its declared path is the supported allocation-time helper.
+- If `image_interface.execution.privilegeEscalation` is `sudo-noninteractive`, use a trusted non-interactive sudo wrapper for privileged operations. Do not infer sudo support from the operating-system name.
+- If a field is absent, inspect the VM and its exact image description. Do not infer a path from a technology name such as MariaDB, PostgreSQL, Cassandra, or Vault.
+- `antrieb.managed-image/v1` is a **build-time contract** for creating managed images. Its conventions are not evidence that a user-owned or otherwise undeclared image implements them.
+
+Example: `antrieb:mariadb:v1` may declare `/etc/profile.d/antrieb-app.sh`; a user-created MariaDB image does not inherit that declaration merely because it also runs MariaDB.
+
+## Shipping long content through exec
+
+Anything beyond one line with quotes/newlines/metacharacters eventually breaks escaping. Use one of:
+
+1. **Base64** (preferred): `echo <BASE64> | base64 -d > /tmp/myfile`
+2. **Heredoc, unique delimiter**:
+   ```
+   cat > /tmp/cfg <<'ANTRIEB_EOF'
+   ...
+   ANTRIEB_EOF
+   ```
+3. **Serve between nodes**: one node runs `python3 -m http.server`, another `curl`s it.
+
+## Streaming / long-running commands
+
+`exec` is a synchronous await, capped at ~2 MB output. For commands that stream (`dhclient -v`, `tail -f`), run for minutes (`apt install`), or may hang, **redirect + background + poll** — the standard UNIX pattern:
+
+```
+# Launch, capture PID
+exec: cmd > /tmp/out.log 2>&1 & echo $! > /tmp/cmd.pid
+
+# Poll in subsequent exec calls (as often as you need to decide)
+exec: tail -30 /tmp/out.log
+
+# Stop early if you've seen enough
+exec: kill "$(cat /tmp/cmd.pid)" 2>/dev/null
+```
+
+Each call is small and fast. The LLM decides cadence and can act on partial output turn by turn. Don't treat this as a workaround — it's the supported streaming contract.
+
+## Small exec calls, not one huge script
+
+One logical step per exec, check `exit_code` before the next. A 50-line script returns pass/fail with no hint of which line broke. Small steps debug easier, recover easier, and translate into runbooks cleanly.
+
+## Provision timing
+
+`provision` returns in under a second, but:
+
+- Exec is available immediately.
+- DHCP-assigned LAN IPs take 5–10 seconds to settle. Poll `hostname -I` until non-loopback.
+- Stack-image servi
+...[TRUNCATED 23280 CHARACTERS]...
+any unapproved path.","actions_performed":["Created and locked opsbot on node2.","Installed node1’s Ed25519 public key with secure ownership and permissions.","Validated and reloaded sshd configuration.","Captured node2’s pre-restart boot ID and healthy service/account/key state."],"evidence":[{"requirement":"Node2 key-only SSH configuration","command_ids":["cmd-c3f645ec366e46a7","cmd-5770434e35d84de2"],"summary":"Effective sshd policy is pubkeyauthentication=yes, passwordauthentication=[REDACTED]], authenticationmethods=publickey; account and key permissions are correct."}]}
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+codex
+{"status":"completed","summary":"Node2 restarted successfully. Its boot ID changed, sshd recovered, and the locked account, authorized key fingerprint, secure modes, and key-only policy all persisted.","actions_performed":["Restarted node2 with delayed native `systemctl reboot` after receiving acknowledgement.","Polled until managed execution returned.","Confirmed boot ID changed from `a8e7c48c-...` to `0015b36b-...`.","Captured direct post-restart service, account, key, and policy proof."],"evidence":[{"requirement":"Node2 mandatory restart and recovery","command_ids":["cmd-5770434e35d84de2","cmd-b62bced5c1804031","cmd-5ddfe27016fe45d7","cmd-a58cb5e80283474d"],"summary":"Healthy baseline, restart acknowledgement, changed boot identity, and recovered SSH/account/key state are all directly evidenced."}]}
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+codex
+{"status":"blocked","summary":"Node2 is correctly configured and restart-persistent. Node1 became unreachable after its RHEL 7 sshd rejected an unsupported Match-block directive and the reload stopped SSH. The permitted control surface now receives connection refused, preventing correction, end-to-end login verification, or node1’s mandatory restart. Recovery requires console/provider access to remove `ChallengeResponseAuthentication` from the benchmark block in `/etc/ssh/sshd_config`, validate it, and start sshd.","actions_performed":["Created and password-locked opsbot on node1 and node2.","Generated opsbot’s Ed25519 keypair on node1 and installed its public key on both accounts.","Configured and verified node2 to require public-key authentication for opsbot.","Restarted node2 safely and verified changed boot identity and complete recovery.","Repeatedly retried node1 through the only permitted control surface; SSH remains refused.","Did not restart node1 because it cannot currently be restarted and recovered safely."],"evidence":[{"requirement":"Create opsbot and key material on node1","command_ids":["cmd-44bba09c4856417f"],"summary":"Shows the created account, key files, ownership, modes, and generated public key; it also records the unsupported directive validation error."},{"requirement":"Configure node2 for opsbot key-only access","command_ids":["cmd-c3f645ec366e46a7","cmd-5770434e35d84de2"],"summary":"Shows the locked account, authorized-key fingerprint, secure permissions, valid sshd configuration, and effective publickey-only policy."},{"requirement":"Node2 mandatory restart and recovery","command_ids":["cmd-5770434e35d84de2","cmd-b62bced5c1804031","cmd-5ddfe27016fe45d7","cmd-a58cb5e80283474d"],"summary":"Captures the healthy baseline, reboot acknowledgement, changed boot ID, and recovered sshd/account/key/policy state."},{"requirement":"Node1 mandatory restart limitation","command_ids":["cmd-3e8bddf8e12e4f05","cmd-6cbd3bf4a8e04a38","cmd-dbe23cbf12774fd5","cmd-314493ffec314a02"],"summary":"The initial baseline records node1’s boot ID and active sshd; subsequent direct attempts consistently show connection refused. No restart or recovery is claimed."},{"requirement":"End-to-end node1-to-node2 SSH access","command_ids":["cmd-44bba09c4856417f","cmd-c3f645ec366e46a7"],"summary":"The matching key was generated on node1 and authorized on node2, but an actual SSH command from node1 could not be captured after node1 became unreachable."}]}
+tokens used
+28,914
+
+
+codex
+{"summary":"Attempt 1 did not complete the task. Node2 had a locally validated, restart-persistent opsbot configuration requiring public-key authentication. Node1’s account and key files were created, but its SSH configuration was left invalid, sshd subsequently refused connections, and neither node1’s effective policy nor an end-to-end node1-to-node2 command was verified.","evidence":[{"source":"Node1 baseline","finding":"RHEL 7.9 was reachable initially, sshd was active, and opsbot did not exist."},{"source":"Node1 configuration command","finding":"opsbot and its Ed25519 keypair were created with appropriate ownership and modes. However, sshd validation reported that ChallengeResponseAuthentication is not allowed inside the Match block."},{"source":"Node1 command sequencing","finding":"The command used semicolons, so systemctl reload sshd was attempted even after sshd -t failed. The overall return code was misleadingly zero because later commands succeeded."},{"source":"Subsequent node1 attempts","finding":"Every later connection received port 22 connection refused. No service status, logs, corrected configuration, effective opsbot policy, restart, or SSH login test could then be collected."},{"source":"Node2 validation","finding":"opsbot existed with a locked password; authorized_keys had mode 600; sshd -t succeeded; and effective settings for opsbot showed PubkeyAuthentication yes, PasswordAuthentication no, and AuthenticationMethods publickey."},{"source":"Node2 restart evidence","finding":"The boot ID changed and the account, key, active sshd service, valid configuration, and effective key-only policy persisted after restart."},{"source":"End-to-end requirement","finding":"No command executed from node1 as opsbot to node2 was captured, so functional access was not proven."}],"likely_causes":[{"cause":"The unsupported ChallengeResponseAuthentication directive made node1’s Match block invalid on its RHEL 7 OpenSSH build.","confidence":"high"},{"cause":"The executor reloaded sshd despite failed validation because the commands were not conditionally chained; the reload likely caused the listener to exit while parsing the invalid configuration.","confidence":"high"},{"cause":"The exact mechanism by which sshd stopped cannot be established because no node1 journal, systemctl status, or listener evidence was available after connectivity was lost.","confidence":"medium"}],"next_attempt_guidance":["On the fresh cluster, inspect the installed OpenSSH behavior and validate every proposed configuration before changing or reloading the live service.","Use a minimal Match User opsbot block containing only directives already proven valid on this image: PubkeyAuthentication yes, PasswordAuthentication no, and AuthenticationMethods publickey. Do not place ChallengeResponseAuthentication in that Match block.","Create and retain a backup, build a complete candidate sshd_config, and run /usr/sbin/sshd -t -f against it before installation. Gate installation and reload on validation success; never separate validation and reload with an unconditional semicolon.","After reload, immediately verify sshd is active and check effective settings with sshd -T -C for opsbot on each node.","Generate the private key only for opsbot on node1, install the corresponding public key with secure ownership and modes on node2, and configure node1’s authorized_keys if inbound opsbot SSH must also be key-only.","Prove the principal workflow by running a noninteractive command from node1 as opsbot to node2 as opsbot using the generated private key. Also confirm a no-key/password attempt cannot authenticate.","Perform any required restart-persistence checks only after both nodes pass syntax, effective-policy, service-health, and end-to-end tests; restart one node at a time and reverify afterward."]}
+tokens used
+29,322

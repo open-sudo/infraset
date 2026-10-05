@@ -1,0 +1,75 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-worker as a real OpenRC-managed service on node1 (Alpine/OpenRC). It runs as a dedicated unprivileged 'inventory' user inside a private mount namespace with a read-only overlay of the entire root filesystem (bind-remounted ro to avoid the ext4 EBUSY superblock-writer issue), with only /var/lib/inventory re-exposed writable via a bind mount, plus --no-new-privs. Verified writes elsewhere fail (Read-only file system) while /var/lib/inventory writes succeed, CapEff=0, NoNewPrivs=1. Completed the mandatory single-node restart: captured baseline boot_id, issued a background-acked reboot, polled until the node returned, confirmed a new boot_id, and verified the service auto-started, the worker log persisted, and all confinement properties (ro root, no-new-privs, unprivileged uid/gid) held after restart.",
+  "actions_performed": [
+    "Created system group/user 'inventory' with home /var/lib/inventory and nologin shell",
+    "Created /var/lib/inventory (mode 700, owned by inventory:inventory)",
+    "Installed /usr/local/bin/inventory-worker.sh (long-running loop appending timestamps to /var/lib/inventory/worker.log)",
+    "Installed /usr/local/bin/inventory-worker-wrapper.sh implementing sandbox: tmpfs-backed rw overlay of /, bind+remount read-only, bind-mount real /var/lib/inventory back in as the sole writable path, then chroot + setpriv --no-new-privs drop to unprivileged user",
+    "Installed OpenRC service /etc/init.d/inventory-worker using unshare --mount --propagation private to run the wrapper, enabled via rc-update add inventory-worker default, started via rc-service",
+    "Verified confinement: writes outside /var/lib/inventory fail with 'Read-only file system'; writes inside succeed and persist; CapEff=0, NoNewPrivs=1, unprivileged uid/gid",
+    "Captured pre-restart baseline (boot_id, service status, process, mountinfo, log contents)",
+    "Rebooted node1 via backgrounded 'reboot' so the exec call acknowledged before disconnect",
+    "Polled node1 until reachable again, confirmed changed boot_id",
+    "Verified post-restart: service auto-started at boot, worker process running, log persisted and still growing, sandbox confinement flags intact"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-worker deployed as a managed OpenRC service, enabled at boot, running as a long-lived background worker",
+      "command_ids": [
+        "cmd-1e2226fa75464743",
+        "cmd-5e451a4a95184f19",
+        "cmd-50b2cd42699242fb"
+      ],
+      "summary": "OpenRC service file installed, rc-update add to default runlevel, rc-service status shows 'started', worker process actively looping"
+    },
+    {
+      "requirement": "Confined so it writes only inside /var/lib/inventory",
+      "command_ids": [
+        "cmd-63e13e79fede4777",
+        "cmd-5aab66f9cd5a4139",
+        "cmd-50b2cd42699242fb"
+      ],
+      "summary": "Read-only overlay bind-mount test: touch outside /var/lib/inventory fails with 'Read-only file system' while writes inside /var/lib/inventory succeed; worker process mountinfo confirms root mount 'ro,relatime'"
+    },
+    {
+      "requirement": "Gains no new privileges",
+      "command_ids": [
+        "cmd-5e451a4a95184f19",
+        "cmd-50b2cd42699242fb",
+        "cmd-0c1e54f2cf3b4401"
+      ],
+      "summary": "Worker process /proc/PID/status shows NoNewPrivs:1 and CapEff:0000000000000000, running as unprivileged uid/gid 103/104 (inventory), both before and after restart"
+    },
+    {
+      "requirement": "Mandatory restart protocol: healthy baseline before restart",
+      "command_ids": [
+        "cmd-50b2cd42699242fb"
+      ],
+      "summary": "Captured boot_id 7b162ed4-..., service status started, process alive, worker.log actively appending, confinement flags verified pre-restart"
+    },
+    {
+      "requirement": "Mandatory restart protocol: restart acknowledged and returned before disconnect",
+      "command_ids": [
+        "cmd-3acd485743264e91",
+        "cmd-2b21eb21e65945d8",
+        "cmd-43dff021d1924fa4"
+      ],
+      "summary": "Backgrounded 'reboot' command acknowledged immediately; subsequent poll showed connection reset/timeout confirming the node went down"
+    },
+    {
+      "requirement": "Mandatory restart protocol: changed boot identity proven",
+      "command_ids": [
+        "cmd-9df4aeb0d7434472"
+      ],
+      "summary": "boot_id changed from 7b162ed4-9200-450c-8f8a-ffc93f6c378e to 18690a58-ace5-4ec4-a306-9090e7ba48ce, proving an actual reboot occurred, not just downtime"
+    },
+    {
+      "requirement": "Mandatory restart protocol: post-restart recovery of service, data, and confinement",
+      "command_ids": [
+        "cmd-0c1e54f2cf3b4401"
+      ],
+      "summary": "After reboot: service auto-started (rc-update default runlevel), worker process running under new PID, worker.log persisted with pre-restart entries and continued appending new entries, confinement flags (ro root, CapEff 0, NoNewPrivs 1, unprivileged uid/gid) all intact"
+    }
+  ]
+}

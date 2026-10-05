@@ -1,0 +1,81 @@
+{
+  "status": "completed",
+  "summary": "Published node2's port-8080 app to node3 through node1 via destination NAT, while keeping the rest of the private link (10.50.50.0/24 between node1 eth1 and node2 ens7) closed. Started the app on node2 bound only to its private IP, added hairpin-style source NAT on node1 so replies route back through it, and locked down node1's forward filter to default-drop + established/related + the single explicit DNAT flow. Verified end-to-end from node3, confirmed node2 is not directly reachable, and confirmed the rest of the 10.50.50.0/24 network stays unreachable from node3. Completed the mandatory restart protocol on all three nodes (node3, node2, node1 in that order) with boot-id proof of restart and post-restart recovery verification, including a final full end-to-end retest after node1's reboot.",
+  "actions_performed": [
+    "Discovered topology: node1 (VyOS) and node2 both had a second, unconfigured NIC (eth1/ens7) forming the private link; node1 eth0, node2 ens2, and node3 ens2 share the 10.100.208.0/24 network.",
+    "Assigned static IPs on the private link: node1 eth1 = 10.50.50.254/24 (VyOS config, committed+saved), node2 ens7 = 10.50.50.10/24 (persisted via /etc/network/interfaces.d/ens7.cfg).",
+    "Deployed a systemd-managed Python HTTP app on node2, bound only to 10.50.50.10:8080 (not 0.0.0.0), enabled for boot persistence.",
+    "Configured VyOS destination NAT rule 10 on node1: inbound eth0, tcp/8080 -> 10.50.50.10:8080.",
+    "Diagnosed an asymmetric-return-path failure (node2 had a competing direct route to node3's subnet via ens2) and fixed it with a source NAT (masquerade) rule scoped to traffic destined for 10.50.50.10:8080 outbound on eth1.",
+    "Locked down node1's forward filter: default-action drop, rule 5 accept established/related, rule 10 accept only the specific inbound-eth0/10.50.50.10/tcp-8080 flow, using the correct VyOS 'state established'/'state related' multi-value syntax found in the CLI template tree.",
+    "Verified end-to-end: node3 -> http://10.100.208.10:8080 returns 200 with app content; direct node3 -> 10.100.208.11:8080 refused; node3 -> 10.50.50.10:8080 unreachable (no route).",
+    "Captured pre-restart boot_id baselines on all three nodes plus service/connectivity health.",
+    "Restarted node3 via 'reboot', polled until exec available, confirmed new boot_id, reverified app reachability through node1.",
+    "Restarted node2 via 'reboot', polled until exec available, confirmed new boot_id, verified nodeapp.service auto-started and ens7 IP persisted, reverified app reachability through node1.",
+    "Restarted node1 (VyOS) via '/sbin/reboot', polled until exec available, confirmed new boot_id, verified eth1 IP, NAT rules, and firewall rules persisted in config.boot/nft ruleset, and reverified full end-to-end reachability plus continued blocking of direct node2 access."
+  ],
+  "evidence": [
+    {
+      "requirement": "App on node2:8080 reachable from node3 through node1 on port 8080",
+      "command_ids": [
+        "cmd-dedef6e8a3f44712",
+        "cmd-3546933fdff444c9"
+      ],
+      "summary": "curl from node3 to http://10.100.208.10:8080/ returns HTTP 200 with the app's response body, proving the publish works end-to-end via node1."
+    },
+    {
+      "requirement": "Rest of the private network (node2 direct access, other private-net hosts) not opened to node3",
+      "command_ids": [
+        "cmd-dedef6e8a3f44712",
+        "cmd-676c5a318a414344"
+      ],
+      "summary": "Direct curl from node3 to node2's shared-network IP (10.100.208.11:8080) is refused, and node3 has no route to the 10.50.50.0/24 private network at all (10.50.50.10 attempt times out)."
+    },
+    {
+      "requirement": "NAT/firewall configuration correctly implemented and scoped to only the forwarded flow",
+      "command_ids": [
+        "cmd-637c3d4480174d80",
+        "cmd-642521aa636740bd",
+        "cmd-e8156cb1a1e4413f",
+        "cmd-a68cdce8482742a7",
+        "cmd-d2c2945eb0a9462c"
+      ],
+      "summary": "VyOS DNAT rule 10 (eth0 tcp/8080 -> 10.50.50.10:8080), SNAT rule 10 (masquerade toward 10.50.50.10:8080 out eth1), and forward filter (default-drop, established/related, single explicit accept rule) confirmed both in VyOS config and live nftables ruleset."
+    },
+    {
+      "requirement": "node3 baseline healthy state and restart with changed boot identity",
+      "command_ids": [
+        "cmd-76ab53d8b85440ea",
+        "cmd-8c8f55c5647e4360",
+        "cmd-17d8d27cb36c42e0",
+        "cmd-b80bda4ddb354445",
+        "cmd-6970f3d5ceec4988"
+      ],
+      "summary": "Boot_id e881ab3c captured pre-restart; reboot acknowledged; connection refused mid-reboot; new boot_id 07cc9c26 confirmed post-restart; app still reachable through node1 afterward."
+    },
+    {
+      "requirement": "node2 baseline healthy state and restart with changed boot identity plus service/data recovery",
+      "command_ids": [
+        "cmd-7c97fd5364234783",
+        "cmd-4e7bef7ee2f74dde",
+        "cmd-348d0de0611b4f1a",
+        "cmd-f4afd9db057d4225",
+        "cmd-8da829cbdd1647b9",
+        "cmd-aa49c87fc9fc4503"
+      ],
+      "summary": "Boot_id f41e1f8a captured pre-restart with nodeapp.service active; reboot acknowledged; connection refused mid-reboot; new boot_id 704cd896 confirmed post-restart; nodeapp.service auto-active again on 10.50.50.10:8080, and end-to-end curl from node3 through node1 succeeds again."
+    },
+    {
+      "requirement": "node1 baseline healthy state and restart with changed boot identity plus NAT/firewall config recovery",
+      "command_ids": [
+        "cmd-3e145feba5fb40a0",
+        "cmd-280160ecbb214eed",
+        "cmd-2f1ccf6f07bc4243",
+        "cmd-3e8b307719224e57",
+        "cmd-17e55346e83d422a",
+        "cmd-b413edcd9b384838"
+      ],
+      "summary": "Boot_id 32669db3 captured pre-restart; reboot acknowledged; connection reset/timeout mid-reboot; new boot_id 16b466ba confirmed post-restart; eth1 address, DNAT/SNAT rules, and forward-filter default-drop rules all present in nftables ruleset post-reboot, and final curl from node3 returns HTTP 200."
+    }
+  ]
+}

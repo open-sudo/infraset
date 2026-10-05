@@ -1,0 +1,94 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) to route between lan-a (opt1/vtnet1, 10.60.1.0/24, node2) and lan-b (opt2/vtnet2, 10.60.2.0/24, node3). Created a single port alias \"node3_svc_ports\" (8080, 8443, 9000) and one firewall pass rule on the lan-a interface referencing that alias to permit node2->node3 on those ports only. Set up supporting static routes on node2/node3 and opened matching firewalld rich rules on node3 scoped to node2's IP. Verified TCP connectivity succeeds on all three listed ports and fails on an unlisted port (9999). Performed the mandatory one-at-a-time restart protocol on node1, node2, and node3, proving changed boot identity on each and confirming full recovery of interfaces, routes, firewall alias/rule, and end-to-end connectivity afterward.",
+  "actions_performed": [
+    "Inspected node1 OPNsense config.xml, discovered only 'lan' (vtnet0, management/exec network) was configured",
+    "Determined vtnet1/vtnet2 on node1 map to node2 eth1 / node3 eth1 via temporary IP + ping test",
+    "Brought up eth1 on node2 (10.60.1.11/24) and node3 (10.60.2.12/24) via nmcli, persisted",
+    "Added opt1 (LAN_A, vtnet1, 10.60.1.254/24) and opt2 (LAN_B, vtnet2, 10.60.2.254/24) interfaces to node1 config.xml and applied via configctl interface reconfigure",
+    "Added static routes on node2 (10.60.2.0/24 via 10.60.1.254) and node3 (10.60.1.0/24 via 10.60.2.254), persisted via nmcli",
+    "Added a port-type firewall alias 'node3_svc_ports' (8080,8443,9000) under OPNsense/Firewall/Alias/aliases in config.xml",
+    "Added a single pass rule on interface opt1 (lan-a) from 10.60.1.11 to 10.60.2.12 referencing the alias as the destination port, applied via configctl filter reload",
+    "Opened firewalld rich rules on node3 scoped to source 10.60.1.11 for ports 8080/8443/9000 (persistent)",
+    "Set up python2 TCP listeners on node3 for 8080/8443/9000/9999 to test connectivity",
+    "Verified from node2: connections succeed on 8080/8443/9000 and fail (timeout) on 9999",
+    "Captured pre-restart baseline (boot markers, interface/route/firewall state) on all three nodes",
+    "Restarted node1 (FreeBSD shutdown -r now), polled until SSH available, confirmed kern.boottime changed, verified interfaces/rule/forwarding intact and re-tested connectivity",
+    "Restarted node2 (shutdown -r now), polled until available, confirmed /proc/sys/kernel/random/boot_id changed, verified routes and connectivity",
+    "Restarted node3 (shutdown -r now), polled until available, confirmed boot_id changed, verified routes, firewalld rich rules, relaunched test listener, and re-verified end-to-end connectivity"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 routes between lan-a and lan-b (opt1/opt2 interfaces configured and forwarding enabled)",
+      "command_ids": [
+        "cmd-2b34003f8e2c406d",
+        "cmd-2d6ce1c5866d44f6",
+        "cmd-0946c75e23064eb2"
+      ],
+      "summary": "Added opt1 (vtnet1, 10.60.1.254/24) and opt2 (vtnet2, 10.60.2.254/24) to config.xml, reconfigured, confirmed net.inet.ip.forwarding=1"
+    },
+    {
+      "requirement": "Single named alias object expresses the port set (8080,8443,9000)",
+      "command_ids": [
+        "cmd-cb02f3dda26944a7",
+        "cmd-1547ef5935aa40f2",
+        "cmd-9e480adaedf145cc"
+      ],
+      "summary": "Created port alias node3_svc_ports with content 8080/8443/9000; pfctl -sr confirms node3_svc_ports = \"{ 8080 8443 9000 }\""
+    },
+    {
+      "requirement": "Single firewall rule references the alias instead of one rule per port",
+      "command_ids": [
+        "cmd-d22166f27f584f8e",
+        "cmd-1c7ad73c68a9499a"
+      ],
+      "summary": "One pass rule on opt1 from 10.60.1.11 to 10.60.2.12 with destination port set to the alias name; pfctl expands it to three port-specific pass lines all sharing the same rule label, proving one rule object"
+    },
+    {
+      "requirement": "node2 can reach node3 on ports 8080/8443/9000 but not other ports",
+      "command_ids": [
+        "cmd-e7ef27596f2c44d5",
+        "cmd-2590904b25634e32",
+        "cmd-4ddaac027f024fdd"
+      ],
+      "summary": "TCP connect tests from node2 to node3: 8080/8443/9000 succeed with banner responses, 9999 times out; pf state table shows completed handshakes for the three allowed ports"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b2306e3f9fd44245",
+        "cmd-491202e0abd2493e",
+        "cmd-1c7ad73c68a9499a",
+        "cmd-5baecc7538774c52",
+        "cmd-9d196a77f82e4d40",
+        "cmd-0c063161d37d413c",
+        "cmd-16451c768bfd4303",
+        "cmd-29ce00fd35d4495e"
+      ],
+      "summary": "Baseline kern.boottime=...17:06:27; reboot acked; SSH timeout confirms disconnection; kern.boottime changed to ...17:12:41; opt1/opt2 addresses, pf rule, and forwarding intact; connectivity to node3 re-verified"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-3af37fa424f34e5a",
+        "cmd-6fbe622d97224c33",
+        "cmd-0484306ce1aa4d58",
+        "cmd-376a9daec7444584",
+        "cmd-b65a64466ff948bb"
+      ],
+      "summary": "Baseline boot_id 2fc81aed...; reboot acked; SSH timeout confirms disconnection; boot_id changed to b8946347...; routes and connectivity to node3 verified afterward"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b9001aed35454d3c",
+        "cmd-2ffa9b0a77054a87",
+        "cmd-74306dd4bd444c54",
+        "cmd-3771052e03df4510",
+        "cmd-d153c5534ead4587",
+        "cmd-e5d9cd46efcc4858"
+      ],
+      "summary": "Baseline boot_id 738d0aac...; reboot acked; SSH timeout confirms disconnection; boot_id changed to 0949fd75...; routes and firewalld rich rules confirmed persisted; end-to-end connectivity from node2 re-verified after relaunching test listener"
+    }
+  ]
+}

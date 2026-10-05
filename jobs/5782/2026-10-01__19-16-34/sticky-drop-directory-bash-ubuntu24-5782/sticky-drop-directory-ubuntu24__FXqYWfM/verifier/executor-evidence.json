@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 8,
+    "successful": 7,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Shared writable directory configuration",
+      "command_ids": [
+        "cmd-3e184d9b04904341",
+        "cmd-a6373332b74747a8"
+      ],
+      "summary": "Shows `/srv/drop` is root-owned with mode 1777; users `nobody` and `daemon` both created files successfully."
+    },
+    {
+      "requirement": "Users cannot remove files owned by other users",
+      "command_ids": [
+        "cmd-a6373332b74747a8",
+        "cmd-2049a1a129204975"
+      ],
+      "summary": "Cross-owner removal failed with `Operation not permitted` both before and after reboot, while owner cleanup succeeded."
+    },
+    {
+      "requirement": "Node1 restart and recovery",
+      "command_ids": [
+        "cmd-7873d0a8d8ac41c1",
+        "cmd-59c5fe2086f24a3d",
+        "cmd-389abba7aef44e13",
+        "cmd-2049a1a129204975"
+      ],
+      "summary": "Baseline boot ID was `c96a02ae-22aa-4530-8d57-ce64bf4629af`; reboot was acknowledged; post-reboot boot ID changed to `0db893ac-fed9-482b-8b8c-52e61083c0f8`; mode, writable storage, proof data, and sticky-directory enforcement all recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-e08de12ba46049d0",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T03:07:36.225668+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 203,
+      "command": "id; printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; if [ -e /srv/drop ]; then stat -c 'path=%n type=%F mode=%a perms=%A owner=%U group=%G' /srv/drop; findmnt -T /srv/drop -o TARGET,SOURCE,FSTYPE,OPTIONS; else printf 'drop_state=absent\\n'; findmnt -T /srv -o TARGET,SOURCE,FSTYPE,OPTIONS 2>/dev/null || true; fi",
+      "stdout": "uid=0(root) gid=0(root) groups=0(root)\nboot_id=c96a02ae-22aa-4530-8d57-ce64bf4629af\ndrop_state=absent\nTARGET SOURCE    FSTYPE OPTIONS\n/      /dev/vda1 ext4   rw,relatime,discard,errors=remount-ro,commit=30"
+    },
+    {
+      "command_id": "cmd-3e184d9b04904341",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T03:07:38.534528+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 89,
+      "command": "install -d -o root -g root -m 1777 /srv/drop; stat -c 'path=%n type=%F mode=%a perms=%A owner=%U group=%G' /srv/drop",
+      "stdout": "path=/srv/drop type=directory mode=1777 perms=drwxrwxrwt owner=root group=root"
+    },
+    {
+      "command_id": "cmd-a6373332b74747a8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T03:07:47.316624+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 121,
+      "command": "set -eu\nrunuser -u nobody -- sh -c \"printf 'owned-by-nobody\\n' > /srv/drop/nobody-proof\"\nrunuser -u daemon -- sh -c \"printf 'owned-by-daemon\\n' > /srv/drop/daemon-proof\"\nprintf 'created_files:\\n'\nstat -c '%n owner=%U group=%G mode=%a content_size=%s' /srv/drop/nobody-proof /srv/drop/daemon-proof\nset +e\ncross_output=$(runuser -u daemon -- rm /srv/drop/nobody-proof 2>&1)\ncross_rc=$?\nset -e\nprintf 'daemon_remove_nobody_rc=%s\\n' \"$cross_rc\"\nprintf 'daemon_remove_nobody_output=%s\\n' \"$cross_output\"\ntest \"$cross_rc\" -ne 0\ntest -f /srv/drop/nobody-proof\nrunuser -u nobody -- rm /srv/drop/nobody-proof\nrunuser -u daemon -- rm /srv/drop/daemon-proof\nprintf 'owner_cleanup=successful remaining_proof_files='\nfind /srv/drop -maxdepth 1 -type f -name '*-proof' -printf '%f ' | sort\nprintf '\\n'\nstat -c 'directory=%n mode=%a perms=%A owner=%U group=%G' /srv/drop",
+      "stdout": "created_files:\n/srv/drop/nobody-proof owner=nobody group=nogroup mode=644 content_size=16\n/srv/drop/daemon-proof owner=daemon group=daemon mode=644 content_size=16\ndaemon_remove_nobody_rc=1\ndaemon_remove_nobody_output=rm: cannot remove '/srv/drop/nobody-proof': Operation not permitted\nowner_cleanup=successful remaining_proof_files=\ndirectory=/srv/drop mode=1777 perms=drwxrwxrwt owner=root group=root"
+    },
+    {
+      "command_id": "cmd-7873d0a8d8ac41c1",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T03:07:57.737945+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 113,
+      "command": "set -eu\nrunuser -u nobody -- sh -c \"printf 'node1-restart-persistence-proof\\n' > /srv/drop/.restart-proof-node1\"\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nstat -c 'directory=%n mode=%a perms=%A owner=%U group=%G' /srv/drop\nstat -c 'proof=%n owner=%U group=%G mode=%a size=%s' /srv/drop/.restart-proof-node1\nprintf 'proof_content='; cat /srv/drop/.restart-proof-node1\nprintf 'mount='; findmnt -n -T /srv/drop -o TARGET,SOURCE,FSTYPE,OPTIONS\nrunuser -u daemon -- sh -c \"printf 'daemon-write-ok\\n' > /srv/drop/.daemon-pre-reboot\"\nset +e\nrunuser -u daemon -- rm /srv/drop/.restart-proof-node1 2>/tmp/cross-delete-pre.err\ncross_rc=$?\nset -e\nprintf 'cross_owner_delete_rc=%s output=' \"$cross_rc\"; cat /tmp/cross-delete-pre.err\nrm -f /tmp/cross-delete-pre.err\nrunuser -u daemon -- rm /srv/drop/.daemon-pre-reboot\ntest \"$cross_rc\" -ne 0\ntest -f /srv/drop/.restart-proof-node1\nprintf 'baseline_health=healthy\\n'",
+      "stdout": "boot_id=c96a02ae-22aa-4530-8d57-ce64bf4629af\ndirectory=/srv/drop mode=1777 perms=drwxrwxrwt owner=root group=root\nproof=/srv/drop/.restart-proof-node1 owner=nobody group=nogroup mode=644 size=32\nproof_content=node1-restart-persistence-proof\nmount=/      /dev/vda1 ext4   rw,relatime,discard,errors=remount-ro,commit=30\ncross_owner_delete_rc=1 output=rm: cannot remove '/srv/drop/.restart-proof-node1': Operation not permitted\nbaseline_health=healthy"
+    },
+    {
+      "command_id": "cmd-59c5fe2086f24a3d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T03:08:00.182410+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 69,
+      "command": "nohup sh -c 'sleep 2; /usr/sbin/reboot' >/tmp/benchmark-node1-reboot.log 2>&1 & printf 'reboot_ack=node1-safe-reboot-scheduled\\n'; printf 'pre_reboot_boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "reboot_ack=node1-safe-reboot-scheduled\npre_reboot_boot_id=c96a02ae-22aa-4530-8d57-ce64bf4629af"
+    },
+    {
+      "command_id": "cmd-728c33114f70484c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T03:08:02.307704+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 44,
+      "command": "printf 'reachable=yes boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-389abba7aef44e13",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T03:08:10.486455+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 100,
+      "command": "printf 'reachable=yes boot_id='; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "reachable=yes boot_id=0db893ac-fed9-482b-8b8c-52e61083c0f8"
+    },
+    {
+      "command_id": "cmd-2049a1a129204975",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T03:08:17.132608+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 122,
+      "command": "set -eu\nprintf 'post_boot_id='; cat /proc/sys/kernel/random/boot_id\nstat -c 'directory=%n mode=%a perms=%A owner=%U group=%G' /srv/drop\nstat -c 'recovered_proof=%n owner=%U group=%G mode=%a size=%s' /srv/drop/.restart-proof-node1\nprintf 'recovered_content='; cat /srv/drop/.restart-proof-node1\nprintf 'mount='; findmnt -n -T /srv/drop -o TARGET,SOURCE,FSTYPE,OPTIONS\nrunuser -u daemon -- sh -c \"printf 'post-reboot-write-ok\\n' > /srv/drop/.daemon-post-reboot\"\nprintf 'daemon_write='; cat /srv/drop/.daemon-post-reboot\nset +e\ncross_output=$(runuser -u daemon -- rm /srv/drop/.restart-proof-node1 2>&1)\ncross_rc=$?\nset -e\nprintf 'post_reboot_cross_owner_delete_rc=%s\\n' \"$cross_rc\"\nprintf 'post_reboot_cross_owner_delete_output=%s\\n' \"$cross_output\"\ntest \"$cross_rc\" -ne 0\ntest -f /srv/drop/.restart-proof-node1\nrunuser -u daemon -- rm /srv/drop/.daemon-post-reboot\nrunuser -u nobody -- rm /srv/drop/.restart-proof-node1\nprintf 'owner_cleanup=successful\\n'\nstat -c 'final_directory=%n mode=%a perms=%A owner=%U group=%G' /srv/drop\nprintf 'final_health=healthy\\n'",
+      "stdout": "post_boot_id=0db893ac-fed9-482b-8b8c-52e61083c0f8\ndirectory=/srv/drop mode=1777 perms=drwxrwxrwt owner=root group=root\nrecovered_proof=/srv/drop/.restart-proof-node1 owner=nobody group=nogroup mode=644 size=32\nrecovered_content=node1-restart-persistence-proof\nmount=/      /dev/vda1 ext4   rw,relatime,discard,errors=remount-ro,commit=30\ndaemon_write=post-reboot-write-ok\npost_reboot_cross_owner_delete_rc=1\npost_reboot_cross_owner_delete_output=rm: cannot remove '/srv/drop/.restart-proof-node1': Operation not permitted\nowner_cleanup=successful\nfinal_directory=/srv/drop mode=1777 perms=drwxrwxrwt owner=root group=root\nfinal_health=healthy"
+    }
+  ]
+}

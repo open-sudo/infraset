@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Provide an encrypted volume on node1 mounted at /srv/secure",
+      "status": "satisfied",
+      "summary": "A LUKS2-encrypted, file-backed volume (/var/lib/secure-volume/secure.img) was created via cryptsetup luksFormat, opened as /dev/mapper/secure_srv, formatted ext4, and mounted at /srv/secure. Directly observed via mount output and df -h both before and after the reboot cycle.",
+      "evidence_ids": [
+        "cmd-43a0cd36619a43d0",
+        "cmd-d32b044bf9ae40b2",
+        "cmd-1de2f83584e14bd5"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Volume unlocks and mounts automatically at boot without manual/interactive intervention",
+      "status": "satisfied",
+      "summary": "Healthy baseline captured pre-reboot (LUKS volume mounted, healthcheck.txt written, boot_id 31b01b46...). Reboot was triggered (cmd-35b0cf4bad6342a5), node observed unreachable during the transition (cmd-6371a8367bda4a62), then reachable again with a new boot_id b22cc786... (cmd-3ebecaf13fdb4a5c), directly proving an actual restart. Post-boot, systemd-cryptsetup@secure_srv.service and srv-secure.mount are both shown Active since the new boot time with no manual commands executed in between, and /srv/secure is mounted from /dev/mapper/secure_srv (cmd-1de2f83584e14bd5). This is a full pre-disruption/disruption/recovery transition, satisfying the higher evidentiary bar for boot-time behavior.",
+      "evidence_ids": [
+        "cmd-802a29a2b9054d5c",
+        "cmd-35b0cf4bad6342a5",
+        "cmd-6371a8367bda4a62",
+        "cmd-3ebecaf13fdb4a5c",
+        "cmd-1de2f83584e14bd5"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Data on the encrypted volume survives the unlock/mount cycle",
+      "status": "satisfied",
+      "summary": "healthcheck.txt SHA-256 (46959369...) captured pre-reboot matches exactly the checksum captured post-reboot after auto-unlock/auto-mount, confirming data integrity through the boot cycle.",
+      "evidence_ids": [
+        "cmd-802a29a2b9054d5c",
+        "cmd-1de2f83584e14bd5"
+      ]
+    }
+  ],
+  "overall_summary": "The executor created a LUKS2-encrypted, file-backed volume mounted at /srv/secure on node1 and wired it for unattended boot-time unlock/mount via a crypttab 'noauto' entry combined with an fstab x-systemd.requires dependency, causing local-fs.target to pull in the cryptsetup service automatically. This was verified with a real, direct reboot transition: a captured pre-reboot healthy baseline (boot_id, mounted volume, checksummed test file), a triggered reboot, an observed unreachable window, and a post-reboot state showing a new boot_id with the cryptsetup service and mount unit both active since boot and the test file's checksum unchanged \u2014 fully satisfying the evidentiary bar for boot-time recovery claims. A single bounded troubleshooting mutation (temporarily unmounting/closing the volume to test mount -a) was immediately self-corrected and left no lasting effect.",
+  "limitations": [
+    "Only a single reboot cycle was observed; repeated reboot resilience was not tested.",
+    "The unattended-unlock keyfile is stored in plaintext on the root filesystem (/etc/cryptsetup-keys.d/srv-secure.key) with 600 permissions \u2014 this is an inherent tradeoff for automatic unlock without a TPM/network key-escrow mechanism and is not flagged as a defect since the task explicitly requires unattended unlock at boot.",
+    "The backing store is a file-backed loop device rather than a dedicated block device, noted by the executor as due to the VM having no spare disk; this is a reasonable implementation choice but differs from a typical dedicated-partition LUKS setup."
+  ],
+  "command_stats": {
+    "total": 14,
+    "successful": 13,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most state-changing commands map cleanly to task outcomes: package install, backing file/keyfile creation, luksFormat, luksOpen/mkfs/mount, crypttab/fstab edits, healthcheck file write, and the reboot itself. One bounded diagnostic mutation occurred: cmd-84069d636545464b unmounted /srv/secure and closed the LUKS mapping to test whether `mount -a` alone (relying on the noauto crypttab entry) would trigger auto-unlock; this failed as expected (crypttab noauto by design defers unlocking to the mount unit's dependency, not mount -a) and left the volume closed/unmounted. This was corrected in the very next command (cmd-393794349bf84f6e), which started srv-secure.mount and restored the mounted state, and the subsequent full reboot independently re-validated the end state. The mutation was low-risk, fully self-corrected, and left no residue, so it is treated as a minor troubleshooting experiment rather than a significant hygiene issue. No abandoned files, failed services, unsafe exposure, or damaged package state were observed in the after_executor snapshot (no failed-services, listening-socket changes limited to expected PID/reboot churn on pre-existing ports, only benign /tmp/reboot.log added).",
+    "evidence_ids": [
+      "cmd-84069d636545464b",
+      "cmd-393794349bf84f6e",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

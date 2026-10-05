@@ -1,0 +1,64 @@
+{
+  "status": "completed",
+  "summary": "Deployed a self-signed-CA-backed HTTPS service on node1 port 8443 that renews its TLS certificate automatically before expiry and hot-picks-up each renewed cert without dropping connections or restarting; completed the single-node restart/recovery evidence protocol.",
+  "actions_performed": [
+    "Surveyed node1 (RHEL 7.9, no internet/yum repos, no nginx/httpd/python3; only python2.7.5 with ssl.SSLContext and openssl 1.0.2k available)",
+    "Built a local demo CA at /opt/https-rotate/ca (ca.key/ca.crt, index.txt/serial) to sign short-lived leaf certs",
+    "Wrote /opt/https-rotate/gen-cert.sh: issues a 300s-lifetime leaf cert, renewing only when fewer than 180s of validity remain (openssl x509 -checkend), atomically swapping tls.key/tls.crt into place",
+    "Wrote /opt/https-rotate/serve.py: python2 threaded HTTPS server that builds a fresh SSLContext from the current cert/key files on every newly accepted TCP connection, so a renewed cert is served on the very next request with no process restart",
+    "Installed and enabled systemd units https-rotate.service (the server) and https-rotate-renew.timer/.service (renewal check every 60s, Persistent=true)",
+    "Fixed a python2 SocketServer.accept() bug found on first boot, redeployed, verified curl -k https://$NODE_IP:8443/ returns 200 'ok'",
+    "Observed two live automatic renewal cycles (cert serial 1000->1001->1002) via a polling loop while https-rotate.service's MainPID (2428) stayed constant, proving hot cert pickup without restart",
+    "Captured pre-reboot boot_id/health baseline, ran sudo systemctl reboot on node1, polled until exec access returned, confirmed a new boot_id, confirmed both systemd units auto-started, and observed a further renewal cycle post-reboot (serial 1002->1003) with HTTPS continuing to serve 200s"
+  ],
+  "evidence": [
+    {
+      "requirement": "HTTPS served on port 8443 with a valid cert",
+      "command_ids": [
+        "cmd-fab7c445afbc4ab2",
+        "cmd-812068271bd94ec8"
+      ],
+      "summary": "After fixing the accept() bug and restarting the service, curl -k to https://$NODE_IP:8443/ returns HTTP 200 'ok'; openssl s_client shows the served cert serial=1000, notAfter=14:31:04Z, matching the locally issued leaf cert."
+    },
+    {
+      "requirement": "Certificate renewed automatically before it expires",
+      "command_ids": [
+        "cmd-0ee1c869bb9a49d0",
+        "cmd-07959ec603834e0e"
+      ],
+      "summary": "Cert serial advanced 1000->1001 before the original 14:31:04Z expiry (last-renewed 14:28:40Z, new expiry 14:33:40Z, confirmed via live TLS handshake), and a second cycle 1001->1002 and later 1002->1003 was captured, all triggered automatically by https-rotate-renew.timer with no manual intervention."
+    },
+    {
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no restart)",
+      "command_ids": [
+        "cmd-07959ec603834e0e",
+        "cmd-025e277b09ab45aa"
+      ],
+      "summary": "Poll log shows serial 1001->1002 transition with http=200 on every 20s check, and systemctl show -p MainPID reported the unchanged PID 2428 across both renewal cycles, proving the running process served the newly rotated cert without restarting."
+    },
+    {
+      "requirement": "node1 mandatory restart evidence: healthy baseline before restart",
+      "command_ids": [
+        "cmd-025e277b09ab45aa"
+      ],
+      "summary": "Captured boot_id d72bd4ec-4e55-42df-9c71-99b4f4ace0ec, both systemd units active, cert serial=1002 valid, and HTTPS returning 200 immediately before the reboot."
+    },
+    {
+      "requirement": "node1 mandatory restart evidence: restart acknowledged and boot identity changed",
+      "command_ids": [
+        "cmd-555ed2e6f1e94739",
+        "cmd-d2496a8a26f543da",
+        "cmd-994e2ac946eb41f2"
+      ],
+      "summary": "systemctl reboot was issued and acknowledged before the connection dropped; subsequent exec calls timed out during the reboot window and then succeeded again reporting a new boot_id 41f1cd47-f42d-46ed-8ba7-ca8f93bcee75, proving an actual restart occurred."
+    },
+    {
+      "requirement": "node1 mandatory restart evidence: post-restart recovery of required services and data",
+      "command_ids": [
+        "cmd-c5a6e8daf40648c5",
+        "cmd-9076668de03e498b"
+      ],
+      "summary": "After reboot, https-rotate.service and https-rotate-renew.timer were active again (auto-started, new MainPID 871), the existing cert/data on disk was intact (serial=1002 still valid), HTTPS answered 200, and a further automatic renewal (serial 1002->1003) was observed post-reboot, confirming full end-to-end recovery of the rotation pipeline."
+    }
+  ]
+}

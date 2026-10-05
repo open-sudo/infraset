@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "app-on-node2-8080",
+      "requirement": "Serve an application from node2 on TCP port 8080",
+      "status": "satisfied",
+      "summary": "A systemd unit (wg-demo-app.service) running python3 http.server on 0.0.0.0:8080 was deployed to node2 via Ansible. Direct local curl on node2 succeeded (cmd-819f6fe136be4a3a shows the port was previously closed; cmd-67c88c1ea6834511/cmd-dcf0124996c1448e chain shows it active and serving), and the after_executor lifecycle snapshot independently confirms 'tcp LISTEN 0.0.0.0:8080 python3' on node2.",
+      "evidence_ids": [
+        "cmd-819f6fe136be4a3a",
+        "cmd-4f99f2b4b3de4f25",
+        "cmd-67c88c1ea6834511",
+        "cmd-dcf0124996c1448e",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    },
+    {
+      "id": "node3-only-via-tunnel",
+      "requirement": "node3 (outside the private network) can reach the node2 app only through a WireGuard tunnel terminated on node1",
+      "status": "satisfied",
+      "summary": "wg0 on node1 shows an established peer/handshake with node3 (cmd-0805e8f0fa8b484c). node3's curl to node2:8080 succeeds over the wg0 route (cmd-b306023319f34b3e). A bounded disruption test removed the tunnel-specific route on node3 and direct access failed with 'No route to host' due to node2's firewalld rich rule restricting port 8080 to node1's LAN IP (cmd-3c609689529e47e9 \u2014 the executor's own evidence citation had a typo, cmd-3c609693529e47e9, that does not match any command in the trace; the correctly-IDed command cmd-3c609689529e47e9 is the actual evidence). Access was then restored via wg-quick (cmd-405366519ce548f0), completing baseline\u2192disruption\u2192recovery for this security property.",
+      "evidence_ids": [
+        "cmd-0805e8f0fa8b484c",
+        "cmd-b306023319f34b3e",
+        "cmd-3c609689529e47e9",
+        "cmd-405366519ce548f0",
+        "cmd-67c88c1ea6834511"
+      ]
+    },
+    {
+      "id": "ansible-implementation",
+      "requirement": "Implement using Ansible, run from the control node",
+      "status": "satisfied",
+      "summary": "An inventory and a single playbook (playbooks/site.yml) were authored and executed from node4, the designated control_node with ansible-core, covering key generation, VyOS wg0/NAT configuration, node3 tunnel config, and the node2 app/firewall. Re-runs (cmd-ba8a14d709904138, cmd-d7422d1829f2425b) show it converges to a mostly idempotent state.",
+      "evidence_ids": [
+        "cmd-b6c44ff620134fb8",
+        "cmd-f3e7554c10fa4578",
+        "cmd-4f99f2b4b3de4f25",
+        "cmd-ba8a14d709904138",
+        "cmd-d7422d1829f2425b"
+      ]
+    },
+    {
+      "id": "restart-evidence-node1",
+      "requirement": "(Independent protocol) node1 restart evidence: baseline, ack, changed boot id, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 01e92881... and healthy wg0/NAT state captured (cmd-72c06d1d8eea40c9), reboot acknowledged (cmd-83f37dca0a9a4267), new boot_id c5b68ddb... with fresh uptime (cmd-3487766403db4c40), matching the fixed after_executor snapshot. Post-restart wg0 interface, peer, and NAT config confirmed intact (cmd-a6404c14edbb4be0), and node3 tunnel connectivity re-verified (cmd-840c859b25fb4f92).",
+      "evidence_ids": [
+        "cmd-72c06d1d8eea40c9",
+        "cmd-83f37dca0a9a4267",
+        "cmd-3487766403db4c40",
+        "cmd-a6404c14edbb4be0",
+        "cmd-840c859b25fb4f92",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-evidence-node2",
+      "requirement": "(Independent protocol) node2 restart evidence",
+      "status": "satisfied",
+      "summary": "Baseline boot_id f54d7366... with working app captured (cmd-657049fe43a84fd5), reboot acknowledged (cmd-0399457673844d04), new boot_id a7d3bc82... (cmd-09bd86ac820d4f2b) matching the fixed snapshot, and post-restart service/firewall/app state confirmed (cmd-dcf0124996c1448e). The after_executor snapshot separately shows an unrelated NetworkManager-wait-online.service failure post-reboot \u2014 not tied to any executor mutation and not part of the task contract, but worth flagging as a residual anomaly.",
+      "evidence_ids": [
+        "cmd-657049fe43a84fd5",
+        "cmd-0399457673844d04",
+        "cmd-09bd86ac820d4f2b",
+        "cmd-dcf0124996c1448e",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node2:failed-services"
+      ]
+    },
+    {
+      "id": "restart-evidence-node3",
+      "requirement": "(Independent protocol) node3 restart evidence",
+      "status": "satisfied",
+      "summary": "Baseline boot_id dfdea52d... (cmd-2a318138972c4b24), reboot acknowledged (cmd-b5aea230d9234c17), new boot_id 1bb5c3ca... (cmd-0e2962c15a6c49e5) matching the fixed snapshot, and wg-quick@wg0 auto-restored the tunnel with app reachability confirmed post-restart (cmd-338a1e9588f04d53).",
+      "evidence_ids": [
+        "cmd-2a318138972c4b24",
+        "cmd-b5aea230d9234c17",
+        "cmd-0e2962c15a6c49e5",
+        "cmd-338a1e9588f04d53",
+        "global:after_executor:node3:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-evidence-node4",
+      "requirement": "(Independent protocol) node4 (control node) restart evidence",
+      "status": "satisfied",
+      "summary": "Baseline boot_id e796da36... (cmd-0accca332f444e68), reboot acknowledged (cmd-20d4e6514bb54f82), new boot_id 86d29d70... (cmd-d085832a9f54471c) matching the fixed snapshot. A subsequent playbook re-run initially failed because node1's SSH key did not survive node1's own reboot (VyOS regenerated authorized_keys), which was correctly diagnosed and fixed by moving the key into VyOS's declarative config (cmd-771e380516d44222/cmd-7e5879c81e184d10), after which the playbook succeeded end-to-end (cmd-d7422d1829f2425b).",
+      "evidence_ids": [
+        "cmd-0accca332f444e68",
+        "cmd-20d4e6514bb54f82",
+        "cmd-d085832a9f54471c",
+        "cmd-7e3b0536fed64dc1",
+        "cmd-7e5879c81e184d10",
+        "cmd-d7422d1829f2425b",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material task outcomes \u2014 the node2:8080 app, the node3-only-via-WireGuard-tunnel access restriction, and the Ansible-from-control-node implementation \u2014 are satisfied with direct, verifiable evidence, including a genuine bounded-disruption test (route removal/restoration) proving the tunnel-only access property rather than merely showing configuration. The independent node-restart evidence protocol was completed for all four nodes with matching baseline/post boot identities from the fixed lifecycle snapshots, real reboot acknowledgements, and confirmed post-restart recovery, including a legitimately diagnosed and fixed VyOS SSH-key-persistence issue. Operational hygiene is good: one experimental WireGuard config commit on node1 was made and cleanly reverted during debugging, and a redundant manual package install occurred, but no unsafe exposure or lasting unwanted state resulted.",
+  "limitations": [
+    "The executor's own evidence citation for the tunnel-restriction test used command ID cmd-3c609693529e47e9, which does not exist in the trace; the actual matching command is cmd-3c609689529e47e9 (a near-identical ID, likely a transcription slip) \u2014 evidence content itself is coherent and was used for scoring.",
+    "The NetworkManager-wait-online.service failure appearing on node2 in the after_executor snapshot is not explained by any executor command and could not be attributed to a specific mutation; it does not appear task-relevant but is noted for completeness.",
+    "Full playbook source and idempotency proof were captured via truncated tail outputs of ansible-playbook runs; some early-task output was not visible in every re-run, though final PLAY RECAP summaries and targeted greps were sufficient to establish convergence.",
+    "Executor evidence item 2 referenced unknown command IDs: cmd-3c609693529e47e9"
+  ],
+  "command_stats": {
+    "total": 129,
+    "successful": 108,
+    "failed": 21,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "The bulk of the trace is legitimate discovery, prerequisite bootstrapping (SSH keys, package installs), and final verification. One bounded, low-risk troubleshooting excursion on node1 directly committed a real WireGuard interface with test values outside the playbook (cmd-e64f1d0b68254f56, confirmed via cmd-20a1caba94ae4573) and was fully reverted before the playbook's real configuration was applied (cmd-e308672f4f6a4aa7, delete+commit+save) \u2014 no residue remained. A number of other VyOS configure/commit attempts during debugging of the config-session bug (cmd-8bb598a9624d4adb, cmd-9798dd118af84b64, cmd-97b80399c7b84bf2, cmd-99837767684a4039, etc.) failed or were left uncommitted, so they produced no persistent state change. wireguard-tools was manually installed on node3 via dnf outside Ansible (cmd-fc99d43110ec446e) even though the playbook has an equivalent idempotent task; this is a minor redundant manual mutation but is a genuine, retained prerequisite rather than harmful residue. No unsafe exposure, weakened security controls, or damaged package state was observed; the after_executor snapshot shows only the expected new services (wg0/51820, app:8080) and one unrelated failed unit (NetworkManager-wait-online.service) on node2 that is not attributable to executor commands.",
+    "evidence_ids": [
+      "cmd-e64f1d0b68254f56",
+      "cmd-20a1caba94ae4573",
+      "cmd-e308672f4f6a4aa7",
+      "cmd-fc99d43110ec446e",
+      "global:after_executor:node2:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

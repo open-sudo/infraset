@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Run a managed systemd service named inventory-worker on node1",
+      "status": "satisfied",
+      "summary": "systemctl status output shows inventory-worker.service loaded, enabled, and active (running) with correct ExecStart process tree; confirmed again after restart.",
+      "evidence_ids": [
+        "cmd-19eb92552ff84abb",
+        "cmd-d714ce68c3934300"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Worker is long-running (persistent background process)",
+      "status": "satisfied",
+      "summary": "Worker script is an infinite sleep-loop; counter/log file inside /var/lib/inventory were observed incrementing across multiple checks separated in time, both before and after a reboot.",
+      "evidence_ids": [
+        "cmd-f019dfa1ffcd4858",
+        "cmd-1b92ad5792b44b43",
+        "cmd-ebb9e964f6e042d6",
+        "cmd-d714ce68c3934300"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Confined so the service writes only inside /var/lib/inventory",
+      "status": "satisfied",
+      "summary": "Live process mountinfo for the service's actual PID shows root '/' mounted read-only and /var/lib/inventory mounted separately read-write; a write attempt to /etc as the inventory user failed with Permission denied while a write inside /var/lib/inventory succeeded. Note: a separate 'sudo -u inventory touch /tmp/...' test succeeded because that ad-hoc shell process runs outside the unit's sandboxed mount namespace, so it does not contradict confinement of the actual service process.",
+      "evidence_ids": [
+        "cmd-a97d8f0d5d984662",
+        "cmd-1b92ad5792b44b43",
+        "cmd-53054f9c32c840a5"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Gains no new privileges (NoNewPrivileges)",
+      "status": "satisfied",
+      "summary": "systemctl show confirms NoNewPrivileges=yes is configured on the unit. Direct in-process confirmation via /proc/PID/status was unavailable because this kernel/procfs (4.4.0, systemd 229) does not expose a NoNewPrivs field even for PID 1, which the executor verified is a platform limitation rather than evidence the setting is absent. This leaves the requirement resting primarily on unit configuration rather than a runtime probe.",
+      "evidence_ids": [
+        "cmd-e34d8a005d924ab3",
+        "cmd-786a23ffc9194b34"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "(Independent protocol) node1 restart evidence: baseline, acknowledgement, changed boot identity, recovered service/data/confinement state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id 35c87ec9... with active/enabled service and counter=6 was captured; a backgrounded 'shutdown -r now' was issued and acknowledged; the node briefly refused SSH then returned with a new boot_id f72b61b0..., matching the fixed lifecycle boot-identity cross-check; post-restart the service was active/enabled, counter continued incrementing (7->9), log kept appending, and the ro-root/rw-inventory mount confinement was re-verified.",
+      "evidence_ids": [
+        "cmd-ebb9e964f6e042d6",
+        "cmd-db8f01adc7284511",
+        "cmd-7bea8c6b734d4b05",
+        "cmd-08d3072691fc4593",
+        "cmd-d714ce68c3934300",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The inventory-worker systemd service was correctly created, confined via read-only root plus a read-write bind mount for /var/lib/inventory (verified against the live process's own mountinfo), and configured with NoNewPrivileges=yes. The service was shown running and producing data continuously both before and after a full node reboot, with a directly observed boot-identity change and post-restart recovery of service, data, and confinement state, consistent with the fixed lifecycle boot-identity snapshots. The main evidence gap is that NoNewPrivileges could only be confirmed via unit configuration, not a runtime /proc probe, due to a platform/kernel limitation the executor identified but could not work around. Minor hygiene residue (two small diagnostic test files) was left without an observed cleanup step.",
+  "limitations": [
+    "NoNewPrivileges was verified only via systemd unit configuration (systemctl show), not via a direct runtime kernel probe, because this kernel/procfs does not expose a NoNewPrivs field even for PID 1.",
+    "Whether the /tmp/should_fail_or_ok test artifact and /var/lib/inventory/write_test file were ultimately removed could not be confirmed from the captured evidence; the fixed after-executor temp-files snapshot does not list the /tmp artifact but that snapshot may be bounded/filtered rather than exhaustive."
+  ],
+  "command_stats": {
+    "total": 15,
+    "successful": 13,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.78,
+    "summary": "Reviewed all state-changing commands chronologically. User/directory creation, worker script, and systemd unit installation (cmd-a97d8f0d5d984662, cmd-f019dfa1ffcd4858, cmd-19eb92552ff84abb) are all directly required for the task. The reboot (cmd-db8f01adc7284511) is required by the independent restart protocol. Two small diagnostic test artifacts appear not to have been cleaned up: a file 'should_fail_or_ok' left in /tmp by an ad-hoc permission test and a 'write_test' file left inside /var/lib/inventory by a confinement write test (both from cmd-53054f9c32c840a5). Neither command has a subsequent removal in the trace, and the fixed after-executor temp-files snapshot does not explicitly list /tmp/should_fail_or_ok, so its final presence could not be independently confirmed. Both are low-risk, bounded diagnostic residue (one inside the intended writable directory, the other a single small file in /tmp) rather than broad, destructive, or security-weakening mutations, so they are scored as a minor deduction rather than a serious hygiene failure. No failed/conflicting services, no unsafe network exposure, and package health remained unchanged across the lifecycle snapshots.",
+    "evidence_ids": [
+      "cmd-53054f9c32c840a5",
+      "global:before_prepare:node1:temporary-files",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,86 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 as the cluster's internal chrony time source (local stratum 10, allow 10.100.29.0/24, NTP opened in firewalld) and node2 to sync against node1 (server 10.100.29.10 iburst) instead of the public pool, implemented via an Ansible playbook run from node3 (the control node, only node with ansible/ansible-playbook installed). Since ansible-core 2.20 requires Python 3 on managed nodes and the RHEL7 nodes only have Python 2 with no package repos reachable (isolated cluster), tasks against node1/node2 use ansible.builtin.raw, which bypasses the module subsystem. Verified node2 reached '^*' synced state against node1 (stratum 11, NTP synchronized: yes). Completed the mandatory one-at-a-time restart protocol on all three nodes: captured baseline boot_id and health, rebooted, polled until reachable, confirmed changed boot_id, and confirmed chrony/firewall config and sync recovered after each restart, then re-ran the playbook post-restarts to confirm end-to-end health.",
+  "actions_performed": [
+    "Surveyed all 3 nodes: node1/node2 RHEL7 with chrony pointed at public pool servers (unsynchronized, isolated network); node3 Ubuntu 24.04 with ansible-core 2.20 installed (control node)",
+    "Wired passwordless SSH from node3 to node1/node2 using CLUSTER_SSH_PRIVKEY/PUBKEY and added CLUSTER_HOSTS to /etc/hosts",
+    "Discovered ansible-core 2.20 modules fail on RHEL7's Python 2-only interpreter (no python3, no reachable yum repos) and switched target tasks to ansible.builtin.raw",
+    "Wrote /root/ansible/internal-time-sync/{inventory.ini,site.yml} on node3 configuring node1 (local stratum 10 + allow 10.100.29.0/24 + firewalld ntp service) and node2 (server 10.100.29.10 iburst)",
+    "Ran the playbook, diagnosed and fixed a firewalld block on node1 preventing node2's NTP queries from arriving, folded the fix into site.yml, and re-ran to verify node2 achieves '^*' synced status against node1",
+    "Executed the mandatory restart-evidence protocol: captured boot_id + chrony health baseline on node1, node2, node3; rebooted each one at a time via backgrounded systemctl reboot; polled until reachable; confirmed changed boot_id; verified chrony/firewall config and sync recovered after each restart; re-ran the Ansible playbook after all restarts to confirm end-to-end health"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 configured as internal cluster time source",
+      "command_ids": [
+        "cmd-3f17a01a8beb4011",
+        "cmd-72ff96c2b70f4b86"
+      ],
+      "summary": "chrony.conf on node1 sets 'local stratum 10' + 'allow 10.100.29.0/24'; chronyc tracking shows Stratum 10, Leap status Normal both right after initial playbook run and again after node1's restart"
+    },
+    {
+      "requirement": "node2 configured to sync against node1 instead of public servers",
+      "command_ids": [
+        "cmd-35986f53926d4307",
+        "cmd-26fda080bf6d4c9c"
+      ],
+      "summary": "node2's chrony.conf set to 'server 10.100.29.10 iburst'; chronyc sources shows '^* vm-rhel7-3504805211 (10.100.29.10)' as the current synced source, stratum 11, NTP synchronized: yes, both immediately after configuration and again after node2's restart"
+    },
+    {
+      "requirement": "Implementation done via Ansible",
+      "command_ids": [
+        "cmd-3e6720e0241d4426",
+        "cmd-6c32146ca4e34558",
+        "cmd-a5b2a60a8eb4427a",
+        "cmd-2eed3f0e46024e0a",
+        "cmd-3f17a01a8beb4011",
+        "cmd-c37de53735b24f83",
+        "cmd-e1be0c7430c44e81",
+        "cmd-35986f53926d4307"
+      ],
+      "summary": "Ansible inventory/playbook authored and executed from node3 (the only node with ansible-playbook, confirming it as control node); ansible.builtin.raw used after confirming ansible-core 2.20's normal modules fail on RHEL7's Python-2-only, repo-less nodes"
+    },
+    {
+      "requirement": "Firewall fix needed for NTP to actually reach node1",
+      "command_ids": [
+        "cmd-3c5c3bafef51409a",
+        "cmd-c37de53735b24f83",
+        "cmd-e1be0c7430c44e81"
+      ],
+      "summary": "Diagnosed firewalld public zone on node1 only allowed dhcpv6-client/ssh (no ntp), added firewall-cmd --add-service=ntp via Ansible task, folded into site.yml"
+    },
+    {
+      "requirement": "node1 restart baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-c4e484bada8c4d32",
+        "cmd-d4977aa2b0c74f22",
+        "cmd-33265ad1f3ae4bd0",
+        "cmd-48d1506fa8ce4438",
+        "cmd-72ff96c2b70f4b86"
+      ],
+      "summary": "Baseline boot_id 4326d5b8...; reboot acknowledged then connection dropped; boot_id after reconnect 2ff972d1... (changed); chronyd active, stratum 10, Leap Normal, ntp firewall service present post-restart"
+    },
+    {
+      "requirement": "node2 restart baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-7f76520bc4a4493e",
+        "cmd-4445c5a17fea42fd",
+        "cmd-30bad83b2009465f",
+        "cmd-0e70541bf46a4c15",
+        "cmd-26fda080bf6d4c9c"
+      ],
+      "summary": "Baseline boot_id 9ed9e820...; reboot acknowledged then timed out; boot_id after reconnect 1983dffe... (changed); chronyd active and re-synced to node1 ('^*' source, stratum 11, NTP synchronized: yes) post-restart"
+    },
+    {
+      "requirement": "node3 (control node) restart baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-ea054f4f945b4673",
+        "cmd-60f52fe7b73b4e28",
+        "cmd-f8e183c840f04fba",
+        "cmd-9cc2e6abd8c84565",
+        "cmd-d3375b92640740e9"
+      ],
+      "summary": "Baseline boot_id 6fd57414...; reboot acknowledged then timed out; boot_id after reconnect 389cac76... (changed); ansible/ansible-playbook still present and playbook re-run succeeded end-to-end confirming node1/node2 still healthy"
+    }
+  ]
+}

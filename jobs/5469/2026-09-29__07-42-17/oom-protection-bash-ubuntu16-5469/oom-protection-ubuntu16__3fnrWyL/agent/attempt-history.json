@@ -1,0 +1,70 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-29T13:11:01.824853+00:00",
+      "outcome": "executor_blocked",
+      "finished_at": "2026-09-29T13:14:02.623979+00:00",
+      "error": "Configured inventory-api as an OOM-protected systemd service on node1 (OOMScoreAdjust=-1000, verified applied and serving), then launched an unprotected memory-hog process (default oom_score_adj=0) to drive the node out of memory. The node became unresponsive to further exec calls almost immediately after the hog was launched (sshd cannot fork a new session \u2014 \"exec request failed on channel 0\") and has not recovered after ~36 minutes of retries. Because the exec tool is the only interface available and it is itself blocked, I cannot confirm whether the kernel OOM-killer actually reaped the hog while inventory-api kept serving, cannot capture post-event proof, and cannot carry out the mandatory per-node restart/recovery evidence protocol.",
+      "diagnosis": {
+        "evidence": [
+          {
+            "source": "pre-flight inspection (cmd @13:11:13)",
+            "finding": "node1: Ubuntu 16.04.7, systemd 229, 999M total RAM, 0B swap configured, 833M free at baseline before any workload was placed."
+          },
+          {
+            "source": "service setup + verification (cmd @13:11:25, 13:11:29)",
+            "finding": "inventory-api deployed as a systemd unit (Restart=always, OOMScoreAdjust=-1000, User=root). systemctl is-active reported 'active'; /proc/<PID>/oom_score_adj read back as -1000; GET /health returned 200 {\"status\":\"ok\"} \u2014 service was confirmed managed, protected, and serving before disruption."
+          },
+          {
+            "source": "pre-hog baseline (cmd @13:11:34)",
+            "finding": "free -h showed 670M free / 0B swap immediately before the hog launched. Hog script grows RSS by allocating 10MB bytearrays every 0.05s (~200MB/s) with no cap, then idles only after it hits a Python MemoryError."
+          },
+          {
+            "source": "hog launch (cmd @13:11:34)",
+            "finding": "Hog started via `sudo sh -c 'nohup python3 ... &'` inside the same SSH exec session (not its own systemd unit/cgroup), PID 2291 confirmed with oom_score_adj=0 (unprotected, as intended)."
+          },
+          {
+            "source": "post-launch polling (cmd @13:11:38 through 13:13:41 and later, 36+ min)",
+            "finding": "Every subsequent exec call, including trivial `true`/`echo ok`, failed with 'exec request failed on channel 0' \u2014 i.e. sshd could not fork a new session. No dmesg, free -h, systemctl status, or curl output was ever captured after the hog was launched. The node did not recover within the observed window."
+          },
+          {
+            "source": "executor structured report",
+            "finding": "Executor self-reported status=blocked and explicitly could not confirm whether the OOM killer ever reaped the hog or whether inventory-api survived \u2014 this is an acknowledged evidence gap, not a claimed success."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "With 0 swap and only ~999M RAM, the hog's allocation rate (~200MB/s, no throttling, no cgroup cap) drove the system to near-zero free memory faster than the kernel's OOM killer / reclaim path could act, so the whole node (including sshd's ability to fork new sessions) was starved before or concurrently with any OOM kill \u2014 a classic OOM livelock/thrash scenario that swapless small-memory VMs are especially prone to.",
+            "confidence": "high"
+          },
+          {
+            "cause": "OOMScoreAdjust=-1000 only biases *which* process the OOM killer picks once it runs; it does not reserve memory or guarantee sshd/exec stays responsive during the approach to exhaustion. Protecting only inventory-api, with no headroom (e.g. vm.min_free_kbytes) or protection for sshd itself, left the exec transport as collateral damage even if the OOM killer eventually behaved correctly and killed the hog.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "The hog was launched as a raw nohup'd background process inside the SSH exec session rather than in its own systemd/cgroup scope. This is unlikely to be the direct cause of the fork failures, but it does mean there was no independent process boundary or memory accounting/limit on the hog, making the growth effectively unbounded and fast.",
+            "confidence": "low"
+          },
+          {
+            "cause": "The node may have hard-hung or required an out-of-band restart (not merely OOM-killed a process) \u2014 sustained 36+ minute unresponsiveness to even trivial commands is more consistent with the whole VM being wedged than with a single reaped process. This cannot be confirmed or ruled out from the available evidence since no console/serial access, dmesg, or restart evidence was captured.",
+            "confidence": "medium"
+          }
+        ],
+        "next_attempt_guidance": [
+          "Provision the fresh node with some swap (even a modest 256\u2013512M swapfile) so the kernel has headroom and time to invoke the OOM killer before total exhaustion makes forking new processes (including new SSH sessions) impossible.",
+          "Throttle or cap the memory hog instead of letting it free-run: launch it under its own cgroup/systemd scope with a MemoryMax slightly below total RAM, or slow its allocation rate, so the OOM killer has a clear, bounded target to act on and the demo is reproducible rather than racing the whole system into collapse.",
+          "Before triggering the hog, start a background `dmesg -w` (or `journalctl -kf`) redirected to a local file with output flushed incrementally, so OOM-killer evidence is captured on disk even if the exec channel dies afterward \u2014 don't rely on a post-event exec call to fetch it.",
+          "Consider also lowering vm.min_free_kbytes or otherwise reserving memory headroom, and/or setting a (less extreme) oom_score_adj for sshd, so the exec/SSH transport stays responsive as memory pressure builds and doesn't become the first casualty.",
+          "Launch the hog as its own systemd-managed transient unit (systemd-run) rather than a bare nohup'd background shell process, so its lifecycle, memory accounting, and cgroup are independently observable and controllable.",
+          "If the node again becomes unresponsive to exec for more than a couple of minutes, treat that as a signal the box may need a full restart rather than continued polling \u2014 plan for and document the mandatory per-node restart/recovery evidence step as a first-class part of the run, not a fallback only reached on failure.",
+          "Since this postmortem had no cluster access, the fresh attempt should independently re-verify each claim the prior run made (systemd unit active, oom_score_adj=-1000 live, /health 200 before and after) rather than assuming the old node's partial results still apply."
+        ],
+        "summary": "The executor correctly configured inventory-api as a systemd-managed, OOM-protected service (OOMScoreAdjust=-1000, verified live, serving /health) and launched an unprotected memory-hog with the intended default oom_score_adj=0. However, almost immediately after the hog started ballooning memory (~200MB/s, no cap, no swap on a 999M-RAM box), every subsequent exec call failed at the SSH transport level ('exec request failed on channel 0') and the node never recovered in 36+ minutes of polling. As a result, the core deliverable \u2014 evidence that the kernel OOM-killer reaped the hog while inventory-api kept serving \u2014 was never captured, and the mandatory restart/recovery evidence step was never reached. The run is correctly marked blocked; there is no evidence of success or failure of the actual OOM-protection mechanism, only that the node became unresponsive."
+      }
+    }
+  ]
+}

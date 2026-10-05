@@ -1,0 +1,99 @@
+{
+  "status": "completed",
+  "summary": "Configured a persistent firewalld host firewall on node1 (AlmaLinux 9): SSH open to all, TCP/9000 accepted only from node2 (10.100.100.11) via a high-priority rich rule, and TCP/9000 rejected from everyone else (including node3) via a lower-priority generic reject rule. Fixed an initial ordering bug where firewalld's default deny-before-allow chain evaluation would have blocked node2 too, by assigning explicit rich-rule priorities (-100 accept, 100 reject) so the node2 accept rule is placed in the pre-chain evaluated before the generic reject in the post-chain. Verified live behavior with an actual TCP listener on port 9000: node2 gets HTTP 200, node3 gets connection refused, SSH from both reaches the auth stage. Then performed the mandatory one-at-a-time restart protocol on node1, node2, and node3: captured boot_id/uptime baselines, triggered systemctl reboot via a detached background command so the ack returned before disconnect, polled until each node was reachable again, confirmed boot_id changed and uptime reset to a few seconds, and re-verified firewalld state/rules and actual allow/reject connectivity behavior after each node's restart.",
+  "actions_performed": [
+    "Inspected node1 OS/firewall state and cluster host IPs",
+    "Added and reloaded firewalld rich rules: allow ssh (pre-existing), accept tcp/9000 from node2 IP, reject tcp/9000 generally",
+    "Diagnosed firewalld deny-before-allow chain ordering issue via nft chain listing",
+    "Corrected rule priorities (-100 accept, 100 reject) so node2 accept evaluates before generic reject",
+    "Verified rules persisted via --permanent and firewall-cmd --list-all",
+    "Started test HTTP listener on node1:9000 and validated connectivity from node2 (allowed) and node3 (rejected), and SSH reachability from both",
+    "Captured boot_id/uptime baseline on node1, node2, node3",
+    "Restarted node1 via detached systemctl reboot, polled until reachable, confirmed new boot_id and low uptime",
+    "Re-verified firewalld rule persistence and live accept/reject behavior on node1 post-restart",
+    "Repeated capture/restart/poll/verify cycle for node2 (verified it could still reach node1:9000)",
+    "Repeated capture/restart/poll/verify cycle for node3 (verified it was still rejected on 9000 and SSH still reachable)",
+    "Cleaned up temporary test listener and log files on node1"
+  ],
+  "evidence": [
+    {
+      "requirement": "SSH allowed from any address on node1",
+      "command_ids": [
+        "cmd-111ff621759b4393",
+        "cmd-d886e20712a54749",
+        "cmd-a1dae38a50134251"
+      ],
+      "summary": "firewalld public zone includes ssh service by default; SSH connections from node2 and node3 reach the publickey auth stage (not blocked at TCP level), confirmed pre- and post-restart"
+    },
+    {
+      "requirement": "TCP 9000 allowed only from node2",
+      "command_ids": [
+        "cmd-c01ae5a4a7ed44c9",
+        "cmd-a7141473a25e4160",
+        "cmd-e66ead8d8cec4945",
+        "cmd-6c74584691a74bff",
+        "cmd-2e7acd58aa144d93",
+        "cmd-d886e20712a54749",
+        "cmd-0107036bf2034d78",
+        "cmd-8d1cd4ce33b74208"
+      ],
+      "summary": "Diagnosed and fixed firewalld chain ordering with explicit rich-rule priorities so node2's accept rule (filter_IN_public_pre) evaluates before the generic reject (filter_IN_public_post); live curl test from node2 to node1:9000 returns HTTP 200 both before and after node1/node2 restarts"
+    },
+    {
+      "requirement": "TCP 9000 rejected from node3 and everywhere else",
+      "command_ids": [
+        "cmd-e9cf686f305e49f2",
+        "cmd-3ed83fae42ca413a",
+        "cmd-a1dae38a50134251"
+      ],
+      "summary": "curl from node3 to node1:9000 returns 'Connection refused' (TCP reject) both before and after restarts of node1 and node3"
+    },
+    {
+      "requirement": "Firewall configuration is persistent (survives reboot)",
+      "command_ids": [
+        "cmd-b6ca2bc62d6b497c",
+        "cmd-05ba649be3a44021",
+        "cmd-c3dad666c4134fa2"
+      ],
+      "summary": "Rules added with --permanent, confirmed present in firewall-cmd --list-all before restart, and confirmed still present with identical priorities after node1's reboot"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-102ad427018b4786",
+        "cmd-17ec4a0bc66b4897",
+        "cmd-d3f62bf635e44afe",
+        "cmd-3159fd352fba4fde",
+        "cmd-c3dad666c4134fa2",
+        "cmd-2dcfdbd2a5dc4d14",
+        "cmd-0107036bf2034d78",
+        "cmd-3ed83fae42ca413a"
+      ],
+      "summary": "Baseline boot_id d6298ced captured; reboot triggered and acknowledged; node unreachable during reboot; post-reboot boot_id 535ebb5b with uptime 2.8s proves restart; firewalld active/rules intact and live accept/reject behavior confirmed via new listener test"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-1b8f3508176d41a1",
+        "cmd-e8be0776d2e84b81",
+        "cmd-3505d8b6fc864e2e",
+        "cmd-215329a4f4e7430c",
+        "cmd-f9cb5bfb074c47a1",
+        "cmd-8d1cd4ce33b74208"
+      ],
+      "summary": "Baseline boot_id 5fb1b173 captured; reboot triggered; node unreachable during reboot; post-reboot boot_id f0e58231 with uptime 3.5s proves restart; node2 successfully reaches node1:9000 post-restart confirming networking/service recovery"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-1243be5506bb4df7",
+        "cmd-b5b63002bb2a4982",
+        "cmd-fb3c5e6f8e8e4a5d",
+        "cmd-3d9bc3004ece452e",
+        "cmd-1e3ba1580f7e4730",
+        "cmd-a1dae38a50134251"
+      ],
+      "summary": "Baseline boot_id c2ffc729 captured; reboot triggered; node unreachable during reboot; post-reboot boot_id 45476c58 with uptime 3.4s proves restart; post-restart curl to node1:9000 still rejected and SSH still reaches auth stage, confirming node3's networking recovered and firewall policy remains correctly enforced"
+    }
+  ]
+}

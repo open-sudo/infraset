@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "source-of-truth",
+      "requirement": "Treat /etc/inventory/app.conf on node1 as the source of truth for the inventory application's configuration",
+      "status": "satisfied",
+      "summary": "Executor created /etc/inventory/app.conf on node1 with realistic config content and used it consistently as the origin for all subsequent sync operations.",
+      "evidence_ids": [
+        "cmd-632e48203a1b4b1e"
+      ]
+    },
+    {
+      "id": "sync-node2-copy",
+      "requirement": "Keep the copy of app.conf on node2 synchronized with node1",
+      "status": "satisfied",
+      "summary": "An SSH-key-authenticated rsync script was installed on node2 (/usr/local/sbin/sync-inventory-conf.sh) driven by a cron job, and manual/automated runs both produced byte-identical copies on node2 confirmed via diff/cmp and cat comparisons at multiple points, including after both nodes were rebooted.",
+      "evidence_ids": [
+        "cmd-e1439fed04e04211",
+        "cmd-c5f6a4c7ece34e88",
+        "cmd-b4f2c16464f04f3b",
+        "cmd-b342b64ebfcb46b7",
+        "cmd-7ff0462fa24041a9"
+      ]
+    },
+    {
+      "id": "sync-within-15min",
+      "requirement": "Pick up any change on node1 within 15 minutes",
+      "status": "satisfied",
+      "summary": "A 5-minute cron interval was installed (well under the 15-minute requirement). A real change (log_level=debug appended on node1 at 20:16:30) was directly observed propagating to node2 by the 20:20:02 cron-triggered run, confirmed via syslog entries and a subsequent diff showing MATCH \u2014 roughly a 4-minute detection latency, consistent with the 5-minute cron cadence and comfortably inside the 15-minute bound.",
+      "evidence_ids": [
+        "cmd-760102df3549489e",
+        "cmd-9ad2d90b4c4e435c",
+        "cmd-b4f2c16464f04f3b",
+        "cmd-1431b3ba310d460b"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the sync task are satisfied with direct, corroborating evidence: node1's app.conf was established as source of truth, a functioning rsync+cron mechanism keeps node2 synchronized, and a real edit was observed propagating well within the 15-minute window (cron runs every 5 minutes). The independent node-restart protocol was also executed cleanly for both nodes, with pre-restart baselines, boot-id changes, and full post-restart recovery of services and data (including a successful post-reboot sync) directly observed and cross-checked against the fixed lifecycle snapshots. The main blemish is operational hygiene: the executor left verification-only text (a duplicate log_level line, a post_reboot_marker, and a final_check timestamp) permanently embedded in the production app.conf on both nodes rather than using a disposable test file or reverting the additions.",
+  "limitations": [
+    "The lifecycle 'after_prepare' phase is only an alias of 'before_prepare' since prepare was disabled, so no independent preparer-vs-executor delta could be computed beyond the executor_comparison already reviewed.",
+    "One diagnostic sync-poll command (cmd-a1d624866bba4c5f) failed due to a proxy timeout rather than any real fault; it was read-only and did not affect the outcome, so it was not counted as a hygiene issue.",
+    "Confidence is capped slightly below 1 because sync latency was demonstrated at one data point (~4 minutes) rather than across many cycles, though the 5-minute cron cadence provides a structural guarantee within the 15-minute bound."
+  ],
+  "command_stats": {
+    "total": 37,
+    "successful": 30,
+    "failed": 6,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.5,
+    "summary": "Most state-changing commands were legitimate and necessary: regenerating node1's missing sshd host keys and enabling ssh (cmd-308c576ce04148ba) was a required prerequisite since sshd was pre-existing broken, and the sync script/cron installation (cmd-e1439fed04e04211, cmd-1431b3ba310d460b) directly implements the task. However, the executor used the live production source-of-truth file itself as its test vehicle and never cleaned it up: cmd-760102df3549489e appended a duplicate 'log_level=debug' line, cmd-394aebbfbc964fb4 appended 'post_reboot_marker=1', and cmd-a35d4b8c4b19479d appended 'final_check=<timestamp>'. None of these test markers were reverted \u2014 the final /etc/inventory/app.conf on both node1 and node2 (confirmed in cmd-7ff0462fa24041a9) permanently contains this leftover verification residue instead of clean application configuration. This is an unbounded mutation of the very file the task designates as authoritative and should have been cleaned up or performed against a disposable copy.",
+    "evidence_ids": [
+      "cmd-760102df3549489e",
+      "cmd-394aebbfbc964fb4",
+      "cmd-a35d4b8c4b19479d",
+      "cmd-7ff0462fa24041a9"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

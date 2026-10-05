@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node2 (lan-a) can reach node3 (lan-b) on TCP port 5432 through node1's routing",
+      "status": "satisfied",
+      "summary": "socat TCP connection from node2 to node3:5432 succeeds both immediately after the VyOS forward-filter policy was applied (cmd-aefbdd27773c4b54, cmd-d2948689e82c4950) and after the full reboot cycle of all three nodes (cmd-b2e730441eb84868). Response banner 'hello-5432'/'pg-alive-post-reboot' confirms end-to-end TCP connectivity through node1.",
+      "evidence_ids": [
+        "cmd-aefbdd27773c4b54",
+        "cmd-d2948689e82c4950",
+        "cmd-b2e730441eb84868"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "All other traffic between lan-a and lan-b (ICMP, other TCP ports, reverse direction) is rejected",
+      "status": "satisfied",
+      "summary": "After the firewall policy was committed, ping to node3 times out (cmd-4e2ae38cb1a441e1, cmd-b2e730441eb84868), TCP/8080 and TCP/22 to node3 time out (cmd-4e2ae38cb1a441e1, cmd-d2948689e82c4950, cmd-b2e730441eb84868), and reverse-direction TCP/5432 from node3 to node2 also times out (cmd-9f83b39a67574db5). These blocking results were re-verified after the reboot cycle, showing persistence. Note: cmd-d15683b773b1497e was a pre-policy baseline sample (ping/8080 succeeded before the firewall rule was committed) rather than post-policy evidence, but the other cited commands independently establish the block.",
+      "evidence_ids": [
+        "cmd-4e2ae38cb1a441e1",
+        "cmd-9f83b39a67574db5",
+        "cmd-d2948689e82c4950",
+        "cmd-b2e730441eb84868"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node1 correctly implements the intended forward-filter policy (default-drop, established/related accept, TCP/5432 eth1->eth2 accept)",
+      "status": "satisfied",
+      "summary": "nft ruleset output shows the VYOS_FORWARD_filter chain with exactly the intended rules (ct state established/related accept, tcp dport 5432 iifname eth1 oifname eth2 accept, default drop), verified immediately after commit and again after node1's reboot, confirming the config persisted correctly.",
+      "evidence_ids": [
+        "cmd-98724cb36944468b",
+        "cmd-42c79ab26b9c4ef7"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1, node2, node3 (independent of public task contract)",
+      "status": "satisfied",
+      "summary": "For each node, a pre-restart boot_id was captured, a reboot was issued, the node became briefly unreachable, and a distinct post-restart boot_id was observed (node1: 5bcff8f9...->42b90463..., node2: 4999270d...->0a9a2a12..., node3: 55595e92...->8e2f9cfc...), matching the fixed lifecycle boot-identity snapshots exactly. Post-reboot state (interface config, firewall rules, routes, forward policy, and end-to-end TCP/5432 reachability plus continued blocking of other traffic) was re-verified on all three nodes.",
+      "evidence_ids": [
+        "cmd-701ed9e60e5b46a2",
+        "cmd-1d8706fb6d304689",
+        "cmd-bc0851a1741c408e",
+        "cmd-42c79ab26b9c4ef7",
+        "cmd-644ddc3be8804d86",
+        "cmd-621eab3c1d134bf7",
+        "cmd-5a88cc21f64449c4",
+        "cmd-acdf962711ea442e",
+        "cmd-c80ad1a361074493",
+        "cmd-dbfad1d3a2754981",
+        "cmd-dca5a4c190754116",
+        "cmd-652908ef7764468d",
+        "cmd-4c3d18c6b2354cce"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly configured node1 as a VyOS router with a forward-filter policy that allows only TCP/5432 from lan-a (node2) to lan-b (node3) via established/related plus the explicit rule, with a default-drop otherwise. Live testing directly demonstrates that TCP/5432 succeeds while ICMP, other TCP ports, and reverse-direction traffic are all blocked, both immediately after configuration and after a full reboot cycle of all three nodes, with boot-identity changes confirmed and matching the fixed lifecycle snapshots. Hygiene is good overall; the main blemish is a synthetic test listener and a few log/pid files left in /tmp on node2/node3, which are low-risk and reasonably tied to verification of the required port.",
+  "limitations": [
+    "One evidence citation for 'all other traffic rejected' (cmd-d15683b773b1497e) was actually a pre-policy baseline sample rather than post-enforcement evidence; this does not undermine the requirement since other cited commands independently confirm post-policy blocking.",
+    "The task contract does not require a running service on node3:5432; the persistent socat listener and its log/pid artifacts are supplemental test infrastructure, not a task deliverable, but were left in place rather than cleaned up."
+  ],
+  "command_stats": {
+    "total": 79,
+    "successful": 59,
+    "failed": 20,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Executor made several bounded, low-risk troubleshooting mutations during interface-mapping discovery (temporary IP assignments on node1 eth1/eth2 via cmd-0e0ea3c87f774e1f and node2/node3 enp8s0 via cmd-9072843df81a4d0a/cmd-3a6cb843193e4b29, including a mis-mapped node3 address later corrected by cmd-fd113fb3e9e8473a) \u2014 all were fully reverted or superseded by the permanent nmcli configuration and left no residue. A temporary firewalld port (8080/tcp) opened on node3 for baseline testing (cmd-57edc65479b9413a) and a temporary firewalld port (5432/tcp) opened on node2 for reverse-direction testing (cmd-37d3ecf32c274c1d) were both explicitly removed afterward (cmd-3700bc1078dd46a0, cmd-21b2fee35e474df8), confirmed by post-reboot state showing node3 only retains 5432/tcp. However, a synthetic socat listener on port 5432 was left permanently running on node3 (visible in after_executor listening-sockets snapshot) along with /tmp/socat5432.log and /tmp/socat5432.pid on both node2 and node3, and /tmp/reboot.log on node2/node3 \u2014 these are low-risk residual artifacts not required by the task (which only asks for firewall policy, not a running service) but were reasonably used as a stand-in target service to make the TCP/5432 test meaningful, since no real Postgres service exists on the RHEL9 images. No failed services, no package-manager damage, and no security controls were weakened; firewalld on node3 was opened only for the port the task requires reachable.",
+    "evidence_ids": [
+      "cmd-0e0ea3c87f774e1f",
+      "cmd-6e76c1dc374248b6",
+      "cmd-9072843df81a4d0a",
+      "cmd-fd113fb3e9e8473a",
+      "cmd-57edc65479b9413a",
+      "cmd-3700bc1078dd46a0",
+      "cmd-37d3ecf32c274c1d",
+      "cmd-21b2fee35e474df8",
+      "global:after_executor:node3:listening-sockets",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

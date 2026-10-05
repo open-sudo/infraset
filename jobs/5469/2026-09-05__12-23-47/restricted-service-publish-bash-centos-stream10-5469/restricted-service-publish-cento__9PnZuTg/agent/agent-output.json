@@ -1,0 +1,88 @@
+{
+  "status": "completed",
+  "summary": "Published node2's private-network HTTP service (10.50.50.2:8080) on node1's (OPNsense) management address at TCP port 80, restricted to node3 as the only allowed source; verified refusal for other sources; restarted all three nodes one at a time with boot-identity proof and post-restart recovery verification.",
+  "actions_performed": [
+    "Discovered topology: node1 is OPNsense (FreeBSD), management/LAN address 10.100.215.10 shared with node2/node3 on 10.100.215.0/24; node1 vtnet1 and node2 enp8s0 form a second, unaddressed private link.",
+    "Assigned static IP 10.50.50.2/24 to node2's enp8s0 (private link to node1) via nmcli.",
+    "Added OPNsense opt1 interface on vtnet1 with static IP 10.50.50.1/24 and applied via configctl interface reconfigure opt1.",
+    "Deployed a persistent systemd-managed Python HTTP service on node2 bound to 10.50.50.2:8080, opened only to enp8s0 via a dedicated firewalld zone/port.",
+    "Edited /conf/config.xml on node1 (with backups) to: disable webgui anti-lockout (needed to allow rdr on port 80), add a destination-NAT (rdr) rule forwarding lan:80 (self) -> 10.50.50.2:8080 restricted to source 10.100.215.12 (node3), add an explicit pass rule for node3 ahead of an explicit reject (block return) rule for all other sources to lan:80, and add hybrid-mode outbound NAT/masquerade on opt1 so return traffic from node2 routes back through node1 (fixing an asymmetric-routing timeout discovered during testing).",
+    "Applied via configctl interface reconfigure / configctl filter reload; verified pf rule/NAT ordering via pfctl.",
+    "Verified end-to-end: node3 curl to http://10.100.215.10/ returns 200 with node2's content; node2 curl to the same URL is refused (TCP RST / connection refused).",
+    "Captured pre-restart baseline (FreeBSD kern.boottime for node1, /proc/sys/kernel/random/boot_id for node2/node3) plus service/health evidence.",
+    "Sequentially rebooted node1 (FreeBSD /sbin/reboot), then node2, then node3 (systemctl reboot), each backgrounded so the ack returned before disconnection; polled each until exec was available again.",
+    "Confirmed changed boot identity for each node after restart, and re-verified config persistence, service health, and the node3-allowed/node2-refused access pattern after each restart, waiting for each node to fully recover before moving to the next."
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline: node2 HTTP service healthy on private link before any changes",
+      "command_ids": [
+        "cmd-b9a8b0da872141cf",
+        "cmd-0d2feda749b44b69",
+        "cmd-a798904b20704c32",
+        "cmd-571eef71f3e74147",
+        "cmd-353aa0b98bcd4dd3",
+        "cmd-b0b454bce8844353",
+        "cmd-c96de5d62bc945a1"
+      ],
+      "summary": "Showed node2 initially had no listener on 8080, then private IP 10.50.50.2 assigned, systemd HTTP service created/started and confirmed listening, firewalld opened, and node1 curl to 10.50.50.2:8080 returned the service content."
+    },
+    {
+      "requirement": "Publish node2:8080 on node1's management address port 80, reachable by node3",
+      "command_ids": [
+        "cmd-0e1e92f336c74626",
+        "cmd-3dbcfa35b76642a3",
+        "cmd-1a86bf480e3142c8",
+        "cmd-4b2b75818a584aa4",
+        "cmd-a5e3357a78eb44c9",
+        "cmd-d4e12fa34fa3401d",
+        "cmd-0c88ac43305749a8"
+      ],
+      "summary": "opt1 interface configured, NAT rdr rule for lan:80(self)->10.50.50.2:8080 and hybrid outbound masquerade added; first test from node3 timed out (asymmetric routing), after masquerade fix node3's curl to http://10.100.215.10/ succeeded with HTTP 200 and node2's content."
+    },
+    {
+      "requirement": "Same published port refused for every other source address",
+      "command_ids": [
+        "cmd-847eff2c9d884cf2",
+        "cmd-3722475cb86b48df",
+        "cmd-7c5d0938ac1c4a9d",
+        "cmd-46177e5b0290479a"
+      ],
+      "summary": "Explicit reject (block return) filter rule added ahead of default-allow, positioned after the node3-only pass rule; pfctl -s rules confirms ordering; node2 curl to node1:80 fails with 'Connection refused' both before and after the masquerade fix."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, boot-identity change, and recovery",
+      "command_ids": [
+        "cmd-136b2b7728b04549",
+        "cmd-bba4983cd0c64c78",
+        "cmd-0dd0f972fd4a4ab8",
+        "cmd-c94da909af824f7a",
+        "cmd-5766e55ee07d43fc",
+        "cmd-471a6376d2b7482a"
+      ],
+      "summary": "Baseline kern.boottime=1788627138 with NAT/filter rules and interfaces confirmed healthy; reboot acknowledged then node unreachable; post-reboot kern.boottime=1788627515 (changed); NAT/filter rules and node3 connectivity (HTTP 200) confirmed recovered."
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, boot-identity change, and recovery",
+      "command_ids": [
+        "cmd-9f4691f491b04804",
+        "cmd-e7b4798d7c9344a3",
+        "cmd-5d119b5c8a6943ad",
+        "cmd-cef73c5638de4552",
+        "cmd-c54b74401cca497a"
+      ],
+      "summary": "Baseline boot_id=deef5424... with service active/listening; reboot acknowledged; post-reboot boot_id=defa9202... (changed); service active, IP/firewalld zone restored, and node3 end-to-end request returned HTTP 200 afterward."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, boot-identity change, and recovery",
+      "command_ids": [
+        "cmd-9a9d0303881c45cd",
+        "cmd-51f1b6ba20904d34",
+        "cmd-32bdb7e2a4424eac",
+        "cmd-2cb6a54c21ad44eb",
+        "cmd-6710a5854da4481f"
+      ],
+      "summary": "Baseline boot_id=4d340bf4... with working request to node1:80 (HTTP 200); reboot acknowledged; post-reboot boot_id=c9e8a47f... (changed); node3's access to the published service confirmed still working (HTTP 200) and node2's refusal still enforced (curl exit 7) after all three restarts."
+    }
+  ]
+}

@@ -1,0 +1,329 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 24,
+    "successful": 16,
+    "failed": 8,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Compatible repaired utility",
+      "command_ids": [
+        "cmd-fc653ebd2714404d",
+        "cmd-2f961f2b7c294533"
+      ],
+      "summary": "The repaired script compiles under Python 2.4 and retained the same checksum after restart."
+    },
+    {
+      "requirement": "Preserve reservations, replay successful IDs, validate quantity, and reject insufficient stock",
+      "command_ids": [
+        "cmd-04d6ce3f301341c3"
+      ],
+      "summary": "Replay returned the prior quantity without decrementing; zero and excessive quantities failed; production data remained unchanged."
+    },
+    {
+      "requirement": "Competing requests keep remaining stock nonnegative",
+      "command_ids": [
+        "cmd-c6811aaa19c14498"
+      ],
+      "summary": "Of two simultaneous quantity-4 requests against stock 5, one succeeded and one failed; remaining stock was 1 with zero negative rows."
+    },
+    {
+      "requirement": "Successful request ID decrements exactly once",
+      "command_ids": [
+        "cmd-f9e8445450b0461d"
+      ],
+      "summary": "Two simultaneous calls using the same ID both returned the same result, created one reservation row, and reduced stock from 5 to 3 once."
+    },
+    {
+      "requirement": "Bounded lock waits",
+      "command_ids": [
+        "cmd-04ef0928575a4873"
+      ],
+      "summary": "Under an independently held write lock, the request exited with code 75 after five seconds and made no database changes."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-a0115cebcaed459e",
+        "cmd-859f506793964e36",
+        "cmd-21be616ddf4a4926",
+        "cmd-2f961f2b7c294533"
+      ],
+      "summary": "Healthy baseline boot ID 4244d945-3e4d-4348-8000-000000000000 was captured, restart was acknowledged, boot ID changed to dc6bec76-a7d4-4be4-8000-000000000000, and post-restart compilation, database integrity, persisted data, and live replay all passed."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-b6073c3efefd48de",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:09:49.276098+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 304,
+      "command": "cd /srv/legacy2/sqlite-lock-contention && pwd && uname -a && cat /etc/redhat-release && ls -l bin/reserve.py && sed -n '1,240p' bin/reserve.py && find . -maxdepth 3 -type f -print",
+      "stdout": "/srv/legacy2/sqlite-lock-contention\nLinux centos5 2.6.18-398.el5 #1 SMP Tue Sep 16 20:50:52 EDT 2014 x86_64 x86_64 x86_64 GNU/Linux\nCentOS release 5.11 (Final)\n-rwxr-xr-x 1 root root 477 Nov 14  2023 bin/reserve.py\n#!/usr/bin/python\nimport os, sys, sqlite3, time\nbase = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\ndb = sqlite3.connect(os.path.join(base, 'stock.db'), timeout=0)\nremaining = db.execute('SELECT remaining FROM stock WHERE id=1').fetchone()[0]\nquantity = int(sys.argv[2])\ntime.sleep(1)\ndb.execute('UPDATE stock SET remaining=? WHERE id=1', (remaining-quantity,))\ndb.execute('INSERT INTO reservations VALUES (?,?)', (sys.argv[1], quantity))\ndb.commit()\ndb.close()\n./stock.db\n./bin/reserve.py\n./schema.sql\n"
+    },
+    {
+      "command_id": "cmd-5802d2bbb0094679",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:09:53.932955+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 221,
+      "command": "cd /srv/legacy2/sqlite-lock-contention && sed -n '1,240p' schema.sql && /usr/bin/python -V 2>&1 && /usr/bin/python -c \"import sqlite3; print(sqlite3.sqlite_version)\" && /usr/bin/python - <<'PY'\nimport sqlite3\nc=sqlite3.connect('stock.db')\nprint('journal_mode=%s' % c.execute('PRAGMA journal_mode').fetchone()[0])\nprint('busy_timeout=%s' % c.execute('PRAGMA busy_timeout').fetchone()[0])\nprint('stock=%r' % (c.execute('SELECT * FROM stock').fetchall(),))\nprint('reservations=%r' % (c.execute('SELECT * FROM reservations ORDER BY request_id').fetchall(),))\nfor row in c.execute(\"SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','index') ORDER BY type,name\"):\n print(row)\nc.close()\nPY",
+      "stdout": "CREATE TABLE stock (id INTEGER PRIMARY KEY, remaining INTEGER NOT NULL);\nINSERT INTO stock VALUES (1,5);\nCREATE TABLE reservations (request_id TEXT PRIMARY KEY, quantity INTEGER NOT NULL);\nINSERT INTO reservations VALUES ('previous-request',2);\nPython 2.4.3\n",
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in ?\nImportError: No module named sqlite3\n"
+    },
+    {
+      "command_id": "cmd-3b1d2dc18b174431",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:09:58.250112+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 234,
+      "command": "command -v python python2 python2.7 sqlite3 2>/dev/null || true\nls -l /usr/bin/python* /usr/local/bin/python* 2>/dev/null || true\nrpm -qa | grep -E '^(python|sqlite)' | sort\nsqlite3 --version 2>/dev/null || true\ncd /srv/legacy2/sqlite-lock-contention && sqlite3 stock.db \".mode list\" \"PRAGMA journal_mode;\" \"SELECT 'stock',id,remaining FROM stock;\" \"SELECT 'reservation',request_id,quantity FROM reservations ORDER BY request_id;\" \".schema\" 2>/dev/null || true",
+      "stdout": "/usr/bin/python\n/usr/bin/python2\n/usr/bin/sqlite3\n-rwxr-xr-x 2 root root 4736 Jan  9  2013 /usr/bin/python\nlrwxrwxrwx 1 root root    6 Sep 27 15:26 /usr/bin/python2 -> python\n-rwxr-xr-x 2 root root 4736 Jan  9  2013 /usr/bin/python2.4\npython-2.4.3-56.el5\npython-elementtree-1.2.6-5\npython-iniparse-0.2.3-6.el5\npython-libs-2.4.3-56.el5\npython-sqlite-1.1.7-1.2.1\npython-urlgrabber-3.1.0-6.el5\nsqlite-3.3.6-7\nsqlite-3.3.6-7\n"
+    },
+    {
+      "command_id": "cmd-836f96ffec774992",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:10:02.314912+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 180,
+      "command": "cd /srv/legacy2/sqlite-lock-contention\n/usr/bin/sqlite3 stock.db '.schema'\n/usr/bin/sqlite3 stock.db \"SELECT 'stock',id,remaining FROM stock; SELECT 'reservation',request_id,quantity FROM reservations ORDER BY request_id;\"\n/usr/bin/python - <<'PY'\ntry:\n import sqlite\n print('sqlite module=%r version=%r' % (sqlite, getattr(sqlite, '__version__', None)))\n print('connect=%r' % sqlite.connect)\nexcept Exception, e:\n print('sqlite import failed: %r' % e)\nPY",
+      "stdout": "CREATE TABLE reservations (request_id TEXT PRIMARY KEY, quantity INTEGER NOT NULL);\nCREATE TABLE stock (id INTEGER PRIMARY KEY, remaining INTEGER NOT NULL);\nstock|1|5\nreservation|previous-request|2\nsqlite module=<module 'sqlite' from '/usr/lib64/python2.4/site-packages/sqlite/__init__.pyc'> version=None\nconnect=<function connect at 0x2abca43a15f0>\n"
+    },
+    {
+      "command_id": "cmd-23ab60aa4a2549b0",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:10:12.815623+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 240,
+      "command": "cd /srv/legacy2/sqlite-lock-contention\n/usr/bin/python - <<'PY'\nimport sqlite, time\nprint('connect_doc=%r' % sqlite.connect.__doc__)\ndb = sqlite.connect('stock.db', timeout=1.0)\nprint('isolation_level=%r' % getattr(db, 'isolation_level', 'missing'))\ntry:\n db.execute('BEGIN IMMEDIATE')\n print('begin_immediate=ok remaining=%s' % db.execute('SELECT remaining FROM stock WHERE id=1').fetchone()[0])\n db.rollback()\n print('rollback=ok')\nfinally:\n db.close()\nPY",
+      "stdout": "connect_doc=None\nisolation_level='missing'\n",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 6, in ?\n  File \"/usr/lib64/python2.4/site-packages/sqlite/main.py\", line 580, in __getattr__\n    raise AttributeError, key\nAttributeError: execute\n"
+    },
+    {
+      "command_id": "cmd-d3678b02f4c9431f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:10:16.132079+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 198,
+      "command": "cd /srv/legacy2/sqlite-lock-contention\n/usr/bin/python - <<'PY'\nimport sqlite\ndb = sqlite.connect('stock.db', timeout=1.0)\ncur = db.cursor()\ntry:\n cur.execute('BEGIN IMMEDIATE')\n cur.execute('SELECT remaining FROM stock WHERE id=1')\n print('begin_immediate=ok remaining=%s' % cur.fetchone()[0])\n db.rollback()\n print('rollback=ok')\nfinally:\n db.close()\nPY",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 5, in ?\n  File \"/usr/lib64/python2.4/site-packages/sqlite/main.py\", line 244, in execute\n    self.rs = self.con.db.execute(SQL)\n_sqlite.DatabaseError: attempt to write a readonly database\n"
+    },
+    {
+      "command_id": "cmd-01bbc15e324247c7",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:10:19.324150+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 196,
+      "command": "id\nls -ld /srv/legacy2/sqlite-lock-contention /srv/legacy2/sqlite-lock-contention/bin\nls -l /srv/legacy2/sqlite-lock-contention/stock.db\nmount | grep ' /srv ' || true\ngetenforce 2>/dev/null || true\nls -lZ /srv/legacy2/sqlite-lock-contention/stock.db 2>/dev/null || true",
+      "stdout": "uid=500(antrieb) gid=500(antrieb) groups=500(antrieb) context=user_u:system_r:unconfined_t\ndrwxr-xr-x 3 root root 4096 Oct  3 02:09 /srv/legacy2/sqlite-lock-contention\ndrwxr-xr-x 2 root root 4096 Oct  3 02:09 /srv/legacy2/sqlite-lock-contention/bin\n-rw-r--r-- 1 root root 4096 Nov 14  2023 /srv/legacy2/sqlite-lock-contention/stock.db\n-rw-r--r--  root root user_u:object_r:var_t            /srv/legacy2/sqlite-lock-contention/stock.db\n"
+    },
+    {
+      "command_id": "cmd-da4b5582548f4f65",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:10:21.418389+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 193,
+      "command": "sudo -n true && echo sudo-ok",
+      "stdout": "sudo-ok\n"
+    },
+    {
+      "command_id": "cmd-2a2ce48e3fee4f21",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:10:34.751558+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 238,
+      "command": "cd /srv/legacy2/sqlite-lock-contention\nsudo -n /usr/bin/python - <<'PY'\nimport sqlite\ndb = sqlite.connect('stock.db', timeout=1.0)\ncur = db.cursor()\ntry:\n cur.execute('BEGIN IMMEDIATE')\n cur.execute('SELECT remaining FROM stock WHERE id=1')\n print('begin_immediate=ok remaining=%s' % cur.fetchone()[0])\n db.rollback()\n print('rollback=ok')\nfinally:\n db.close()\nPY",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 5, in ?\n  File \"/usr/lib64/python2.4/site-packages/sqlite/main.py\", line 244, in execute\n    self.rs = self.con.db.execute(SQL)\n_sqlite.DatabaseError: cannot start a transaction within a transaction\n"
+    },
+    {
+      "command_id": "cmd-eaab19a3e6224b47",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:10:37.381801+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 191,
+      "command": "sed -n '1,220p' /usr/lib64/python2.4/site-packages/sqlite/main.py\nsed -n '220,680p' /usr/lib64/python2.4/site-packages/sqlite/main.py",
+      "stdout": "from __future__ import nested_scopes\nimport _sqlite\n\nimport copy, new, sys, time, weakref\nfrom types import *\n\ntry:\n    from mx import DateTime\n    have_datetime = 1\nexcept ImportError:\n    have_datetime = 0\n\nif have_datetime:\n    # Make the required Date/Time constructor visable in the PySQLite module.\n    Date = DateTime.Date\n    Time = DateTime.Time\n    Timestamp = DateTime.Timestamp\n    DateFromTicks = DateTime.DateFromTicks\n    TimeFromTicks = DateTime.TimeFromTicks\n    TimestampFromTicks = DateTime.TimestampFromTicks\n\n    # And also the DateTime types\n    DateTimeType = DateTime.DateTimeType\n    DateTimeDeltaType = DateTime.DateTimeDeltaType\n\nclass DBAPITypeObject:\n    def __init__(self,*values):\n        self.values = values\n\n    def __cmp__(self,other):\n        if other in self.values:\n            return 0\n        if other < self.values:\n            return 1\n        else:\n            return -1\n\ndef _quote(value):\n    \"\"\"_quote(value) -> string\n\n    This function transforms the Python value into a string suitable to send to\n    the SQLite database in a SQL statement.  This function is automatically\n    applied to all parameters sent with an execute() call.  Because of this a\n    SQL statement string in an execute() call should only use '%s' [or\n    '%(name)s'] for variable substitution without any quoting.\"\"\"\n\n    if value is None:\n        return 'NULL'\n    elif type(value) in (IntType, LongType, FloatType):\n        return value\n    elif isinstance(value, StringType):\n        return \"'%s'\" % value.replace(\"'\", \"''\")\n    elif hasattr(value, '__quote__'):\n        return value.__quote__()\n    elif hasattr(value, '_quote'):\n        return value._quote()\n    elif have_datetime and type(value) in \\\n            (DateTime.DateTimeType, DateTime.DateTimeDeltaType):\n        return \"'%s'\" % value\n    else:\n        return repr(value)\n\ndef _quoteall(vdict):\n    \"\"\"_quoteall(vdict)->dict\n    Quotes all elements in a list or dictionary to make them suitable for\n    insertion in a SQL statement.\"\"\"\n\n    if type(vdict) is D\n...[TRUNCATED 12321 CHARACTERS]...\n               if doclose:\n                        cursor.close()\n                    else:\n                        cursor._reset()\n                except weakref.ReferenceError:\n                    pass\n\n    def _begin(self):\n        self.db.execute(\"BEGIN\")\n        self.inTransaction = 1\n\n    #\n    # PySQLite extensions:\n    #\n\n    def create_function(self, name, nargs, func):\n        self.db.create_function(name, nargs, func)\n\n    def create_aggregate(self, name, nargs, agg_class):\n        self.db.create_aggregate(name, nargs, agg_class)\n\n    #\n    # DB-API methods:\n    #\n\n    def commit(self):\n        self._checkNotClosed(\"commit\")\n        if self.autocommit:\n            # Ignore .commit(), according to the DB-API spec.\n            return\n\n        if self.inTransaction:\n            self.db.execute(\"COMMIT\")\n            self.inTransaction = 0\n\n    def rollback(self):\n        self._checkNotClosed(\"rollback\")\n        if self.autocommit:\n            raise _sqlite.ProgrammingError, \"Rollback failed - autocommit is on.\"\n\n        if self.inTransaction:\n            self.db.execute(\"ROLLBACK\")\n            self.inTransaction = 0\n\n    def close(self):\n        self._checkNotClosed(\"close\")\n\n        self.__closeCursors(1)\n\n        if self.inTransaction:\n            self.rollback()\n\n        if self.db:\n            self.db.close()\n        self.closed = 1\n\n    def cursor(self):\n        self._checkNotClosed(\"cursor\")\n        return Cursor(self, self.rowclass)\n\n    #\n    # Optional DB-API extensions from PEP 0249:\n    #\n\n    def __getattr__(self, key):\n        if key in self.__dict__.keys():\n            return self.__dict__[key]\n        elif key in ('IntegrityError', 'InterfaceError', 'InternalError',\n                     'NotSupportedError', 'OperationalError',\n                     'ProgrammingError', 'Warning'):\n            return getattr(_sqlite, key)\n        else:\n            raise AttributeError, key\n\n    #\n    # MySQLdb compatibility stuff\n    #\n\n    def insert_id(self):\n        return self.db.sqlite_last_insert_rowid()\n"
+    },
+    {
+      "command_id": "cmd-fc653ebd2714404d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:11:06.728508+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 223,
+      "command": "cd /srv/legacy2/sqlite-lock-contention\nsudo -n cp -p bin/reserve.py /tmp/reserve.py.pre-repair\nsudo -n tee bin/reserve.py >/dev/null <<'PY'\n#!/usr/bin/python\nimport os\nimport sys\nimport time\nimport sqlite\n\nLOCK_WAIT_SECONDS = 5.0\nLOCK_RETRY_SECONDS = 0.05\n\n\ndef usage():\n    sys.stderr.write('usage: reserve.py REQUEST_ID POSITIVE_QUANTITY\\n')\n\n\ndef begin_immediate(cursor):\n    deadline = time.time() + LOCK_WAIT_SECONDS\n    while 1:\n        try:\n            cursor.execute('BEGIN IMMEDIATE')\n            return\n        except sqlite.DatabaseError, exc:\n            message = str(exc).lower()\n            if ('locked' not in message and 'busy' not in message) or time.time() >= deadline:\n                raise\n            time.sleep(LOCK_RETRY_SECONDS)\n\n\ndef main(argv):\n    if len(argv) != 3 or not argv[1]:\n        usage()\n        return 2\n\n    request_id = argv[1]\n    try:\n        quantity = int(argv[2])\n    except ValueError:\n        usage()\n        return 2\n\n    if quantity <= 0:\n        sys.stderr.write('quantity must be positive\\n')\n        return 2\n\n    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n    db = sqlite.connect(os.path.join(base, 'stock.db'), autocommit=1)\n    cursor = db.cursor()\n    transaction = 0\n\n    try:\n        begin_immediate(cursor)\n        transaction = 1\n\n        cursor.execute('SELECT quantity FROM reservations WHERE request_id=%s',\n                       (request_id,))\n        existing = cursor.fetchone()\n        if existing is not None:\n            reserved_quantity = existing[0]\n            cursor.execute('COMMIT')\n            transaction = 0\n            db.close()\n            sys.stdout.write('reserved %s %d\\n' %\n                             (request_id, reserved_quantity))\n            return 0\n\n        cursor.execute('SELECT remaining FROM stock WHERE id=1')\n        stock = cursor.fetchone()\n        if stock is None:\n            raise sqlite.DatabaseError('stock row id=1 is missing')\n\n        remaining = stock[0]\n        if remaining < quantity:\n            cursor.execute('ROLLBACK')\n            transaction = 0\n            db.close()\n            sys.stderr.write('insufficient stock: requested %d, remaining %d\\n' %\n                             (quantity, remaining))\n            return 1\n\n        cursor.execute('UPDATE stock SET remaining=remaining-%s '\n                       'WHERE id=1 AND remaining>=%s', (quantity, quantity))\n        if cursor.rowcount != 1:\n            raise sqlite.DatabaseError('stock update did not affect one row')\n        cursor.execute('INSERT INTO reservations (request_id, quantity) '\n                       'VALUES (%s, %s)', (request_id, quantity))\n        cursor.execute('COMMIT')\n        transaction = 0\n        db.close()\n        sys.stdout.write('reserved %s %d\\n' % (request_id, quantity))\n        return 0\n    except sqlite.DatabaseError, exc:\n        if transaction:\n            try:\n                cursor.execute('ROLLBACK')\n            except sqlite.DatabaseError:\n                pass\n        db.close()\n        message = str(exc)\n        if 'locked' in message.lower() or 'busy' in message.lower():\n            sys.stderr.write('database busy: lock wait exceeded %.1f seconds\\n' %\n                             LOCK_WAIT_SECONDS)\n            return 75\n        sys.stderr.write('database error: %s\\n' % message)\n        return 1\n\n\nif __name__ == '__main__':\n    sys.exit(main(sys.argv))\nPY\nsudo -n chmod 0755 bin/reserve.py\nsudo -n /usr/bin/python -m py_compile bin/reserve.py\nls -l bin/reserve.py\nsed -n '1,240p' bin/reserve.py",
+      "stdout": "-rwxr-xr-x 1 root root 3274 Oct  3 02:11 bin/reserve.py\n#!/usr/bin/python\nimport os\nimport sys\nimport time\nimport sqlite\n\nLOCK_WAIT_SECONDS = 5.0\nLOCK_RETRY_SECONDS = 0.05\n\n\ndef usage():\n    sys.stderr.write('usage: reserve.py REQUEST_ID POSITIVE_QUANTITY\\n')\n\n\ndef begin_immediate(cursor):\n    deadline = time.time() + LOCK_WAIT_SECONDS\n    while 1:\n        try:\n            cursor.execute('BEGIN IMMEDIATE')\n            return\n        except sqlite.DatabaseError, exc:\n            message = str(exc).lower()\n            if ('locked' not in message and 'busy' not in message) or time.time() >= deadline:\n                raise\n            time.sleep(LOCK_RETRY_SECONDS)\n\n\ndef main(argv):\n    if len(argv) != 3 or not argv[1]:\n        usage()\n        return 2\n\n    request_id = argv[1]\n    try:\n        quantity = int(argv[2])\n    except ValueError:\n        usage()\n        return 2\n\n    if quantity <= 0:\n        sys.stderr.write('quantity must be positive\\n')\n        return 2\n\n    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n    db = sqlite.connect(os.path.join(base, 'stock.db'), autocommit=1)\n    cursor = db.cursor()\n    transaction = 0\n\n    try:\n        begin_immediate(cursor)\n        transaction = 1\n\n        cursor.execute('SELECT quantity FROM reservations WHERE request_id=%s',\n                       (request_id,))\n        existing = cursor.fetchone()\n        if existing is not None:\n            reserved_quantity = existing[0]\n            cursor.execute('COMMIT')\n            transaction = 0\n            db.close()\n            sys.stdout.write('reserved %s %d\\n' %\n                             (request_id, reserved_quantity))\n            return 0\n\n        cursor.execute('SELECT remaining FROM stock WHERE id=1')\n        stock = cursor.fetchone()\n        if stock is None:\n            raise sqlite.DatabaseError('stock row id=1 is missing')\n\n        remaining = stock[0]\n        if remaining < quantity:\n            cursor.execute('ROLLBACK')\n            transaction = 0\n            db.close()\n            sys.stderr.write('insufficient stock: requested %d, remaining %d\\n' %\n                             (quantity, remaining))\n            return 1\n\n        cursor.execute('UPDATE stock SET remaining=remaining-%s '\n                       'WHERE id=1 AND remaining>=%s', (quantity, quantity))\n        if cursor.rowcount != 1:\n            raise sqlite.DatabaseError('stock update did not affect one row')\n        cursor.execute('INSERT INTO reservations (request_id, quantity) '\n                       'VALUES (%s, %s)', (request_id, quantity))\n        cursor.execute('COMMIT')\n        transaction = 0\n        db.close()\n        sys.stdout.write('reserved %s %d\\n' % (request_id, quantity))\n        return 0\n    except sqlite.DatabaseError, exc:\n        if transaction:\n            try:\n                cursor.execute('ROLLBACK')\n            except sqlite.DatabaseError:\n                pass\n        db.close()\n        message = str(exc)\n        if 'locked' in message.lower() or 'busy' in message.lower():\n            sys.stderr.write('database busy: lock wait exceeded %.1f seconds\\n' %\n                             LOCK_WAIT_SECONDS)\n            return 75\n        sys.stderr.write('database error: %s\\n' % message)\n        return 1\n\n\nif __name__ == '__main__':\n    sys.exit(main(sys.argv))\n"
+    },
+    {
+      "command_id": "cmd-04d6ce3f301341c3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:11:16.027836+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 222,
+      "command": "cd /srv/legacy2/sqlite-lock-contention\nprintf '%s\\n' 'before:'\nsudo -n sqlite3 stock.db \"SELECT remaining FROM stock WHERE id=1; SELECT request_id,quantity FROM reservations ORDER BY request_id;\"\nprintf '%s\\n' 'replay existing ID with a different requested quantity:'\nsudo -n bin/reserve.py previous-request 999\nreplay_rc=$?\nprintf 'replay_rc=%s\\n' \"$replay_rc\"\nprintf '%s\\n' 'invalid quantity:'\nsudo -n bin/reserve.py invalid-zero 0\ninvalid_rc=$?\nprintf 'invalid_rc=%s\\n' \"$invalid_rc\"\nprintf '%s\\n' 'insufficient request:'\nsudo -n bin/reserve.py too-large 6\ninsufficient_rc=$?\nprintf 'insufficient_rc=%s\\n' \"$insufficient_rc\"\nprintf '%s\\n' 'after:'\nsudo -n sqlite3 stock.db \"SELECT remaining FROM stock WHERE id=1; SELECT request_id,quantity FROM reservations ORDER BY request_id;\"",
+      "stdout": "before:\n5\nprevious-request|2\nreplay existing ID with a different requested quantity:\nreserved previous-request 2\nreplay_rc=0\ninvalid quantity:\ninvalid_rc=2\ninsufficient request:\ninsufficient_rc=1\nafter:\n5\nprevious-request|2\n",
+      "stderr": "quantity must be positive\ninsufficient stock: requested 6, remaining 5\n"
+    },
+    {
+      "command_id": "cmd-c6811aaa19c14498",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:11:29.614738+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 288,
+      "command": "test_root=$(mktemp -d /tmp/reserve-concurrent.XXXXXX) || exit 1\nmkdir \"$test_root/bin\"\ncp /srv/legacy2/sqlite-lock-contention/bin/reserve.py \"$test_root/bin/reserve.py\"\nsqlite3 \"$test_root/stock.db\" \"CREATE TABLE stock (id INTEGER PRIMARY KEY, remaining INTEGER NOT NULL); INSERT INTO stock VALUES (1,5); CREATE TABLE reservations (request_id TEXT PRIMARY KEY, quantity INTEGER NOT NULL);\"\n\"$test_root/bin/reserve.py\" concurrent-a 4 >\"$test_root/a.out\" 2>\"$test_root/a.err\" &\npid_a=$!\n\"$test_root/bin/reserve.py\" concurrent-b 4 >\"$test_root/b.out\" 2>\"$test_root/b.err\" &\npid_b=$!\nwait \"$pid_a\"; rc_a=$?\nwait \"$pid_b\"; rc_b=$?\nprintf 'test_root=%s\\nrequest_a_rc=%s stdout=' \"$test_root\" \"$rc_a\"\ncat \"$test_root/a.out\"\nprintf 'request_a_stderr='\ncat \"$test_root/a.err\"\nprintf 'request_b_rc=%s stdout=' \"$rc_b\"\ncat \"$test_root/b.out\"\nprintf 'request_b_stderr='\ncat \"$test_root/b.err\"\nprintf '%s\\n' 'final database:'\nsqlite3 \"$test_root/stock.db\" \"SELECT 'remaining',remaining FROM stock WHERE id=1; SELECT 'reservation',request_id,quantity FROM reservations ORDER BY request_id; SELECT 'negative_count',count(*) FROM stock WHERE remaining<0;\"",
+      "stdout": "test_root=/tmp/reserve-concurrent.uz3507\nrequest_a_rc=1 stdout=request_a_stderr=insufficient stock: requested 4, remaining 1\nrequest_b_rc=0 stdout=reserved concurrent-b 4\nrequest_b_stderr=final database:\nremaining|1\nreservation|concurrent-b|4\nnegative_count|0\n"
+    },
+    {
+      "command_id": "cmd-f9e8445450b0461d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:11:35.785768+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 290,
+      "command": "test_root=$(mktemp -d /tmp/reserve-idempotent.XXXXXX) || exit 1\nmkdir \"$test_root/bin\"\ncp /srv/legacy2/sqlite-lock-contention/bin/reserve.py \"$test_root/bin/reserve.py\"\nsqlite3 \"$test_root/stock.db\" \"CREATE TABLE stock (id INTEGER PRIMARY KEY, remaining INTEGER NOT NULL); INSERT INTO stock VALUES (1,5); CREATE TABLE reservations (request_id TEXT PRIMARY KEY, quantity INTEGER NOT NULL);\"\n\"$test_root/bin/reserve.py\" same-request 2 >\"$test_root/a.out\" 2>\"$test_root/a.err\" &\npid_a=$!\n\"$test_root/bin/reserve.py\" same-request 2 >\"$test_root/b.out\" 2>\"$test_root/b.err\" &\npid_b=$!\nwait \"$pid_a\"; rc_a=$?\nwait \"$pid_b\"; rc_b=$?\nprintf 'test_root=%s\\nrequest_a_rc=%s stdout=' \"$test_root\" \"$rc_a\"\ncat \"$test_root/a.out\"\nprintf 'request_a_stderr='\ncat \"$test_root/a.err\"\nprintf 'request_b_rc=%s stdout=' \"$rc_b\"\ncat \"$test_root/b.out\"\nprintf 'request_b_stderr='\ncat \"$test_root/b.err\"\nprintf '%s\\n' 'final database:'\nsqlite3 \"$test_root/stock.db\" \"SELECT 'remaining',remaining FROM stock WHERE id=1; SELECT 'reservation',request_id,quantity FROM reservations ORDER BY request_id; SELECT 'same_id_rows',count(*) FROM reservations WHERE request_id='same-request';\"",
+      "stdout": "test_root=/tmp/reserve-idempotent.Rd3547\nrequest_a_rc=0 stdout=reserved same-request 2\nrequest_a_stderr=request_b_rc=0 stdout=reserved same-request 2\nrequest_b_stderr=final database:\nremaining|3\nreservation|same-request|2\nsame_id_rows|1\n"
+    },
+    {
+      "command_id": "cmd-04ef0928575a4873",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:11:52.816532+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 8248,
+      "command": "test_root=$(mktemp -d /tmp/reserve-lockwait.XXXXXX) || exit 1\nmkdir \"$test_root/bin\"\ncp /srv/legacy2/sqlite-lock-contention/bin/reserve.py \"$test_root/bin/reserve.py\"\nsqlite3 \"$test_root/stock.db\" \"CREATE TABLE stock (id INTEGER PRIMARY KEY, remaining INTEGER NOT NULL); INSERT INTO stock VALUES (1,5); CREATE TABLE reservations (request_id TEXT PRIMARY KEY, quantity INTEGER NOT NULL);\"\npython -c \"import sqlite,time,sys; db=sqlite.connect(sys.argv[1],autocommit=1); c=db.cursor(); c.execute('BEGIN IMMEDIATE'); open(sys.argv[2],'w').write('locked'); time.sleep(8); c.execute('ROLLBACK'); db.close()\" \"$test_root/stock.db\" \"$test_root/locked\" &\nholder_pid=$!\ni=0\nwhile [ ! -f \"$test_root/locked\" ] && [ \"$i\" -lt 50 ]; do sleep 0.1; i=$((i+1)); done\nstart=$(date +%s)\n\"$test_root/bin/reserve.py\" bounded-wait 1 >\"$test_root/request.out\" 2>\"$test_root/request.err\"\nrequest_rc=$?\nend=$(date +%s)\nwait \"$holder_pid\"\nprintf 'test_root=%s\\nrequest_rc=%s elapsed_seconds=%s\\nstdout=' \"$test_root\" \"$request_rc\" \"$((end-start))\"\ncat \"$test_root/request.out\"\nprintf 'stderr='\ncat \"$test_root/request.err\"\nprintf '%s\\n' 'final database:'\nsqlite3 \"$test_root/stock.db\" \"SELECT 'remaining',remaining FROM stock WHERE id=1; SELECT 'reservation_count',count(*) FROM reservations;\"",
+      "stdout": "test_root=/tmp/reserve-lockwait.TA3586\nrequest_rc=75 elapsed_seconds=5\nstdout=stderr=database busy: lock wait exceeded 5.0 seconds\nfinal database:\nremaining|5\nreservation_count|0\n"
+    },
+    {
+      "command_id": "cmd-a0115cebcaed459e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:12:04.288320+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 235,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'kernel='; uname -r\nprintf 'release='; cat /etc/redhat-release\ncd /srv/legacy2/sqlite-lock-contention\nprintf '%s\\n' 'compile check:'\nsudo -n /usr/bin/python -m py_compile bin/reserve.py && echo compile=ok\nprintf '%s\\n' 'database integrity and state:'\nsudo -n sqlite3 stock.db \"PRAGMA integrity_check; SELECT 'stock',id,remaining FROM stock; SELECT 'reservation',request_id,quantity FROM reservations ORDER BY request_id;\"\nprintf '%s\\n' 'live replay check:'\nsudo -n bin/reserve.py previous-request 1\nprintf '%s\\n' 'state after replay:'\nsudo -n sqlite3 stock.db \"SELECT 'stock',id,remaining FROM stock; SELECT 'reservation',request_id,quantity FROM reservations ORDER BY request_id;\"\nprintf 'script_sha256='; sha256sum bin/reserve.py | awk '{print $1}'",
+      "stdout": "boot_id=4244d945-3e4d-4348-8000-000000000000\nkernel=2.6.18-398.el5\nrelease=CentOS release 5.11 (Final)\ncompile check:\ncompile=ok\ndatabase integrity and state:\nok\nstock|1|5\nreservation|previous-request|2\nlive replay check:\nreserved previous-request 2\nstate after replay:\nstock|1|5\nreservation|previous-request|2\nscript_sha256=969af615e362e561ff310af2d7b143ac4589a6622a99e989fb2106ec7a0dec06\n"
+    },
+    {
+      "command_id": "cmd-859f506793964e36",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:12:07.752441+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 202,
+      "command": "sudo -n sync\nsudo -n sh -c 'nohup sh -c \"sleep 2; /sbin/shutdown -r now\" >/tmp/codex-restart.log 2>&1 &'\necho restart-scheduled-for-node1",
+      "stdout": "restart-scheduled-for-node1\n"
+    },
+    {
+      "command_id": "cmd-4f450418a6c744e6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:12:10.215866+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 186,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime",
+      "stdout": "boot_id=4244d945-3e4d-4348-8000-000000000000\n 02:12:09 up 3 min,  0 users,  load average: 0.00, 0.00, 0.00\n"
+    },
+    {
+      "command_id": "cmd-7a0d3bb1ee734c5b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:12:24.330895+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 104,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime",
+      "stderr": "ssh: connect to host 10.100.217.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-7e3acfb74aba43ae",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:12:41.961658+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5112,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime",
+      "stderr": "ssh: connect to host 10.100.217.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-67c20b85ed8844ea",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:13:02.972772+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 3213,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime",
+      "stderr": "ssh: connect to host 10.100.217.10 port 22: No route to host\r\n"
+    },
+    {
+      "command_id": "cmd-2142d4d79d074a1d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:13:25.109213+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 124,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime",
+      "stderr": "ssh: connect to host 10.100.217.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-21be616ddf4a4926",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:13:49.769060+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 241,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nuptime",
+      "stdout": "boot_id=dc6bec76-a7d4-4be4-8000-000000000000\n 02:13:49 up 0 min,  0 users,  load average: 0.05, 0.01, 0.00\n"
+    },
+    {
+      "command_id": "cmd-2f961f2b7c294533",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T06:13:56.965454+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 246,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'kernel='; uname -r\nprintf 'release='; cat /etc/redhat-release\ncd /srv/legacy2/sqlite-lock-contention\nprintf '%s\\n' 'compile check:'\nsudo -n /usr/bin/python -m py_compile bin/reserve.py && echo compile=ok\nprintf '%s\\n' 'database integrity and persisted state:'\nsudo -n sqlite3 stock.db \"PRAGMA integrity_check; SELECT 'stock',id,remaining FROM stock; SELECT 'reservation',request_id,quantity FROM reservations ORDER BY request_id;\"\nprintf '%s\\n' 'live replay check after restart:'\nsudo -n bin/reserve.py previous-request 999\nprintf '%s\\n' 'state after replay:'\nsudo -n sqlite3 stock.db \"SELECT 'stock',id,remaining FROM stock; SELECT 'reservation',request_id,quantity FROM reservations ORDER BY request_id;\"\nprintf 'script_sha256='; sha256sum bin/reserve.py | awk '{print $1}'",
+      "stdout": "boot_id=dc6bec76-a7d4-4be4-8000-000000000000\nkernel=2.6.18-398.el5\nrelease=CentOS release 5.11 (Final)\ncompile check:\ncompile=ok\ndatabase integrity and persisted state:\nok\nstock|1|5\nreservation|previous-request|2\nlive replay check after restart:\nreserved previous-request 2\nstate after replay:\nstock|1|5\nreservation|previous-request|2\nscript_sha256=969af615e362e561ff310af2d7b143ac4589a6622a99e989fb2106ec7a0dec06\n"
+    }
+  ]
+}

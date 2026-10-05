@@ -1,0 +1,48 @@
+---
+- name: Turn node1 into the 802.1Q trunk router for the shared eth1 link
+  hosts: vyos_routers
+  gather_facts: no
+  tasks:
+    - name: Create VLAN 10 and VLAN 20 sub-interfaces on eth1
+      ansible.builtin.shell: |
+        source /opt/vyatta/etc/functions/script-template
+        configure
+        set interfaces ethernet eth1 vif 10 address 10.10.10.1/24
+        set interfaces ethernet eth1 vif 20 address 10.10.20.1/24
+        commit
+        save
+      args:
+        executable: /bin/bash
+      register: vlan_commit
+      changed_when: "'No configuration changes to commit' not in vlan_commit.stdout"
+      failed_when: vlan_commit.rc != 0 or 'failed' in vlan_commit.stdout
+
+- name: Move node2 onto VLAN 10 and node3 onto VLAN 20 over the shared eth1 link
+  hosts: linux_hosts
+  gather_facts: yes
+  tasks:
+    - name: Stop the eth1 parent connection from chasing DHCP
+      community.general.nmcli:
+        type: ethernet
+        conn_name: "Wired connection 2"
+        ifname: eth1
+        method4: disabled
+        method6: disabled
+        state: present
+
+    - name: Create the tagged VLAN sub-interface with a route back to the peer VLAN via node1
+      community.general.nmcli:
+        type: vlan
+        conn_name: "eth1.{{ vlan_id }}"
+        ifname: "eth1.{{ vlan_id }}"
+        vlandev: eth1
+        vlanid: "{{ vlan_id }}"
+        ip4: "{{ vlan_ip }}"
+        method4: manual
+        routes4:
+          - "{{ peer_subnet }} {{ vlan_gateway }}"
+        state: present
+
+    - name: Ensure the VLAN connection is activated
+      ansible.builtin.command: nmcli connection up "eth1.{{ vlan_id }}"
+      changed_when: false

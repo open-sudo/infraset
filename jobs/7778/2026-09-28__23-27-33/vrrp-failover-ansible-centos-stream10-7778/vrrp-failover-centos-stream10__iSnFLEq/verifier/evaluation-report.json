@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "single-gateway-node3-node4",
+      "requirement": "Give node3 a single gateway address for reaching node4",
+      "status": "satisfied",
+      "summary": "node3 was configured (via community.general.nmcli in the Ansible playbook) with static IP 10.10.1.12/24 and a dedicated route to node4's subnet (10.10.2.0/24) via a single gateway address 10.10.1.1, leaving the mgmt default route untouched. Route table and successful ping to node4 (10.10.2.13) confirm the single-gateway path works.",
+      "evidence_ids": [
+        "cmd-71d00f46be6942a9",
+        "cmd-c53df9ea15984e0c"
+      ]
+    },
+    {
+      "id": "gateway-vrrp-both-routers",
+      "requirement": "The single gateway address must be backed by both node1 and node2 (VRRP or equivalent) so it is not tied to a single physical router",
+      "status": "satisfied",
+      "summary": "Ansible-applied VyOS config on both node1 and node2 shows a committed VRRP group (LAN-A, vrid 10, VIP 10.10.1.1/24) on the node3-facing interface and a second group (LAN-B, vrid 20, VIP 10.10.2.1/24) on the node4-facing interface, with node1 priority 200 and node2 priority 100.",
+      "evidence_ids": [
+        "cmd-287fdaa6bc904f57",
+        "cmd-162f2ba741dc4aba"
+      ]
+    },
+    {
+      "id": "gateway-survives-router-down",
+      "requirement": "The gateway must stay available when either router (node1 or node2) is down",
+      "status": "satisfied",
+      "summary": "With node1's eth1 and eth2 both disabled (simulating node1 fully down), node2 promoted to VRRP MASTER on both VRRP groups within seconds and node3->node4 ping succeeded with 0% packet loss throughout the outage. A single-interface-only disruption on node1 (eth1 alone) showed an unexplained transient 100% ping loss before the executor moved to disabling both interfaces, which is a minor unexplained anomaly not resolved in the evidence.",
+      "evidence_ids": [
+        "cmd-ad29a67d1cfe4bb0",
+        "cmd-789695bf26b44103",
+        "cmd-e88b0c017b514b45",
+        "cmd-5e5a6ba8ce5b46fd",
+        "cmd-c4a9c44057e540f8",
+        "cmd-5c4c044aef0b41ba"
+      ]
+    },
+    {
+      "id": "node1-preferred-while-healthy",
+      "requirement": "node1 must be the preferred gateway while healthy (preempt back)",
+      "status": "satisfied",
+      "summary": "After re-enabling node1's interfaces, node1 (priority 200) reclaimed VRRP MASTER on both groups within seconds while node2 (priority 100) cleanly returned to BACKUP, and node3->node4 connectivity remained unbroken.",
+      "evidence_ids": [
+        "cmd-783e7fe501164a2c",
+        "cmd-4d397194713643d6",
+        "cmd-99a3a19aaa5f4b56",
+        "cmd-9d6471e59ef84191"
+      ]
+    },
+    {
+      "id": "implemented-via-ansible",
+      "requirement": "Implement the solution using Ansible",
+      "status": "satisfied",
+      "summary": "The final, idempotent configuration state on all four affected nodes was applied and verified via an Ansible playbook (playbook.yml) run from node5 using ansible.builtin.shell (for VyOS, due to vyos.vyos.vyos_config module failures against this VyOS build) and community.general.nmcli (for CentOS). Some intermediate configuration was first applied manually via raw SSH/ad-hoc YAML files during troubleshooting before being reasserted by the canonical playbook run.",
+      "evidence_ids": [
+        "cmd-287fdaa6bc904f57",
+        "cmd-71d00f46be6942a9",
+        "cmd-af423d2bf69844ec",
+        "cmd-2b316e99a1f64e8a",
+        "cmd-4908029cf0584974",
+        "cmd-582ae96d7f3c4a5b"
+      ]
+    }
+  ],
+  "overall_summary": "The executor delivered a working, Ansible-applied VRRP-backed single-gateway solution: node3 reaches node4 via a fixed gateway address (10.10.1.1) backed by VRRP groups on node1 (priority 200, preferred) and node2 (priority 100, backup) on both LAN legs, with a dedicated route (not a default-route override) added on node3 and node4. Live failover (node1 fully down -> node2 takes over, 0% packet loss) and preempt-back (node1 recovers -> reclaims master) were both directly demonstrated with before/during/after evidence. All five managed nodes were also restarted individually with proper boot-identity, state, and connectivity verification before/after each reboot, satisfying the independent restart-evidence protocol. The main blemishes are (1) an unexplained transient full packet loss when only node1's eth1 (not eth2) was disabled during failover testing, which the executor did not investigate before switching to a full dual-interface disable, and (2) a non-trivial amount of manual/raw-SSH configuration and failed troubleshooting mutations against the VyOS routers before the working Ansible playbook was finalized, all of which were superseded or cleaned up.",
+  "limitations": [
+    "The evaluator relied entirely on the executor's selected command evidence and the fixed lifecycle/restart snapshots; no independent verification of the live systems was possible.",
+    "One cited evidence ID in the executor's own report (cmd-783eea7ef01164a2c) does not correspond to any captured command and appears to be a typo for cmd-783e7fe501164a2c, which is present in the timeline and was used instead.",
+    "The single-interface-down (eth1 only) failover sub-test showed an unexplained 100% packet-loss result that was not investigated or reconciled by the executor before it moved to a full dual-interface (both eth1+eth2) disruption, which did succeed; this leaves some ambiguity about failover behavior under a partial single-link failure on node1 rather than a full node outage.",
+    "Executor evidence item 5 referenced unknown command IDs: cmd-783eea7ef01164a2c"
+  ],
+  "command_stats": {
+    "total": 152,
+    "successful": 126,
+    "failed": 26,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.68,
+    "summary": "The executor performed extensive, largely necessary discovery (topology mapping via tcpdump, SSH trust setup, collection installs) and cleanly restored/cleaned up temporary artifacts it created (abandoned VyOS config sessions in /opt/vyatta/config/tmp were removed via cmd-fa280797cd594be6; unionfs-fuse mounts were killed). However, getting VyOS configuration working via Ansible required many failed or dead-end troubleshooting mutations against node1/node2: repeated non-root 'vyos' user config-session attempts that failed and left uncommitted/dangling sessions (cmd-8038901af95d48ad, cmd-96650dbe6fd84acd), several pexpect-driven CLI experiments that failed with 'Set failed' and had to be explicitly discarded (cmd-52cc14c280f84ef6, cmd-7859c2bb032a47ee, cmd-78ad680837244b0d, cmd-3bd87db16688469b), and diagnostic sudo -l/permission probing on node2 (cmd-ee0e12d80cfc4471, cmd-d9e1a88d2e48449f, cmd-8649b4cc7d7d4835) that also failed without lasting effect. More notably, the executor applied real, committed configuration changes to node1 and node2 outside the canonical playbook.yml -- via ad-hoc YAML files (cmd-4908029cf0584974, cmd-582ae96d7f3c4a5b) and a raw SSH command with no Ansible involvement (cmd-af423d2bf69844ec, cmd-2b316e99a1f64e8a) -- before the actual playbook.yml was run to reassert the same values. These were low-risk, fully superseded by the final idempotent playbook run, and left no incorrect residue, but they represent unnecessary or premature mutations relative to a clean Ansible-only execution trail.",
+    "evidence_ids": [
+      "cmd-8038901af95d48ad",
+      "cmd-96650dbe6fd84acd",
+      "cmd-fa280797cd594be6",
+      "cmd-52cc14c280f84ef6",
+      "cmd-7859c2bb032a47ee",
+      "cmd-78ad680837244b0d",
+      "cmd-3bd87db16688469b",
+      "cmd-ee0e12d80cfc4471",
+      "cmd-d9e1a88d2e48449f",
+      "cmd-8649b4cc7d7d4835",
+      "cmd-4908029cf0584974",
+      "cmd-582ae96d7f3c4a5b",
+      "cmd-af423d2bf69844ec",
+      "cmd-2b316e99a1f64e8a",
+      "cmd-287fdaa6bc904f57"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,69 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-10-02T02:19:55.061625+00:00",
+      "outcome": "executor_blocked",
+      "finished_at": "2026-10-02T02:32:14.981621+00:00",
+      "error": "Snapshot rollback completed and exact content restoration was verified. A retained recovery snapshot was also validated. However, node1 did not return through the permitted management path after the mandatory reboot, so changed boot identity and post-restart recovery could not be proven.",
+      "diagnosis": {
+        "summary": "The core task was successfully demonstrated before reboot: `/srv/data` was on an LVM-backed ext4 volume, an earlier snapshot was taken, the data was changed, and the snapshot merge restored the earlier tree, metadata, symlink target, and file hashes exactly. A new recovery snapshot was also mounted read-only and validated. The attempt was correctly marked blocked because the required reboot was never observed to complete; therefore storage activation, mount persistence, and restored content after restart remain unproven. The evidence is insufficient to identify why node1 failed to return.",
+        "evidence": [
+          {
+            "source": "Final merge verification",
+            "finding": "After the merge completed, `lvs` showed only the linear `appvg/data` LV, `/srv/data` was mounted from `/dev/mapper/appvg-data`, the saved manifest matched without a diff, and `EXACT_RESTORE_VERIFIED=yes` was emitted."
+          },
+          {
+            "source": "Restored manifest",
+            "finding": "The verified manifest covered paths, object types, sizes, modes, owners/groups, the `current-orders` symlink target, and SHA-256 hashes. The post-snapshot file was confirmed absent."
+          },
+          {
+            "source": "Retained recovery snapshot check",
+            "finding": "`data_recovery` was created, mounted read-only with `noload`, and contained the same structure and hashes as the restored dataset."
+          },
+          {
+            "source": "Merge diagnostics",
+            "finding": "The merge was initially still represented as `snapshot-merge`; the attempted `lvconvert --poll` option was unsupported. Shortly afterward, `lvmpolld` completed the merge and subsequent evidence confirmed the snapshot LV had disappeared."
+          },
+          {
+            "source": "Pre-reboot state",
+            "finding": "The loop-storage service was enabled and active, `/srv/data` was mounted, both origin and recovery snapshot were active, and expected hashes were present. This proves only the pre-reboot state."
+          },
+          {
+            "source": "Reboot sequence",
+            "finding": "A transient timer scheduled `systemctl reboot`. Two immediate probes still returned the original boot ID, followed by repeated connection resets for approximately ten minutes. No new boot ID or post-reboot filesystem evidence was captured."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "The guest reboot or subsequent boot did not complete successfully, or its management agent/path failed to recover. The evidence cannot distinguish these cases.",
+            "confidence": "high"
+          },
+          {
+            "cause": "Boot ordering or activation problems involving the file/loop-backed LVM stack may have delayed or prevented startup; the presence of `appdata-loop.service` makes this plausible, but its unit definition and boot logs are unavailable.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "A provider-side management-path failure independent of the guest storage configuration may have caused the persistent resets.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "The active retained LVM snapshot or LVM initialization caused the boot failure.",
+            "confidence": "low"
+          }
+        ],
+        "next_attempt_guidance": [
+          "On the fresh node, first inventory available block devices; prefer a dedicated persistent block device over loop-backed LVM when one exists.",
+          "If loop-backed storage is necessary, make the systemd dependency chain explicit: create/attach the loop device before VG activation and mount `/srv/data` only after the LV exists. Validate the exact unit and mount dependencies before relying on them.",
+          "Perform an early reboot test immediately after establishing persistent storage, before the snapshot exercise. Record the old boot ID, require a different boot ID afterward, and verify the LV, retained snapshot, mount source, and service state.",
+          "For rollback, wait until `lvs` no longer reports the snapshot/origin relationship and `dmsetup` no longer reports `snapshot-merge` before mounting or claiming completion. Do not depend on the unsupported `lvconvert --poll` option.",
+          "Capture a canonical pre-modification manifest containing path, type, size, mode, UID/GID, symlink target, and hashes. After mutation and rollback, compare against it and explicitly verify added files are absent.",
+          "After the final required reboot, do not report completion until the changed boot ID, `/srv/data` mount, LVM state, retained snapshot, and exact restored manifest have all been observed directly. If the fresh node again fails to return, report the same evidence boundary without assigning an unproven root cause."
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+---
+# Publish node2's private 8080 app through node1, reachable by node3,
+# without exposing the rest of node1<->node2 private network.
+
+- name: Configure node2 private-network address and app
+  hosts: app
+  gather_facts: no
+  vars:
+    private_iface: ens7
+    private_addr: 10.50.50.2
+    private_prefix: 24
+  tasks:
+    - name: Persist static address on the private interface
+      raw: |
+        cat > /etc/network/interfaces.d/60-{{ private_iface }}.cfg <<'EOF'
+        auto {{ private_iface }}
+        iface {{ private_iface }} inet static
+            address {{ private_addr }}/{{ private_prefix }}
+        EOF
+        ip addr flush dev {{ private_iface }}
+        ifdown {{ private_iface }} 2>/dev/null
+        ifup {{ private_iface }}
+        ip -4 addr show dev {{ private_iface }}
+
+    - name: Deploy a minimal HTTP app bound only to the private address
+      raw: |
+        mkdir -p /var/www/privateapp
+        cat > /var/www/privateapp/index.html <<'EOF'
+        served-by-node2-private-network
+        EOF
+
+    - name: Install systemd unit for the private app
+      raw: |
+        cat > /etc/systemd/system/private-app.service <<'EOF'
+        [Unit]
+        Description=Private network demo app on 8080
+        After=network-online.target
+        Wants=network-online.target
+
+        [Service]
+        WorkingDirectory=/var/www/privateapp
+        ExecStart=/usr/bin/python3 -m http.server 8080 --bind {{ private_addr }}
+        Restart=always
+        User=root
+
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        systemctl daemon-reload
+        systemctl enable --now private-app.service
+        systemctl is-active private-app.service
+
+- name: Publish node2:8080 through node1 without exposing the private network
+  hosts: router
+  gather_facts: no
+  vars:
+    wan_iface: eth0
+    lan_iface: eth1
+    lan_addr: 10.50.50.1
+    lan_prefix: 24
+    backend_addr: 10.50.50.2
+    app_port: 8080
+  tasks:
+    # vyos user's login shell is vbash; running plain "bash -c" over SSH as vyos
+    # nests a fresh bash under vbash and loses VyOS's config-session tracking
+    # ("without config session" on every set command, nothing committed).
+    # sudo execs bash directly as root (vyos has NOPASSWD ALL sudo), matching
+    # the working root/bash session and giving a real, persisted commit.
+    - name: Assign the router's private-link address and configure NAT/firewall
+      raw: |
+        sudo bash -c '
+        source /opt/vyatta/etc/functions/script-template
+        configure
+        set interfaces ethernet {{ lan_iface }} address {{ lan_addr }}/{{ lan_prefix }}
+        set nat destination rule 10 inbound-interface name {{ wan_iface }}
+        set nat destination rule 10 protocol tcp
+        set nat destination rule 10 destination port {{ app_port }}
+        set nat destination rule 10 translation address {{ backend_addr }}
+        set nat destination rule 10 translation port {{ app_port }}
+        set nat source rule 10 outbound-interface name {{ lan_iface }}
+        set nat source rule 10 destination address {{ backend_addr }}
+        set nat source rule 10 destination port {{ app_port }}
+        set nat source rule 10 protocol tcp
+        set nat source rule 10 translation address masquerade
+        set firewall ipv4 forward filter default-action drop
+        set firewall ipv4 forward filter rule 5 action accept
+        set firewall ipv4 forward filter rule 5 state established
+        set firewall ipv4 forward filter rule 5 state related
+        set firewall ipv4 forward filter rule 10 action accept
+        set firewall ipv4 forward filter rule 10 inbound-interface name {{ wan_iface }}
+        set firewall ipv4 forward filter rule 10 destination address {{ backend_addr }}
+        set firewall ipv4 forward filter rule 10 destination port {{ app_port }}
+        set firewall ipv4 forward filter rule 10 protocol tcp
+        commit
+        save
+        exit
+        '
+      register: vyos_apply
+      changed_when: "'Set failed' not in vyos_apply.stdout and 'Commit failed' not in vyos_apply.stdout and 'without config session' not in vyos_apply.stdout"
+      failed_when: "'Set failed' in vyos_apply.stdout or 'Commit failed' in vyos_apply.stdout or 'without config session' in vyos_apply.stdout"
+
+    - name: Show resulting NAT and firewall state
+      raw: |
+        sudo bash -c '
+        source /opt/vyatta/etc/functions/script-template
+        configure
+        run show interfaces ethernet {{ lan_iface }} | no-more
+        run show nat destination rules | no-more
+        run show nat source rules | no-more
+        run show firewall ipv4 forward filter | no-more
+        exit
+        '
+      register: vyos_state
+
+    - name: Print VyOS state
+      debug:
+        msg: "{{ vyos_state.stdout_lines }}"
+
+- name: Verify from node3
+  hosts: clients
+  gather_facts: no
+  vars:
+    router_wan_ip: 10.100.201.10
+    app_port: 8080
+    backend_addr: 10.50.50.2
+  tasks:
+    - name: node3 can reach the app through node1
+      raw: "curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://{{ router_wan_ip }}:{{ app_port }}/"
+      register: via_router
+
+    - name: node3 cannot reach node2's private address directly
+      raw: "curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://{{ backend_addr }}:{{ app_port }}/ ; true"
+      register: direct_attempt
+
+    - debug:
+        msg:
+          - "via node1: {{ via_router.stdout }}"
+          - "direct to node2 private IP: {{ direct_attempt.stdout }}"

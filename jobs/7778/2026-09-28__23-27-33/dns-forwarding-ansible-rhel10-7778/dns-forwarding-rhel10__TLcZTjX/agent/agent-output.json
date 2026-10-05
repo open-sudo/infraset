@@ -1,0 +1,92 @@
+{
+  "status": "completed",
+  "summary": "Built an Ansible playbook run from control_node node4 that makes node1 (VyOS) the DNS resolver for the shared private network 10.100.66.0/24: node1 answers inventory.internal with node2's address (10.100.66.11) via a VyOS static-host-mapping (consumed by pdns-recursor's default hosts-file lookup) and forwards everything else upstream via VyOS's DHCP-learned system nameserver. node2 and node3 were configured via community.general.nmcli to use node1 (10.100.66.10) as their resolver, overriding DHCP-provided DNS. The playbook is idempotent and self-verifying (dig/getent checks with assertions). Also completed the mandatory one-at-a-time node-restart evidence protocol for all four nodes, proving each reboot via a changed OS boot_id and confirming DNS/config recovery afterward.",
+  "actions_performed": [
+    "Surveyed the cluster: node1=VyOS 2026.04 rolling (router), node2/node3=RHEL10, node4=Ubuntu 24.04 control node with ansible-core 2.21 and community.general 13.0.1",
+    "Wired up passwordless cluster SSH: added CLUSTER_SSH_PUBKEY to node2/node3 root authorized_keys, and to node1's vyos user via VyOS's own config (`set system login user vyos authentication public-keys`) since direct file writes to VyOS's authorized_keys are reconciled away by system_login.py",
+    "Diagnosed that VyOS root SSH login is refused because root's password is locked (passwd -S shows L), which per OpenSSH semantics disables all root auth including pubkey; used the vyos user with become/sudo instead",
+    "Discovered VyOS 'configure' session tracking only works when the command runs as root, so playbook tasks against node1 use ansible_become=true (sudo) rather than running as the unprivileged vyos user directly",
+    "Wrote /root/ansible-dns on node4: ansible.cfg, inventory/hosts.ini (dns_resolver=node1, dns_clients=node2/node3), a Jinja2 template for the VyOS config script, and playbooks/dns.yml",
+    "playbooks/dns.yml play 1 (node1): renders and runs a VyOS configure script (set service dns forwarding allow-from/listen-address/system, set system static-host-mapping inventory.internal -> node2 IP; commit; save), then verifies via dig that inventory.internal resolves to node2 and example.com resolves via upstream forwarding",
+    "playbooks/dns.yml play 2 (node2, node3): discovers the active NetworkManager connection, uses community.general.nmcli (dns4, dns4_ignore_auto) to point DNS at node1 and stop honoring DHCP DNS, reactivates the connection, then verifies /etc/resolv.conf and getent hosts resolution",
+    "Ran the playbook to completion (all green), re-ran it to confirm idempotency (steady state, no unwanted changes), and independently verified from node2/node3 with getent hosts and curl to a real HTTPS site",
+    "Executed the mandatory restart-evidence protocol: captured boot_id/uptime and service/DNS health baseline on each node, rebooted node1 -> node2 -> node3 -> node4 one at a time via `systemctl reboot` (backgrounded so the ack returned first), polled each node back online, confirmed a changed boot_id on every node, and verified DNS forwarding/config persistence (and a clean playbook re-run from node4) after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 is configured as DNS resolver answering inventory.internal with node2's address and forwarding everything else upstream",
+      "command_ids": [
+        "cmd-8b19db73272e4a4b",
+        "cmd-a24756958bae4b0e",
+        "cmd-d7cd74de44fd4a2e",
+        "cmd-4c46184db6ac4a98"
+      ],
+      "summary": "VyOS config committed (dns forwarding + static-host-mapping) then verified: dig inventory.internal@node1 -> 10.100.66.11, dig example.com@node1 -> real upstream IPs; playbook run shows tasks succeeding and 'already exists' idempotent re-application"
+    },
+    {
+      "requirement": "node2 and node3 configured to resolve through node1",
+      "command_ids": [
+        "cmd-f09d21eefb3049b4",
+        "cmd-f9b58c218f774f34",
+        "cmd-6dbaa7420890416d"
+      ],
+      "summary": "Playbook applied nmcli DNS override; node2/node3 /etc/resolv.conf shows nameserver 10.100.66.10, getent hosts inventory.internal resolves to 10.100.66.11, and example.com resolves plus a live curl to https://example.com returns 200"
+    },
+    {
+      "requirement": "Implementation done via Ansible",
+      "command_ids": [
+        "cmd-6da9f8610d7749cc",
+        "cmd-d43f5f1af78a42af",
+        "cmd-4c46184db6ac4a98",
+        "cmd-f09d21eefb3049b4",
+        "cmd-cc1293dff5a54363"
+      ],
+      "summary": "ansible ping confirms connectivity to all three managed nodes from control_node node4; playbooks/dns.yml executed twice (initial apply, then idempotent no-op re-run) covering both node1's VyOS config and node2/node3's resolver settings"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-7de8cdd645d545cf",
+        "cmd-21ec799788324bcf",
+        "cmd-a231bb46999a4cdd",
+        "cmd-012916e740da4b10",
+        "cmd-8f1f609aa23c46d3",
+        "cmd-07a363734bea4422"
+      ],
+      "summary": "Baseline boot_id 32669db3.../DNS working; systemctl reboot triggered; connection timeout confirms disruption; new boot_id 4ee83a13... with new uptime; post-reboot DNS forwarding and static-host-mapping config verified intact"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-36fd6bb742b646db",
+        "cmd-bed87f186f4c4e94",
+        "cmd-ff74ecb3d2ac40a1",
+        "cmd-653c36250f264aa9",
+        "cmd-219bcfebda834ac3"
+      ],
+      "summary": "Baseline boot_id 21972395...; reboot triggered and timeout observed; new boot_id eda6efc1... after restart; resolv.conf, getent hosts, and live curl confirm DNS resolver config survived reboot"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-49ecf29b09f04ccd",
+        "cmd-9cd093278d874a89",
+        "cmd-c05139118e794d68",
+        "cmd-4c6b64447f4446bd",
+        "cmd-3128f00deebe4883"
+      ],
+      "summary": "Baseline boot_id 03273aa8...; reboot triggered, connection reset/timeout confirms disruption; new boot_id 9bd86a65... after restart; resolv.conf, getent hosts, and live curl confirm DNS resolver config survived reboot"
+    },
+    {
+      "requirement": "node4 (control node) restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-5b70a6ae780040fb",
+        "cmd-7f9bc6606e2e48dc",
+        "cmd-2af3c77941d74d7e",
+        "cmd-df645a69ad3447a1",
+        "cmd-06ba971a141c4d08"
+      ],
+      "summary": "Baseline boot_id eefaca89...; reboot triggered, connection reset confirms disruption; new boot_id 76bb9413... after restart; Ansible playbook re-run from node4 completes cleanly against all managed nodes, proving the control node's tooling and state survived the restart"
+    }
+  ]
+}

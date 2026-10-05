@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "opsadmin-user-key",
+      "requirement": "Create opsadmin on node1 and install the required ed25519 public key for SSH access",
+      "status": "satisfied",
+      "summary": "Baseline confirmed opsadmin absent (cmd-80141482bf894ee8). User was created with home dir and .ssh (700); authorized_keys was populated with exactly the specified key at 600 permissions (cmd-f44b7a98a28349c9). After an intermediate test-key detour, authorized_keys was restored to contain only the required key, verified as a single line with correct ownership/permissions (cmd-280e9be9385b4e5a, cmd-d81337813fbd4b7e, cmd-1685b0f15b824083). Post-reboot state confirms the account and key persisted (cmd-90f9589802df4216).",
+      "evidence_ids": [
+        "cmd-80141482bf894ee8",
+        "cmd-f44b7a98a28349c9",
+        "cmd-280e9be9385b4e5a",
+        "cmd-d81337813fbd4b7e",
+        "cmd-1685b0f15b824083",
+        "cmd-90f9589802df4216"
+      ]
+    },
+    {
+      "id": "sshd-key-only-auth",
+      "requirement": "Require key-based SSH authentication (disable password/keyboard-interactive auth) on node1",
+      "status": "satisfied",
+      "summary": "Discovery found a genuine hazard: sshd_config had a duplicate 'PasswordAuthentication' directive (line 65 'yes' before line 141 'no'); OpenSSH's first-match-wins semantics meant the effective policy was still password-enabled (cmd-8229b05efba242bb, cmd-108b0277c2cc446b, cmd-02018607c33c4cdb showing passwordauthentication=[REDACTED] despite the file's trailing 'no'). The executor backed up the file, corrected the first occurrence, validated with sshd -t, and reloaded sshd; sshd -T then confirmed pubkeyauthentication=yes, passwordauthentication=[REDACTED], kbdinteractiveauthentication=no (cmd-2dd5e6fef11949c7, cmd-a6eb3a1d78e94747). The corrected policy was re-verified before reboot and after reboot (cmd-5b95f535ff1d40b9, cmd-1685b0f15b824083, cmd-90f9589802df4216).",
+      "evidence_ids": [
+        "cmd-8229b05efba242bb",
+        "cmd-108b0277c2cc446b",
+        "cmd-02018607c33c4cdb",
+        "cmd-2dd5e6fef11949c7",
+        "cmd-a6eb3a1d78e94747",
+        "cmd-1685b0f15b824083",
+        "cmd-5b95f535ff1d40b9",
+        "cmd-90f9589802df4216"
+      ]
+    },
+    {
+      "id": "functional-enforcement-proof",
+      "requirement": "Demonstrate end-to-end that key-based login succeeds and non-key login is rejected",
+      "status": "satisfied",
+      "summary": "A live SSH session as opsadmin using the required key's credential succeeded (cmd-51734342ce534f79). A login attempt with pubkey auth disabled client-side was refused with 'Permission denied (publickey,gssapi-keyex,gssapi-with-mic)' - notably password is absent from the offered-methods list, confirming the server does not offer password authentication (cmd-1dc9d95b2e8f4056). The same pubkey-success / non-pubkey-rejected pattern was repeated after reboot (cmd-27e59dadb53f42d6), confirming the policy is durable.",
+      "evidence_ids": [
+        "cmd-51734342ce534f79",
+        "cmd-1dc9d95b2e8f4056",
+        "cmd-27e59dadb53f42d6"
+      ]
+    }
+  ],
+  "overall_summary": "The executor fulfilled the task contract: opsadmin was created on node1 with exactly the specified ed25519 key installed in authorized_keys, and SSH was configured to require key-based authentication only. Notably, the executor caught and correctly resolved a real pre-existing hazard - a duplicate PasswordAuthentication directive whose first-match-wins ordering meant password auth was still effectively enabled despite a later 'no' line - verifying the fix via sshd -t/-T and live SSH testing (pubkey success, non-pubkey rejection without password being offered). The independent node-restart evidence protocol was also completed cleanly for node1: a pre-restart healthy baseline, an acknowledged reboot, a changed boot_id (matching the fixed global before/after snapshots), and full post-restart recovery of sshd, the opsadmin account/keys, the auth policy, and functional SSH behavior. Temporary test-key artifacts used for verification were bounded and fully cleaned up both before and after the restart.",
+  "limitations": [
+    "Native package-manager consistency check ('package-health') was unavailable (timed out) in both before-prepare and after-executor snapshots, so no direct check exists that the package layer was undamaged; this is a pre-existing collection limitation, not evidence of executor-caused damage.",
+    "The sshd_config.bak.<timestamp> backup file created before editing was not explicitly confirmed removed in the final evidence trail, though this is a low-risk, conventional backup artifact rather than a functional concern."
+  ],
+  "command_stats": {
+    "total": 26,
+    "successful": 20,
+    "failed": 6,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.92,
+    "summary": "All state-changing commands trace to a clear purpose: user/key provisioning, fixing the genuine duplicate-directive sshd config hazard, functional verification, or the mandatory restart-evidence protocol. Temporary artifacts (a disposable SSH test keypair added twice to authorized_keys for functional testing, and the resulting known_hosts file from self-connecting) were bounded, low-risk, and fully reverted each time (cmd-14e5132cfdc747e2/cmd-280e9be9385b4e5a pre-reboot; cmd-27e59dadb53f42d6/cmd-35bd04dabae34602 post-reboot), leaving authorized_keys with exactly one line matching the required key at both checkpoints (cmd-d81337813fbd4b7e, cmd-35bd04dabae34602). A sshd_config backup file (sshd_config.bak.<timestamp>) was created as a safety measure before editing and was not shown to be removed, but this is a minor, conventional, non-harmful residue rather than an unnecessary mutation. Failed commands (cmd-7d574acab7eb46a6, cmd-e60cf58b0a5b4c50 permission-denied reads without sudo; cmd-92724945c38b4684 unresolved hostname from an unset variable; cmd-f2d8abd0a91c40ca/cmd-ab197605995a43f4/cmd-b5836c20c67f400b connection drops during the expected reboot window) are read-only discovery misses or expected reboot-induced disconnects, not state-damaging failures. Global before/after snapshots show no failed services, no unexpected listening sockets, and only reboot-consistent /tmp churn (reboot.log, regenerated systemd-private dirs tied to the new boot id).",
+    "evidence_ids": [
+      "cmd-14e5132cfdc747e2",
+      "cmd-280e9be9385b4e5a",
+      "cmd-27e59dadb53f42d6",
+      "cmd-35bd04dabae34602",
+      "cmd-d81337813fbd4b7e",
+      "cmd-2dd5e6fef11949c7",
+      "cmd-7d574acab7eb46a6",
+      "cmd-e60cf58b0a5b4c50",
+      "cmd-92724945c38b4684",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

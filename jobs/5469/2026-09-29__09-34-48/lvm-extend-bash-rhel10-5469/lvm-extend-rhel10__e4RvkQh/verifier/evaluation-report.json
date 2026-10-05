@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "lv-created-mounted",
+      "requirement": "Provide a logical volume mounted at /srv/data on node1",
+      "status": "satisfied",
+      "summary": "pvcreate/vgcreate/lvcreate/mkfs.xfs/mount executed successfully; df -h and lvs/vgs confirm vg_data/lv_data (1.2G) mounted at /srv/data. The LV is backed by a loopback device rather than a native disk partition, but this was a reasonable workaround since the only disk (20GB vda) was fully partitioned with no free space for a native PV, and the task did not mandate a specific backing device.",
+      "evidence_ids": [
+        "cmd-5645a9dc54e848e6",
+        "cmd-7c22faab6afd42b3",
+        "cmd-cc9ad06a7c1e4049"
+      ]
+    },
+    {
+      "id": "grown-2gb-while-mounted",
+      "requirement": "Grow the LV to at least 2 GB while it stays mounted",
+      "status": "satisfied",
+      "summary": "Backing file truncated to 2600M, loop device resized via losetup -c, pvresize + lvextend (two passes) + xfs_growfs run online against /srv/data without unmounting. Final df -h shows 2.5G filesystem and lvs shows LSize <2.54g; mount output confirms /srv/data remained mounted throughout the entire grow sequence.",
+      "evidence_ids": [
+        "cmd-9238628e0de14fda",
+        "cmd-1a513f28e5d54c51",
+        "cmd-1e82edfcde354112",
+        "cmd-37c9e1e7d355477a"
+      ]
+    },
+    {
+      "id": "contents-intact",
+      "requirement": "Contents stay intact through the grow",
+      "status": "satisfied",
+      "summary": "marker.txt and a 50MB payload.bin were written and sha256-checksummed before the grow; after growth, sha256sum -c against the recorded checksums reports both files OK, and marker.txt content is unchanged.",
+      "evidence_ids": [
+        "cmd-72493d09a1944165",
+        "cmd-524e295fa0a94875"
+      ]
+    },
+    {
+      "id": "reboot-recovery",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart healthy baseline, restart, changed boot identity, recovered LV/mount/data state",
+      "status": "satisfied",
+      "summary": "Pre-reboot: boot_id 368725cb... captured with healthy mount/df/checksum state. systemctl reboot issued and acknowledged (exec stream closed as expected), node unreachable during reboot window, then boot_id changed to 0703e696... post-reboot. After reboot, srv-data-loop.service shows active(exited) success, /srv/data mounted at 2.5GB via /dev/mapper/vg_data-lv_data, lvs confirms lv_data at <2.54g, and sha256sum -c confirms both files intact. Fixed lifecycle snapshots (before_prepare vs after_executor boot-identity) independently corroborate the boot_id change. This is supplemental evidence beyond the public task contract (which did not require reboot persistence), but the transition was fully and directly observed.",
+      "evidence_ids": [
+        "cmd-4a36208feab2458c",
+        "cmd-3e386d0606a24133",
+        "cmd-b7e5b9edcb21480c",
+        "cmd-6d76210b593e4341",
+        "cmd-6d74ba551c4c463c",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material elements of the task contract: it created an LV mounted at /srv/data, grew it from ~1.17GB to ~2.54GB (exceeding the 2GB requirement) while it stayed mounted throughout, and verified via sha256 checksums that the pre-existing file contents remained intact after the grow. The loop-device-backed volume is a defensible workaround given the fully-partitioned 20GB root disk with no spare space, and this is a valid equivalent implementation choice rather than a shortcut. The independently required provider-wide reboot evidence protocol was also fully and directly demonstrated: a healthy pre-restart baseline, an acknowledged reboot, a differing post-restart boot identity (corroborated by the fixed lifecycle snapshots), and full recovery of the LV, mount, and data (via the systemd oneshot unit re-attaching the loop device and activating the VG) with checksums confirmed OK afterward. No unnecessary mutations, residue, or hygiene issues were found in the command trace.",
+  "limitations": [
+    "The after_prepare snapshot is an alias of before_prepare (prepare stage was disabled), so preparer-vs-executor separation relies entirely on before_prepare vs after_executor diffs, which is sufficient here but slightly reduces independent cross-validation depth.",
+    "The reboot commands returned return_code -1 with connection-timeout stderr during the disconnect window; this is expected behavior during a genuine reboot rather than a task failure, but it means the direct command-level evidence during the outage itself is limited to timeout errors rather than richer telemetry.",
+    "Evidence about the underlying physical disk layout (fully partitioned 20GB vda) relies on the executor's own discovery commands rather than independent verification, though the parted/fdisk output is directly captured and consistent."
+  ],
+  "command_stats": {
+    "total": 21,
+    "successful": 18,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Reviewing the chronological command trace, all state-changing commands map clearly to task requirements: disk/lsblk discovery (read-only), lvm2 package check (read-only, already installed), loop-backed disk creation (necessary given no free space on vda), pvcreate/vgcreate/lvcreate/mkfs/mount (core requirement), test file writes for checksum baseline (necessary prerequisite for the intact-contents requirement), the grow sequence (core requirement, executed in two lvextend passes which is a reasonable equivalent implementation choice, not a wasted mutation), persistence unit/fstab creation (reasonable prerequisite to survive the independently-required reboot protocol), and the reboot itself. No commands were reverted, no abandoned residue, no failed/conflicting services (failed-services observation is empty both before and after), and no unsafe exposure changes (listening-sockets diff is limited to expected pid/fd churn from the reboot, same ports). The fstab was backed up before modification (/etc/fstab.bak) as a safety practice. The loopback-backed LV approach is a somewhat unusual (though justified) infrastructure pattern; it introduces a permanent dependency on a backing file under /var/lib/lvm-backing and a custom systemd unit, which is intentional design to satisfy the task's persistent-mount requirement, not unwanted residue. No unnecessary mutations were identified.",
+    "evidence_ids": [
+      "cmd-25a3265082034cbc",
+      "cmd-5645a9dc54e848e6",
+      "cmd-a3896011aabb4c24",
+      "global:after_executor:node1:failed-services",
+      "global:before_prepare:node1:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Every command run through sudo on node1 is recorded to /var/log/sudo-commands.log with the invoking user and a timestamp",
+      "status": "satisfied",
+      "summary": "sudo was configured with 'Defaults syslog=local2' and rsyslog routes local2.* to /var/log/sudo-commands.log. A live test sudo command (testsudo -> whoami) appeared in the log with timestamp, user, and command ('Sep 4 23:46:42 node1 sudo[1662]: testsudo : PWD=/ ; USER=root ; COMMAND=/usr/bin/whoami'), and a fresh sudo command issued after the restart was also captured, confirming the mechanism works both before and after a restart.",
+      "evidence_ids": [
+        "cmd-41d14f0e465c4eac",
+        "cmd-342a8548bafb4a3c",
+        "cmd-2ca9e4a7699b4a8f"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Sudo log entries are kept out of the general system log(s) (/var/log/messages and /var/log/secure)",
+      "status": "satisfied",
+      "summary": "A 'stop' directive in the rsyslog local2 rule prevents sudo entries from falling through to the messages/secure catch-all rules. grep for 'PWD=...COMMAND=' lines in /var/log/messages returned 0 matches both before and after the restart; the only 3 matching lines in /var/log/secure were verified to be timestamped before the local2 config was applied (host bootstrap artifacts), so no post-configuration leakage occurred into either general log.",
+      "evidence_ids": [
+        "cmd-342a8548bafb4a3c",
+        "cmd-5e93f26ea2f0400f",
+        "cmd-646604ecac984962",
+        "cmd-5dc078f59a334ee5"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Configuration is correctly implemented and persists across a restart",
+      "status": "satisfied",
+      "summary": "The sudoers.d drop-in and rsyslog.d rule file contents were confirmed identical before and after the reboot, rsyslog remained active, and the pre-restart log content was retained after restart, with a new post-restart sudo invocation correctly appended and still excluded from /var/log/messages.",
+      "evidence_ids": [
+        "cmd-c996513faf4c497f",
+        "cmd-b6c2ebc6b53e438b",
+        "cmd-5e93f26ea2f0400f",
+        "cmd-2ca9e4a7699b4a8f"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart healthy baseline, restart acknowledgement, changed boot identity, and recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id, rsyslog state, and config/log contents; the backgrounded systemctl reboot returned an acknowledgement before the connection was lost; polling showed a connection timeout during the outage window; boot_id changed from bf4e9cbb... to d8113afa... with a new uptime -s value, directly demonstrating an actual restart; and post-restart checks show rsyslog active, config intact, log data preserved, and functional logging/isolation confirmed with a fresh sudo command. This is corroborated by the fixed lifecycle snapshots showing the boot-identity change between after_prepare and after_executor.",
+      "evidence_ids": [
+        "cmd-c996513faf4c497f",
+        "cmd-5e274db90c214c4a",
+        "cmd-0a53fb4d6b084b33",
+        "cmd-f4d4c4028c0948c7",
+        "cmd-149656a76771403c",
+        "cmd-b6c2ebc6b53e438b",
+        "cmd-5e93f26ea2f0400f",
+        "cmd-2ca9e4a7699b4a8f",
+        "cmd-646604ecac984962"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly configured sudo to log via syslog facility local2 with an rsyslog drop-in that routes those entries to /var/log/sudo-commands.log (including user, timestamp, and command) while a 'stop' directive keeps them out of /var/log/messages and /var/log/secure, verified both before and after a full node restart with a proven boot-identity change and full functional recovery. All test artifacts (temporary user, temporary sudoers drop-in) were cleaned up, though two minor temp files (/tmp/sudo-syslog, /tmp/reboot.log) were left behind.",
+  "limitations": [
+    "No direct evidence was captured showing sudo log entries are also excluded from any other facility-specific logs (e.g. journald binary logs) beyond /var/log/messages and /var/log/secure, though the syslog=local2 + stop mechanism inherently limits routing to the dedicated file.",
+    "The restart outage window was only observed indirectly via connection timeouts, not via a continuous health-check trace, so the precise duration of the disruption is not established."
+  ],
+  "command_stats": {
+    "total": 26,
+    "successful": 23,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "All state-changing actions map to the task or the restart protocol: creating the sudoers.d/rsyslog.d config files, the log file with restrictive permissions, and restarting rsyslog were required prerequisites (cmd-0f80af2fcdfa49d3, cmd-d42123cc4b0c43f3, cmd-3f13b89255594c36). The temporary testsudo user and NOPASSWD drop-in used to generate a verifiable test sudo entry (cmd-0af7e80c730c402f, cmd-41d14f0e465c4eac) were fully removed afterward, including a follow-up terminate-and-retry after an initial userdel failed because a session was still active (cmd-cbbc468b8e474204, cmd-4ad562f813a143c6) \u2014 a legitimate corrective step, not new residue. The added logrotate policy (cmd-a23a2f1e98ab4012) is a reasonable, low-risk operational addition adjacent to the task's log file, not explicitly required but not harmful. Minor residue: /tmp/sudo-syslog (the source file used to build the sudoers drop-in) and /tmp/reboot.log (the backgrounded reboot's stdout/stderr capture) were left behind and are still visible in the after_executor temporary-files snapshot; these are low-risk abandoned temp files that were never cleaned up.",
+    "evidence_ids": [
+      "cmd-a23a2f1e98ab4012",
+      "cmd-0af7e80c730c402f",
+      "cmd-41d14f0e465c4eac",
+      "cmd-cbbc468b8e474204",
+      "cmd-4ad562f813a143c6",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

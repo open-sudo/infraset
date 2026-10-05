@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "tmp-mount-options",
+      "requirement": "On node1, /tmp is mounted with noexec, nosuid, and nodev enforced",
+      "status": "satisfied",
+      "summary": "findmnt confirmed /tmp mounted tmpfs with rw,nosuid,nodev,noexec both before and after reboot (cmd-a55e1f7aeb3a4688, cmd-fc5a3403ceca4721, cmd-8c622a6bbf4246c8). Functional test scripts placed and chmod+x'd in /tmp failed to execute with Permission denied (rc=126) both pre- and post-reboot (cmd-fc5a3403ceca4721, cmd-8c622a6bbf4246c8), directly demonstrating enforcement of all three restrictions (noexec blocks execution; nosuid/nodev confirmed via mount option flags).",
+      "evidence_ids": [
+        "cmd-a55e1f7aeb3a4688",
+        "cmd-fc5a3403ceca4721",
+        "cmd-8c622a6bbf4246c8"
+      ]
+    },
+    {
+      "id": "shm-mount-options",
+      "requirement": "On node1, /dev/shm is mounted with noexec, nosuid, and nodev enforced",
+      "status": "satisfied",
+      "summary": "Baseline showed /dev/shm already had nosuid,nodev but was missing noexec (cmd-eca856e2bd764395). After remount, findmnt and mount output confirm rw,nosuid,nodev,noexec on /dev/shm both before and after reboot (cmd-a55e1f7aeb3a4688, cmd-fc5a3403ceca4721, cmd-8c622a6bbf4246c8). Execution of a chmod+x'd script placed in /dev/shm failed with Permission denied (rc=126) pre- and post-reboot, directly demonstrating enforcement.",
+      "evidence_ids": [
+        "cmd-eca856e2bd764395",
+        "cmd-a55e1f7aeb3a4688",
+        "cmd-fc5a3403ceca4721",
+        "cmd-8c622a6bbf4246c8"
+      ]
+    },
+    {
+      "id": "persist-across-reboot",
+      "requirement": "The mount option settings for /tmp and /dev/shm survive a reboot",
+      "status": "satisfied",
+      "summary": "fstab was updated with persistent tmpfs entries specifying nodev,nosuid,noexec for both mounts (cmd-7762f01a32684128). A full bounded disruption was captured: pre-restart boot_id 434803ac... and healthy mount state (cmd-63130731bf154b19, cmd-bebf4c278d694d20), a reboot command issued and acknowledged (cmd-e425af4346ee4dc7), timeouts during the outage window (cmd-168c683850b346ea, cmd-221a99a0d088473e), a new boot_id 52b2d6e3... confirming an actual restart (cmd-0c6b230f193a4e57), and post-reboot findmnt plus successful exec-denial tests on both /tmp and /dev/shm confirming the hardening was reapplied automatically from fstab after reboot (cmd-8c622a6bbf4246c8). The boot-identity transition is corroborated by the independent fixed lifecycle snapshots, which show the identical before/after boot IDs.",
+      "evidence_ids": [
+        "cmd-7762f01a32684128",
+        "cmd-63130731bf154b19",
+        "cmd-bebf4c278d694d20",
+        "cmd-e425af4346ee4dc7",
+        "cmd-168c683850b346ea",
+        "cmd-221a99a0d088473e",
+        "cmd-0c6b230f193a4e57",
+        "cmd-8c622a6bbf4246c8",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task -- noexec/nosuid/nodev enforcement on /tmp, the same on /dev/shm, and persistence across reboot -- are satisfied with direct, functional evidence (execution denial tests) captured both before and after an actual observed reboot (boot_id change corroborated by the independent fixed lifecycle snapshots). The only blemish is a transient stacked duplicate /tmp mount created during a retried activation attempt, whose cleanup is not fully confirmed by the trace, though it had no observable functional impact and did not persist past the reboot.",
+  "limitations": [
+    "The single `umount /tmp` cleanup command's own /proc/mounts check still showed two /tmp entries afterward, so it cannot be fully confirmed that the stacked duplicate mount was completely removed before the reboot (though it was functionally inert and the post-reboot state is confirmed clean).",
+    "The first live-activation attempt's exact point of failure (cmd-28245c624bab4b30, rc=1) is not fully diagnosable from the captured stdout/stderr, so the precise cause of the duplicate mount cannot be stated with certainty."
+  ],
+  "command_stats": {
+    "total": 16,
+    "successful": 11,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Reviewing the chronological executor commands: fstab backup before edit (cmd-7762f01a32684128) is a safe prerequisite. The first live-activation attempt (cmd-28245c624bab4b30) returned rc=1 (partial failure) and was immediately retried with an equivalent split-command version (cmd-f75deeea19f840a1) that succeeded; this retry is a legitimate corrective action, not an unnecessary mutation. However, the retry combined with the earlier partial attempt appears to have left /tmp double-mounted (stacked tmpfs mounts), visible via `mount` and /proc/mounts showing two identical /tmp entries (cmd-a55e1f7aeb3a4688, cmd-c8dcf7b372f44628). The executor attempted cleanup with a single `umount /tmp` (cmd-1fe826ffbd884f48), but the /proc/mounts check taken within that same command still showed two /tmp entries afterward, so the cleanup claim ('leaving one clean mount') is not fully substantiated by the evidence -- findmnt (which shows only the top mount) subsequently reported a single correct entry, but whether an inert stacked duplicate remained underneath at that point cannot be confirmed from the trace. This is a low-risk, bounded artifact (an extra unused tmpfs layer would not change effective mount options or block enforcement) and in any case is moot after the reboot, since the post-reboot findmnt (cmd-8c622a6bbf4246c8) shows exactly one clean /tmp mount, matching a normal single fstab-driven mount. Test scripts written to /tmp and /dev/shm during verification were removed immediately after each check (cmd-63130731bf154b19, cmd-8c622a6bbf4246c8), leaving no residue. No failed services, unsafe exposures, or package-state damage were introduced (after_executor failed-services and package-health snapshots are clean and match baseline). Listening-socket and temp-file differences between before/after-executor snapshots are attributable to the reboot itself (new PIDs, new boot-id-scoped systemd-private dirs), not to executor mutations.",
+    "evidence_ids": [
+      "cmd-28245c624bab4b30",
+      "cmd-f75deeea19f840a1",
+      "cmd-a55e1f7aeb3a4688",
+      "cmd-c8dcf7b372f44628",
+      "cmd-1fe826ffbd884f48",
+      "cmd-fc5a3403ceca4721",
+      "cmd-8c622a6bbf4246c8",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

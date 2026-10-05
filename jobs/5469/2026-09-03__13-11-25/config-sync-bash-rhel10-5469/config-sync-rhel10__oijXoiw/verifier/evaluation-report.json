@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "source-of-truth",
+      "requirement": "/etc/inventory/app.conf on node1 is the authoritative source of truth for the inventory application's configuration",
+      "status": "satisfied",
+      "summary": "File did not exist prior to the task; executor created it on node1 with inventory-app content and treated it as authoritative for all subsequent sync operations.",
+      "evidence_ids": [
+        "cmd-776f033e06b6434b",
+        "cmd-0b16edad5a624ddd"
+      ]
+    },
+    {
+      "id": "sync-mechanism",
+      "requirement": "A mechanism keeps the copy of app.conf on node2 synchronized with node1",
+      "status": "satisfied",
+      "summary": "A pull-based script on node2 (SSH to node1, checksum compare, overwrite on diff) was installed and run via cron, and a manual invocation produced a matching sha256sum on node2.",
+      "evidence_ids": [
+        "cmd-39cca81b88e34110",
+        "cmd-51dfaedb82c84d5c",
+        "cmd-629eb56566774dea"
+      ]
+    },
+    {
+      "id": "15-min-sla",
+      "requirement": "Changes to node1's file are picked up on node2 within 15 minutes",
+      "status": "satisfied",
+      "summary": "Cron runs every 5 minutes. After modifying node1's file, node2's copy was observed to update via the actual cron trigger (not a manual run) at 13:15:01, syslog-confirmed, well within the 15-minute window.",
+      "evidence_ids": [
+        "cmd-8f3d2ea3b06b43e0",
+        "cmd-2c646eb56bfa4468",
+        "cmd-65089ccb341542d6"
+      ]
+    },
+    {
+      "id": "sync-durability",
+      "requirement": "Sync remains functional on an ongoing basis (survives reboots, since this is a standing 15-minute requirement rather than a one-time copy)",
+      "status": "satisfied",
+      "summary": "After sequential reboots of node1 then node2, crond and the crontab entry persisted on node2, and a further live test (modify node1's file, wait for native cron trigger) synced node2 to match within ~4 minutes, confirmed via syslog and checksum.",
+      "evidence_ids": [
+        "cmd-a126838bbfff40fe",
+        "cmd-e7bd752605c942d9",
+        "cmd-c4f30fc522374b45"
+      ]
+    }
+  ],
+  "overall_summary": "The executor created the missing source-of-truth file on node1 and installed a pull-based cron sync (every 5 minutes) on node2 that reliably propagates changes well within the 15-minute SLA, verified both manually and via genuine cron triggers before and after sequential, fully-observed reboots of both nodes (pre-restart baseline, restart acknowledgement/disconnection, changed boot identity, and post-restart recovery of crond, crontab persistence, and data consistency are all directly evidenced and cross-checked against the fixed lifecycle boot-identity snapshots). The task's material outcomes are satisfied. The main blemish is that two of the verification steps permanently altered the source-of-truth config file with test artifacts (a duplicate log_level line and a timestamp line) instead of restoring it, and a small reboot.log byproduct was left in /tmp on both nodes.",
+  "limitations": [
+    "No visibility into the actual inventory application (if any) consuming this config, so only the config file's synchronization was verified, not any downstream application impact.",
+    "The 15-minute SLA was demonstrated with a 5-minute cron interval observed to fire within ~3-5 minutes twice; behavior at longer intervals or under sustained load was not tested.",
+    "Command outcomes and lifecycle lists were treated as complete as captured; any evidence outside the provided command IDs was not independently reviewable."
+  ],
+  "command_stats": {
+    "total": 35,
+    "successful": 27,
+    "failed": 8,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "Two verification mutations were made directly to the source-of-truth production config file and left in place permanently rather than being reverted: appending a duplicate log_level=debug line (cmd-8f3d2ea3b06b43e0) and appending a post_reboot_check=<timestamp> line (cmd-e7bd752605c942d9). Both were reasonable techniques to trigger and observe sync behavior, but neither was cleaned up afterward, leaving a duplicate key and throwaway test data in what is meant to be authoritative application configuration. Additionally /tmp/reboot.log was created on both nodes as a byproduct of backgrounding the reboot command (cmd-e8b6574a77c14e04, cmd-8d6026688b8244f1) and persisted into the after_executor snapshot on both nodes; this is a low-risk artifact tied to a legitimate operational technique (avoiding a blocked connection during reboot) rather than an unrelated experiment. No failed/conflicting services, no unsafe exposure, and package health remained clean on both nodes per the lifecycle snapshots.",
+    "evidence_ids": [
+      "cmd-8f3d2ea3b06b43e0",
+      "cmd-e7bd752605c942d9",
+      "cmd-e8b6574a77c14e04",
+      "cmd-8d6026688b8244f1",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-baseline-cluster",
+      "requirement": "Three-member etcd cluster across node1, node2, node3 holding application keys is established/running",
+      "status": "satisfied",
+      "summary": "After discovering etcd was not pre-installed, the executor installed etcd 2.2.5 on all three nodes, configured a static 3-node cluster, started it, and directly verified 3/3 healthy members via etcdctl cluster-health/member list. Application keys were written under /app/config, /app/service, /app/nodes and confirmed readable via etcdctl ls --recursive and etcdctl get, with a matching baseline capture (boot_id, etcd active, key value, cluster-health) taken independently on all three nodes before the disruption.",
+      "evidence_ids": [
+        "cmd-d6f51eb712634364",
+        "cmd-26860e105c064b38",
+        "cmd-c30119fcdbe24593",
+        "cmd-7f583e8888ad459a",
+        "cmd-cab4fcd4a0c446e7",
+        "cmd-0fcdc6c397c04278"
+      ]
+    },
+    {
+      "id": "req-2-node3-loss-and-removal",
+      "requirement": "node3's member is permanently lost (irrecoverable) and removed from the cluster while quorum/availability is preserved on node1/node2",
+      "status": "satisfied",
+      "summary": "node3's etcd was stopped and its data directory deleted (simulating unrecoverable loss), then etcdctl member remove was run from node1, which showed node3 unreachable while node1 and node2 remained healthy (quorum preserved) both before and immediately after the removal.",
+      "evidence_ids": [
+        "cmd-dd72bca6984443b8",
+        "cmd-c845086d4e6c46d6"
+      ]
+    },
+    {
+      "id": "req-3-replacement-member-and-key-recovery",
+      "requirement": "A new working member is added on node3 and the cluster returns to three healthy members with the existing application keys intact",
+      "status": "satisfied",
+      "summary": "A new member was added via etcdctl member add, node3 was reconfigured with ETCD_INITIAL_CLUSTER_STATE=existing, and etcd was started fresh; cluster-health and member list immediately showed 3/3 healthy, and etcdctl ls/get on node3 confirmed all four application key paths and their original values were present, matching the pre-loss baseline values captured earlier.",
+      "evidence_ids": [
+        "cmd-d5eca7002dfc4eb9",
+        "cmd-24b741d2ebe6487c",
+        "cmd-b7ca40e8d9a142b0",
+        "cmd-8afa4b7afe7f4296",
+        "cmd-1b266dc666ab4e85"
+      ]
+    },
+    {
+      "id": "req-4-node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all three managed nodes with pre-restart health, restart acknowledgement, changed boot identity, and post-restart cluster/data recovery",
+      "status": "satisfied",
+      "summary": "For each of node1, node2, and node3, the executor captured a pre-reboot boot_id/cluster-health/key value, issued and confirmed a reboot acknowledgement followed by connection loss, confirmed reconnection, and then captured a distinct post-reboot boot_id together with etcd active, 3/3 cluster-health, correct key values, and (for node3) the replacement member's ID and full key set. Post-reboot boot IDs match the fixed after_executor lifecycle snapshot exactly for all three nodes, cross-confirming the transition.",
+      "evidence_ids": [
+        "cmd-f4f802f49e22400d",
+        "cmd-dd38b329c4f348eb",
+        "cmd-2e6b5babcd694a0d",
+        "cmd-f1aa3078353944d9",
+        "cmd-f74b67a3e89847f0",
+        "cmd-931d7c14db674054",
+        "cmd-4f6dfab73ac44ac0",
+        "cmd-856059b8a0524782",
+        "cmd-3e9a61cb08cc4bdb",
+        "cmd-76098bd734694632",
+        "cmd-5f7b8752aee84208",
+        "cmd-fb9fe478305c4c9c"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built the required 3-node etcd cluster with application keys from scratch (etcd was not pre-installed and prepare was disabled), captured a genuine healthy baseline, then correctly simulated node3's permanent loss by stopping etcd and wiping its data, removed the dead member while node1/node2 preserved quorum, added and started a fresh replacement member on node3 with ETCD_INITIAL_CLUSTER_STATE=existing, and directly verified the cluster returned to 3/3 healthy with all application keys intact on the new member. All three nodes were then rebooted one at a time with directly observed pre/post boot-identity changes and full cluster/key recovery, cross-confirmed by the fixed lifecycle snapshots. All material outcomes are satisfied with direct, coherent evidence and no unexplained residue.",
+  "limitations": [
+    "Because prepare was disabled and no baseline cluster existed, the 'existing three-member cluster with keys' starting state was itself established by the executor rather than pre-provisioned, so the demonstrated node3 loss is a self-simulated scenario rather than recovery of an independently pre-existing deployment.",
+    "Several apt-get commands returned proxy-timeout errors even though the underlying operation appears to have completed server-side (e.g., node2's install); exact backend completion timing for those specific attempts cannot be independently confirmed beyond the follow-up dpkg checks."
+  ],
+  "command_stats": {
+    "total": 71,
+    "successful": 53,
+    "failed": 14,
+    "indeterminate": 4,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "No unnecessary or unexplained mutations were found; every state-changing command traces to installing etcd, forming the initial cluster, seeding keys, simulating node3's loss, replacing the member, or the mandatory reboot protocol. Several apt-get invocations failed or hit 120s proxy timeouts on all three nodes (cmd-bd371ea0f4054f3b, cmd-a37e7be096424848, cmd-ec38aafe9b174061, cmd-3ae029bc72354ab2) due to IPv6-only DNS and proxy instability; these were legitimate installation attempts, not speculative experiments, and follow-up checks (cmd-12cf5e0a31bc4b29/cmd-01ea946e1a6649f7/cmd-3937d3ed85694d2c, cmd-43c35c5a75774d97) confirm no corrupted/half-installed package state resulted. The executor cleaned up hung background jobs it started (cmd-43fe60f56e644ba1) and wiped default-created etcd data directories before applying the intended cluster config (cmd-cc1bb94716cf49df, cmd-7a31666ebedc4a64, cmd-a0e8ccc493614e5d), both reasonable prerequisites. Temp files created during installation and reboot (/tmp/etcd_install.log, /tmp/reboot.log) do not appear in the after_executor temporary-files snapshot, consistent with them being cleared by the final reboot on each node; package-health and failed-services remained clean (manager=dpkg, no failed units) in the after_executor snapshot for all three nodes.",
+    "evidence_ids": [
+      "cmd-bd371ea0f4054f3b",
+      "cmd-a37e7be096424848",
+      "cmd-ec38aafe9b174061",
+      "cmd-3ae029bc72354ab2",
+      "cmd-43fe60f56e644ba1",
+      "cmd-cc1bb94716cf49df",
+      "cmd-7a31666ebedc4a64",
+      "cmd-a0e8ccc493614e5d",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

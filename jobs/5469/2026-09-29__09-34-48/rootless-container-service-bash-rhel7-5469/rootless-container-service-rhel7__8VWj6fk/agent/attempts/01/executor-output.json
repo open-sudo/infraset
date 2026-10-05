@@ -1,0 +1,65 @@
+{
+  "status": "completed",
+  "summary": "On node1 (RHEL 7.9), installed Podman, created the unprivileged user appsvc, and configured a rootless container (nginxinc/nginx-unprivileged:alpine) running on port 8080 under that account. The container starts at boot via a systemd system unit (webapp-container.service, User=appsvc) that requires no active login session for appsvc - only lingering is enabled, no logind session exists. Verified across a full node restart: new boot ID, container auto-started, and HTTP 200 served on port 8080, all with zero login sessions for appsvc.",
+  "actions_performed": [
+    "Diagnosed RHEL7 node had no configured yum repos/subscription and no internet to standard mirrors; added CentOS 7.9 vault base/updates/extras repos, EPEL via archives.fedoraproject.org, and the kubic libcontainers repo",
+    "Fixed a large system clock skew (~34 days) via HTTP Date header + date -s, which was breaking TLS to some mirrors; restarted chronyd afterward",
+    "Installed podman 1.6.4 (RHEL7 extras channel) plus dependencies (runc, conmon, fuse-overlayfs, slirp4netns, containernetworking-plugins)",
+    "Created unprivileged user appsvc with subuid/subgid ranges; enabled user.max_user_namespaces sysctl (was 0, blocking user namespaces)",
+    "Diagnosed and fixed a self-inflicted setuid+file-capability conflict on /usr/bin/newuidmap and /usr/bin/newgidmap (kernel refuses to raise capabilities when both are present) by removing the erroneously added setuid bit, restoring correct multi-line subuid/subgid mapping for rootless podman",
+    "Diagnosed a rootless-storage caching issue where podman fell back to single-ID mapping after an earlier failed attempt; fixed by clearing appsvc's container storage state",
+    "Diagnosed stock nginx:alpine failing with pwrite() Operation not permitted on its pidfile under rootless podman on this old 3.10 kernel, traced to the OCI default seccomp profile being incompatible with the kernel; switched to nginxinc/nginx-unprivileged:alpine with seccomp=unconfined",
+    "Created and enabled appsvc account with loginctl enable-linger",
+    "Generated and adapted a systemd system unit (webapp-container.service, User=appsvc) since RHEL7's systemd 219 package does not ship user@.service (systemctl --user unsupported), enabling boot start without a login session via RuntimeDirectory=user/1001",
+    "Ran the mandatory restart protocol: captured baseline boot_id and healthy service/container/HTTP state, restarted node1 via shutdown -r now, polled until reachable, confirmed changed boot_id, and verified container, systemd unit, and HTTP 8080 all recovered with no login session for appsvc"
+  ],
+  "evidence": [
+    {
+      "requirement": "Container app runs as unprivileged account appsvc, serving on port 8080",
+      "command_ids": [
+        "cmd-e4b7975979a54b61",
+        "cmd-db1ab2a6e3ad4834",
+        "cmd-34000a71223e4a98"
+      ],
+      "summary": "curl to $NODE_IP:8080 returns HTTP 200 and nginx welcome page; podman ps/systemctl status show the container and its process tree running under appsvc"
+    },
+    {
+      "requirement": "Service starts at boot while appsvc has no active login session",
+      "command_ids": [
+        "cmd-766b507ade9448f6",
+        "cmd-a72ac34839da4003",
+        "cmd-b8ee2ea16fd44ba3"
+      ],
+      "summary": "loginctl shows appsvc has Sessions= empty (only linger) while its podman/conmon/nginx processes are running; systemd unit enabled with WantedBy=multi-user.target and User=appsvc"
+    },
+    {
+      "requirement": "Healthy baseline captured before restart",
+      "command_ids": [
+        "cmd-b0df75805866464b"
+      ],
+      "summary": "Captured baseline boot_id (e9250ad1...), systemd enabled/active state, and HTTP 200 response prior to reboot"
+    },
+    {
+      "requirement": "Node restarted via native safe mechanism, ack returned before disconnect",
+      "command_ids": [
+        "cmd-6a31804c135d4783"
+      ],
+      "summary": "shutdown -r now issued in background; connection closed by remote host confirming reboot proceeded"
+    },
+    {
+      "requirement": "Boot identity changed, proving actual restart (not just service restart)",
+      "command_ids": [
+        "cmd-5d75df742e7347df"
+      ],
+      "summary": "Post-reboot boot_id is 6ae46876-1f77-452b-b613-4aa67dc85419, differing from baseline e9250ad1-c4f0-4bec-b58e-4e30255a8dcf, with uptime reset to 0 minutes"
+    },
+    {
+      "requirement": "Service, container, and data recovered post-restart with no login session",
+      "command_ids": [
+        "cmd-5a9aa02511a04fd7",
+        "cmd-34000a71223e4a98"
+      ],
+      "summary": "After reboot: systemctl is-enabled/is-active both report enabled/active, container webapp is Up and serving, curl returns HTTP 200, and loginctl confirms appsvc still has zero sessions"
+    }
+  ]
+}

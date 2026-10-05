@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Configure node1 as the internal time source for the cluster",
+      "status": "satisfied",
+      "summary": "Ansible playbook installed and configured chrony on node1 with 'allow 10.100.123.0/24' (permitting the cluster subnet to query it) and a 'local stratum 10' fallback so it can serve time even without upstream sync. Post-run verification (cmd-5037933d4d1f40a7) shows chronyd active and listening on UDP 123 via ss -ulnp, and chronyc sources -v shows it synced to upstream public NTP servers to redistribute internally. This design (node1 sources time externally, then serves the internal subnet) satisfies acting as the cluster's internal time source. Post-restart verification (cmd-a50a5c3d9d734183) confirms chrony still active+enabled and listening on UDP 123 after a full reboot.",
+      "evidence_ids": [
+        "cmd-6ff14828de65458c",
+        "cmd-5037933d4d1f40a7",
+        "cmd-a50a5c3d9d734183"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Configure node2 to synchronize its clock against node1 instead of a public time server",
+      "status": "satisfied",
+      "summary": "Playbook wrote chrony.conf on node2 with the single NTP line 'server 10.100.123.10 iburst prefer', replacing any public pool config. chronyc waitsync/tracking/sources -v (cmd-a7dd5c969af24aa7) show Reference ID 0A647B0A (10.100.123.10, i.e. node1) marked '*' as the current best/synchronized source at stratum 11, one above node1's stratum 10 \u2014 direct evidence node2 is syncing against node1 and not a public server. Post-restart verification (cmd-15a11814983d40b4, cmd-9625f124cf024661) confirms the same source persists after reboot.",
+      "evidence_ids": [
+        "cmd-6ff14828de65458c",
+        "cmd-a7dd5c969af24aa7",
+        "cmd-15a11814983d40b4",
+        "cmd-9625f124cf024661"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Implement using Ansible",
+      "status": "satisfied",
+      "summary": "An inventory (inventory.ini) and playbook.yml were authored on node3 (the Ansible-equipped control node) and executed with ansible-playbook against both hosts, completing with 0 failures/unreachable (node1: ok=5 changed=3; node2: ok=6 changed=3). Playbook and inventory files were confirmed intact on node3 post-restart.",
+      "evidence_ids": [
+        "cmd-425cf2382d254a85",
+        "cmd-f5deaea11e864e5c",
+        "cmd-6ff14828de65458c",
+        "cmd-9ae1b925f0864f5c"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol on all managed nodes (independent check)",
+      "status": "satisfied",
+      "summary": "For each of node1, node2, and node3: pre-restart boot_id and healthy state were captured (cmd-abbcb9eed0a54b4e, cmd-b1b365418c1a48a6, cmd-c9049a5dea2847e6), a reboot was triggered and acknowledged via transient connection failures (cmd-228dab3c41784df5/cmd-ae50af93cc4947d0 for node1; cmd-600c61174d6a42b2/cmd-5027046bb0e246dd for node2; cmd-b65cdb8ad59c4e31/cmd-ed48aa9fc7684e4f for node3), a new distinct boot_id was observed post-reboot (cmd-b6f462fb5cb4428c, cmd-4bc536c95c974d9c, cmd-812b5c5916b443a8), and recovered service/data state was verified: node1 chrony active/enabled/listening on 123 (cmd-a50a5c3d9d734183), node2 chrony active/enabled and re-synced to node1 via waitsync (cmd-15a11814983d40b4), and node3's ansible artifacts and binary intact (cmd-9ae1b925f0864f5c). Final cross-check after all three restarts (cmd-6f324392ad354a3b, cmd-9625f124cf024661) shows node1 still serving and node2 still tracking node1. This matches the fixed after-executor boot-identity observations in the lifecycle snapshot for all three nodes.",
+      "evidence_ids": [
+        "cmd-abbcb9eed0a54b4e",
+        "cmd-b1b365418c1a48a6",
+        "cmd-c9049a5dea2847e6",
+        "cmd-b6f462fb5cb4428c",
+        "cmd-4bc536c95c974d9c",
+        "cmd-812b5c5916b443a8",
+        "cmd-a50a5c3d9d734183",
+        "cmd-15a11814983d40b4",
+        "cmd-9ae1b925f0864f5c",
+        "cmd-6f324392ad354a3b",
+        "cmd-9625f124cf024661"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material outcomes of the public task: node1 was configured via an Ansible playbook as chrony's internal time server for the cluster subnet (with allow rule and local-stratum fallback, listening on UDP 123), and node2 was configured with only 'server 10.100.123.10 iburst prefer' as its NTP source, directly verified via chronyc tracking/waitsync showing node1's IP as the synchronized reference. Implementation was performed entirely via an ansible-playbook run from node3 with a clean play recap (0 failed/unreachable). The independent provider-wide restart-evidence protocol was also thoroughly executed and documented for all three nodes, each showing a pre-restart healthy baseline, a distinct post-restart boot_id, and recovered chrony/service state, consistent with the fixed after-executor lifecycle snapshot. Prerequisite SSH fixes (missing host keys, inactive sshd, key authorization) were legitimate blockers on the base images rather than unnecessary mutations, and no unrelated or unrestored mutations were found.",
+  "limitations": [
+    "The fixed lifecycle snapshot system aliased after_prepare to before_prepare (prepare disabled), so preparer-vs-executor separation relies entirely on the executor's own before/after command evidence rather than an independent preparer snapshot.",
+    "chronyc sources on node1 still show public NTP pool servers as its own upstream reference; this is a reasonable interpretation of 'internal time source' (node1 relays externally-sourced time internally) but the task wording does not explicitly confirm whether node1 should be fully isolated from public sources \u2014 treated as an acceptable implementation choice, not a deficiency."
+  ],
+  "command_stats": {
+    "total": 48,
+    "successful": 34,
+    "failed": 14,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "Reviewed all 48 executor commands chronologically. State-changing actions consisted of: (1) ssh-keygen -A + systemctl enable --now ssh on node1 and node2 (cmd-bb5aeb48463f4404, cmd-6122af3e4058410b) \u2014 a necessary prerequisite fix since the base images shipped with missing SSH host keys and inactive sshd, blocking Ansible connectivity, not executor-caused residue; (2) appending CLUSTER_SSH_PUBKEY to authorized_keys on node1/node2 (cmd-98697e13d0e0438f, cmd-4721088e42cc49d8) \u2014 required for the control node to reach managed nodes via Ansible; (3) writing inventory.ini and playbook.yml on node3 (cmd-425cf2382d254a85, cmd-f5deaea11e864e5c, revised at cmd-681d7f3708c24f8a after an initial auth failure) \u2014 the task's actual Ansible artifacts, appropriately retained; (4) the chrony installs/config/restarts driven by the playbook itself, directly satisfying the task; (5) three sequential reboots as part of the mandated restart-evidence protocol, each followed by recovery verification. No unnecessary, unbounded, or destructive mutations were identified; failed/diagnostic commands (SSH probing with wrong keys, id lookups for a nonexistent 'antrieb' user) were read-only and did not mutate state. Lifecycle diffs show only expected boot-scoped ephemeral artifacts (new systemd-private tmp dirs, new socket listeners for chronyd/sshd) tied directly to the task and reboots, with no failed services or package inconsistencies in the after-executor snapshot.",
+    "evidence_ids": [
+      "cmd-bb5aeb48463f4404",
+      "cmd-6122af3e4058410b",
+      "cmd-98697e13d0e0438f",
+      "cmd-4721088e42cc49d8",
+      "cmd-425cf2382d254a85",
+      "cmd-f5deaea11e864e5c",
+      "cmd-681d7f3708c24f8a",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

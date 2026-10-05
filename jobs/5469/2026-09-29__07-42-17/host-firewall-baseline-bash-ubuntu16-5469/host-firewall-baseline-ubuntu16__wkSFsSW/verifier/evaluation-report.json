@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Enable a persistent host firewall on node1 (survives reboot)",
+      "status": "satisfied",
+      "summary": "ufw configured with default deny incoming/allow outgoing, enabled non-interactively, and systemd-enabled (systemctl is-enabled ufw -> enabled, ufw.conf ENABLED=yes). Persistence was directly demonstrated: a full reboot was performed (boot_id changed from b185f188... to c54b62d5...), and post-restart ufw status verbose still showed active with the identical rule set, confirming true persistence rather than just a live session state.",
+      "evidence_ids": [
+        "cmd-a3b23f0f01cd4913",
+        "cmd-508c520e0d2f44d3",
+        "cmd-2e96d2014a81406f",
+        "cmd-c07d0e27c1524531",
+        "cmd-0121c4f0f0134daf",
+        "cmd-7f7aba786bcc464b",
+        "cmd-4921dce04ec9453d"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Permit SSH (22/tcp) inbound",
+      "status": "satisfied",
+      "summary": "Explicit ALLOW rule for 22/tcp (and v6) added and confirmed in ufw status, the ufw-user-input iptables chain, and /etc/ufw/user.rules. A live connectivity test to port 22 succeeded, and sshd remained active both pre- and post-restart with the rule intact.",
+      "evidence_ids": [
+        "cmd-a3b23f0f01cd4913",
+        "cmd-391e83a7daac4405",
+        "cmd-508c520e0d2f44d3",
+        "cmd-3f72f79dff8845b7",
+        "cmd-4921dce04ec9453d"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Permit TCP port 8080 inbound",
+      "status": "satisfied",
+      "summary": "Explicit ALLOW rule for 8080/tcp (and v6) added and confirmed via ufw status, iptables chain, and user.rules. A test listener on 8080 was reachable both before and after the restart (via nc/ss and an external nc -zv test), and the rule persisted post-reboot.",
+      "evidence_ids": [
+        "cmd-a3b23f0f01cd4913",
+        "cmd-391e83a7daac4405",
+        "cmd-508c520e0d2f44d3",
+        "cmd-6bae49a074004713",
+        "cmd-3f72f79dff8845b7",
+        "cmd-4921dce04ec9453d",
+        "cmd-2749ccc9f32c4ca5"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Reject unrelated inbound connections (only SSH and 8080 allowed)",
+      "status": "partially_satisfied",
+      "summary": "Configuration evidence supports the requirement: ufw default policy is deny incoming, raw iptables INPUT chain policy is DROP, and only 22/tcp and 8080/tcp ALLOW rules exist in the ufw-user-input chain (no rule for 9999 or any other port). However, the only behavioral test of an unrelated port (9999) unexpectedly reported 'Connection succeeded' rather than being blocked, because the test connected via the loopback route (ip route get showed 'local ... dev lo'), which ufw treats permissively by default and does not exercise the same path as genuine external inbound traffic. The executor itself flagged this test as non-authoritative and did not perform a valid external-path test proving rejection, so the reject behavior rests on configuration inference rather than a directly observed successful block.",
+      "evidence_ids": [
+        "cmd-a3b23f0f01cd4913",
+        "cmd-391e83a7daac4405",
+        "cmd-3f72f79dff8845b7",
+        "cmd-f7644c4eca3148cb"
+      ]
+    }
+  ],
+  "overall_summary": "node1 now runs a persistent ufw firewall with default-deny incoming and explicit ALLOW rules for 22/tcp and 8080/tcp, verified as surviving a full reboot (boot_id changed, rules and service state identical after restart). SSH and 8080 access are directly demonstrated to work. The 'reject unrelated inbound' half of the requirement is backed by solid configuration (default DROP policy, no other allow rules) but the one behavioral test of an unrelated port (9999) inconclusively succeeded due to a loopback routing artifact, which the executor itself acknowledged as non-authoritative and did not replace with a valid external test. Minor hygiene issue: one leftover temp log file (/tmp/nc8080b.log) from a test listener was not cleaned up; other test mutations were properly reverted.",
+  "limitations": [
+    "No valid external-network test proved that an unrelated port (e.g., 9999) is actually rejected; the only attempt used a loopback path and gave a misleading 'succeeded' result that the executor flagged as non-authoritative.",
+    "The 8080 reachability check on the post-restart node used a local ss listener check rather than a genuine external connection, so end-to-end external reachability of 8080 post-restart is inferred from rule persistence rather than directly re-tested externally."
+  ],
+  "command_stats": {
+    "total": 17,
+    "successful": 12,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.7,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.875,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Executor commands were mostly diagnostic or directly tied to the firewall configuration and the mandated restart-evidence protocol. Test listeners on ports 8080 and 9999 (cmd-6bae49a074004713) were a bounded, low-risk troubleshooting mutation used to sanity-check the ruleset; they were explicitly terminated afterward (cmd-9eb1329d14b348a3) and confirmed cleaned up (cmd-d4f13cc23df3489d). A second post-restart listener on 8080 (part of cmd-4921dce04ec9453d) was likewise killed (cmd-af45aa8a9f864c02) and confirmed removed (cmd-2749ccc9f32c4ca5). However, the after_executor lifecycle snapshot shows a leftover file /tmp/nc8080b.log (the nohup log redirect target for the post-restart test listener) that was never deleted, constituting minor unnecessary residue. No failed services, package damage, or weakened security controls were introduced; the firewall's final state is default-deny with only the two intended allow rules.",
+    "evidence_ids": [
+      "cmd-6bae49a074004713",
+      "cmd-9eb1329d14b348a3",
+      "cmd-d4f13cc23df3489d",
+      "cmd-af45aa8a9f864c02",
+      "cmd-2749ccc9f32c4ca5",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 0.875,
+  "provisional_reward": 0.875
+}

@@ -1,0 +1,213 @@
+---
+# Deploy the app on node2, and publish it through node1 (VyOS) to node3,
+# without exposing the rest of the node1/node2 private network to node3.
+
+- name: Deploy application on node2 and restrict direct access to it
+  hosts: app
+  become: true
+  vars:
+    gateway_ip: 10.100.61.10     # node1
+    controller_ip: 10.100.61.13  # node4, the Ansible control node - needed for management access
+    external_ip: 10.100.61.12    # node3 - must not reach node2 on any port, only via node1's published 8080
+  tasks:
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Serve the app on port 8080 instead of the default 80
+      copy:
+        dest: /etc/nginx/sites-available/app8080
+        content: |
+          server {
+              listen 8080 default_server;
+              location / {
+                  return 200 "app on node2 (via node1 gateway)\n";
+                  add_header Content-Type text/plain;
+              }
+          }
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Enable the app8080 site
+      file:
+        src: /etc/nginx/sites-available/app8080
+        dest: /etc/nginx/sites-enabled/app8080
+        state: link
+      notify: Reload nginx
+
+    - name: Disable the default site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+
+    - name: Ensure nginx is started and enabled
+      systemd:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Install ufw
+      apt:
+        name: ufw
+        state: present
+
+    - name: Remove any broad allow-from-anywhere SSH rule from earlier runs
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        delete: true
+
+    - name: Allow SSH from the gateway (node1), for management only
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        src: "{{ gateway_ip }}"
+
+    - name: Allow SSH from the Ansible control node, for management only
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        src: "{{ controller_ip }}"
+
+    - name: Allow port 8080 only from node1 (the gateway) - not from node3 directly
+      community.general.ufw:
+        rule: allow
+        port: "8080"
+        proto: tcp
+        src: "{{ gateway_ip }}"
+
+    - name: Deny everything from node3 outside of the published flow through node1
+      community.general.ufw:
+        rule: deny
+        src: "{{ external_ip }}"
+
+    - name: Set default incoming policy to deny
+      community.general.ufw:
+        policy: deny
+        direction: incoming
+
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled
+
+  handlers:
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
+- name: Publish node2's app through node1 to node3 (port-forward only, nothing else)
+  hosts: gateway
+  become: true
+  vars:
+    app_ip: 10.100.61.11    # node2
+    app_port: 8080
+    wan_iface: eth0          # node1's only interface; also faces node3 on this flat topology
+  tasks:
+    # bash -c '...' silently fails here: script-template defines "configure"/"exit"
+    # as aliases, and alias expansion does not apply to later commands within a
+    # single bash -c argument. Writing a real script file and running `bash file`
+    # makes bash read it incrementally, so the aliases take effect as intended.
+    - name: Write VyOS destination NAT + hairpin source NAT + forward filter script
+      copy:
+        dest: /tmp/publish_app_nat.sh
+        mode: "0700"
+        content: |
+          source /opt/vyatta/etc/functions/script-template
+          configure
+
+          # Destination NAT: anything hitting node1:8080 is redirected to node2:8080
+          set nat destination rule 10 inbound-interface name {{ wan_iface }}
+          set nat destination rule 10 protocol tcp
+          set nat destination rule 10 destination port {{ app_port }}
+          set nat destination rule 10 translation address {{ app_ip }}
+          set nat destination rule 10 translation port {{ app_port }}
+
+          # Hairpin source NAT: node2 is on the same flat subnet as node1 and node3, and
+          # node2 default route is the platform gateway, not node1. Without this,
+          # node2 would reply straight to node3, bypassing node1, and the DNAT
+          # connection would never complete. Masquerading forces the reply through
+          # node1 so the NAT session stays symmetric.
+          set nat source rule 10 outbound-interface name {{ wan_iface }}
+          set nat source rule 10 protocol tcp
+          set nat source rule 10 destination address {{ app_ip }}
+          set nat source rule 10 destination port {{ app_port }}
+          set nat source rule 10 translation address masquerade
+
+          # Forward filter: default-drop, only allow the published app flow (plus
+          # its established/related return traffic). This is what keeps the rest
+          # of the node1/node2 private network closed off to node3 - only the
+          # single NAT-ed port is reachable, nothing else gets routed.
+          set firewall ipv4 forward filter default-action drop
+          set firewall ipv4 forward filter rule 5 action accept
+          set firewall ipv4 forward filter rule 5 state established enable
+          set firewall ipv4 forward filter rule 5 state related enable
+          set firewall ipv4 forward filter rule 10 action accept
+          set firewall ipv4 forward filter rule 10 protocol tcp
+          set firewall ipv4 forward filter rule 10 destination address {{ app_ip }}
+          set firewall ipv4 forward filter rule 10 destination port {{ app_port }}
+
+          commit
+          save
+          exit
+
+    - name: Apply the VyOS configuration
+      ansible.builtin.command: bash /tmp/publish_app_nat.sh
+      register: vyos_config
+      changed_when: "'nothing changed' not in vyos_config.stdout"
+
+    - name: Write VyOS show-configuration script
+      copy:
+        dest: /tmp/show_app_nat.sh
+        mode: "0700"
+        content: |
+          source /opt/vyatta/etc/functions/script-template
+          configure
+          run show configuration commands | grep -E "^set (nat|firewall)"
+          exit
+
+    - name: Show resulting NAT + firewall configuration
+      ansible.builtin.command: bash /tmp/show_app_nat.sh
+      register: vyos_show
+      changed_when: false
+
+    - name: Print configuration
+      debug:
+        var: vyos_show.stdout_lines
+
+- name: Verify the app is reachable from node3 via node1, and not directly from node2
+  hosts: external
+  become: false
+  vars:
+    gateway_ip: 10.100.61.10
+    app_ip: 10.100.61.11
+    app_port: 8080
+  tasks:
+    - name: Fetch the app through node1 (expected to succeed)
+      ansible.builtin.uri:
+        url: "http://{{ gateway_ip }}:{{ app_port }}/"
+        return_content: true
+      register: via_gateway
+
+    - name: Show response via node1
+      debug:
+        msg: "{{ via_gateway.content }}"
+
+    - name: Try to reach node2 directly (expected to fail / be refused)
+      ansible.builtin.uri:
+        url: "http://{{ app_ip }}:{{ app_port }}/"
+        return_content: true
+      register: direct_attempt
+      failed_when: false
+
+    - name: Show direct-access result (should NOT be a successful 200)
+      debug:
+        msg: "status={{ direct_attempt.status | default('connection failed') }}"

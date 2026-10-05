@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Serve the inventory application over TCP port 8181 on node1",
+      "status": "satisfied",
+      "summary": "A systemd-managed Python HTTP server (inventory-app.service) was created, enabled, and confirmed listening on *:8181 via `ss`, with curl against $NODE_IP:8181 returning the inventory JSON payload. This was verified both before and after the mandatory restart, confirming persistence across reboot.",
+      "evidence_ids": [
+        "cmd-f2189b3f7db44dde",
+        "cmd-37e78b0c18174695",
+        "cmd-f390a42f5d164fb9"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Mandatory access control (AppArmor) remains in enforcing mode while the app is set up and serving",
+      "status": "satisfied",
+      "summary": "AppArmor was confirmed as the node's MAC system (no SELinux present). aa-status was checked at multiple points \u2014 before app creation, immediately after the service was brought up, immediately before restart, and after restart \u2014 consistently showing 13/13 profiles loaded and in enforce mode, with the apparmor kernel module loaded throughout.",
+      "evidence_ids": [
+        "cmd-02c4757891da4e55",
+        "cmd-f2189b3f7db44dde",
+        "cmd-37e78b0c18174695",
+        "cmd-f390a42f5d164fb9"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Provider-wide node-restart evidence protocol on node1 (pre-restart baseline, restart acknowledgement, changed boot identity, recovered service/data/MAC state)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id e4e401d2... with service active/enabled, AppArmor enforcing, port 8181 listening, and curl succeeding. `shutdown -r now` was issued and acknowledged; a subsequent connection attempt failed (node down), and a later attempt succeeded with a new boot_id (5e5b6798...), directly confirming a real reboot. Post-restart checks show the service active/enabled, port 8181 listening, curl returning the inventory JSON, and AppArmor still 13/13 enforcing \u2014 matching the fixed after-prepare/after-executor boot-identity cross-check in the lifecycle snapshots (e4e401d2... -> 5e5b6798...).",
+      "evidence_ids": [
+        "cmd-37e78b0c18174695",
+        "cmd-0842311fdf854c16",
+        "cmd-9affedd29cfb498f",
+        "cmd-0f88c3adb2da4dce",
+        "cmd-f390a42f5d164fb9",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor deployed a systemd-managed Python HTTP server on node1 that serves inventory JSON on TCP 8181, verified reachable via curl both before and after a full restart, while AppArmor remained continuously in enforcing mode (13/13 profiles) throughout setup, serving, and after reboot. The mandatory node-restart evidence protocol was completed with clear boot-identity change and full recovery of service, port, and MAC state, corroborated by the fixed before/after lifecycle boot-identity snapshots. A transient Python 3.5 compatibility bug caused a temporary service failure during setup but was promptly diagnosed and fixed, leaving no residue in the final state.",
+  "limitations": [
+    "The lifecycle 'listening-sockets' global observations were captured empty (likely bounded/filtered) both before and after, so they could not independently corroborate the port-8181 listener; port evidence instead relies on executor-run `ss` commands.",
+    "No indication of file/directory ownership or permission hardening review beyond default root-owned systemd unit deployment, though nothing in the task or evidence suggests this was required."
+  ],
+  "command_stats": {
+    "total": 11,
+    "successful": 6,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "One state-changing misstep occurred during setup: the first server.py used a Python-3.6-only context-manager form of TCPServer, which is incompatible with the node's Python 3.5, causing inventory-app.service to crash-loop and hit systemd's start-limit ('failed' state) in cmd-6fa9b71a46c74eaa, observed via cmd-fc53823e983b4fe0. This was a legitimate bug fix directly tied to satisfying the port-8181 requirement, not an unrelated experiment, and it was fully corrected in cmd-f2189b3f7db44dde (rewrote server.py, ran `systemctl reset-failed`, restarted successfully). The after_executor lifecycle snapshot confirms no residual failed services and a clean final state. No other unnecessary or unbounded mutations were observed; all other commands were either read-only discovery, necessary file/unit creation, or the mandatory restart protocol.",
+    "evidence_ids": [
+      "cmd-6fa9b71a46c74eaa",
+      "cmd-fc53823e983b4fe0",
+      "cmd-f2189b3f7db44dde",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

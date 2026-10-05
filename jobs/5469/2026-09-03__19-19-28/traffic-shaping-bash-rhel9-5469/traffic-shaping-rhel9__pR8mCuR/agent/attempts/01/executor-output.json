@@ -1,0 +1,90 @@
+{
+  "status": "completed",
+  "summary": "Built the node2/node3-via-node1 routed topology (previously unconfigured) and applied a VyOS QoS rate-control policy on node1's eth2 (facing node3) egress, capping node2\u2192node3 traffic at 1Mbit/s while leaving node3\u2192node2 unrestricted. Verified with iperf3 baseline (~24Gbit/s unshaped) and post-shaping (~0.97Mbit/s node2\u2192node3 vs ~0.5-1.5Gbit/s node3\u2192node2). All three nodes (node1, node2, node3) were then restarted one at a time per the mandatory protocol; each showed a changed boot_id and fully recovered network config, IP forwarding, VyOS QoS policy, and shaping behavior (re-verified end-to-end with iperf3 after all three restarts).",
+  "actions_performed": [
+    "Inspected topology: node1(VyOS) eth0/eth1/eth2, node2/node3 RHEL9 enp1s0/enp8s0 - found eth1/eth2 and enp8s0 unconfigured (no IPs)",
+    "Assigned static IPs via VyOS 'set interfaces ethernet' on node1 eth1 (10.10.12.1/24, to node2) and eth2 (10.10.13.1/24, to node3)",
+    "Assigned static IPs on node2/node3 enp8s0 via nmcli (persistent, avoided NetworkManager reconciler clobbering manual 'ip addr add')",
+    "Added persistent cross-subnet routes via nmcli +ipv4.routes on node2 (to 10.10.13.0/24 via node1) and node3 (to 10.10.12.0/24 via node1)",
+    "Confirmed VyOS ip_forward=1 and no firewall rules blocking transit; verified end-to-end ping node2<->node3 through node1",
+    "Installed iperf3, measured unshaped baseline node2->node3 throughput (~24 Gbit/s)",
+    "Applied VyOS 'set qos policy rate-control LIMIT-N2-TO-N3 bandwidth 1mbit' policy and attached to 'set qos interface eth2 egress' (the node3-facing interface), committed and saved config",
+    "Verified via 'show qos interface eth2' and 'tc qdisc show dev eth2' that a tbf qdisc at 1Mbit was installed",
+    "Verified with iperf3 that node2->node3 throughput dropped to ~0.96-1.2 Mbit/s while node3->node2 remained unrestricted (~1.3 Gbit/s)",
+    "Captured pre-restart boot_id baseline on all three nodes",
+    "Restarted node1 via 'reboot', polled until exec available, confirmed changed boot_id, and verified QoS policy, interface IPs, ip_forward, and tbf qdisc all persisted via VyOS config.boot",
+    "Restarted node2 via 'reboot', confirmed changed boot_id, verified enp8s0 static IP/route persisted via NetworkManager, verified shaping still enforced with iperf3",
+    "Restarted node3 via 'reboot', confirmed changed boot_id, verified enp8s0 static IP/route persisted, ran final bidirectional iperf3 test confirming node2->node3 still capped at ~1Mbit/s and node3->node2 still unrestricted",
+    "Cleaned up iperf3 servers and temporary firewalld port openings on node2/node3"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2/node3 connect through node1 (topology build-out, since it was unconfigured)",
+      "command_ids": [
+        "cmd-7f3e74f2610949c6",
+        "cmd-2ce8f5007a48499b",
+        "cmd-3207f6edf4e4455e",
+        "cmd-f6ff363e70774ca1",
+        "cmd-7210b6bf9ea2406e",
+        "cmd-8bb2d725edd946fa",
+        "cmd-8443290f2c4547a5",
+        "cmd-5925df7f02a0403d"
+      ],
+      "summary": "Discovered node1 eth1/eth2 and node2/node3 enp8s0 unconfigured; assigned IPs (VyOS CLI on node1, nmcli-persistent on node2/node3) and confirmed routed connectivity end-to-end via ping through node1"
+    },
+    {
+      "requirement": "Limit node2->node3 traffic to 1Mbit/s",
+      "command_ids": [
+        "cmd-06f22f7403e94674",
+        "cmd-93265640f4d84e99",
+        "cmd-7a216b1e48ab44ed"
+      ],
+      "summary": "Baseline unshaped throughput ~24Gbit/s; applied VyOS 'qos policy rate-control' (1mbit) on eth2 egress (node3-facing interface), producing a tbf qdisc; post-config iperf3 measured ~0.96-1.2Mbit/s node2->node3"
+    },
+    {
+      "requirement": "Leave node3->node2 traffic unrestricted",
+      "command_ids": [
+        "cmd-db68fbf480df4c92"
+      ],
+      "summary": "iperf3 node3->node2 measured ~1.05-1.34Gbit/s, confirming no shaping applied in the reverse direction (only eth1, facing node2, remains unshaped)"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-59249c346726480d",
+        "cmd-3e1c6e1988cd4e0f",
+        "cmd-b81479ca165948cd",
+        "cmd-e63c27c50c614d8c",
+        "cmd-427d440b619547d2",
+        "cmd-5d34b1150eac48af",
+        "cmd-781e4e1487ec4f48"
+      ],
+      "summary": "Baseline boot_id 32669db3...; reboot acknowledged then connection dropped; post-reboot boot_id 210243e0... (changed) with 'up 0 min'; QoS policy, eth1/eth2 IPs, ip_forward=1, and tbf qdisc all confirmed persisted via config.boot; end-to-end ping through node1 recovered"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-1573b329692c4cfb",
+        "cmd-d70d735172f743a4",
+        "cmd-a499c494601847db",
+        "cmd-0c7963f388424216",
+        "cmd-3da7db421aa34ecf",
+        "cmd-e73a90bd155a4f82"
+      ],
+      "summary": "Baseline boot_id 55595e92...; reboot acknowledged then connection reset; post-reboot boot_id 51e51ee4... (changed) with 'up 0 min'; enp8s0 static IP/route (nmcli-persisted) confirmed intact; iperf3 re-confirmed ~1Mbit/s shaping still enforced node2->node3"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-33fd0e67cfe648ae",
+        "cmd-683484baa58e4d18",
+        "cmd-e983a41c9e0146dc",
+        "cmd-662083e874d2423c",
+        "cmd-b82c877a976a49d2",
+        "cmd-0526dd46746d4df4",
+        "cmd-7ea351795fcd4990"
+      ],
+      "summary": "Baseline boot_id 4999270d...; reboot acknowledged; post-reboot boot_id 318f82f3... (changed) with 'up 0 min'; enp8s0 static IP/route confirmed intact; final bidirectional iperf3 test after all 3 restarts confirmed node2->node3 still ~0.97Mbit/s and node3->node2 still unrestricted (~0.5-1.5Gbit/s)"
+    }
+  ]
+}

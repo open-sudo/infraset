@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node2 is placed on VLAN 10 and node3 on VLAN 20 over the shared link",
+      "status": "satisfied",
+      "summary": "nmcli created enp8s0.10 (10.10.10.2/24) on node2 and enp8s0.20 (10.10.20.2/24) on node3, both interfaces up and confirmed post-reboot as well.",
+      "evidence_ids": [
+        "cmd-99a1859187474b4a",
+        "cmd-e1ae3ccfa1ab48c2",
+        "cmd-917c6df833c044ef",
+        "cmd-50206ec7d3524514"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node1 routes between the two VLANs (router-on-a-stick with 802.1q sub-interfaces and forwarding enabled)",
+      "status": "satisfied",
+      "summary": "VyOS eth1 vif 10 (10.10.10.1/24) and vif 20 (10.10.20.1/24) were configured and committed/saved; ip_forward=1 confirmed; forward-filter firewall rules explicitly permit inter-VLAN traffic while defaulting to drop otherwise.",
+      "evidence_ids": [
+        "cmd-164212cae7514270",
+        "cmd-553240ee157144dc",
+        "cmd-30b7b16377cc4504",
+        "cmd-1fe15ea5f6d94b99"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node2 and node3 can still reach each other, routed through node1",
+      "status": "satisfied",
+      "summary": "Bidirectional ping succeeded with ttl=63 (one router hop) after fixing an initial default-route asymmetry with subnet-specific static routes; connectivity was re-verified after all three reboots.",
+      "evidence_ids": [
+        "cmd-860532a551db422d",
+        "cmd-277daf4a24954dc3",
+        "cmd-917c6df833c044ef",
+        "cmd-50206ec7d3524514",
+        "cmd-1fe15ea5f6d94b99"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Segregation is genuine 802.1Q VLAN tagging on the shared link, not just IP-level routing",
+      "status": "satisfied",
+      "summary": "tcpdump -e capture on node1's eth1 shows ICMP traffic explicitly tagged 'vlan 10' to/from node2 and 'vlan 20' to/from node3, confirming real VLAN separation and node1 retagging/routing between them.",
+      "evidence_ids": [
+        "cmd-fae8633a70f04538"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Configuration persists and connectivity recovers across a reboot of each node (provider-wide restart evidence protocol, applied here to all three managed nodes)",
+      "status": "satisfied",
+      "summary": "Each node's pre-restart boot_id was captured, a reboot was issued, connection attempts timed out during the transition, and a new distinct boot_id was observed post-restart, matching the fixed lifecycle snapshot boot-identity diffs. VLAN interfaces, routes, firewall/forwarding state, and end-to-end cross-VLAN ping were all re-verified as healthy after each of the three reboots.",
+      "evidence_ids": [
+        "cmd-5de8247b0d7e43a4",
+        "cmd-7de64f9733614d09",
+        "cmd-73f69d96744e4b51",
+        "cmd-1fe15ea5f6d94b99",
+        "cmd-d8e5a0bfebe94a42",
+        "cmd-4b7aad10a8884492",
+        "cmd-85798268f7c14dbf",
+        "cmd-917c6df833c044ef",
+        "cmd-08f729bbe80b4d4e",
+        "cmd-66a52babdbe54c44",
+        "cmd-413cda83cbb44d0a",
+        "cmd-50206ec7d3524514",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:before_prepare:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:before_prepare:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully segmented node2 onto VLAN 10 and node3 onto VLAN 20 across the shared link, configured node1 as a router-on-a-stick with 802.1Q sub-interfaces and forward-filter firewall rules, and verified genuine VLAN tagging via tcpdump plus working bidirectional connectivity between node2 and node3 through node1. An initial routing misconfiguration (dual default routes) was diagnosed and corrected with static routes rather than left broken. All three nodes were then rebooted one at a time with clear pre-restart boot_id baselines, restart acknowledgements, distinct post-restart boot_ids, and full re-verification of VLAN interfaces, routing, firewall state, and cross-VLAN connectivity \u2014 satisfying the provider-wide node-restart evidence protocol as well as the core task contract.",
+  "limitations": [
+    "Restart verification relied on interface/route/ping checks rather than confirming the VyOS firewall commit persisted verbatim from /config/config.boot after reboot, though ip_forward and connectivity results are consistent with a persisted config.",
+    "Minor diagnostic residue (/tmp/vlan.log, /tmp/tcpdump.pid) was left on node1 and not confirmed removed."
+  ],
+  "command_stats": {
+    "total": 56,
+    "successful": 38,
+    "failed": 18,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Almost all state-changing commands had a clear purpose tied to the task: VLAN sub-interface/firewall configuration on node1, VLAN connections and static routes on node2/node3, and the three sequential reboots (with pre/post verification) matching the provider-wide restart protocol. The initial gateway-based routing approach (cmd-99a1859187474b4a/cmd-e1ae3ccfa1ab48c2) caused a 'Destination Host Unreachable' failure, but this was corrected in-place via nmcli modify (cmd-0a7d696b2f934bab, cmd-d9f229627d0f4235) rather than left broken or duplicated as separate leftover connections, so it counts as a corrective action, not an unnecessary mutation. One minor item: the executor started a background tcpdump on node1 (cmd-909f1c0eafda4125) writing /tmp/vlan.log and /tmp/tcpdump.pid; these were used for verification but not explicitly cleaned up afterward, leaving small bounded diagnostic residue on node1. No failed services, no broad or destructive mutations, no security-control weakening; package-health and failed-services checks are clean before and after.",
+    "evidence_ids": [
+      "cmd-909f1c0eafda4125",
+      "cmd-0a7d696b2f934bab",
+      "cmd-d9f229627d0f4235",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

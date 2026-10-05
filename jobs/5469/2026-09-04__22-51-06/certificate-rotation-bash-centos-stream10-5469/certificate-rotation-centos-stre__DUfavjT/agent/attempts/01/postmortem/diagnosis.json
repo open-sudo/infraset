@@ -1,0 +1,51 @@
+{
+  "evidence": [
+    {
+      "source": "command audit: renew-cert.sh execution logs (03:09:59, 03:11:04)",
+      "finding": "Both 'renewed cert' log entries correspond to manual/direct invocations of /usr/local/bin/renew-cert.sh triggered by the executor while debugging permissions, not to an automatic firing of cert-renew.timer. The timer was only enabled at 03:11:17, after both observed renewals."
+    },
+    {
+      "source": "command audit: cert inspection at 03:11:28 and 03:12:02",
+      "finding": "Cert in place has notBefore=03:11:04, notAfter=03:17:04 (6-minute lifetime); the renewal threshold is <3 minutes remaining, i.e. due around 03:14:04. The last audit record checked is timestamped 03:12:02 \u2014 about 2 minutes before the earliest possible automatic renewal. No automatic renewal was captured in the selected records."
+    },
+    {
+      "source": "command audit: /tmp/watch.log contents",
+      "finding": "The watch loop (intended to poll every 5s for 300s) only produced entries from 03:11:26 through 03:12:02 (36 seconds of the planned 300), all showing HTTP 200 and unchanged serial 6A9B8848. This is consistent with the executor's own account that a background sleep/wait tracking issue prevented the intended wall-clock wait from elapsing before the turn ended."
+    },
+    {
+      "source": "executor structured report",
+      "finding": "Executor explicitly states the mandatory per-node restart/reboot evidence protocol (boot-id baseline, reboot, post-reboot recovery verification) was never started for node1."
+    },
+    {
+      "source": "command audit: nginx config and TLS setup",
+      "finding": "nginx installed, configured to terminate TLS on 8443 using /etc/nginx/tls/server.crt and server.key; curl -vk against the endpoint returned a completed TLSv1.3 handshake and HTTP 200, ownership/permissions on the cert/key were corrected to nginx:nginx to satisfy SELinux enforcing mode."
+    },
+    {
+      "source": "command audit: renew-cert.sh workflow (script content not fully shown, only behavior)",
+      "finding": "Script logic, as described and exercised, checks remaining cert validity, reissues via openssl with explicit -not_before/-not_after, then runs 'nginx -t' followed by 'systemctl reload nginx' \u2014 a reload (not restart), which is the correct primitive for picking up new certs without dropping connections, though this specific behavior under an actual near-expiry trigger was never observed."
+    }
+  ],
+  "likely_causes": [
+    {
+      "cause": "Turn/session time budget exhaustion: the executor chose a very short (6-minute) cert lifetime specifically to be able to observe a renewal within one turn, but then lost track of elapsed wall-clock time across separate backgrounded exec calls (each exec call is a fresh synchronous invocation; a `sleep` or `wait` started in one call does not block a later call), so the multi-minute observation window it needed never actually completed before the turn was force-ended.",
+      "confidence": "high"
+    },
+    {
+      "cause": "Scope/process issue rather than a technical defect: nginx, the local CA, the renewal script, and the systemd timer were all installed and independently verified to work (initial cert issuance, correct permissions, valid TLS handshake, nginx -t + reload logic in the script). The blocker was purely evidentiary \u2014 no automatic timer-triggered renewal or restart-survival proof was captured \u2014 not a sign that the mechanism itself is broken.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "The mandatory restart/reboot evidence protocol was deprioritized in favor of the live-renewal proof and never attempted at all, suggesting the executor ran out of turn budget rather than encountering a technical obstacle with reboot itself (no reboot command or failure evidence exists in the audit).",
+      "confidence": "medium"
+    }
+  ],
+  "next_attempt_guidance": [
+    "Insufficient evidence exists to know whether the renew-cert.sh + cert-renew.timer combination actually performs a correct automatic renewal+reload when triggered by the timer (as opposed to manual invocation) \u2014 treat this as unverified, not confirmed, on the fresh cluster.",
+    "Do not assume the previous 6-minute cert lifetime / 3-minute threshold values are required; they were chosen only to compress the observation window for demo purposes within a single turn. A more realistic lifetime (e.g. days) with a proportionally longer renewal check interval is fine, and arguably safer against clock-skew edge cases, but requires longer between-check polling, so plan multi-turn or long-poll evidence capture accordingly.",
+    "Structure the live-renewal proof so it doesn't depend on wall-clock waits spanning multiple tool-call turns: prefer starting a single backgrounded watch+wait script and polling its log with follow-up execs within the SAME turn until the renewal is observed, or artificially force a renewal (e.g., temporarily shrink the timer's cert lifetime/threshold, or manually invoke the renewal script) and then immediately verify via curl that requests succeed before and after, rather than depending on unattended timer firing across turn boundaries.",
+    "Run the mandatory per-node restart/reboot evidence protocol early \u2014 capture the boot id (`cat /etc/machine-id` or `journalctl --list-boots` / `who -b`) before reboot, issue the reboot, poll for the node coming back, capture the new boot id to prove a real restart occurred, and then re-verify nginx is active and serving the same (or freshly renewed) certificate. Do this before spending time on the harder live-renewal-under-load proof, since it's a fixed, bounded piece of evidence less prone to timing flakiness.",
+    "Verify SELinux file contexts (not just ownership/permissions) on any custom /etc/nginx/tls directory with `ls -Z` / `restorecon -v`, since SELinux enforcing mode was confirmed active and ownership fixes alone resolved read access in this attempt, but a context mismatch could still silently break renewal-time file writes to that directory after a relabel or reboot.",
+    "When demonstrating 'no dropped connections' during a reload, use a persistent HTTP/1.1 keep-alive connection or a request loop with short intervals (e.g., every 1-2s) that logs failures explicitly, and let it run continuously through an actual observed cert-serial change, rather than relying on separate short-lived background scripts to survive across tool-call boundaries."
+  ],
+  "summary": "The redacted evidence shows the executor got HTTPS on node1:8443 genuinely working (nginx installed, local CA created, initial leaf cert issued with correct nginx-readable permissions under SELinux enforcing, TLSv1.3 handshake and HTTP 200 confirmed via curl) and installed a plausible renewal mechanism (renew-cert.sh checking remaining validity and reissuing via openssl, wired to a 30s systemd timer, using `nginx -t && systemctl reload nginx` to hot-swap the cert). However, the task was correctly marked blocked/incomplete: the two \"renewed cert\" log entries in the audit both correspond to manual invocations of the script during debugging, not to an automatic timer firing, and the cert-renew.timer was only enabled after those events. The audit's last captured moment (03:12:02) is roughly two minutes before the earliest time an automatic renewal could occur (~03:14:04), so no automatic renewal-while-serving-traffic was ever actually observed \u2014 only intended. The mandatory per-node restart/reboot evidence protocol was never attempted at all. The executor's own account attributes this to a wall-clock tracking issue: `sleep`/background jobs started in one exec call are not tracked across separate tool-call invocations, so its multi-minute wait never actually elapsed before the turn ended.</summary>\n</invoke>\n"
+}

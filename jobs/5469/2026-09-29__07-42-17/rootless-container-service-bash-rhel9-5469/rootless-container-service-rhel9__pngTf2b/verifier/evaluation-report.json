@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "unprivileged-user",
+      "requirement": "Web application container runs as the unprivileged account appsvc",
+      "status": "satisfied",
+      "summary": "appsvc created as a regular (non-root) locked-password user (uid 1000), with rootless podman running the container under appsvc's own systemd --user manager. podman ps confirms container 'webapp' owned by appsvc's session before and after reboot.",
+      "evidence_ids": [
+        "cmd-d1e40ad9dcf44244",
+        "cmd-27d2ee01c2c347fe",
+        "cmd-67f20c2d6d5b45f3",
+        "cmd-61947204c1cb466b"
+      ]
+    },
+    {
+      "id": "port-8080",
+      "requirement": "Application serves on port 8080",
+      "status": "satisfied",
+      "summary": "curl to node1:8080 returns HTTP 200 with httpd content both before and after reboot; listening-sockets snapshot confirms port 8080 listening (pasta.avx2, the rootless podman port-forwarder) after executor changes, absent before.",
+      "evidence_ids": [
+        "cmd-67f20c2d6d5b45f3",
+        "cmd-61947204c1cb466b",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "boot-start-no-session",
+      "requirement": "Service starts at boot while appsvc has no active login session",
+      "status": "satisfied",
+      "summary": "loginctl enable-linger appsvc set Linger=yes; webapp.service enabled under appsvc's systemd --user manager. A real reboot was performed (boot_id changed from 5f3ce3b8-... to 7839216f-...), and after reconnect the container, user@1000.service, and webapp.service were all active/enabled again with confirmed absence of any appsvc login session both before and after reboot, and HTTP 8080 responded post-reboot.",
+      "evidence_ids": [
+        "cmd-5d72d4683ffe4a76",
+        "cmd-c2b395db8e6b4a78",
+        "cmd-2eebfd6594bc49b3",
+        "cmd-b83f8806099d40ae",
+        "cmd-192262d9f5c14455",
+        "cmd-61947204c1cb466b",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The task's material outcomes are all satisfied with direct evidence: a rootless podman container serving httpd on port 8080 runs under the unprivileged appsvc account, and a genuine reboot (with boot_id change and reconnect) demonstrates the service, container, and HTTP endpoint recover automatically post-boot while appsvc has no active login session (via systemd linger). The single managed node's restart-evidence protocol is fully and coherently captured, matching the fixed before/after boot-identity snapshots. The only blemish is minor leftover temp files (setup script and logs) in /tmp, a low-severity hygiene issue.",
+  "limitations": [
+    "Only one managed node (node1) exists, so the node-restart evidence protocol and the task's own boot-recovery requirement fully overlap; no additional nodes were available to cross-check restart evidence quality independently.",
+    "cmd-d1e40ad9dcf44244's rc=3 failure mode is inferred from context (likely a SIGPIPE from a piped `head` under `set -e pipefail`) since no stderr was captured for that command.",
+    "No explicit confirmation that the leftover /tmp files (setup_webapp.sh, dnf.log, reboot.log) were intentionally retained or simply forgotten; they represent low-risk but unremoved residue."
+  ],
+  "command_stats": {
+    "total": 11,
+    "successful": 5,
+    "failed": 6,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "All state-changing commands (podman install, appsvc creation, passwd lock, loginctl enable-linger, systemd user unit creation, enable+start of webapp.service, systemctl reboot) map directly to satisfying the task contract or collecting required restart evidence. The first setup attempt (cmd-d1e40ad9dcf44244) exited non-zero (rc=3) partway through (likely a SIGPIPE from `... | head -5` under `set -e pipefail`), but the mutations it made (package install, user creation, linger) were idempotent and were safely completed by the corrective rerun (cmd-27d2ee01c2c347fe) rather than reverted \u2014 a corrective continuation, not an unnecessary mutation. Minor residue was left behind: /tmp/setup_webapp.sh, /tmp/dnf.log, and /tmp/reboot.log remain in the after-executor temporary-files snapshot with no evidence of cleanup. No failed services, no unexpected port exposure beyond the required 8080, and package-health checks are clean before and after.",
+    "evidence_ids": [
+      "cmd-d1e40ad9dcf44244",
+      "cmd-27d2ee01c2c347fe",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

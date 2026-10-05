@@ -1,0 +1,106 @@
+{
+  "status": "completed",
+  "summary": "Made node1 (VyOS) the DNS resolver for the private \"lan\" network (10.10.10.0/24) it shares with node2 and node3, using PowerDNS Recursor's built-in dns-forwarding service: it answers inventory.internal with node2's lan address (10.10.10.2) via an authoritative-domain record, and forwards all other queries to 1.1.1.1 upstream. node2 and node3 were statically addressed on the lan interface and configured (via NetworkManager) to use node1 (10.10.10.1) as their sole DNS server, with the mgmt-network DHCP-supplied DNS explicitly disabled so resolution unambiguously routes through node1. Everything was implemented and applied idempotently from node4 (the designated control_node) via an Ansible playbook (inventory.ini + site.yml) driving VyOS through a pushed configure-script and RHEL9 clients through community.general.nmcli. Completed the mandatory one-at-a-time restart protocol on all four nodes, proving changed boot IDs and full functional/data recovery after each restart, including re-establishing durable (config-persisted) SSH trust from node4 to node1 after discovering VyOS's login reconciler wipes manually-appended authorized_keys.",
+  "actions_performed": [
+    "Surveyed topology: node1=VyOS (mgmt eth0 + lan eth1), node2/node3=RHEL9 (mgmt enp1s0 + lan enp8s0), node4=ansible control_node (mgmt only); lan network is dhcp=false/egress=false, shared only by node1-3",
+    "Read VyOS's service_dns_forwarding.py conf-mode script and jinja templates on node1 to determine exact CLI syntax for PowerDNS-Recursor-based authoritative-domain A records and catch-all upstream forwarding",
+    "Wired passwordless SSH from node4 to node1/node2/node3 using CLUSTER_SSH_PRIVKEY/PUBKEY",
+    "Wrote an Ansible inventory (inventory.ini) and playbook (site.yml) on node4 under /root/dns-lab",
+    "Playbook play 1: pushed and ran a VyOS configure-script (files/vyos_dns.sh) via ansible.builtin.script that sets eth1=10.10.10.1/24, dns forwarding listen-address/allow-from/name-server 1.1.1.1, and authoritative-domain inventory.internal record '@' -> 10.10.10.2, then commit+save",
+    "Playbook play 2: used community.general.nmcli to set enp8s0 static (10.10.10.2/24 and 10.10.10.3/24) with dns4=10.10.10.1 and dns4_ignore_auto, and disabled DHCP-supplied DNS on enp1s0 (dns4_ignore_auto true, dns4 []), reapplying without dropping the SSH session",
+    "Ran the playbook (ansible-playbook -i inventory.ini site.yml) successfully; verified resolution: getent hosts inventory.internal -> 10.10.10.2 on both node2 and node3, and getent hosts example.com resolving via upstream forwarding",
+    "Re-ran playbook to confirm idempotency (VyOS reported 'No configuration changes to commit')",
+    "Captured pre-restart boot_id baselines on all 4 nodes plus healthy-state evidence (interfaces, pdns-recursor active, resolv.conf, working resolution)",
+    "Restarted node1 via /sbin/reboot (backgrounded so ack returned first), polled until reachable, confirmed boot_id changed, verified eth1 address/config.boot persisted, pdns-recursor active, and DNS answers correct from node2/node3",
+    "Restarted node2, confirmed boot_id changed, verified enp8s0 static IP/resolv.conf persisted and inventory.internal/upstream resolution still worked",
+    "Restarted node3, confirmed boot_id changed, verified same recovery",
+    "Restarted node4 (control node) last; found VyOS's system_login.py reconciler had wiped the manually-appended authorized_keys on node1 (classic reconciler-clobber pattern), breaking node4->node1 ansible SSH",
+    "Fixed durably by adding the cluster SSH public key via VyOS's own config (`set system login user vyos authentication public-keys ...`) then commit+save, restoring node4->node1 SSH and ansible connectivity for all 3 managed nodes (ping module success)",
+    "Re-ran the playbook once more post-restart to confirm continued idempotency, then re-verified inventory.internal and upstream DNS resolution from node2 and node3"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 is configured as DNS resolver for the shared lan network with authoritative-domain forwarding config persisted in VyOS config.boot",
+      "command_ids": [
+        "cmd-e5ce313d62414766",
+        "cmd-c7d0e3f938124636",
+        "cmd-9d1de5f29f7c4c71"
+      ],
+      "summary": "Initial config.boot showed no dns config; after playbook run config.boot shows eth1=10.10.10.1/24 and service dns forwarding with authoritative-domain inventory.internal record a @ -> 10.10.10.2, name-server 1.1.1.1, listen-address 10.10.10.1"
+    },
+    {
+      "requirement": "inventory.internal resolves to node2's lan address on both clients, other domains forward upstream",
+      "command_ids": [
+        "cmd-77643ed365404a0f",
+        "cmd-a817393e01e947b6",
+        "cmd-45544b6ff31c455b",
+        "cmd-ec21aed92e964453"
+      ],
+      "summary": "getent hosts inventory.internal returns 10.10.10.2 on node2 and node3; getent hosts example.com/google.com resolve successfully via node1's upstream forwarder"
+    },
+    {
+      "requirement": "node2 and node3 configured via Ansible (community.general.nmcli) to resolve exclusively through node1",
+      "command_ids": [
+        "cmd-c7d0e3f938124636",
+        "cmd-af77469e04be4ae5"
+      ],
+      "summary": "ansible-playbook run applied nmcli changes; resulting /etc/resolv.conf on node2/node3 shows only nameserver 10.10.10.1 and search inventory.internal, DHCP-supplied 10.100.202.1 removed"
+    },
+    {
+      "requirement": "Implementation delivered via Ansible from the designated control_node (node4)",
+      "command_ids": [
+        "cmd-52e75639df4544b0",
+        "cmd-e92516e3d5734562",
+        "cmd-49229ae7c62e46fd",
+        "cmd-c7d0e3f938124636",
+        "cmd-aa9aa23426404c5d"
+      ],
+      "summary": "Inventory and playbook created on node4; ansible-playbook executed from node4 and re-run to confirm idempotency (VyOS reported no changes to commit)"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a4f7192484c9499a",
+        "cmd-bd95df271c104041",
+        "cmd-fba43299c28548e7",
+        "cmd-f85c2da93dd3497b",
+        "cmd-de64549cf926445e",
+        "cmd-2bb2eeab57664ced"
+      ],
+      "summary": "Baseline boot_id 01e92881-...; reboot command acked immediately (backgrounded); boot_id changed to f28204c3-...; post-restart eth1 address, pdns-recursor active state, and correct DNS answers from node2/node3 confirmed"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-2df1e7abd00f482a",
+        "cmd-2dd7077b3eca42fb",
+        "cmd-b4d46a51964244eb",
+        "cmd-a7d1192d51a749d5"
+      ],
+      "summary": "Baseline boot_id 910dc564-...; reboot acked; boot_id changed to 5ff2b033-...; post-restart enp8s0 static IP, resolv.conf, and inventory.internal/example.com resolution confirmed"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-c7cc07a8face4d1a",
+        "cmd-c286036bd2634c1c",
+        "cmd-11278c47d7c14e4f",
+        "cmd-0e41fc6f4e0c4aba"
+      ],
+      "summary": "Baseline boot_id 5f3ce3b8-...; reboot acked; boot_id changed to 1a87e588-...; post-restart enp8s0 static IP, resolv.conf, and DNS resolution confirmed"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered state (control-node functionality)",
+      "command_ids": [
+        "cmd-b849ba49b3814e8d",
+        "cmd-43edde0e18ab4fb0",
+        "cmd-c4f39141141a4eba",
+        "cmd-7301db0467a943bb",
+        "cmd-ff98169606064e31",
+        "cmd-090d75c186094be1",
+        "cmd-aa9aa23426404c5d"
+      ],
+      "summary": "Baseline boot_id e796da36-...; reboot acked; boot_id changed to 81b78cf4-...; discovered VyOS's login reconciler wiped node1's manually-added authorized_keys, fixed via native VyOS config command, then confirmed ansible ping success to node1/node2/node3 and a clean idempotent playbook re-run"
+    }
+  ]
+}

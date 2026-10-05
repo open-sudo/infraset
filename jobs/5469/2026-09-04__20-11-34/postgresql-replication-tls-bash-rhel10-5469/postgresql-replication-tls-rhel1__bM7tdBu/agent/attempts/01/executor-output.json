@@ -1,0 +1,99 @@
+{
+  "status": "completed",
+  "summary": "Configured PostgreSQL 16 streaming replication across node1 (primary), node2, node3 (standbys) on RHEL 10, secured with a cluster-created CA. Replication connections require a client cert signed by that CA (hostssl ... cert in pg_hba.conf); verified rejection of no-cert and wrong-CA-signed-cert connections. Verified live data replication and SSL=on for both standby connections. Completed the mandatory one-at-a-time restart protocol on all three nodes with boot_id proof of restart and post-restart recovery/quorum verification.",
+  "actions_performed": [
+    "Installed postgresql-server on node1/node2/node3 (fixed a GPG import issue on node1)",
+    "Installed openssl and created a cluster CA on node1; issued server certs (CN=node hostname, SAN IP+DNS) for each node and a client cert (CN=replicator) for replication auth",
+    "Wired cluster-wide SSH via CLUSTER_SSH_PRIVKEY/PUBKEY and distributed CA/certs to node2 and node3 via scp",
+    "Initialized data directories with postgresql-setup --initdb on all three nodes",
+    "Configured postgresql.conf on all nodes: listen_addresses='*', ssl=on with cert/key/ca files, wal_level=replica, max_wal_senders=10, max_replication_slots=10, hot_standby=on",
+    "Configured pg_hba.conf on all nodes: hostssl replication replicator <subnet> cert (requires CA-signed client cert)",
+    "Opened firewalld 'postgresql' service on all three nodes (required for cross-node connections)",
+    "Created replicator role (LOGIN REPLICATION) on node1",
+    "Took pg_basebackup -R from node1 using the replicator client cert (sslmode=verify-full) to provision node2 and node3 as standbys",
+    "Started PostgreSQL on all nodes and verified streaming replication (pg_stat_replication, pg_stat_ssl) and end-to-end data replication",
+    "Negative-tested cert enforcement: no client cert -> rejected; cert signed by an untrusted CA -> rejected with 'unknown ca'",
+    "Captured baseline boot_id and health on all nodes, then rebooted node2, node3, node1 (primary last) one at a time via systemctl reboot, polled until reachable, confirmed changed boot_id, and verified PostgreSQL/replication recovery after each restart",
+    "Performed a final post-restart-cycle write on node1 and confirmed it replicated to both standbys",
+    "Cleaned up test tables and temporary bad-cert files"
+  ],
+  "evidence": [
+    {
+      "requirement": "PostgreSQL streaming replication configured, node1 primary, node2/node3 standbys",
+      "command_ids": [
+        "cmd-30da1568b4ee4a01",
+        "cmd-d3d8d3e89eb5428b",
+        "cmd-2b6c5dd237614c6b",
+        "cmd-ddc021005e554f70",
+        "cmd-7a1af4d73c014d21",
+        "cmd-b9cc0fbcc1ab4db6"
+      ],
+      "summary": "node1 initialized as primary; node2/node3 provisioned via pg_basebackup -R and started as standbys with pg_is_in_recovery=t; pg_stat_replication on node1 shows both walreceivers streaming"
+    },
+    {
+      "requirement": "Replication traffic carried over TLS using a cluster-created CA",
+      "command_ids": [
+        "cmd-6e1579be53d64976",
+        "cmd-d6e193aaa29242a9",
+        "cmd-0aa7c6fd987a4fee",
+        "cmd-bb44657de7d54a40",
+        "cmd-05f3d5caad164186"
+      ],
+      "summary": "CA created on node1 (ca.crt/ca.key); server certs issued per node and client cert for replicator; postgresql.conf enables ssl with these files; pg_stat_ssl confirms ssl=t on both replication connections"
+    },
+    {
+      "requirement": "Only peers presenting a certificate issued by the cluster CA are accepted for replication",
+      "command_ids": [
+        "cmd-d1784b5105364469",
+        "cmd-0b4b009e476d4f8f",
+        "cmd-46aea01e010440c7"
+      ],
+      "summary": "pg_hba.conf uses 'hostssl replication replicator <subnet> cert'; connection attempt with no client cert rejected ('requires a valid client certificate'); connection with a cert signed by a foreign untrusted CA rejected ('unknown ca')"
+    },
+    {
+      "requirement": "End-to-end data replication verified",
+      "command_ids": [
+        "cmd-05f3d5caad164186",
+        "cmd-cb37a12d93ff4903",
+        "cmd-669a04ba5f7b4792"
+      ],
+      "summary": "Row inserted on node1 (repl_test) observed on both node2 and node3"
+    },
+    {
+      "requirement": "Mandatory restart protocol - node2 baseline, restart, changed boot id, recovery",
+      "command_ids": [
+        "cmd-5eec5b30773b49c0",
+        "cmd-bab9de2de8114b66",
+        "cmd-897a41b7d0434231",
+        "cmd-439b8ecd40d64816",
+        "cmd-2f9dda4e3da24cfb"
+      ],
+      "summary": "Baseline boot_id 2db46909...; reboot issued; post-reboot boot_id ebd53232... (changed); postgresql active, in recovery, marker data intact, and reconnected streaming on node1"
+    },
+    {
+      "requirement": "Mandatory restart protocol - node3 baseline, restart, changed boot id, recovery",
+      "command_ids": [
+        "cmd-58b2e18a39f14c00",
+        "cmd-40c4ab2c4c364517",
+        "cmd-ab056aa4886c4539",
+        "cmd-ca07dccab8ab4ead",
+        "cmd-359fc145b8bb400f"
+      ],
+      "summary": "Baseline boot_id 21972395...; reboot issued; post-reboot boot_id 797aa689... (changed); postgresql active, in recovery, marker data intact, and reconnected streaming on node1"
+    },
+    {
+      "requirement": "Mandatory restart protocol - node1 (primary) baseline, restart, changed boot id, recovery, cluster quorum/health restored",
+      "command_ids": [
+        "cmd-ae686746412e4e40",
+        "cmd-61056ae75f7f4655",
+        "cmd-a601425c8a264cc3",
+        "cmd-acd8b58ba2ff45c7",
+        "cmd-17bea9b7dcfa4033",
+        "cmd-7199c21d55054de2",
+        "cmd-7cd102baa4cd4e41",
+        "cmd-c998c180bb29459b"
+      ],
+      "summary": "Baseline boot_id 03273aa8...; reboot issued (after both standbys already healthy, preserving an independent recovery path); post-reboot boot_id 6fe030d4... (changed); primary returned pg_is_in_recovery=f with data intact; both standbys reconnected with ssl=t streaming; a fresh write on node1 replicated to both node2 and node3, confirming full post-restart cluster health"
+    }
+  ]
+}

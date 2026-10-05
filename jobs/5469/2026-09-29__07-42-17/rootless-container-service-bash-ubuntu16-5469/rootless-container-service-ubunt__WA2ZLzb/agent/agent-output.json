@@ -1,0 +1,66 @@
+{
+  "status": "completed",
+  "summary": "On node1, deployed a rootless OCI container (runc, sharing the host network namespace) running BusyBox httpd on port 8080, entirely under the unprivileged appsvc system user. The container is managed by an appsvc systemd --user unit (webapp.service, enabled), and loginctl enable-linger appsvc makes systemd start appsvc's user manager (and the enabled unit) at boot even with zero active login sessions for that account. Verified across a full node reboot: boot ID changed, no appsvc login session exists, user@999.service and webapp.service are active, and HTTP 8080 serves correctly post-restart.",
+  "actions_performed": [
+    "Surveyed node1 (Ubuntu 16.04 i686, kernel 4.4, systemd 229) and confirmed no rootless Docker (needs 20.10+) or Podman packages/binaries exist for this old i386 distro via apt, snap, or static download.docker.com tarballs",
+    "Installed docker.io from apt solely to obtain the bundled runc OCI runtime and busybox-static, then disabled the unused rootful dockerd",
+    "Created unprivileged system user appsvc (uid 999)",
+    "Built an OCI bundle at /home/appsvc/webapp: busybox rootfs serving /www via 'busybox httpd -f -p 8080', generated with 'runc spec --rootless' (self uid/gid mapping, no subuid ranges needed, host network namespace shared so port 8080 binds directly as an unprivileged user)",
+    "Manually validated the container ran under appsvc's UID and served HTTP on 8080 via curl against $NODE_IP before wiring persistence",
+    "Created /home/appsvc/.config/systemd/user/webapp.service (Type=simple, ExecStart=runc run webapp, with cleanup ExecStartPre/ExecStopPost) and enabled it under appsvc's systemd --user instance",
+    "Ran loginctl enable-linger appsvc so appsvc's user manager and its enabled unit start at boot independent of any login session",
+    "Captured healthy baseline (boot_id, service active, HTTP 200, linger state, confirmed no active appsvc session)",
+    "Issued a single reboot (shutdown -r now backgrounded so the ack returned before disconnect), polled node1 until exec was available again",
+    "Verified post-restart: boot_id changed, uptime matches the new boot, still no appsvc login session, user@999.service and webapp.service both active, runc container running under appsvc with a new PID, and curl to port 8080 succeeded"
+  ],
+  "evidence": [
+    {
+      "requirement": "Containerized web app runs as unprivileged appsvc user on port 8080",
+      "command_ids": [
+        "cmd-38ca83cfa7034454",
+        "cmd-426219b9a0f84ffd",
+        "cmd-3e58435f492044e6",
+        "cmd-50ae4f5a301e48a0",
+        "cmd-2fc72af52e274665"
+      ],
+      "summary": "appsvc (uid 999) created; runc rootless OCI bundle built and manually run as appsvc, listed by runc list as owner appsvc, and curl confirmed HTTP 200 on port 8080 via NODE_IP and loopback"
+    },
+    {
+      "requirement": "Service starts at boot with appsvc having no active login session (systemd --user + linger)",
+      "command_ids": [
+        "cmd-6199c3632f904d27",
+        "cmd-6d6437a814c64b1e"
+      ],
+      "summary": "webapp.service created under appsvc's systemd --user, enabled and started; loginctl shows appsvc State=lingering, Linger=yes, and list-sessions shows no session owned by appsvc while the unit is active"
+    },
+    {
+      "requirement": "Mandatory restart protocol - healthy baseline before restart",
+      "command_ids": [
+        "cmd-1f887b196cb24cf7"
+      ],
+      "summary": "Captured pre-restart boot_id (8336c3a1...), webapp.service active, HTTP 200 on 8080, and linger state=lingering"
+    },
+    {
+      "requirement": "Mandatory restart protocol - restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-9c125579c8ec48f1"
+      ],
+      "summary": "Backgrounded 'shutdown -r now' printed ack-returned before the SSH connection was closed by the reboot"
+    },
+    {
+      "requirement": "Mandatory restart protocol - node polled until exec available again",
+      "command_ids": [
+        "cmd-0f1ca2fb7f0b4d91",
+        "cmd-981efb5bbde6457e"
+      ],
+      "summary": "First poll refused (node down mid-reboot), second poll succeeded once node1 came back up"
+    },
+    {
+      "requirement": "Mandatory restart protocol - changed boot identity and recovered service/cluster state proven",
+      "command_ids": [
+        "cmd-7a89a3f1285d4af0"
+      ],
+      "summary": "Post-restart boot_id changed to 3e00038f..., uptime matches new boot time, no appsvc login session exists, user@999.service and webapp.service both active, runc container running under appsvc with fresh PID, and curl to port 8080 returned the expected page"
+    }
+  ]
+}

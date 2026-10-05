@@ -1,0 +1,104 @@
+---
+- name: Deploy sandboxed inventory-worker service
+  hosts: localhost
+  connection: local
+  become: true
+  vars:
+    worker_dir: /var/lib/inventory
+    worker_user: inventory
+    worker_group: inventory
+    worker_script: /usr/local/bin/inventory-worker.sh
+    unit_path: /etc/systemd/system/inventory-worker.service
+
+  tasks:
+    - name: Create dedicated service group
+      ansible.builtin.group:
+        name: "{{ worker_group }}"
+        system: true
+        state: present
+
+    - name: Create dedicated service user
+      ansible.builtin.user:
+        name: "{{ worker_user }}"
+        group: "{{ worker_group }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ worker_dir }}"
+        create_home: false
+        state: present
+
+    - name: Create data directory owned by the service account
+      ansible.builtin.file:
+        path: "{{ worker_dir }}"
+        state: directory
+        owner: "{{ worker_user }}"
+        group: "{{ worker_group }}"
+        mode: "0750"
+
+    - name: Install the worker script
+      ansible.builtin.copy:
+        dest: "{{ worker_script }}"
+        mode: "0755"
+        owner: root
+        group: root
+        content: |
+          #!/bin/sh
+          # Long-running inventory worker: periodically records a heartbeat
+          # into its confined data directory.
+          set -eu
+          DATA_DIR="/var/lib/inventory"
+          LOG_FILE="$DATA_DIR/worker.log"
+
+          while :; do
+            printf '%s inventory-worker heartbeat pid=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" >> "$LOG_FILE"
+            sleep 10
+          done
+
+    - name: Install the systemd unit with sandboxing hardening
+      ansible.builtin.copy:
+        dest: "{{ unit_path }}"
+        mode: "0644"
+        owner: root
+        group: root
+        content: |
+          [Unit]
+          Description=Inventory background worker
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ worker_user }}
+          Group={{ worker_group }}
+          ExecStart={{ worker_script }}
+          Restart=on-failure
+
+          # Confinement: no new privileges, filesystem locked down except
+          # the one directory the worker is allowed to write to.
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          ReadWritePaths={{ worker_dir }}
+          PrivateTmp=true
+          PrivateDevices=true
+          ProtectKernelTunables=true
+          ProtectKernelModules=true
+          ProtectControlGroups=true
+          RestrictSUIDSGID=true
+          RestrictRealtime=true
+          LockPersonality=true
+          MemoryDenyWriteExecute=true
+          CapabilityBoundingSet=
+          AmbientCapabilities=
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd unit files
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and start inventory-worker service
+      ansible.builtin.systemd:
+        name: inventory-worker
+        enabled: true
+        state: started

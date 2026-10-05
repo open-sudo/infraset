@@ -1,0 +1,111 @@
+{
+  "status": "completed",
+  "summary": "Built a 3-member etcd (v3.5.17) cluster on node1/node2/node3 (RHEL 7.9) using systemd-managed etcd with static bootstrap over TCP 2379/2380 (firewalld opened). Fixed a stale system clock on all nodes (chrony resync) that had been blocking TLS downloads. Verified cross-node replication, availability during a single-member outage, and automatic catch-up when the member rejoined. Completed the mandatory sequential-restart protocol on all three nodes, confirming changed kernel boot_id and full cluster/quorum/data recovery after each restart.",
+  "actions_performed": [
+    "Diagnosed and fixed incorrect system clocks (Aug 26 vs actual Sep 8 2026) via chronyc burst+makestep on node1, node2, node3",
+    "Downloaded and installed etcd/etcdctl/etcdutl v3.5.17 binaries to /usr/local/bin on all three nodes",
+    "Created etcd system user/group and /var/lib/etcd data dir (0700, owned by etcd) plus /etc/etcd/etcd.conf per node with node-specific peer/client URLs and shared initial-cluster string",
+    "Installed systemd unit /etc/systemd/system/etcd.service on each node (Type=notify, User=etcd, EnvironmentFile)",
+    "Opened firewalld ports 2379/tcp and 2380/tcp permanently on all three nodes",
+    "Started etcd on all nodes to bootstrap a new 3-member cluster; confirmed member list and endpoint health all true",
+    "Wrote a key via node1 and confirmed it was readable from node2 and node3 (replication proof)",
+    "Stopped etcd on node3, wrote/read a key against node1/node2 to prove continued availability with one member down, confirmed leader election held with 2/3 quorum",
+    "Restarted etcd on node3 and confirmed it caught up to the same raft applied index and had the key written during its outage",
+    "Captured pre-restart boot_id and cluster health baseline for all three nodes",
+    "Sequentially restarted node1, then node2, then node3 via systemctl reboot, polling each until exec access returned",
+    "Confirmed each node's kernel boot_id changed after its restart, that its clock remained correct, and that etcd came back active/enabled",
+    "After each node's restart, verified full 3-node endpoint health, member list, and presence of all previously-written keys before moving to the next node",
+    "Final end-to-end write from node3 and read from node1 confirmed the cluster fully functional after all three restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "3-member etcd cluster formed across node1/node2/node3",
+      "command_ids": [
+        "cmd-fe20dca7cc9a4997"
+      ],
+      "summary": "etcdctl member list shows node1, node2, node3 all status 'started' with correct peer/client addrs; endpoint health true for all three."
+    },
+    {
+      "requirement": "Key written through one member is readable from the others",
+      "command_ids": [
+        "cmd-c37ed6a22c054b6b",
+        "cmd-3b48aa91e0f34cfc",
+        "cmd-30277712eb4a4f17"
+      ],
+      "summary": "Wrote /bench/hello on node1 (10.100.13.10:2379); read back identical value from node2 (10.100.13.11:2379) and node3 (10.100.13.12:2379)."
+    },
+    {
+      "requirement": "Cluster keeps serving reads/writes while one member is unavailable",
+      "command_ids": [
+        "cmd-6f205d047c2d49b0",
+        "cmd-eb8ae812d011447e",
+        "cmd-a1efaed577184cd6"
+      ],
+      "summary": "Stopped etcd on node3; with only node1/node2 up, a write to /bench/during-outage succeeded (leader elected on node2) and was immediately readable from node2."
+    },
+    {
+      "requirement": "Unavailable member catches up when it returns",
+      "command_ids": [
+        "cmd-165661e313694748",
+        "cmd-4b6d459f9d544b72"
+      ],
+      "summary": "Restarted etcd on node3; it read back /bench/during-outage and /bench/hello, and endpoint status showed identical raft term/applied index (16) across all three members."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline before restart",
+      "command_ids": [
+        "cmd-5d9ed3d274024af3",
+        "cmd-4b6d459f9d544b72"
+      ],
+      "summary": "Captured boot_id b35fad86... on node1 prior to restart, alongside full-cluster health confirmation."
+    },
+    {
+      "requirement": "node1 restart: acknowledgement returned before disconnection",
+      "command_ids": [
+        "cmd-845737ad0a8b4232"
+      ],
+      "summary": "systemctl reboot issued on node1; command returned 'reboot acknowledgement issued' before the SSH connection was closed by the remote host."
+    },
+    {
+      "requirement": "node1 restart: changed boot identity",
+      "command_ids": [
+        "cmd-aaae91829a094cd2"
+      ],
+      "summary": "Post-restart boot_id on node1 is 39b627c8..., differing from the pre-restart b35fad86..., with a new uptime -s boot timestamp."
+    },
+    {
+      "requirement": "node1 restart: recovered service/data/cluster state",
+      "command_ids": [
+        "cmd-3dd7f096bb0e4859",
+        "cmd-9f89ddc0cfa04151"
+      ],
+      "summary": "etcd active/enabled after reboot; full 3-node endpoint health true, member list intact, and /bench/hello and /bench/during-outage both readable from node1."
+    },
+    {
+      "requirement": "node2 restart: acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-3c98af51bce14eb3",
+        "cmd-87d6207610714371",
+        "cmd-b58b46ca777e4d58"
+      ],
+      "summary": "Reboot acknowledged then connection closed; new boot_id 6e7d7428... confirmed distinct from prior session; post-restart etcd active, all 3 endpoints healthy, and both test keys readable from node2."
+    },
+    {
+      "requirement": "node3 restart: acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-2f720f501b6440f1",
+        "cmd-068b83e5c4354605",
+        "cmd-18ac198c8c354a97"
+      ],
+      "summary": "Reboot acknowledged then connection closed; new boot_id b0462986... confirmed distinct; post-restart etcd active, all 3 endpoints healthy, member list intact, and both test keys readable from node3."
+    },
+    {
+      "requirement": "Cluster fully functional after all three sequential restarts",
+      "command_ids": [
+        "cmd-f0c5bf5c4d504c24",
+        "cmd-3a71cf77df954d10"
+      ],
+      "summary": "After all nodes had been restarted, wrote /bench/post-restart from node3 and read it back successfully from node1, confirming end-to-end write/replication path still works."
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "status": "completed",
+  "summary": "Discovered node1 (VyOS) and node2 (OPNsense) are joined by two independent point-to-point transit networks (node1 eth1 <-> node2 vtnet1 = transit#1; node1 eth2 <-> node2 vtnet2 = transit#2), with node3 hanging off node1 (eth3) and node4 hanging off node2 (vtnet3). Configured VyOS policy-based routing on node1 (destination-port match: tcp/8080 -> routing table 101 -> transit#1/eth1; tcp/9090 -> table 102 -> transit#2/eth2), assigned OPNsense opt1/opt2/opt3 interfaces with pass rules in config.xml on node2, and verified with live TCP flows (a socat echo service on port 8080, the built-in cockpit service on port 9090) that traffic node3 sends to node4 on port 8080 traverses transit network #1 exclusively and traffic on port 9090 traverses transit network #2 exclusively - confirmed independently via tcpdump captures on both node1's and node2's own interfaces. All 4 nodes were then restarted one at a time (node3, node4, node1, node2) using each OS's native reboot command, with verified boot-identity changes (Linux boot_id / FreeBSD kern.boottime) and full post-restart recovery of interface addressing, VyOS PBR configuration, OPNsense interface/firewall configuration, and the end-to-end port-based split-path flows (re-verified with fresh tcpdump captures after all restarts).",
+  "actions_performed": [
+    "Mapped physical topology by temporarily assigning test addresses on node1 eth1/eth2/eth3 and node2 vtnet1/vtnet2/vtnet3 and pinging to discover which interfaces are physically linked to which peer (node1<->node2 transit1, node1<->node2 transit2, node1<->node3, node2<->node4)",
+    "Assigned persistent addressing: node1 eth1=10.10.98.1/30, eth2=10.10.97.1/30, eth3=10.10.99.1/30 (VyOS set/commit/save); node2 vtnet1=10.10.98.2/30, vtnet2=10.10.97.2/30, vtnet3=10.10.96.1/30 (via config.xml opt1/opt2/opt3); node3 enp8s0=10.10.99.2/30 via nmcli persistent connection with a static route to 10.10.96.0/30 via node1; node4 enp8s0=10.10.96.2/30 via nmcli persistent connection with a static route to 10.10.99.0/30 via node2",
+    "Configured VyOS policy route PBR-EGRESS on node1: rule 10 matches tcp dport 8080 and sets table 101 (route to 10.10.96.0/30 via 10.10.98.2/eth1); rule 20 matches tcp dport 9090 and sets table 102 (route to 10.10.96.0/30 via 10.10.97.2/eth2); policy applied to ingress interface eth3 (facing node3), committed and saved",
+    "Edited OPNsense (node2) /conf/config.xml via a Python script to add opt1/opt2/opt3 interface definitions and pass-any firewall rules for each, applied with configctl filter reload; verified the existing SSH/LAN pass rule was untouched so exec access was never lost",
+    "Added a non-persisted static return route on node2 (10.10.99.0/30 via 10.10.98.1) needed for full bidirectional TCP flows; re-added it after node2's restart since it is a runtime-only FreeBSD route not represented in OPNsense's route/gateway schema",
+    "Opened firewalld port 8080/tcp permanently on node4 and started a socat TCP-LISTEN:8080 echo test listener; used the pre-existing cockpit.socket service already listening on port 9090 as the second test target",
+    "Ran real TCP flows from node3 to node4:10.10.96.2 on ports 8080 and 9090, and used tcpdump on node1's eth1/eth2 and independently on node2's vtnet1/vtnet2 to prove the 8080 flow's SYN/data/FIN traverses only transit#1 and the 9090 flow's SYN and forward-direction segments traverse only transit#2",
+    "Captured pre-restart baselines (boot_id/kern.boottime, addressing, PBR/pf rule state) on all four nodes, then restarted node3, node4, node1, and node2 one at a time using native reboot commands (reboot / VyOS Debian reboot / FreeBSD reboot), polling each until exec access returned and confirming the boot identity changed each time",
+    "After each restart, verified recovery: node3 and node4 regained their nmcli-managed addressing and routes automatically; node1 regained its full VyOS interface, PBR rule, ip rule, and routing-table configuration automatically from the saved config; node2 regained its opt1/opt2/opt3 interfaces and pf pass rules automatically from config.xml, requiring only re-addition of the non-persistent return route and restart of the ephemeral socat test listener on node4",
+    "Re-ran the full end-to-end TCP test with fresh tcpdump captures on node1's eth1/eth2 after all four restarts, confirming port 8080 still steers exclusively over transit#1 and port 9090 exclusively over transit#2"
+  ],
+  "evidence": [
+    {
+      "requirement": "Two independent transit networks between node1 and node2 identified and addressed",
+      "command_ids": [
+        "cmd-786c408e98954dd7",
+        "cmd-7823463948ba46ea",
+        "cmd-19fbae8a904540c7",
+        "cmd-6a0da9c8f62a4a6a",
+        "cmd-f0442b75d5234083",
+        "cmd-4087b913721747c9",
+        "cmd-e4a305064be44335",
+        "cmd-db6fd9a627754719",
+        "cmd-8b88429110074c26",
+        "cmd-8acbcab466c344bc",
+        "cmd-34e17cf6d8254dbb",
+        "cmd-57dd0c0f34b342ae",
+        "cmd-8a7fc3e1193b4e3f",
+        "cmd-bc97ea0ac0bc4c1b",
+        "cmd-e938ab7949c64f41"
+      ],
+      "summary": "Ping tests on temporarily-addressed interfaces confirmed node1 eth1<->node2 vtnet1 (transit#1) and node1 eth2<->node2 vtnet2 (transit#2), with node1 eth3<->node3 and node2 vtnet3<->node4 as the endpoint links"
+    },
+    {
+      "requirement": "Port 8080 traffic from node3 to node4 is steered across the first transit network",
+      "command_ids": [
+        "cmd-b2783fb531784350",
+        "cmd-60ea082f86064bd2",
+        "cmd-9a22353976c74b18"
+      ],
+      "summary": "tcpdump on node1's eth1 shows the full 8080 SYN/data/FIN exchange with node4 (10.10.96.2); tcpdump on node2's vtnet1 independently confirms the 8080 SYN/SYN-ACK entering/leaving via transit#1"
+    },
+    {
+      "requirement": "Port 9090 traffic from node3 to node4 is steered across the second transit network",
+      "command_ids": [
+        "cmd-8b12f8239c6b42f9",
+        "cmd-9a22353976c74b18"
+      ],
+      "summary": "tcpdump on node1's eth2 shows the full outbound 9090 SYN and forward-direction segments; tcpdump on node2's vtnet2 independently confirms the 9090 SYN entering via transit#2"
+    },
+    {
+      "requirement": "Both flows successfully reach node4",
+      "command_ids": [
+        "cmd-e907962b3989475f",
+        "cmd-a7a4f204a6ae4a78",
+        "cmd-f95abe402d31481f",
+        "cmd-2f526d32b92246bb",
+        "cmd-21707b1cc1184a81",
+        "cmd-fccfe223f7f6440d"
+      ],
+      "summary": "Repeated TCP tests from node3 show the 8080 echo service returning the exact sent payload and the 9090 cockpit service returning HTTP 200, both before and after the node restarts"
+    },
+    {
+      "requirement": "PBR configuration mechanism on node1 (VyOS)",
+      "command_ids": [
+        "cmd-bb9b6417ef724950",
+        "cmd-872288df9ee14a40",
+        "cmd-894f0566dc844213",
+        "cmd-fb31694e0a3747f4"
+      ],
+      "summary": "VyOS policy route PBR-EGRESS with per-destination-port rules mapped to table 101 (eth1) and table 102 (eth2), applied on ingress interface eth3, shown compiled into nftables mangle rules with per-rule packet counters"
+    },
+    {
+      "requirement": "node1 (VyOS) restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-77af728e7f104460",
+        "cmd-726f6b6a144c4fd8",
+        "cmd-60725a90fc554ade",
+        "cmd-af2786a4a29d464b",
+        "cmd-410bbb3857994b10",
+        "cmd-a522cb487c7e46ec"
+      ],
+      "summary": "boot_id 50503c5d captured pre-restart; reboot acknowledged and returned; boot_id changed to 0a02f92e post-restart; interfaces, PBR rules, ip rules, and routing tables all confirmed automatically restored"
+    },
+    {
+      "requirement": "node2 (OPNsense) restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-7c6719bfc25842be",
+        "cmd-e248a736706d4001",
+        "cmd-b649a3415f4040c0",
+        "cmd-4a46bbc4b7b04fbc",
+        "cmd-12989122626e4212",
+        "cmd-5d108f95122e4bfc"
+      ],
+      "summary": "kern.boottime 05:00:22 captured pre-restart; reboot acknowledged; boottime changed to 05:14:49 post-restart; opt1/opt2/opt3 interface addressing and pf pass rules confirmed restored automatically from config.xml, with the non-persistent return route re-added"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-229eb19e04d3456d",
+        "cmd-96722e5c02ef48c8",
+        "cmd-0fa41f28052845cd",
+        "cmd-48ce417c6d8c4426",
+        "cmd-e29b3c7679814e4b"
+      ],
+      "summary": "boot_id bccb87ac captured pre-restart; reboot acknowledged; boot_id changed to daa2676d post-restart; enp8s0 addressing and route to node4's link network confirmed restored via nmcli autoconnect, ping to node1 succeeded"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-fe9dae8f72c44bca",
+        "cmd-69221c9880fe400f",
+        "cmd-e56919ea52b54d13",
+        "cmd-68d7f40db8364caf",
+        "cmd-955fbf987eda487f",
+        "cmd-c94919f23bc14b4f"
+      ],
+      "summary": "boot_id 45c22b1f captured pre-restart, firewalld port 8080 made permanent; reboot acknowledged; boot_id changed to ca66cc15 post-restart; enp8s0 addressing, permanent firewall rule, and cockpit service confirmed restored, with the ephemeral socat test listener manually restarted"
+    }
+  ]
+}

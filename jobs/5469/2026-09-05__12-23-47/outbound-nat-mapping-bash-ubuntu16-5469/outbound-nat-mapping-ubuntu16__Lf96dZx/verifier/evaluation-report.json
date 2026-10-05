@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node1 acts as router/NAT gateway between lan-a and lan-b, translating node2 (lan-a) -> node3 (lan-b) connections to appear as coming from a chosen address on node1",
+      "status": "partially_satisfied",
+      "summary": "node1's config.xml was edited to add a VIP alias 10.100.251.1/24 for lan-b, switch outbound NAT to hybrid mode, and add a manual outbound-NAT rule translating 10.100.250.0/24->10.100.251.0/24 to 10.100.251.1. `pfctl -s nat` confirms this rule is installed and active on vtnet0, and ip forwarding is enabled. However, this was never exercised with a live node2->node3 connection because node3 became unreachable before any traffic test could be run, so the actual translated-source behavior described in the task was never directly observed.",
+      "evidence_ids": [
+        "cmd-f81d4ee011684124",
+        "cmd-0f22b371dc24487e",
+        "cmd-9ee688c866514bdf",
+        "cmd-d188aa2ab4e74f9a"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "connections in the reverse direction (node3 -> node2) retain their original (unmodified) source address",
+      "status": "indeterminate",
+      "summary": "The installed pf NAT rule is scoped only to source 10.100.250.0/24 -> destination 10.100.251.0/24, with no matching rule for the reverse direction, which is consistent with the requirement by construction. But this was never verified with live reverse-direction traffic, and node3 (the would-be initiator in the reverse test) was unreachable for the remainder of the trace, so the claim rests on rule inspection rather than observed behavior.",
+      "evidence_ids": [
+        "cmd-d188aa2ab4e74f9a"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node2 and node3 are correctly placed on lan-a/lan-b respectively and can communicate through node1 (prerequisite for the NAT scenario to be exercised at all)",
+      "status": "not_satisfied",
+      "summary": "While moving node3 to the new lan-b static address (10.100.251.12/24), the `sudo systemctl restart systemd-networkd` command on node3 took its only NIC down. From that point (~17:48:40 UTC) through the end of the executor trace (~18:08 UTC, roughly 20 minutes), node3 was unreachable at both its old (10.100.250.12) and new (10.100.251.12) addresses via ping, ssh, and tcpdump-observed ARP from node1, and the fixed after-executor lifecycle snapshot independently confirms node3 could not be reached for any observation (all six after_executor:node3 observations returned 'No route to host'). The topology required for the task scenario (node2 and node3 both reachable across node1) was never restored, so the end-to-end scenario cannot function.",
+      "evidence_ids": [
+        "cmd-045e288edcf14f5c",
+        "cmd-950312e5e8e14935",
+        "cmd-157e5fd1f49b4ea2",
+        "cmd-4a35c985a872419e",
+        "cmd-93dda0ba275e46e3",
+        "cmd-392c1ad2e86f4e80"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly identified and implemented an OPNsense outbound-NAT design on node1 (VIP alias for lan-b, hybrid-mode manual SNAT rule scoped to lan-a->lan-b, and a pass rule), and pf output confirms the rule was installed as intended, with no corresponding rule for the reverse direction. However, while re-addressing node3 onto the new lan-b subnet, restarting systemd-networkd took node3's interface down permanently for the rest of the observed session (confirmed independently by the fixed after-executor snapshot showing total SSH unreachability to node3). As a result, the actual NAT behavior was never exercised with live node2->node3 traffic, the reverse-direction guarantee was never observed, and the basic topology precondition for the task (node3 reachable on lan-b) was left broken. The executor itself reported 'blocked' status, which the evidence corroborates.",
+  "limitations": [
+    "No live traffic test (e.g., a TCP connection from node2 to node3 and a check of the source address node3 observes) was ever captured, so the core requirement is verified only via static pf ruleset inspection, not by observed behavior.",
+    "node3's post-restart boot identity, service, and recovery state could not be captured because it remained unreachable for the entire remaining trace; the mandatory node-restart evidence protocol is therefore incomplete for node3 and was not attempted at all for node1/node2.",
+    "One executor command (cmd-cef5b161e45545bc, the sudo-escalated systemd-networkd restart on node3) timed out at the 120s proxy limit with an ambiguous outcome, so it cannot be established with certainty whether that specific invocation completed the restart or whether the earlier non-sudo attempt (cmd-045e288edcf14f5c) was the actual cause of the outage.",
+    "The executor's evidence-selection metadata flagged a referenced command ID (cmd-047e290d47500046ac) that does not appear in the timeline; the closest matching real IDs (cmd-45e288edcf14f5c and cmd-47290d47500046ac) were used instead where the intent was clear.",
+    "Executor evidence item 4 referenced unknown command IDs: cmd-047e290d47500046ac"
+  ],
+  "command_stats": {
+    "total": 82,
+    "successful": 62,
+    "failed": 18,
+    "indeterminate": 2,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 0.6667,
+  "confidence": 0.55,
+  "evaluation_complete": false,
+  "publication_eligible": false,
+  "functionality": 0.25,
+  "operational_hygiene": {
+    "score": 0.3,
+    "summary": "Most executor actions were read-only discovery (extensive source-code/config inspection on node1, ~30+ commands) or clearly necessary configuration steps (VIP alias, outbound NAT rule, pass rule on node1; route additions on node2). The critical issue is `cmd-045e288edcf14f5c`, escalated via sudo in `cmd-cef5b161e45545bc` (which itself timed out at the 120s proxy limit, leaving the actual restart outcome ambiguous), which restarted systemd-networkd on node3 to apply a new static IP for the lan-b move. This action took node3's only NIC down and it never recovered for the remainder of the trace (~20+ minutes of polling, confirmed independently by the after-executor lifecycle snapshot showing all node3 observations failing with 'No route to host'). This was a necessary attempt to fulfill the task's implied topology change, but its blast radius (total, unrecovered loss of node3 connectivity) was not bounded or reverted, leaving a managed node inoperative at task end \u2014 this is the dominant hygiene concern. Minor residue was also left on node1: /tmp/nat_setup.py, /tmp/cap.pcap, and several /tmp/tmpcfd_*/tmpHOSTS scratch files visible in the after-executor snapshot that were not present before, none of which are high-risk but represent uncleaned scratch state. node1's own NAT/VIP/filter configuration was appropriately verified via read-only pfctl and ifconfig checks after each change.",
+    "evidence_ids": [
+      "cmd-045e288edcf14f5c",
+      "cmd-cef5b161e45545bc",
+      "global:after_executor:node3:boot-identity",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": null,
+  "provisional_reward": 0.25
+}

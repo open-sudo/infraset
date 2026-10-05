@@ -1,0 +1,61 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-worker as an OpenRC-managed service on node1 (Alpine) via an Ansible playbook run from node2 (the ansible-controller/control_node). The service runs a long-running loop that appends heartbeats to /var/lib/inventory/worker.log, confined by a private mount namespace (root filesystem bind-remounted read-only, /var/lib/inventory bind-remounted read-write) combined with setpriv dropping to the unprivileged `inventory` user, clearing the capability bounding set/inheritable/ambient caps, and setting no-new-privs. Verified writes succeed only inside /var/lib/inventory and fail everywhere else, NoNewPrivs=1 and CapEff=0 for the running process, service is enabled at the default OpenRC runlevel, and a full Ansible re-run is idempotent (0 changed). Completed the mandatory node-restart protocol on both node1 and node2: captured boot_id baselines, issued native `reboot`, polled until exec access returned, and confirmed changed boot_id plus full recovery (service auto-restarted with confinement intact on node1; Ansible control/SSH functionality restored on node2, followed by a clean idempotent playbook re-run).",
+  "actions_performed": [
+    "Surveyed node1 (Alpine, target) and node2 (Ubuntu, ansible-controller/control_node) to confirm topology and available tooling",
+    "Created system user 'antrieb' on node1 with node2's SSH key authorized and passwordless sudo, fixing an initial account-lock/empty-password issue so Ansible SSH+become would work",
+    "Prototyped and validated the mount-namespace + setpriv confinement approach interactively on node1 before automating it",
+    "Authored an Ansible inventory and playbook (pushed to node2 via base64) that creates the inventory user/group, /var/lib/inventory directory, worker script, confinement wrapper script, and OpenRC service unit for inventory-worker, then enables and starts it",
+    "Ran the playbook from node2 against node1 and verified idempotency on re-run",
+    "Verified running process confinement: uid/gid=inventory, CapEff=0, NoNewPrivs=1, distinct mount namespace, writes succeed only in /var/lib/inventory and fail elsewhere",
+    "Captured pre-restart boot_id/service baselines, rebooted node1 natively, polled until reachable, confirmed changed boot_id and full service/confinement recovery",
+    "Captured pre-restart boot_id/state baseline on node2, rebooted node2 natively, polled until reachable, confirmed changed boot_id, restored SSH/Ansible control path, and re-ran the playbook idempotently to prove node1 state is intact"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-worker deployed as a managed (OpenRC) service on node1, implemented via Ansible",
+      "command_ids": [
+        "cmd-ca5b41438d694aca",
+        "cmd-dc6d7e76a2b345a0",
+        "cmd-35aba1aba35b480e"
+      ],
+      "summary": "ansible-playbook run from node2 created the user/dir/scripts/init.d unit, enabled it at the default runlevel, and started it; rc-service status and ps confirm it running on node1"
+    },
+    {
+      "requirement": "Worker confined to write only inside /var/lib/inventory and gains no new privileges",
+      "command_ids": [
+        "cmd-320ac1daf65e42c8",
+        "cmd-dc6d7e76a2b345a0",
+        "cmd-2b95c413897c4049"
+      ],
+      "summary": "Manual and in-service checks show CapEff=0000000000000000, NoNewPrivs=1, uid/gid=inventory, a distinct mount namespace, writes to /var/lib/inventory succeeding while writes to /etc fail with Read-only file system"
+    },
+    {
+      "requirement": "Ansible-based implementation is idempotent/correct",
+      "command_ids": [
+        "cmd-b28ddaa7901a45ac"
+      ],
+      "summary": "Playbook re-run after node2's own restart reports ok=9 changed=0, confirming converged state"
+    },
+    {
+      "requirement": "node1 mandatory restart evidence: healthy baseline, restart ack, changed boot identity, recovered service",
+      "command_ids": [
+        "cmd-fe3726553a514e5b",
+        "cmd-79e02040e3ba4e58",
+        "cmd-d071dc5ee8e84aff",
+        "cmd-a1b4a2171dd44318"
+      ],
+      "summary": "Captured boot_id b77dad80... and running service pre-restart; issued native reboot; polled until reachable with new boot_id 4edc4834...; confirmed service auto-started with heartbeat log growing and confinement properties (uid/gid, CapEff=0, NoNewPrivs=1) intact post-restart"
+    },
+    {
+      "requirement": "node2 mandatory restart evidence: healthy baseline, restart ack, changed boot identity, recovered control-node functionality",
+      "command_ids": [
+        "cmd-c91c5a77e98f4e9e",
+        "cmd-86119db0b66e4411",
+        "cmd-9c3f6fff36724717",
+        "cmd-b28ddaa7901a45ac"
+      ],
+      "summary": "Captured boot_id 416c5cf5... plus working SSH-to-node1 pre-restart; issued native reboot; polled until reachable with new boot_id a189f94a...; confirmed SSH to node1 and a successful idempotent ansible-playbook run post-restart"
+    }
+  ]
+}

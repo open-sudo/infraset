@@ -1,0 +1,109 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) as a one-armed load balancer: TCP port 80 on its LAN/management address (10.100.6.10) round-robins to node2 and node3's HTTP servers on port 8080 via a pf rdr-to pool rule plus a matching outbound SNAT rule that masquerades traffic to the backends as coming from node1 (required because backend replies otherwise bypassed NAT translation and returned directly to the client \u2014 an asymmetric routing issue). Verified node4 receives alternating responses identifying node2 and node3 through the single port-80 entry point. Also disabled OPNsense's automatic HTTP->HTTPS webgui redirect (disablehttpredirect) since it owned port 80 via an anti-lockout no-rdr rule that shadowed the new DNAT rule. Completed the mandatory one-at-a-time restart protocol on all 4 nodes with captured baseline, restart acknowledgement, changed boot identity, and post-restart recovery verification for each.",
+  "actions_performed": [
+    "Inspected all 4 nodes; identified node1 as OPNsense (FreeBSD) single-homed on the shared 10.100.6.0/24 LAN with node2/node3/node4",
+    "Studied OPNsense's MVC firewall models (DNat, Filter/snatrules, Alias) directly on the box to determine current config syntax",
+    "Created a host alias 'lb_backends' (10.100.6.11, 10.100.6.12) via the OPNsense Alias model",
+    "Added a DNAT (port-forward) rule: lan:80/tcp -> lb_backends:8080 with poolopts=round-robin and pass=pass",
+    "Found and fixed a port-80 anti-lockout no-rdr rule blocking the forward by setting system.webgui.disablehttpredirect",
+    "Diagnosed an asymmetric-routing failure (backend SYN-ACK bypassing NAT) via tcpdump on node1/node2/node3; fixed by adding a manual outbound SNAT rule masquerading LB->backend traffic to the LAN interface address",
+    "Deployed systemd-managed Python HTTP servers on node2 and node3 serving hostname-identifying content on port 8080, opened firewalld port 8080/tcp on both",
+    "Verified end-to-end round-robin load balancing from node4 through node1:80 to both backends",
+    "Executed the mandatory one-node-at-a-time restart protocol on node2, node3, node4 (systemctl reboot) and node1 (shutdown -r now), capturing baseline, restart acknowledgement, changed boot identity, and post-restart service/data recovery for each, verifying full LB functionality after every restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 and node3 serve HTTP on 8080 identifying the host",
+      "command_ids": [
+        "cmd-92f495be09084ab4",
+        "cmd-5d88813005704b8d",
+        "cmd-dfbd408e7e244658"
+      ],
+      "summary": "Deployed and verified systemd HTTP servers on node2 (10.100.6.11) and node3 (10.100.6.12) each returning 'Hello from <hostname>'"
+    },
+    {
+      "requirement": "node1 presents one entry point on TCP 80 of its management address that spreads requests across both hosts",
+      "command_ids": [
+        "cmd-c09af2855ea84562",
+        "cmd-1287e29970944bf2",
+        "cmd-d089ba71c4eb4f75",
+        "cmd-cd50b3dc5b0a4443",
+        "cmd-c3e13e3a5dff435c"
+      ],
+      "summary": "Built and applied OPNsense DNAT rule with round-robin pool to lb_backends alias on lan:80; confirmed active in pfctl -s nat"
+    },
+    {
+      "requirement": "Diagnosed and fixed port-80 anti-lockout conflict blocking the forward",
+      "command_ids": [
+        "cmd-b9e492a725bc4c95",
+        "cmd-9b18bccb8fa848f5",
+        "cmd-5625fe9444cf4f38"
+      ],
+      "summary": "curl showed OPNsense webgui intercepting port 80 with a 301 redirect; disabled disablehttpredirect and confirmed no-rdr rule for http was removed"
+    },
+    {
+      "requirement": "Diagnosed and fixed asymmetric NAT routing so backend replies return via node1",
+      "command_ids": [
+        "cmd-2f50c961b5c4493c",
+        "cmd-d0a26c5d320e4051",
+        "cmd-aaa3a5500a974e6a",
+        "cmd-e75634d02d0f4e3a"
+      ],
+      "summary": "tcpdump proved backend SYN-ACKs bypassed node1 and reached the client directly (dropped); added outbound SNAT rule masquerading LB->backend traffic; confirmed NAT rule active"
+    },
+    {
+      "requirement": "node4 receives answers from each host through the port-80 entry point",
+      "command_ids": [
+        "cmd-8169691211b4499b",
+        "cmd-e8f5b4fc73e849aa"
+      ],
+      "summary": "node4 curl to http://10.100.6.10:80/ returned alternating 'Hello from node2'/'Hello from node3' responses across repeated requests"
+    },
+    {
+      "requirement": "node2 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-9a3d66c064ad40d0",
+        "cmd-4a4dca4764194748",
+        "cmd-ce9cd32dcb9d4954",
+        "cmd-d33fc0db7a314616"
+      ],
+      "summary": "Baseline boot_id 45c22b1f...; reboot acknowledged then connection dropped; polled back up with new boot_id 6149200c... and lb-backend/firewalld active, content served"
+    },
+    {
+      "requirement": "node3 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-1f3a8c68083d432d",
+        "cmd-d075c6a3e9f0490a",
+        "cmd-e8d72b11fe774e1c",
+        "cmd-ab23be4472084fb3",
+        "cmd-e4c78359256e4cf3"
+      ],
+      "summary": "Baseline boot_id f7db4b4e...; reboot acknowledged and disconnected; polled back up with new boot_id d2952a1d...; services recovered and round-robin confirmed with both backends"
+    },
+    {
+      "requirement": "node4 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-36e47f2c8f13440b",
+        "cmd-6c2005ed5edc4efc",
+        "cmd-2a1c58ad94c840f5",
+        "cmd-1ddb88ab92de4d63",
+        "cmd-4c8db560dcb14430",
+        "cmd-f9a2d9b5a06e4945"
+      ],
+      "summary": "Baseline boot_id df8bab0d...; reboot acknowledged and disconnected; polled back up with new boot_id fb4a8d86...; immediately confirmed round-robin still functions post-restart"
+    },
+    {
+      "requirement": "node1 restart: baseline, restart, changed boot identity, recovery of LB config and function",
+      "command_ids": [
+        "cmd-80373160c0ff4e25",
+        "cmd-dd0fcdfc0c4e46c4",
+        "cmd-92ed38a1275746a9",
+        "cmd-f65ecebb75f342f3",
+        "cmd-bf63ee978ea8484d",
+        "cmd-544f0a942b2a4107"
+      ],
+      "summary": "Baseline kern.boottime sec=1788626955; shutdown -r now acknowledged, SSH connection subsequently timed out confirming disruption; polled back up; kern.boottime changed to sec=1788627799 (uptime 9s) proving reboot; pf NAT/rdr rules persisted from config.xml and full round-robin load balancing verified end-to-end from node4"
+    }
+  ]
+}

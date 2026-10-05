@@ -1,0 +1,74 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-09-05T17:41:06.018245+00:00",
+      "outcome": "executor_blocked",
+      "finished_at": "2026-09-05T18:09:10.182105+00:00",
+      "error": "Configured node1 (OPNsense) as a router between two subnets on its single LAN interface: a VIP alias 10.100.251.1/24 (lan-b) alongside the existing 10.100.250.0/24 (lan-a), a manual outbound-NAT rule that translates lan-a sources to 10.100.251.1 when they talk to lan-b, and a firewall pass rule allowing lan-b-sourced traffic through \u2014 this satisfies the requirement that node2->node3 traffic appear to originate from an address on node1 while node3->node2 traffic keeps its original source. However, while moving node3 into the new lan-b subnet, restarting systemd-networkd on node3 to apply its new static address took its only NIC down, and it has not recovered after ~13 minutes of polling from node1, node2, and via the exec tool itself (which also depends on SSH reachability to the node's configured IP). Node3 is currently unreachable by every available means, so the NAT behavior could not be verified end-to-end with live traffic, and the mandatory node-restart evidence protocol could not be executed for node3 (nor safely attempted for node1/node2 while node3 is down). Node1 and node2 remain healthy and reachable throughout.",
+      "diagnosis": {
+        "evidence": [
+          {
+            "source": "audit log, node3 cmd chain 'whoami; sudo -n true'",
+            "finding": "Passwordless sudo confirmed working on node3 before the disruptive command."
+          },
+          {
+            "source": "audit log, node2 cmd 'sudo systemctl restart systemd-networkd...'",
+            "finding": "On node2, the identical restart command failed fast (return_code 0 for the chain, but stderr shows 'Failed to restart systemd-networkd.service: Interactive authentication required') \u2014 a synchronous, clean failure \u2014 and node2 stayed reachable throughout with only DHCP addressing on ens2."
+          },
+          {
+            "source": "audit log, node3 cmd 'sudo systemctl restart systemd-networkd; sleep 3; ip -4 addr...'",
+            "finding": "The same style of command on node3 did not fail fast; it hung for the full 125038ms until the platform's 120s proxy read timeout aborted the connection with no output returned at all, unlike node2's clean synchronous failure."
+          },
+          {
+            "source": "audit log, subsequent node1/node2 pings and SSH attempts to 10.100.250.12 and 10.100.251.12",
+            "finding": "Every reachability check for node3, at both its old and new address, failed continuously ('No route to host', 100% packet loss, ARP incomplete) for roughly 20+ minutes across many retries."
+          },
+          {
+            "source": "audit log, node1 tcpdump capture on vtnet0",
+            "finding": "node1's own platform gateway repeatedly ARP-requested 10.100.250.12 (node3's original address) with no reply, meaning node3 stopped answering at layer 2, not just failing to have the right IP configured."
+          },
+          {
+            "source": "executor report narrative",
+            "finding": "Executor states node1, node2, and node3 originally sat on one flat /24 with node1 having a single interface (vtnet0); lan-a/lan-b separation was implemented by adding a second subnet as an IP alias on that same single interface, rather than the cluster being provisioned with two distinct networks and node1 having two NICs."
+          },
+          {
+            "source": "executor report narrative",
+            "finding": "Moving node3 into the new lan-b subnet required rewriting its live systemd-networkd config and restarting systemd-networkd over the same SSH session/interface being reconfigured \u2014 this is the action immediately preceding total loss of node3."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "The executor restarted systemd-networkd on node3 over the very SSH connection that depended on the interface (ens2) being reconfigured, with no out-of-band or fallback access. The command hung until the platform's proxy timeout rather than returning, strongly suggesting the restart actually began applying the new static config (unlike node2's fast permission failure) and the interface either flushed/failed to re-establish addressing before dropping the SSH session, permanently orphaning the exec channel.",
+            "confidence": "high"
+          },
+          {
+            "cause": "Topology mismatch: node1 was provisioned with only one NIC on one flat /24, so lan-a and lan-b were faked as two subnets aliased onto the same physical interface/L2 segment, instead of being provisioned as two separate networks with node1 dual-homed (per the platform's own networking-primer pattern). This forced the risky live re-addressing of node3 (moving it from the shared /24 into the aliased lan-b subnet) that triggered the outage; a correctly-provisioned dual-network topology would have let node3 boot directly into lan-b with no later reconfiguration needed.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "Possible network-manager mismatch on Ubuntu 16.04 (Xenial): the default stack there is ifupdown (/etc/network/interfaces), not systemd-networkd. If ifupdown (or another manager) was actually authoritative on ens2 while the executor edited and restarted systemd-networkd, the two could have raced or left the interface in an undefined state. No command in the evidence checked which manager actually owned ens2 before the restart, so this cannot be confirmed either way.",
+            "confidence": "low"
+          },
+          {
+            "cause": "A polkit/sudoers difference between node2 and node3 caused the restart command on node3 to block on an interactive authentication prompt with no TTY available (per platform's documented 'No TTY/PTTY' constraint), rather than failing cleanly as it did on node2. This would explain the hang-to-timeout pattern, but the connection was severed before any output could confirm or rule this out.",
+            "confidence": "low"
+          }
+        ],
+        "next_attempt_guidance": [
+          "Provision the cluster with two distinct networks (lan-a, lan-b) and give node1 two NICs, one per network, per the networking primer's `networks`/`nics` pattern \u2014 do not fake two subnets via IP-aliasing on a single NIC/L2 segment.",
+          "Assign node3 its lan-b address at initial provisioning time so it never needs live re-addressing once it's already reachable and in use as a test target.",
+          "Never issue a network-stack restart (`systemctl restart systemd-networkd`, `networking restart`, etc.) over the same SSH session/interface that carries the command and has no alternate path back to the node. If re-addressing a live node is unavoidable, add the new address alongside the old first, verify reachability on the new address, and only then remove the old \u2014 don't blind-restart the whole service.",
+          "Before touching systemd-networkd on any Ubuntu node, confirm it is actually the authoritative manager for the interface (`networkctl status`, check for `/etc/network/interfaces` stanzas, `systemctl is-enabled networking.service`) rather than assuming based on distro/version.",
+          "Treat an asymmetric result \u2014 one node's command failing fast on permissions while an identical command on another node hangs to the platform timeout \u2014 as an immediate stop signal to investigate (e.g., check for an interactive sudo/polkit prompt) rather than retrying the same disruptive command.",
+          "The OPNsense-side config (VIP alias + manual outbound NAT rule scoped lan-a\u2192lan-b, plus a lan-b pass rule, applied via `configctl interface vip configure` and `configctl filter reload`) produced verifiable pf rules and is a reasonable pattern to reuse once the topology is fixed \u2014 but re-verify with live end-to-end traffic and explicitly confirm no NAT rule exists for the lan-b\u2192lan-a direction.",
+          "Before any command that changes a node's own network identity, ensure there's a way to recover (secondary management NIC, snapshot, or at minimum a plan for how to detect and back out a failed change) rather than relying solely on the same connection being reconfigured."
+        ],
+        "summary": "Executor configured node1 (OPNsense) with an IP-alias-based second subnet (lan-b) on its single existing NIC, plus a manual outbound NAT rule and pass rule that pf confirmed were installed correctly for the lan-a\u2192lan-b direction with no rule in the reverse direction \u2014 directionally matching the task's requirement, but never verified with live traffic. While moving node3 into the new lan-b subnet, the executor rewrote its systemd-networkd config and restarted the service over the same SSH session/interface being reconfigured; that command hung until the platform's proxy timeout (unlike an earlier, fast, clean permission failure on node2 running the identical command), after which node3 became completely unreachable at both its old and new addresses, including failing to answer ARP at all, for the remainder of the attempt (~20+ minutes across many retries). The task was left blocked with node1/node2 healthy but node3 permanently lost and the restart-evidence protocol impossible to complete."
+      }
+    }
+  ]
+}

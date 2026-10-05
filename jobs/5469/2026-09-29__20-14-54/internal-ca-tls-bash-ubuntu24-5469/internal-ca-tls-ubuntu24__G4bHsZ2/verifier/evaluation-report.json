@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-creation",
+      "requirement": "Create a certificate authority named 'Fleet Internal CA' on node1",
+      "status": "satisfied",
+      "summary": "openssl generated a 4096-bit key and self-signed root cert with subject=CN=Fleet Internal CA, O=Fleet Internal CA on node1, directly observed in command output.",
+      "evidence_ids": [
+        "cmd-a5122e34ccae44a0"
+      ]
+    },
+    {
+      "id": "cert-issuance",
+      "requirement": "Issue a TLS certificate for node2 signed by the Fleet Internal CA",
+      "status": "satisfied",
+      "summary": "CSR for CN=node2 with SAN DNS:node2/IP:10.100.159.11 was signed by the CA key/cert; resulting cert shows issuer=CN=Fleet Internal CA, O=Fleet Internal CA.",
+      "evidence_ids": [
+        "cmd-c5f23a5fe870483e"
+      ]
+    },
+    {
+      "id": "node2-https-8443",
+      "requirement": "Configure node2 to serve HTTPS on port 8443 using the issued certificate",
+      "status": "satisfied",
+      "summary": "nginx installed, configured with ssl_certificate/ssl_certificate_key pointing at the issued node2 cert/key, validated (nginx -t), enabled and confirmed listening on 0.0.0.0:8443/[::]:8443. TLS handshake from both nodes shows subject=CN=node2 issued by the CA, and served content returned HTTP 200. Independent lifecycle snapshot (after_executor) also directly shows nginx listening on 8443 on node2.",
+      "evidence_ids": [
+        "cmd-d980ef1ac95e4040",
+        "cmd-d279cfd11d0e416f",
+        "cmd-fa28d8c0d34344a0",
+        "cmd-f088cebdef0b4d8a",
+        "cmd-66ab8427990348bf",
+        "cmd-4fa2602062a04c6d",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    },
+    {
+      "id": "ca-trust-install",
+      "requirement": "Install the CA as a trusted system certificate authority on both node1 and node2",
+      "status": "satisfied",
+      "summary": "CA cert copied to /usr/local/share/ca-certificates and update-ca-certificates run on both nodes ('1 added, 0 removed; done'). Trust was independently confirmed by curl requests with no explicit --cacert flag succeeding ('SSL certificate verify ok', HTTP 200) from both node1 and node2.",
+      "evidence_ids": [
+        "cmd-5d065ca57efb43b3",
+        "cmd-3a9da5563e9943e9",
+        "cmd-2f25a6b934744257",
+        "cmd-c65a5dd3f907461f"
+      ]
+    },
+    {
+      "id": "provider-restart-protocol",
+      "requirement": "Independent provider-wide node-restart evidence protocol on every managed node (not part of the public task contract)",
+      "status": "satisfied",
+      "summary": "For both node1 and node2, a pre-restart healthy baseline (boot_id + service/trust checks) was captured, a restart was acknowledged, a distinct post-restart boot_id was observed, and full recovery of nginx/TLS/CA-trust/cross-node reachability was directly demonstrated after each restart. Post-restart boot_ids and node2's 8443 listening state match the fixed after_executor lifecycle snapshot, corroborating the executor's restart evidence.",
+      "evidence_ids": [
+        "cmd-6d50f240d17c4959",
+        "cmd-5c5260247ae34572",
+        "cmd-b9a16d88f4244708",
+        "cmd-4cf330baae344cc5",
+        "cmd-523e65d53f874dec",
+        "cmd-67941ddd970f4067",
+        "cmd-abca355ab1ea4ee1",
+        "cmd-40353e6df89e427a",
+        "cmd-5b7ee17debd4498e",
+        "cmd-4463747af113431b",
+        "cmd-0b0a16d02d214333",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the public task contract are directly satisfied with strong, coherent evidence: the Fleet Internal CA was created on node1, a node2 server certificate was issued and signed by it, node2 serves HTTPS on 8443 with that certificate (confirmed via TLS handshake and lifecycle snapshot), and the CA was installed into the system trust store on both nodes with trust independently verified via default (non-explicit-cacert) curl requests. The separately-required provider-wide restart protocol was also completed cleanly for both nodes, with pre/post boot-identity changes, service recovery, and cross-node HTTPS/CA trust verified after each reboot, cross-checked against the fixed lifecycle snapshots. The only notable hygiene issue is a harmless, unreverted duplicate /etc/hosts entry added during an abandoned SSH-based file-transfer attempt.",
+  "limitations": [
+    "Evidence is limited to command stdout/stderr captured during the session; no independent live inspection of the nodes was possible.",
+    "The /etc/nginx configuration and CA files were not directly cat'd in full; conclusions rely on nginx -t success, ss listening output, and curl verification rather than viewing full file contents.",
+    "The after_prepare snapshot is an alias of before_prepare (prepare was disabled), so preparer-vs-executor state separation relies entirely on the before_prepare-to-after_executor diff."
+  ],
+  "command_stats": {
+    "total": 33,
+    "successful": 28,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most state-changing commands were clearly tied to the task: nginx install (cmd-2029488e81324f4a), CA/cert generation (cmd-a5122e34ccae44a0, cmd-c5f23a5fe870483e), a temporary python http.server used only to transfer files after SSH was found unavailable and promptly torn down with cleanup (cmd-53acfff02d264795 started it, cmd-f755fbeafdae499e killed the process and removed /tmp/xfer artifacts), nginx site configuration/enable (cmd-d279cfd11d0e416f, cmd-fa28d8c0d34344a0), and CA trust installation (cmd-5d065ca57efb43b3, cmd-3a9da5563e9943e9). One unnecessary mutation stands out: cmd-540058eb05674f89 appended $CLUSTER_HOSTS to /etc/hosts on node1 via 'sudo tee -a' as part of a failed SSH-based transfer attempt, even though the same node1/node2 hostname mappings were already present in /etc/hosts per the earlier discovery command (cmd-995ccc7f6d314ebb). This appended a duplicate, unreverted line to /etc/hosts with no causal contribution to the final solution (the working transfer method was the python http.server). It is low-risk and non-destructive (harmless duplicate hosts entries) but was not cleaned up.",
+    "evidence_ids": [
+      "cmd-540058eb05674f89",
+      "cmd-995ccc7f6d314ebb",
+      "cmd-53acfff02d264795",
+      "cmd-f755fbeafdae499e"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "node1-permit-log",
+      "requirement": "node1 permits node3->node4 tcp/23 traffic and records it",
+      "status": "satisfied",
+      "summary": "A VyOS forward-filter rule (rule 10, action accept, log enabled, matching src 10.100.193.12 / dst 10.100.193.13 / tcp dport 23) was committed and saved. The compiled nftables ruleset shows the rule with a log prefix, and the kernel log (journalctl -k) shows matching '[ipv4-FWD-filter-10-A]' entries recording the SYN packets with SRC/DST/DPT matching the flow, with nonzero packet counters confirming the rule was hit.",
+      "evidence_ids": [
+        "cmd-2425067eaf044cd6",
+        "cmd-88a32f68ef4b49aa",
+        "cmd-536e281dd97f4339",
+        "cmd-24243974f9e64dbd",
+        "cmd-641e6b3358b543c2"
+      ]
+    },
+    {
+      "id": "node2-refuse-log",
+      "requirement": "node2 refuses node3->node4 tcp/23 traffic and records the refusal",
+      "status": "satisfied",
+      "summary": "A pf block rule (label e3040f54fb0f1cbb2ddc7caa6888270d) was inserted ahead of the default LAN-allow rule via config.xml edit + configctl filter reload, verified present via pfctl -s rules. filterlog entries show matching 'block,in' records for src 10.100.193.12 -> dst 10.100.193.13 port 23, directly confirming the refusal and its logging.",
+      "evidence_ids": [
+        "cmd-98eabb78d30b42e8",
+        "cmd-7564e6b094964e3c",
+        "cmd-1cbdfb5d16e047a0"
+      ]
+    },
+    {
+      "id": "single-attempt-log-pair",
+      "requirement": "Show the pair of log entries from one node3 attempt so the point traffic stopped is evident from the records alone",
+      "status": "satisfied",
+      "summary": "A single connection attempt at 05:08:24 UTC produced a matching IP-ID pair (60240/60241): node1's kernel log shows the SYN accepted+logged (ipv4-FWD-filter-10-A), and node2's filterlog shows the identical IP-ID SYN blocked. The matching IP-ID and 5-tuple across both logs from one attempt makes the pass-then-block boundary directly evident from the records.",
+      "evidence_ids": [
+        "cmd-e182c03ec8184e9e",
+        "cmd-8095ff6bbbd5487a",
+        "cmd-7b7e80aca95347fd"
+      ]
+    },
+    {
+      "id": "path-through-node1-node2",
+      "requirement": "Traffic actually traverses node1 first, then node2, as stated in the task's topology premise",
+      "status": "partially_satisfied",
+      "summary": "Discovery (tcpdump/ping probes) found the authored transit/lan-a/lan-b segments non-functional at the addressing level \u2014 node1's eth1, node2's vtnet1/vtnet2, and node4's enp8s0 showed no reachable peer traffic, contradicting the intended segmented topology in node_images/nics. The executor worked around this by adding a host-specific route on node3 (via node1) and a matching static route on node1 (via node2) over the flat management subnet, plus disabling ICMP send-redirects on node1 to stop node3 bypassing it. The matching IP-IDs at node1 and node2 for the same packet prove the forced path worked for this specific flow, but this is an engineered workaround over the mgmt network rather than confirmation that the originally authored dedicated-network topology functions as described.",
+      "evidence_ids": [
+        "cmd-c14f46a80f804d53",
+        "cmd-a8e24bddcdb149bb",
+        "cmd-1eb51345101f40d3",
+        "cmd-ab0b6ba7de2048ed",
+        "cmd-02ca75eed3424d84",
+        "cmd-97e2a81d585e4ff4",
+        "cmd-4c123a9cb33d4753",
+        "cmd-af86afb239964264"
+      ]
+    },
+    {
+      "id": "restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node with pre/post boot identity, healthy baseline, and recovered state",
+      "status": "satisfied",
+      "summary": "All four nodes show a pre-restart boot identity/state, a restart acknowledgement, a distinct post-restart boot identity matching the fixed after-executor snapshot, and recovery of relevant state: node1 (route, firewall rule, send_redirects), node2 (pf rule, forwarding, plus a fresh correlated log pair), node3 (persistent route, blocked-attempt re-verified), node4 (interface address). A final full-chain attempt after all four restarts reproduced the matching permit/refuse log pair (ID 32170/32171), corroborating full recovery.",
+      "evidence_ids": [
+        "cmd-46ad6a37861f490d",
+        "cmd-ce76bcff0cde46cb",
+        "cmd-9d579f7e86004b61",
+        "cmd-75423a12804a4fcd",
+        "cmd-2f3d6eb154c24495",
+        "cmd-6fccbd00bdf94299",
+        "cmd-01333765b0a74244",
+        "cmd-3b3b0625fc7c44a5",
+        "cmd-b738d2ea0225465d",
+        "cmd-ee05db39f3a44168",
+        "cmd-59eb9a2089434abc",
+        "cmd-0632604631e34c75",
+        "cmd-865f056a340a4432",
+        "cmd-9aad8420a2664ea5",
+        "cmd-f092bc0556e14388",
+        "cmd-88d2377b86414394",
+        "cmd-10aa3dc60ac941eb",
+        "cmd-d99b88b772a04e3d",
+        "cmd-454714897b0342cf",
+        "cmd-0ba59bf4ddd54caf"
+      ]
+    }
+  ],
+  "overall_summary": "The three core, directly-instructed outcomes are well supported: node1 permits and logs the flow (nftables rule + matching kernel log entries), node2 refuses and logs it (pf block rule + matching filterlog entries), and a single node3 attempt produced a correlated IP-ID-matched pair of log entries showing the packet passed node1 and was blocked at node2. The provider-wide restart protocol was executed thoroughly on all four nodes with clear pre/post boot-identity changes and recovered state, cross-checked against the fixed after-executor snapshot. The main caveat is that the authored dedicated transit/lan-a/lan-b topology appeared non-functional, requiring the executor to force the node3->node1->node2->node4 path over the flat management subnet with host-specific routes and a send-redirects fix \u2014 this satisfies the letter of the task but is a workaround rather than confirmation of the originally intended network segmentation. A minor, seemingly unresolved troubleshooting mutation on node4's unused NIC and a new post-restart failed service on node3/node4 are noted as hygiene concerns, though causation for the latter is uncertain.",
+  "limitations": [
+    "Cannot independently confirm whether the authored transit/lan-a/lan-b network segments were truly non-functional or simply required address configuration the executor did not attempt before concluding they were isolated.",
+    "The node4 'Wired connection 2' deactivation (cmd-69845d1b852944e6) failed to reactivate cleanly and no later command explicitly confirms its restored state.",
+    "The cause of the new NetworkManager-wait-online.service failure appearing on node3 and node4 after restart (visible in the after-executor lifecycle snapshot vs. baseline) cannot be conclusively attributed to executor action versus pre-existing environment behavior on unaddressed NICs."
+  ],
+  "command_stats": {
+    "total": 111,
+    "successful": 96,
+    "failed": 15,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.82,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.9,
+  "operational_hygiene": {
+    "score": 0.62,
+    "summary": "Most mutations are directly tied to the task or are bounded, reverted discovery probes: temporary IP-address additions (192.168.99.1/98.1/97.1) used for peer-discovery pings were explicitly removed (cmd-85399bab487545c4, cmd-71e5d575a3f44b2c, cmd-403dbd37504344e1), and the persistent host route on node3, static route on node1, permit/log rule on node1, block/log rule on node2, and send-redirects disable are all necessary and retained changes directly serving the task outcome. However, on node4 the executor deactivated 'Wired connection 2' (cmd-69845d1b852944e6) as a connectivity troubleshooting step on an interface that was never actually used by the final solution, and the reactivation attempt explicitly failed ('IP configuration could not be reserved') with no confirmation of restoration to prior state \u2014 an unnecessary, unresolved mutation. A config.xml.bak-antrieb backup file was left on node2 (cmd-98eabb78d30b42e8), which is low-risk residue. The after-executor lifecycle snapshot also shows a new 'NetworkManager-wait-online.service' failure on both node3 and node4 that was absent at baseline; it is unclear whether this stems from the node4 interface-down troubleshooting or is inherent to the environment's unaddressed dedicated NICs, and this ambiguity is treated as a limitation rather than a confirmed executor fault.",
+    "evidence_ids": [
+      "cmd-69845d1b852944e6",
+      "cmd-98eabb78d30b42e8",
+      "cmd-352cc1edf6434ede"
+    ]
+  },
+  "reward": 0.9,
+  "provisional_reward": 0.9
+}

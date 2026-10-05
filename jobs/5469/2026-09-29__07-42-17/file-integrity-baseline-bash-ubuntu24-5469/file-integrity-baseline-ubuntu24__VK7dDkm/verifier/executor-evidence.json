@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 11,
+    "successful": 7,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Integrity baseline for /etc established",
+      "command_ids": [
+        "cmd-a8695808546b4126"
+      ],
+      "summary": "AIDE installed, /etc/aide/aide.conf scoped to /etc with full attribute+hash rule, database initialized with 1950 entries, installed as /var/lib/aide/aide.db, and initial --check reports 'AIDE found NO differences between database and filesystem. Looks okay!!'"
+    },
+    {
+      "requirement": "Baseline correctly detects changes to /etc (falsification proof)",
+      "command_ids": [
+        "cmd-c7ebae942ee043e6",
+        "cmd-e524d9eab1b24fe6",
+        "cmd-4a32556443d146f6"
+      ],
+      "summary": "Canary files added under /etc were flagged by AIDE as 3 added entries; after cleanup, AIDE still correctly flagged the /etc directory's changed mtime/ctime, proving the detection mechanism is sensitive and functioning"
+    },
+    {
+      "requirement": "Clean baseline re-established and confirmed before restart",
+      "command_ids": [
+        "cmd-304fb6c66c80402a",
+        "cmd-9516a16fb8db4ac2"
+      ],
+      "summary": "Database re-initialized after test cleanup (1950 entries), checksum d536d0b5... recorded, and --check reports clean; pre-restart snapshot also captured boot_id a0c36ad2... and btime 1790687964"
+    },
+    {
+      "requirement": "Mandatory restart: pre-restart healthy baseline",
+      "command_ids": [
+        "cmd-9516a16fb8db4ac2"
+      ],
+      "summary": "Captured boot_id, btime, uptime, AIDE db SHA256, and a clean AIDE check immediately before initiating reboot"
+    },
+    {
+      "requirement": "Mandatory restart: acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-33e1ac5c7deb4e8c"
+      ],
+      "summary": "shutdown -r now issued in background; 'issuing reboot' acknowledgement printed before the exec stream closed due to the node going down"
+    },
+    {
+      "requirement": "Mandatory restart: node down then reachable again",
+      "command_ids": [
+        "cmd-b8622aa956ef4fe5",
+        "cmd-a51a1c3203534bf1"
+      ],
+      "summary": "Connection reset confirmed node was down; subsequent poll succeeded once node1 came back up"
+    },
+    {
+      "requirement": "Mandatory restart: changed boot identity proven",
+      "command_ids": [
+        "cmd-a51a1c3203534bf1"
+      ],
+      "summary": "boot_id changed from a0c36ad2-af0d-42fe-ad6f-4750699390c2 to fc0eb3ab-0761-4bb6-90dc-8bd5447f49e8, btime advanced from 1790687964 to 1790688074, and uptime reset to ~6.5s"
+    },
+    {
+      "requirement": "Mandatory restart: post-restart recovery of required data verified",
+      "command_ids": [
+        "cmd-8944d5ace86c4e1a"
+      ],
+      "summary": "Post-restart, /var/lib/aide/aide.db is present with identical SHA256 (d536d0b5...) to the pre-restart baseline, and a fresh AIDE --check reports 'Looks okay!!' with the same 1950 entries, confirming the integrity baseline survived the restart intact"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-96d9fbb1dcd745f7",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:19:41.833199+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 225,
+      "command": "set -Eeuo pipefail\necho \"== OS ==\"; cat /etc/os-release | head -5\necho \"== boot id baseline ==\"; cat /proc/sys/kernel/random/boot_id\necho \"== aide present? ==\"; command -v aide || echo \"not installed\"\n",
+      "stdout": "== OS ==\nPRETTY_NAME=\"Ubuntu 24.04.3 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.3 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\n== boot id baseline ==\na0c36ad2-af0d-42fe-ad6f-4750699390c2\n== aide present? ==\nnot installed"
+    },
+    {
+      "command_id": "cmd-a8695808546b4126",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:20:25.912724+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 34903,
+      "command": "set -Eeuo pipefail\n\necho \"== STEP: install aide ==\"\nexport DEBIAN_FRONTEND=noninteractive\nsudo -n apt-get update -qq\nsudo -n apt-get install -y -qq aide aide-common >/tmp/aide-install.log 2>&1\ndpkg -l | grep -i aide\n\necho \"== STEP: configure aide.conf for /etc baseline ==\"\nsudo -n cp /etc/aide/aide.conf /etc/aide/aide.conf.orig\n\n# Build a minimal, focused config: strong ruleset + /etc recursively, database stored outside /etc\nsudo -n tee /etc/aide/aide.conf >/dev/null <<'AIDE_EOF'\n# Integrity baseline configuration - scoped to /etc\ndatabase=file:/var/lib/aide/aide.db\ndatabase_out=file:/var/lib/aide/aide.db.new\ndatabase_new=file:/var/lib/aide/aide.db.new\ngzip_dbout=no\n\n# Rule: full metadata + content hash\nFullRule = p+i+n+u+g+s+m+c+md5+sha256+acl+xattrs\n\n/etc FullRule\nAIDE_EOF\n\nsudo -n mkdir -p /var/lib/aide\n\necho \"== STEP: initialize baseline database ==\"\nsudo -n aide --config=/etc/aide/aide.conf --init\n\necho \"== STEP: install baseline db as the active db ==\"\nsudo -n cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db\nsudo -n chmod 600 /var/lib/aide/aide.db /var/lib/aide/aide.db.new\n\necho \"== STEP: record baseline metadata ==\"\ndate -u +\"%Y-%m-%dT%H:%M:%SZ\" | sudo -n tee /var/lib/aide/baseline-created-at.txt >/dev/null\nsha256sum /var/lib/aide/aide.db | sudo -n tee /var/lib/aide/aide.db.sha256 >/dev/null\n\necho \"== VERIFY: db exists ==\"\nls -la /var/lib/aide/\n\necho \"== VERIFY: run a check against the just-created baseline (expect clean) ==\"\nsudo -n aide --config=/etc/aide/aide.conf --check | tail -40 || true\n\necho \"== DONE ==\"\n",
+      "stdout": "== STEP: install aide ==\nii  aide                            0.18.6-2ubuntu0.1                       amd64        Advanced Intrusion Detection Environment - dynamic binary\nii  aide-common                     0.18.6-2ubuntu0.1                       all          Advanced Intrusion Detection Environment - Common files\n== STEP: configure aide.conf for /etc baseline ==\n== STEP: initialize baseline database ==\nWARNING: /etc/aide/aide.conf:2: Using 'database' is DEPRECATED and will be removed in the next release.. Update your config and use 'database_in' instead (line: 'database=file:/var/lib/aide/aide.db')\nStart timestamp: 2026-09-29 09:20:25 -0400 (AIDE 0.18.6)\nAIDE successfully initialized database.\nNew AIDE database written to /var/lib/aide/aide.db.new\n\nNumber of entries:\t1950\n\n---------------------------------------------------\nThe attributes of the (uncompressed) database(s):\n---------------------------------------------------\n\n/var/lib/aide/aide.db.new\n MD5       : CV/Zyw+ge92CoLsgUfTJfg==\n SHA1      : mfO0LZKhQE4c3XKFmREFfPpub/k=\n SHA256    : 9LkMqRWHgGi7+QJSTmbtuf8hcQ43pdfV\n             8MYWkgbKQiI=\n SHA512    : pKrbiLtBP2wge0TpTlB1HEvVrM0vnMrG\n             wVJv8chAm9mlC4OyQa8coHm/3PYS2qGc\n             U/+aIpk7qBN/d7cox22Sgw==\n RMD160    : UseEPaRyU8/bfenT5hfWk/SM3ic=\n TIGER     : oJs7fuikYCMb4ZIqhiLrqfHZAW4IOEzC\n CRC32     : dk9Tgg==\n CRC32B    : uW4WQg==\n HAVAL     : YibPSE3l25nSUDtt0RG+a6UiVOTqLUOW\n             6NnlaXrR0jM=\n WHIRLPOOL : qhI+pVqgfSs+rN6OH3oaJWajmqcHa0Xf\n             1uzTDc3FLQgLJBL2/fsrN8sI7/yiPTxI\n             YzZdjsEW+sfoel82sBq01w==\n GOST      : TflJx/OgiflyrRJMTb0freSZto3OQNA6\n             4D2wcZNW3/A=\n\n\nEnd timestamp: 2026-09-29 09:20:25 -0400 (run time: 0m 0s)\n== STEP: install baseline db as the active db ==\n== STEP: record baseline metadata ==\n== VERIFY: db exists ==\ntotal 696\ndrwx------  2 _aide root   4096 Sep 29 09:20 .\ndrwxr-xr-x 42 root  root   4096 Sep 29 09:19 ..\n-rw-------  1 root  root 346061 Sep 29 09:20 aide.db\n-rw-------  1 root  root 346061 Sep 29 09:20 aide.db.new\n-rw-r--r--  1 root  root     88 Sep 29 09:20 aide.db.sha256\n-rw-r--r--  1 root  root     21 Sep 29 09:20 baseline-created-at.txt\n== VERIFY: run a check against the just-created baseline (expect clean) ==\nWARNING: /etc/aide/aide.conf:2: Using 'database' is DEPRECATED and will be removed in the next release.. Update your config and use 'database_in' instead (line: 'database=file:/var/lib/aide/aide.db')\nStart timestamp: 2026-09-29 09:20:25 -0400 (AIDE 0.18.6)\nAIDE found NO differences between database and filesystem. Looks okay!!\n\nNumber of entries:\t1950\n\n---------------------------------------------------\nThe attributes of the (uncompressed) database(s):\n---------------------------------------------------\n\n/var/lib/aide/aide.db\n MD5       : CV/Zyw+ge92CoLsgUfTJfg==\n SHA1      : mfO0LZKhQE4c3XKFmREFfPpub/k=\n SHA256    : 9LkMqRWHgGi7+QJSTmbtuf8hcQ43pdfV\n             8MYWkgbKQiI=\n SHA512    : pKrbiLtBP2wge0TpTlB1HEvVrM0vnMrG\n             wVJv8chAm9mlC4OyQa8coHm/3PYS2qGc\n             U/+aIpk7qBN/d7cox22Sgw==\n RMD160    : UseEPaRyU8/bfenT5hfWk/SM3ic=\n TIGER     : oJs7fuikYCMb4ZIqhiLrqfHZAW4IOEzC\n CRC32     : dk9Tgg==\n CRC32B    : uW4WQg==\n HAVAL     : YibPSE3l25nSUDtt0RG+a6UiVOTqLUOW\n             6NnlaXrR0jM=\n WHIRLPOOL : qhI+pVqgfSs+rN6OH3oaJWajmqcHa0Xf\n             1uzTDc3FLQgLJBL2/fsrN8sI7/yiPTxI\n             YzZdjsEW+sfoel82sBq01w==\n GOST      : TflJx/OgiflyrRJMTb0freSZto3OQNA6\n             4D2wcZNW3/A=\n\n\nEnd timestamp: 2026-09-29 09:20:25 -0400 (run time: 0m 0s)\n== DONE =="
+    },
+    {
+      "command_id": "cmd-c7ebae942ee043e6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:20:34.124110+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 4,
+      "duration_ms": 588,
+      "command": "set -Eeuo pipefail\necho \"== STEP: perturb /etc to prove baseline detects drift ==\"\necho \"# integrity-test-marker\" | sudo -n tee -a /etc/hosts.integrity-test-canary >/dev/null\nsudo -n sh -c 'echo \"# canary line\" >> /etc/hostname.bak' 2>/dev/null || true\necho \"test\" | sudo -n tee /etc/aide-test-canary.conf >/dev/null\n\necho \"== STEP: run check (expect differences) ==\"\nsudo -n aide --config=/etc/aide/aide.conf --check | egrep -A5 \"Summary|Added|found differences\" || true\n\necho \"== STEP: revert perturbation ==\"\nsudo -n rm -f /etc/hosts.integrity-test-canary /etc/aide-test-canary.conf /etc/hostname.bak\n\necho \"== STEP: confirm clean again after revert ==\"\nsudo -n aide --config=/etc/aide/aide.conf --check | tail -5\necho \"== DONE ==\"\n",
+      "stdout": "== STEP: perturb /etc to prove baseline detects drift ==\n== STEP: run check (expect differences) ==\nWARNING: /etc/aide/aide.conf:2: Using 'database' is DEPRECATED and will be removed in the next release.. Update your config and use 'database_in' instead (line: 'database=file:/var/lib/aide/aide.db')\nAIDE found differences between database and filesystem!!\n\nSummary:\n  Total number of entries:\t1953\n  Added entries:\t\t3\n  Removed entries:\t\t0\n  Changed entries:\t\t1\n\n---------------------------------------------------\nAdded entries:\n---------------------------------------------------\n\nf+++++++++++++++++: /etc/aide-test-canary.conf\nf+++++++++++++++++: /etc/hostname.bak\nf+++++++++++++++++: /etc/hosts.integrity-test-canary\n== STEP: revert perturbation ==\n== STEP: confirm clean again after revert ==\nWARNING: /etc/aide/aide.conf:2: Using 'database' is DEPRECATED and will be removed in the next release.. Update your config and use 'database_in' instead (line: 'database=file:/var/lib/aide/aide.db')\n GOST      : TflJx/OgiflyrRJMTb0freSZto3OQNA6\n             4D2wcZNW3/A=\n\n\nEnd timestamp: 2026-09-29 09:20:34 -0400 (run time: 0m 1s)"
+    },
+    {
+      "command_id": "cmd-e524d9eab1b24fe6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:20:50.245457+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 4,
+      "duration_ms": 352,
+      "command": "set -Eeuo pipefail\nsudo -n aide --config=/etc/aide/aide.conf --check > /tmp/aide-recheck.log 2>&1\ncode=$?\necho \"exit_code=$code\"\ncat /tmp/aide-recheck.log\n"
+    },
+    {
+      "command_id": "cmd-4a32556443d146f6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:20:55.173490+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 314,
+      "command": "set -Eeuo pipefail\nset +e\nsudo -n aide --config=/etc/aide/aide.conf --check > /tmp/aide-recheck.log 2>&1\ncode=$?\nset -e\necho \"exit_code=$code\"\ncat /tmp/aide-recheck.log\n",
+      "stdout": "exit_code=4\nWARNING: /etc/aide/aide.conf:2: Using 'database' is DEPRECATED and will be removed in the next release.. Update your config and use 'database_in' instead (line: 'database=file:/var/lib/aide/aide.db')\nStart timestamp: 2026-09-29 09:20:54 -0400 (AIDE 0.18.6)\nAIDE found differences between database and filesystem!!\n\nSummary:\n  Total number of entries:\t1950\n  Added entries:\t\t0\n  Removed entries:\t\t0\n  Changed entries:\t\t1\n\n---------------------------------------------------\nChanged entries:\n---------------------------------------------------\n\nd = ... mc.. ..   : /etc\n\n---------------------------------------------------\nDetailed information about changes:\n---------------------------------------------------\n\nDirectory: /etc\n Mtime     : 2026-09-29 09:20:24 -0400        | 2026-09-29 09:20:33 -0400\n Ctime     : 2026-09-29 09:20:24 -0400        | 2026-09-29 09:20:33 -0400\n\n\n---------------------------------------------------\nThe attributes of the (uncompressed) database(s):\n---------------------------------------------------\n\n/var/lib/aide/aide.db\n MD5       : CV/Zyw+ge92CoLsgUfTJfg==\n SHA1      : mfO0LZKhQE4c3XKFmREFfPpub/k=\n SHA256    : 9LkMqRWHgGi7+QJSTmbtuf8hcQ43pdfV\n             8MYWkgbKQiI=\n SHA512    : pKrbiLtBP2wge0TpTlB1HEvVrM0vnMrG\n             wVJv8chAm9mlC4OyQa8coHm/3PYS2qGc\n             U/+aIpk7qBN/d7cox22Sgw==\n RMD160    : UseEPaRyU8/bfenT5hfWk/SM3ic=\n TIGER     : oJs7fuikYCMb4ZIqhiLrqfHZAW4IOEzC\n CRC32     : dk9Tgg==\n CRC32B    : uW4WQg==\n HAVAL     : YibPSE3l25nSUDtt0RG+a6UiVOTqLUOW\n             6NnlaXrR0jM=\n WHIRLPOOL : qhI+pVqgfSs+rN6OH3oaJWajmqcHa0Xf\n             1uzTDc3FLQgLJBL2/fsrN8sI7/yiPTxI\n             YzZdjsEW+sfoel82sBq01w==\n GOST      : TflJx/OgiflyrRJMTb0freSZto3OQNA6\n             4D2wcZNW3/A=\n\n\nEnd timestamp: 2026-09-29 09:20:55 -0400 (run time: 0m 1s)"
+    },
+    {
+      "command_id": "cmd-304fb6c66c80402a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:21:05.352744+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 446,
+      "command": "set -Eeuo pipefail\necho \"== STEP: re-init baseline after test cleanup ==\"\nsudo -n aide --config=/etc/aide/aide.conf --init\nsudo -n cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db\nsudo -n chmod 600 /var/lib/aide/aide.db /var/lib/aide/aide.db.new\ndate -u +\"%Y-%m-%dT%H:%M:%SZ\" | sudo -n tee /var/lib/aide/baseline-created-at.txt >/dev/null\nsha256sum /var/lib/aide/aide.db | sudo -n tee /var/lib/aide/aide.db.sha256 >/dev/null\n\necho \"== VERIFY: clean check against fresh baseline ==\"\nsudo -n aide --config=/etc/aide/aide.conf --check | grep -E \"Looks okay|Total number of entries\"\n\necho \"== VERIFY: baseline artifacts ==\"\ncat /var/lib/aide/baseline-created-at.txt\ncat /var/lib/aide/aide.db.sha256\nls -la /var/lib/aide/aide.db\necho \"== DONE ==\"\n",
+      "stdout": "== STEP: re-init baseline after test cleanup ==\nWARNING: /etc/aide/aide.conf:2: Using 'database' is DEPRECATED and will be removed in the next release.. Update your config and use 'database_in' instead (line: 'database=file:/var/lib/aide/aide.db')\nStart timestamp: 2026-09-29 09:21:05 -0400 (AIDE 0.18.6)\nAIDE successfully initialized database.\nNew AIDE database written to /var/lib/aide/aide.db.new\n\nNumber of entries:\t1950\n\n---------------------------------------------------\nThe attributes of the (uncompressed) database(s):\n---------------------------------------------------\n\n/var/lib/aide/aide.db.new\n MD5       : pvW+21jUtLsFXCKqeV0csw==\n SHA1      : rJLARF2efnQb2gFvFVn68+pvWBI=\n SHA256    : 1TbQtbNAXLuNIjT/Xt9PEV/u4+kAG4Ht\n             IyakvXO8ID4=\n SHA512    : UrkJ7dYkcedshXtyHip/LOR4z0AxqQZb\n             mhtAo8ZgrwxhTHEJSmcFQxLlwJdgCKaQ\n             9CAJHuynUU8x3fXperXckQ==\n RMD160    : kowM/wtHImMyq/4a64iGw4if4FY=\n TIGER     : z3T2zDdmYsT5HcCGxqx7kYNXne9fBOBV\n CRC32     : FyEDag==\n CRC32B    : BqkBOg==\n HAVAL     : 1Wjhm+YBJ4Zbbbn9IyddIAFnlbRfu2uH\n             eCjcfuww0aI=\n WHIRLPOOL : o3x9YqO6C0/cIgD3XC1MMaPO3vMoB+Ex\n             u258B4Uy8UA1v9dBRRoemeFYKwLK0swg\n             meDOPtlpWWUZX0T4YQHo7Q==\n GOST      : seUhbYyjGdL3YBIrFmNbMNDF7HOBtOyr\n             se2cudn381I=\n\n\nEnd timestamp: 2026-09-29 09:21:05 -0400 (run time: 0m 0s)\n== VERIFY: clean check against fresh baseline ==\nWARNING: /etc/aide/aide.conf:2: Using 'database' is DEPRECATED and will be removed in the next release.. Update your config and use 'database_in' instead (line: 'database=file:/var/lib/aide/aide.db')\nAIDE found NO differences between database and filesystem. Looks okay!!\n== VERIFY: baseline artifacts ==\n2026-09-29T13:21:05Z\nd536d0b5b3405cbb8d2234ff5edf4f115feee3e9001b81ed2326a4bd73bc203e  /var/lib/aide/aide.db\n-rw------- 1 root root 346061 Sep 29 09:21 /var/lib/aide/aide.db\n== DONE =="
+    },
+    {
+      "command_id": "cmd-9516a16fb8db4ac2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:21:09.868679+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 320,
+      "command": "set -Eeuo pipefail\necho \"== BASELINE PRE-RESTART ==\"\necho \"boot_id:\"; cat /proc/sys/kernel/random/boot_id\necho \"boot_time:\"; awk '/btime/{print $2}' /proc/stat\necho \"uptime:\"; cat /proc/uptime\necho \"aide db sha256:\"; sha256sum /var/lib/aide/aide.db\necho \"aide check status:\"\nsudo -n aide --config=/etc/aide/aide.conf --check | grep -E \"Looks okay|found differences\"\n",
+      "stdout": "== BASELINE PRE-RESTART ==\nboot_id:\na0c36ad2-af0d-42fe-ad6f-4750699390c2\nboot_time:\n1790687964\nuptime:\n104.66 385.38\naide db sha256:\nd536d0b5b3405cbb8d2234ff5edf4f115feee3e9001b81ed2326a4bd73bc203e  /var/lib/aide/aide.db\naide check status:\nWARNING: /etc/aide/aide.conf:2: Using 'database' is DEPRECATED and will be removed in the next release.. Update your config and use 'database_in' instead (line: 'database=file:/var/lib/aide/aide.db')\nAIDE found NO differences between database and filesystem. Looks okay!!"
+    },
+    {
+      "command_id": "cmd-33e1ac5c7deb4e8c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:21:13.234758+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 149,
+      "command": "set -Eeuo pipefail\necho \"issuing reboot\"\nsudo -n nohup shutdown -r now >/tmp/reboot.log 2>&1 &\ndisown\nsleep 1\necho \"ack returned, reboot scheduled\"\n",
+      "stdout": "issuing reboot\n",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-b8622aa956ef4fe5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:21:17.597200+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 1325,
+      "command": "cat /proc/sys/kernel/random/boot_id; awk '/btime/{print $2}' /proc/stat; cat /proc/uptime",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-a51a1c3203534bf1",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:21:21.309978+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 84,
+      "command": "cat /proc/sys/kernel/random/boot_id; awk '/btime/{print $2}' /proc/stat; cat /proc/uptime",
+      "stdout": "fc0eb3ab-0761-4bb6-90dc-8bd5447f49e8\n1790688074\n6.56 21.64"
+    },
+    {
+      "command_id": "cmd-8944d5ace86c4e1a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:21:26.550094+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 359,
+      "command": "set -Eeuo pipefail\necho \"== POST-RESTART VERIFICATION ==\"\necho \"aide db present:\"; ls -la /var/lib/aide/aide.db\necho \"aide db sha256 (should match pre-restart d536d0b5...):\"\nsha256sum /var/lib/aide/aide.db\necho \"aide check status:\"\nsudo -n aide --config=/etc/aide/aide.conf --check | grep -E \"Looks okay|found differences|Summary\" -A4\n",
+      "stdout": "== POST-RESTART VERIFICATION ==\naide db present:\n-rw------- 1 root root 346061 Sep 29 09:21 /var/lib/aide/aide.db\naide db sha256 (should match pre-restart d536d0b5...):\nd536d0b5b3405cbb8d2234ff5edf4f115feee3e9001b81ed2326a4bd73bc203e  /var/lib/aide/aide.db\naide check status:\nWARNING: /etc/aide/aide.conf:2: Using 'database' is DEPRECATED and will be removed in the next release.. Update your config and use 'database_in' instead (line: 'database=file:/var/lib/aide/aide.db')\nAIDE found NO differences between database and filesystem. Looks okay!!\n\nNumber of entries:\t1950\n\n---------------------------------------------------"
+    }
+  ]
+}

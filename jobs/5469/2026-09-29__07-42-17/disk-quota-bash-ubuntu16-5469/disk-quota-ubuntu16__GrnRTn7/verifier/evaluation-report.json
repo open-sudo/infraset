@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Account datauser exists on node1",
+      "status": "satisfied",
+      "summary": "useradd -M -s /usr/sbin/nologin datauser created the account; id datauser confirmed uid=1001(datauser) both before and after the restart.",
+      "evidence_ids": [
+        "cmd-345531f7052244b7",
+        "cmd-2ec71ab42d964cc0"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "datauser limited to 100MB of storage under /srv/data, enforced by the filesystem itself",
+      "status": "satisfied",
+      "summary": "After discovering the root ext4 filesystem's kernel lacked quota_v2/quota_tree modules, the executor created a loop-mounted XFS filesystem backing /srv/data (via /var/lib/srvdata.img, persistent fstab entry with uquota) and set bsoft=100m,bhard=100m for datauser via xfs_quota, confirmed by report output showing the 100M limits.",
+      "evidence_ids": [
+        "cmd-d378566858dc42df",
+        "cmd-0149efd32f92485a"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Quota enforcement actually blocks writes beyond 100MB",
+      "status": "satisfied",
+      "summary": "As datauser, a 60MB write succeeded; a second 60MB write failed with 'Disk quota exceeded' after exactly 100M was used, confirmed by xfs_quota report and df. The same test was repeated after the reboot with identical results.",
+      "evidence_ids": [
+        "cmd-6ceb67ddc5a549d1",
+        "cmd-2ec71ab42d964cc0"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Quota configuration and enforcement persist across a restart of node1",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id and active srv-data.mount with quota at 0/100M; reboot was acknowledged (SSH closed, then refused), and a differing post-restart boot_id (10f9f6da...) was observed, matching the fixed after_executor snapshot. Post-restart, /srv/data automounted, the 100M quota persisted, datauser remained intact, and the write-enforcement test was successfully repeated and cleaned up.",
+      "evidence_ids": [
+        "cmd-63f162a969c54e34",
+        "cmd-30b2e56db47e4928",
+        "cmd-31268296f2ed45cb",
+        "cmd-5feb6843901c4d11",
+        "cmd-2ec71ab42d964cc0",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly identified that the root ext4 filesystem's kernel lacked quota support, worked around this by provisioning a dedicated loop-mounted XFS filesystem at /srv/data with a persistent fstab entry and uquota option, created datauser, and set a 100MB (soft=hard) XFS user quota. Enforcement was directly demonstrated (a write succeeded up to exactly 100MB, the next write failed with 'Disk quota exceeded') both before and after a full node reboot, with boot-identity evidence (6ab98831... -> 10f9f6da...) matching the fixed lifecycle snapshots and confirming the mount, quota, and account state all survived the restart. All material outcomes are satisfied with direct evidence.",
+  "limitations": [
+    "The initial ext4-based quota attempt failed due to a kernel limitation and was superseded by the XFS approach within the same session; no separate before/after snapshot exists for that intermediate state, but command-level evidence shows it was cleanly reformatted and fstab was corrected.",
+    "No dedicated observation of /etc/passwd or /etc/group diff was provided beyond 'id datauser' output; group/account persistence is inferred from repeated id checks rather than a full account database snapshot."
+  ],
+  "command_stats": {
+    "total": 11,
+    "successful": 8,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "The executor made one abandoned attempt (ext4 loop image + quotaon, which failed with 'Quota format not supported in kernel' in cmd-345531f7052244b7) before correctly pivoting to XFS; this was a reasonable diagnostic-driven correction, not a wasted destructive action, since the fstab entry was subsequently rewritten and the backing image reformatted in place (cmd-0149efd32f92485a), leaving no residue. Test files used for quota verification (file1/file2, verify1/verify2) were created and then removed in the same or a following command (cmd-6ceb67ddc5a549d1 cleaned up by cmd-63f162a969c54e34; verify1/verify2 cleaned up within cmd-2ec71ab42d964cc0), so no leftover data or quota usage remains. One minor note: /srv/data was set to mode 1777 (world-writable with sticky bit) to allow datauser to write to a root-owned directory; this is a broader-than-strictly-minimal permission but is a common, low-risk pattern (sticky bit prevents cross-user deletion) and was necessary for datauser to write at all. No failed services, no listening sockets, and dpkg package health remained clean before and after (global:after_executor:node1:failed-services, global:after_executor:node1:package-health).",
+    "evidence_ids": [
+      "cmd-345531f7052244b7",
+      "cmd-0149efd32f92485a",
+      "cmd-6ceb67ddc5a549d1",
+      "cmd-63f162a969c54e34",
+      "cmd-2ec71ab42d964cc0",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

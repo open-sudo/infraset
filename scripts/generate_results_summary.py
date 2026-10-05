@@ -6,6 +6,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -16,28 +17,8 @@ JOBS = ROOT / "jobs"
 OUTPUT = ROOT / "results-summary.md"
 DATA_OUTPUT = ROOT / "data" / "execution-summary.jsonl"
 GITHUB_BLOB = "https://github.com/open-sudo/infraset/blob/main"
-JOB_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}__\d{2}-\d{2}-\d{2}$")
-
-
-def find_task_dirs(root: Path) -> list[Path]:
-    """Find task directories anywhere under root, regardless of category nesting.
-
-    A task directory is any directory whose direct children include at least
-    one job (timestamp-named) directory, so this works whether jobs live
-    directly under `jobs/<task>/` or nested under category subdirectories
-    such as `jobs/<category>/<os>/<task>/`.
-    """
-    found = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_dir():
-            continue
-        if any(
-            JOB_NAME.fullmatch(child.name)
-            for child in path.iterdir()
-            if child.is_dir()
-        ):
-            found.append(path)
-    return found
+sys.path.insert(0, str(Path(__file__).parent))
+from job_layout import iter_job_dirs, job_location  # noqa: E402
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
@@ -109,14 +90,6 @@ def trial_dirs(job_dir: Path) -> list[Path]:
         if path.is_dir()
         and (path / "config.json").is_file()
         and (path / "result.json").is_file()
-    )
-
-
-def job_dirs(task_dir: Path) -> list[Path]:
-    return sorted(
-        path
-        for path in task_dir.iterdir()
-        if path.is_dir() and (path / "result.json").is_file()
     )
 
 
@@ -217,8 +190,9 @@ def command_display(
     return value
 
 
-def task_record(task_dir: Path) -> dict[str, Any] | None:
-    jobs = job_dirs(task_dir)
+def task_record(
+    *, runner: str, task_parts: tuple[str, ...], jobs: list[Path]
+) -> dict[str, Any] | None:
     if not jobs:
         return None
 
@@ -272,10 +246,9 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
             available_command_audits += 1
 
     return {
-        "task": task_dir.name,
-        "_analysis_url": (
-            f"{GITHUB_BLOB}/jobs/{task_dir.relative_to(JOBS)}/{jobs[-1].name}/analysis.md"
-        ),
+        "runner": runner,
+        "task": task_parts[-1],
+        "_analysis_url": (f"{GITHUB_BLOB}/{jobs[-1].relative_to(ROOT)}/analysis.md"),
         "environment": environment(jobs[-1]),
         "commands": command_display(
             successful_commands,
@@ -293,9 +266,15 @@ def task_record(task_dir: Path) -> dict[str, Any] | None:
 
 
 def records() -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, tuple[str, ...]], list[Path]] = defaultdict(list)
+    for job_dir in iter_job_dirs(JOBS):
+        location = job_location(job_dir, JOBS)
+        grouped[(location.runner, location.task_parts)].append(job_dir)
+
     values = []
-    for task_dir in find_task_dirs(JOBS):
-        record = task_record(task_dir)
+    for (runner, task_parts), jobs in sorted(grouped.items()):
+        jobs.sort(key=lambda path: job_location(path, JOBS).run_name)
+        record = task_record(runner=runner, task_parts=task_parts, jobs=jobs)
         if record is not None:
             values.append(record)
     return values
@@ -313,13 +292,13 @@ def read_intro() -> str:
 
 def summary_table(values: list[dict[str, Any]]) -> str:
     lines = [
-        "| Task | Environment | Commands | Reward | Coverage | Functionality | Hygiene | Provisioning time | Execution time |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Runner | Task | Environment | Commands | Reward | Coverage | Functionality | Hygiene | Provisioning time | Execution time |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for record in values:
         task_link = f"[{record['task']}]({record['_analysis_url']})"
         lines.append(
-            "| {task_link} | {environment} | "
+            "| {runner} | {task_link} | {environment} | "
             "{commands} | "
             "{reward:.3f} | {evaluation_coverage:.3f} | {functionality:.3f} | "
             "{operational_hygiene:.3f} | "

@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "source-of-truth",
+      "requirement": "node1's /etc/inventory/app.conf is established and maintained as the authoritative config file",
+      "status": "satisfied",
+      "summary": "Executor created /etc/inventory/app.conf on node1 with initial content, and all subsequent changes (sync_version 1->2->3) were made only on node1, consistent with it being the source of truth.",
+      "evidence_ids": [
+        "cmd-11ee990068564470",
+        "cmd-a7f3702eed0c421f",
+        "cmd-fcd6750fad654c95"
+      ]
+    },
+    {
+      "id": "sync-mechanism",
+      "requirement": "node2's copy of app.conf stays synchronized with node1, picking up changes within 15 minutes",
+      "status": "satisfied",
+      "summary": "A cron job on node2 runs an SSH-pull sync script every 5 minutes. Two independent real-world verifications show a change made on node1 at 10:31:48 was picked up automatically by the scheduled cron tick at 10:35:00 (log entry 'synced config...(changed)'), and a later change at 10:36:44 was picked up at 10:40:00 \u2014 both well within the 15-minute SLA and confirmed via passive polling rather than manual triggering.",
+      "evidence_ids": [
+        "cmd-a7f3702eed0c421f",
+        "cmd-b6e3f757c5cc4506",
+        "cmd-4b3950f805c743e6",
+        "cmd-47101f01af4c442e",
+        "cmd-fcd6750fad654c95",
+        "cmd-6e9603e8233f4fba",
+        "cmd-c4d9d0c28cb3408f",
+        "cmd-6cefed6125b1421b"
+      ]
+    },
+    {
+      "id": "sync-idempotent-safe",
+      "requirement": "Sync only overwrites the destination when content actually differs (avoids unnecessary churn) and fails safely on transient errors",
+      "status": "satisfied",
+      "summary": "The sync script compares fetched content via cmp before overwriting, uses an atomic mv from a temp file, and only logs/overwrites on genuine changes, as shown in the script body and the resulting log entries which record exactly one line per actual change.",
+      "evidence_ids": [
+        "cmd-56be77bd00994e3c",
+        "cmd-47101f01af4c442e",
+        "cmd-6cefed6125b1421b"
+      ]
+    },
+    {
+      "id": "sync-persists-across-restart",
+      "requirement": "Sync mechanism (cron job, keys, service) survives a node restart and continues functioning",
+      "status": "satisfied",
+      "summary": "After both node1 and node2 were independently restarted (boot IDs changed on both, confirmed against the fixed lifecycle snapshot cross-check), crond, the crontab entry, and the SSH key on node2 all persisted, and a new config change made on node1 post-restart was picked up automatically by the real cron schedule at 10:40:00.",
+      "evidence_ids": [
+        "cmd-b87b6b8c86824045",
+        "cmd-4fd359f13a494c1b",
+        "cmd-fcd6750fad654c95",
+        "cmd-6cefed6125b1421b",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established /etc/inventory/app.conf on node1 as the source of truth and implemented a cron-driven SSH-pull sync on node2 that runs every 5 minutes, well inside the 15-minute SLA. Two independent, passively-observed cron cycles (not manual triggers) confirmed real propagation of config changes, including one performed after both nodes were independently restarted, with the crontab, SSH key, and crond service all persisting across node2's reboot. The mandatory node-restart evidence protocol was completed on both nodes with pre/post boot-identity, service, and data-state checks that are corroborated by the fixed lifecycle snapshots. The main hygiene concern is that the executor unlocked node1's previously-locked root account to enable root SSH, which was necessary for this architecture but does weaken a pre-existing security control.",
+  "limitations": [
+    "Sync propagation was only observed across two 5-minute cron cycles (~9 minutes of wall-clock observation with sleep-based polling); no evidence spans a much longer duration or multiple days to rule out drift or missed cycles.",
+    "The lifecycle snapshots show 'after_prepare' is an alias of 'before_prepare' since prepare was disabled for this task, so no distinct preparer-created state could be separated from executor changes.",
+    "Restart evidence for cluster-wide behavior (e.g., simultaneous restart of both nodes) was not tested \u2014 restarts were performed sequentially, one node at a time."
+  ],
+  "command_stats": {
+    "total": 54,
+    "successful": 32,
+    "failed": 22,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most state-changing commands map clearly to task needs: creating the source config, generating/installing SSH keys, writing the sync script, installing the cron job, and enabling crond. One mutation warrants scrutiny: node1's root account was locked (shadow '!*') in the base image, and the executor ran 'passwd -u root' to unlock it after diagnosing that this was blocking SSH pubkey login. This was a necessary prerequisite for the chosen root-SSH-pull architecture and is directly tied to enabling the sync mechanism, but it does weaken a pre-existing security control (a locked root account) rather than working around it with a more scoped alternative (e.g., a dedicated non-root sync user or restricted forced command). The change was retained (not reverted) as it is required for ongoing sync operation. No other unnecessary, abandoned, or destructive mutations were observed; the two reboots were part of the mandated node-restart evidence protocol, not task-driven mutations, and left only expected residue (/tmp/reboot.log) with no other unexplained diffs in the lifecycle snapshot comparison.",
+    "evidence_ids": [
+      "cmd-a301da5fa0ec413f",
+      "cmd-dde5d12e8f374259"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

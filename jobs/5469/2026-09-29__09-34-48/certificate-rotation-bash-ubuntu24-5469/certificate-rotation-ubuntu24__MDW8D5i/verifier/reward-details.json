@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on port 8443 on node1",
+      "status": "satisfied",
+      "summary": "nginx installed, configured with site 'rotating-tls' listening on 8443 (ssl), enabled and started. curl -sk against https://$NODE_IP:8443/ returned HTTP_CODE=200 with correct cert subject/issuer. The after-executor lifecycle snapshot independently confirms nginx listening on 0.0.0.0:8443 and [::]:8443.",
+      "evidence_ids": [
+        "cmd-475aa92de8144c37",
+        "cmd-538ba27255fe4a23",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "cert-auto-renew",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A renewal script using 'openssl x509 -checkend' plus a systemd oneshot service/timer (cert-renew.service/.timer, every 1 minute) was installed and enabled. journalctl shows the timer firing cert-renew.service automatically, and the certificate serial changed from 6446C1... to 7B24A6... with a fresh notBefore/notAfter window, all before the original cert's actual expiry (Sep 30 2026). This was observed happening autonomously via the timer, not manually triggered.",
+      "evidence_ids": [
+        "cmd-0bfb678329624d1d",
+        "cmd-4f3328170ba64ffc",
+        "cmd-51366096b0fb4077",
+        "cmd-8cf35a4048f04f0e"
+      ]
+    },
+    {
+      "id": "no-downtime-reload",
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no downtime during rotation)",
+      "status": "satisfied",
+      "summary": "A 90-second, 1-request/sec curl loop against the HTTPS endpoint was run spanning the timer-triggered renewal event (nginx -t + systemctl reload visible in journalctl at the same timestamp as the cert serial change). All 90 collected responses were HTTP 200, and a follow-up curl confirmed the live served certificate's expiry now matches the newly renewed cert, showing nginx picked up the new cert via reload without dropping connections.",
+      "evidence_ids": [
+        "cmd-51366096b0fb4077",
+        "cmd-8cf35a4048f04f0e",
+        "cmd-0b3456a8bb234481"
+      ]
+    },
+    {
+      "id": "restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on node1: pre-restart baseline, restart, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 1e0cb179..., nginx and cert-renew.timer active, cert state, HTTPS 200. A backgrounded 'systemctl reboot' returned an immediate acknowledgement; a subsequent probe timed out (node rebooting) and the next probe returned a new boot_id 9809b0cb... with fresh uptime. Post-restart checks confirmed nginx and cert-renew.timer active and enabled, the rotated cert persisted unchanged on disk, HTTPS still returned 200, and the timer had a live next-scheduled run. The fixed lifecycle before-prepare/after-executor boot-identity observations independently corroborate the same boot_id transition and show port 8443 newly listening post-change.",
+      "evidence_ids": [
+        "cmd-5e9d61ce21584c42",
+        "cmd-b5c3ce3e25a84f71",
+        "cmd-f4e842def9564db1",
+        "cmd-7fdef31610c84b56",
+        "cmd-915c0a768dbb43fe",
+        "cmd-323960487d9141e7",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the public task contract are directly satisfied with coherent evidence: nginx serves HTTPS on 8443 with a self-signed cert, a systemd timer drives automatic renewal via the renewal script (observed firing and rotating the cert serial autonomously), and a sustained request loop spanning the renewal event showed zero dropped requests with nginx picking up the new cert via reload. The mandatory node-restart evidence protocol was also executed correctly on node1, showing a healthy pre-restart baseline, a reboot acknowledgement, a changed boot identity, and full post-restart recovery of nginx, the timer, and the rotated certificate \u2014 independently corroborated by the fixed lifecycle boot-identity and listening-socket snapshots. Hygiene is good with only minor uncleaned temp log files as residue.",
+  "limitations": [
+    "Renewal cadence relies on a checkend threshold (86340s) close to the cert's full 24h validity combined with a 1-minute timer, meaning renewal occurs almost immediately/continuously after each issuance; this reliably demonstrates automated pre-expiry renewal in the captured window but is a much tighter cycle than a typical long-lived-cert renewal schedule.",
+    "Minor unremoved temporary log files in /tmp (curl-loop.log/out, apt-install.log, renew-cert.log) were not cleaned up, though they pose no functional or security risk."
+  ],
+  "command_stats": {
+    "total": 18,
+    "successful": 16,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.88,
+    "summary": "Reviewed all 18 executor commands chronologically. All state-changing actions (apt-get install nginx, creating the renewal script and its later checkend-threshold sed edit, issuing the initial cert, writing the nginx site config and enabling nginx, creating and enabling the systemd service/timer, the background curl-loop test process, and the final systemctl reboot) map directly to satisfying a material outcome, establishing a prerequisite, or collecting bounded final evidence; none appear to be abandoned troubleshooting experiments. The self-signed certificate approach is consistent with the task's phrasing and does not weaken security controls (private key kept mode 600, atomic replace of cert/key). Minor residue: transient log files (/tmp/curl-loop.log, /tmp/curl-loop.out, /tmp/apt-install.log, /tmp/renew-cert.log) were left in /tmp rather than cleaned up, but these are low-risk, bounded test artifacts with no functional impact, and the package-health and failed-services checks both before and after executor changes show no damaged package state or failed units.",
+    "evidence_ids": [
+      "cmd-7d3c9c512d334033",
+      "cmd-50753277bcc84e4b",
+      "cmd-890c45bf7e3144e7",
+      "cmd-475aa92de8144c37",
+      "cmd-4f3328170ba64ffc",
+      "cmd-51366096b0fb4077",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

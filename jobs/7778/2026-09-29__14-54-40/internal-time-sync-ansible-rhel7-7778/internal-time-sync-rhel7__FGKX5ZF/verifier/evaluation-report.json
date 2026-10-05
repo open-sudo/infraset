@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node1 configured as the internal chrony time source for the cluster (serves time to cluster, does not merely act as another client)",
+      "status": "satisfied",
+      "summary": "Baseline (cmd-57e220bc2f0540e0) shows node1 only using public pool servers. After the Ansible playbook ran, node1's /etc/chrony.conf gained 'allow 10.100.17.0/24' and 'local stratum 10' (cmd-ad0e7e28eaeb4890), a firewalld rich rule opening NTP for the subnet was applied and persisted (cmd-289deb19765c4072, cmd-7c2641a564d34014), and chronyc clients on node1 subsequently listed node2 as an active connected client (cmd-289deb19765c4072). Post node1-reboot verification (cmd-d340c34ba2754550, cmd-7c2641a564d34014) shows the chrony.conf and firewalld rich rule persisted and chronyd active.",
+      "evidence_ids": [
+        "cmd-57e220bc2f0540e0",
+        "cmd-ad0e7e28eaeb4890",
+        "cmd-289deb19765c4072",
+        "cmd-d340c34ba2754550",
+        "cmd-7c2641a564d34014"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "node2 configured to synchronize its clock against node1 instead of a public time server",
+      "status": "satisfied",
+      "summary": "Baseline (cmd-9465f21820ad4567) shows node2 using four public rhel.pool.ntp.org servers. After the playbook ran, node2's /etc/chrony.conf contains only 'server 10.100.17.10 iburst prefer' and chronyc sources/tracking show node2 synchronized ('^*') to 10.100.17.10 at stratum 3 with Reference ID 0A64110A (cmd-e5339310b133451d). Post node2-reboot verification (cmd-967525053e0d4957) confirms the config persisted (node1-only server line) and node2 re-synced to node1 after the reboot.",
+      "evidence_ids": [
+        "cmd-9465f21820ad4567",
+        "cmd-e5339310b133451d",
+        "cmd-967525053e0d4957"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Implementation is via Ansible (playbook executed against node1/node2 from control node)",
+      "status": "satisfied",
+      "summary": "A playbook /root/ansible/internal-time-sync/site.yml was written, syntax-checked, and executed via ansible-playbook from node3, producing the observed changes on node1/node2 (cmd-efcc80cb428b4bb9, cmd-51df21f9689348c0, cmd-2d19588b10854348). A subsequent idempotent re-run after all node reboots showed changed=0 across all tasks, confirming the configuration is Ansible-managed and reproducible (cmd-efcd384f78204bde). Connectivity required resolving a genuine Python-version incompatibility between ansible-core 2.20 (requires Python>=3.9) and RHEL7's stock Python 2.7/3.6, which was addressed by installing Python 3.8 via SCL on the targets and running an isolated ansible-core 2.16 venv on the control node (cmd-73f969c7f530461f, cmd-3fbdec327661434b, cmd-30884495c8c1475e).",
+      "evidence_ids": [
+        "cmd-efcc80cb428b4bb9",
+        "cmd-51df21f9689348c0",
+        "cmd-2d19588b10854348",
+        "cmd-efcd384f78204bde",
+        "cmd-3fbdec327661434b",
+        "cmd-30884495c8c1475e"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node with pre-restart healthy baseline, restart acknowledgement, changed boot identity, and recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "For node1: pre-restart boot_id 325732f1... and healthy chronyd/tracking (cmd-aba0f9ca5143417b); reboot acknowledged (cmd-82e644e0eb194680); new boot_id ff7c981c... (cmd-9ccc91b8fb8a4059, corroborated by global after_executor snapshot); chronyd active with chrony.conf and firewalld rich rule intact post-reboot, and node2 remained synced across the restart (cmd-d340c34ba2754550, cmd-7c2641a564d34014, cmd-f90744993a3a4b30). For node2: pre-restart boot_id 0d6209e2... and synced state (cmd-22cd75b354424f0a); reboot acknowledged (cmd-d0f37f482dc84cd6); new boot_id 15c4c98b... (cmd-07833293d33442eb); chronyd active, config persisted, re-synced to node1 (cmd-967525053e0d4957). For node3: pre-restart boot_id 416c5cf5... (cmd-3a78ccb928f34a22); reboot acknowledged (cmd-5eb516dde8e0489c); new boot_id ada931d5... (cmd-d2e943c854da43e4); playbook artifacts persisted, Ansible connectivity to node1/node2 restored, and a full idempotent playbook re-run confirmed cluster state preserved (cmd-efcd384f78204bde). The fixed lifecycle boot-identity snapshots (global:after_executor:node1/node2/node3:boot-identity) independently corroborate the changed boot IDs for all three nodes.",
+      "evidence_ids": [
+        "cmd-aba0f9ca5143417b",
+        "cmd-82e644e0eb194680",
+        "cmd-9ccc91b8fb8a4059",
+        "cmd-d340c34ba2754550",
+        "cmd-7c2641a564d34014",
+        "cmd-f90744993a3a4b30",
+        "cmd-22cd75b354424f0a",
+        "cmd-d0f37f482dc84cd6",
+        "cmd-07833293d33442eb",
+        "cmd-967525053e0d4957",
+        "cmd-3a78ccb928f34a22",
+        "cmd-5eb516dde8e0489c",
+        "cmd-d2e943c854da43e4",
+        "cmd-efcd384f78204bde",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The Ansible playbook correctly configures node1 as an internal chrony source (subnet allow rule, local stratum, firewalld NTP opening, confirmed serving node2) and node2 to sync exclusively against node1 (confirmed '^*' selected source, stratum 3, node1-only server line), with idempotent re-application. The mandatory node-restart evidence protocol was executed on all three managed nodes with clear pre-restart baselines, restart acknowledgements, changed boot IDs (also corroborated by the fixed lifecycle snapshots), and confirmed post-restart recovery of chrony/firewalld state and cluster sync. Achieving Ansible connectivity required legitimate remediation of a Python-version incompatibility, but left some residual, non-destructive artifacts (an unused python3 3.6.8 package, added yum repo files, a leftover /tmp file) that were not cleaned up after the working solution (rh-python38) was in place.",
+  "limitations": [
+    "Native package-manager consistency checks (package-health) were unavailable/timed out on node1 and node2 both before and after the task, so residual effects of the CentOS-vault/EPEL/SCL package installs on RPM database integrity could not be directly verified.",
+    "No evidence was captured of an actual clock-drift correction scenario beyond the chronyc 'prefer'/stratum verification; sync quality (offset bounds over time) was only spot-checked shortly after configuration and after each reboot."
+  ],
+  "command_stats": {
+    "total": 67,
+    "successful": 47,
+    "failed": 20,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most state-changing commands were legitimate prerequisites for a genuinely necessary constraint: ansible-core 2.20 on the control node required Python>=3.9 while RHEL7 nodes shipped Python 2.7/3.6, so installing Python 3.8 (rh-python38) and a legacy ansible-core 2.16 venv were reasonable, bounded fixes directly tied to satisfying the 'implement via Ansible' requirement. However, several intermediate mutations were left in place without cleanup rather than reverted: (1) a yum-installed python3 3.6.8 package (cmd-7411843896854c81 on node1, cmd-315779c6d1814cd6 on node2) was discovered to be too old for ansible-core and superseded by rh-python38, but was never removed, leaving an unused package on both RHEL7 nodes; (2) three new yum repo files (centos-vault.repo, epel.repo, centos-sclo.repo) were added to /etc/yum.repos.d on node1/node2 and retained permanently, altering the nodes' package-manager configuration beyond the task's scope; (3) a stray /tmp/centos-vault.repo file was left on both nodes per the after_executor temporary-files snapshot. None of these are destructive, security-weakening, or broad in blast radius, and the core chrony/firewalld configuration itself was clean, minimal, and idempotent. SSH key installation into antrieb's authorized_keys on node1/node2 was a necessary, appropriately scoped connectivity prerequisite. Native package-manager consistency checks were unavailable (timed out) both before and after on node1/node2, so RPM database health after the SCL/CentOS-vault package installs could not be directly confirmed either way.",
+    "evidence_ids": [
+      "cmd-7411843896854c81",
+      "cmd-315779c6d1814cd6",
+      "cmd-4bf802b6f9c74ceb",
+      "cmd-6712766ec51d4c68",
+      "cmd-73f969c7f530461f",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:before_prepare:node1:package-health",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

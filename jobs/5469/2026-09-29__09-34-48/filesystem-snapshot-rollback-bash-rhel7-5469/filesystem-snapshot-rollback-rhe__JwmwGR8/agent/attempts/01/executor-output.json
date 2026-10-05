@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "On node1 (RHEL 7.9, no LVM/btrfs/package-repo access available), built a snapshot-capable /srv/data using device-mapper directly: a loopback-backed XFS \"origin\" volume (dmsetup snapshot-origin target on /dev/loop0) mounted at /srv/data, and a COW loopback store (/dev/loop1). Populated /srv/data with app.conf and state/counter.txt, recorded a SHA-256 baseline, then created a dm-snapshot device (data-snap) capturing that exact state. Modified /srv/data (corrupted app.conf, changed counter.txt, added an unexpected file) to simulate real drift, confirmed the snapshot's COW store had preserved the original blocks, mounted the snapshot read-only, verified its checksums matched the baseline, then restored /srv/data by replacing its contents with the snapshot's exact content \u2014 post-restore checksums matched the baseline exactly (extra file removed, originals restored byte-for-byte). Made the setup persistent via a systemd oneshot service (data-origin-setup.service) that reattaches the loop devices and recreates the dm-origin table idempotently, plus a srv-data.mount unit, both enabled at boot. Completed the mandatory single-node restart-evidence protocol: captured boot_id fe422859-bfe7-4eb4-819b-e09864f3ca60 and a healthy/matching-baseline data state pre-restart, issued a background `reboot` so the ack returned before disconnection, polled node1 until reachable, confirmed a new boot_id (4f22c5c7-9866-412e-acfd-70785edf7be2) proving an actual restart, and verified full recovery post-restart: dm-origin device reattached, /srv/data remounted automatically, and SHA-256 checksums still match the original baseline exactly. node1 is the cluster's only managed node, so the restart protocol is complete for the full topology.",
+  "actions_performed": [
+    "Inspected node1 disk/filesystem layout, confirmed XFS-on-raw-partition with no LVM/btrfs and no reachable yum repos",
+    "Located device-mapper (dmsetup) already present at /usr/sbin/dmsetup, chose a manual dm-snapshot approach",
+    "Created loopback-backed origin.img (512MB) and cow.img (512MB) under /srv/snapstore",
+    "Created dm snapshot-origin device 'data-origin' over /dev/loop0, formatted XFS, mounted at /srv/data",
+    "Populated /srv/data with app.conf and state/counter.txt; captured SHA-256 baseline",
+    "Created dm-snapshot device 'data-snap' (COW target on /dev/loop1) capturing that exact state",
+    "Modified /srv/data: corrupted app.conf, changed counter.txt, added unexpected.txt",
+    "Confirmed COW store had captured pre-modification blocks (dmsetup status)",
+    "Mounted data-snap read-only, verified its content/checksums matched the pre-modification baseline exactly",
+    "Restored /srv/data by clearing it and copying the snapshot's exact content back; verified checksums match baseline exactly",
+    "Created /usr/local/sbin/setup-data-snapshot.sh plus systemd units data-origin-setup.service and srv-data.mount, enabled them for boot persistence",
+    "Captured pre-restart boot_id and confirmed data still matched baseline",
+    "Issued a backgrounded reboot on node1 so the exec ack returned before disconnection",
+    "Polled node1 until reachable again, confirmed a new boot_id proving an actual restart",
+    "Verified post-restart recovery: dm-origin device present, /srv/data mounted, systemd units active, checksums match baseline exactly"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline snapshot of /srv/data content and healthy dm-snapshot setup before any modification",
+      "command_ids": [
+        "cmd-6e34e676889e42a8",
+        "cmd-2a7a88ff840a4fb1"
+      ],
+      "summary": "Populated /srv/data (app.conf, state/counter.txt), recorded SHA-256 baseline, then created dm-snapshot device data-snap capturing this exact state (dmsetup status shows allocated COW blocks)."
+    },
+    {
+      "requirement": "Directory modified after snapshot capture",
+      "command_ids": [
+        "cmd-911c49ddd5e94511"
+      ],
+      "summary": "app.conf corrupted, counter.txt changed, and an unexpected.txt file added; dmsetup status confirms COW store had preserved pre-modification blocks (48/1048576 allocated)."
+    },
+    {
+      "requirement": "Snapshot content proven to match the earlier baseline exactly",
+      "command_ids": [
+        "cmd-fed08b655e2d4e69"
+      ],
+      "summary": "Mounted data-snap read-only; its file listing and content matched the original; sha256sum diff against baseline showed 'SNAPSHOT MATCHES BASELINE'."
+    },
+    {
+      "requirement": "Restore /srv/data to the exact snapshot-captured content",
+      "command_ids": [
+        "cmd-2959a2eee77e478c"
+      ],
+      "summary": "Cleared /srv/data and copied the snapshot's content back; sha256sum diff against baseline showed 'RESTORE MATCHES BASELINE EXACTLY', with unexpected.txt gone and originals restored."
+    },
+    {
+      "requirement": "Persistence of snapshot-capable /srv/data setup across reboot (systemd units)",
+      "command_ids": [
+        "cmd-2530a0786e1240e6",
+        "cmd-fcf5ecd6b2414cea"
+      ],
+      "summary": "Created and enabled data-origin-setup.service and srv-data.mount; systemctl status showed both active/enabled with /srv/data correctly mounted on /dev/mapper/data-origin immediately after setup."
+    },
+    {
+      "requirement": "node1 pre-restart healthy baseline and boot identity",
+      "command_ids": [
+        "cmd-a2b414ae015f4d33"
+      ],
+      "summary": "Captured boot_id fe422859-bfe7-4eb4-819b-e09864f3ca60, confirmed dm device present, /srv/data mounted, and data checksums matched baseline exactly pre-restart."
+    },
+    {
+      "requirement": "node1 restart acknowledgement returned before disconnection",
+      "command_ids": [
+        "cmd-f696f1d9f59343ca"
+      ],
+      "summary": "Issued a backgrounded 'sleep 2 && reboot' so the exec call acknowledged and returned before the node dropped off the network."
+    },
+    {
+      "requirement": "node1 boot identity changed (proof of actual restart, not just elapsed time)",
+      "command_ids": [
+        "cmd-3b6190634c604c3d",
+        "cmd-10e4046657b04255"
+      ],
+      "summary": "Node was unreachable during reboot (connection timed out), then came back with a new boot_id 4f22c5c7-9866-412e-acfd-70785edf7be2, differing from the pre-restart boot_id, and a fresh uptime -s timestamp."
+    },
+    {
+      "requirement": "node1 post-restart recovery of required services and data",
+      "command_ids": [
+        "cmd-691a3006826d4f9e"
+      ],
+      "summary": "After restart, dm-origin device was recreated (via enabled systemd units, now active), /srv/data was automatically remounted, and SHA-256 checksums of its contents still matched the original baseline exactly."
+    }
+  ]
+}

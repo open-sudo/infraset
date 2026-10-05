@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Serve an application from node2 on TCP port 8080",
+      "status": "satisfied",
+      "summary": "demo-app.service (python3 http.server) installed via Ansible role 'app', bound to private IP 10.10.20.2:8080, enabled and active. Direct HTTP 200 confirmed pre- and post-reboot of node2 (boot_id changed a0c36ad2->5ea83378, service active, curl 200 after).",
+      "evidence_ids": [
+        "cmd-c1e4d12489344dc3",
+        "cmd-79de9c0527a944e2",
+        "cmd-c8703a81f7c94b7c",
+        "cmd-c845d103a3744b8b",
+        "cmd-c6f8d577a1934853"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node3 (outside the private network) reaches node2's app only through a WireGuard tunnel terminated on node1",
+      "status": "satisfied",
+      "summary": "WireGuard tunnel (10.200.0.0/24) established between node1 (server, wg0) and node3 (client), with VyOS firewall/forward rule restricting forwarded traffic to wg0->10.10.20.2:8080 and NAT masquerade for the tunnel subnet. From node3: curl via tunnel returns HTTP 200; curl directly to node2's public IP:8080 returns HTTP 000 (connection refused, app not bound there). Verified both before and after node1's reboot (boot_id 5bcff8f9->7a82131d), with rules and wg0 interface automatically reapplied from config.boot.",
+      "evidence_ids": [
+        "cmd-5edab1ce0f594456",
+        "cmd-88c0248e0e914d61",
+        "cmd-13106ca75e9d4e38",
+        "cmd-6c7580a545664f43",
+        "cmd-fc431423366f4e41",
+        "cmd-c920e79094fe4dde"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Implementation performed using Ansible",
+      "status": "satisfied",
+      "summary": "Ansible project (/root/inventory.ini, /root/ansible/site.yml with roles gateway/app/client) executed from node4 (the pre-provisioned ansible-controller node) against node1/node2/node3. Full playbook run completes cleanly including an in-playbook verification play, and is idempotent on a second run (no further changes on node1/node2, minimal changes on node3).",
+      "evidence_ids": [
+        "cmd-5a4c481185424592",
+        "cmd-821e5bf6b6434726",
+        "cmd-976ff954d0cb4573",
+        "cmd-361d6611420947d6"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (node1-node4)",
+      "status": "satisfied",
+      "summary": "For all four nodes, executor captured a pre-restart boot_id and healthy state, issued systemctl reboot, observed the node unreachable during the reboot window, then observed a different boot_id and recovered functional state: node4 (control tooling/ansible ping to all hosts), node2 (demo-app.service active, HTTP 200), node3 (wg-quick@wg0 active, fresh handshake, HTTP 200 via tunnel), node1 (eth1 address, wg0 interface/keys/peer, firewall rules, NAT all restored from config.boot, and node3's end-to-end tunnel curl succeeded afterward). This matches and is corroborated by the fixed before/after-executor boot-identity snapshots for all four nodes.",
+      "evidence_ids": [
+        "cmd-2618436494db415f",
+        "cmd-a460ecc576c24101",
+        "cmd-8029eff64cae41ff",
+        "cmd-47291f7c543347db",
+        "cmd-c8703a81f7c94b7c",
+        "cmd-8af19a239dc74db9",
+        "cmd-c845d103a3744b8b",
+        "cmd-c6f8d577a1934853",
+        "cmd-0cddd7e803d241a6",
+        "cmd-e4b711e64c824c6f",
+        "cmd-0aac1b8034eb424b",
+        "cmd-5066fceacb344655",
+        "cmd-11715f8c677e4e98",
+        "cmd-7a13aab3af0c4d48",
+        "cmd-350161b9a0af4b35",
+        "cmd-6c7580a545664f43",
+        "cmd-88c0248e0e914d61"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are satisfied with direct, first-hand evidence: node2 serves the app on 10.10.20.2:8080 via a systemd unit; node3, outside the private network, can reach the app only through the WireGuard tunnel terminated on node1 (tunnel path HTTP 200, direct public-IP path HTTP 000), enforced by VyOS firewall/NAT rules; the entire implementation is delivered via an Ansible project (inventory + site.yml + three roles) run from the designated control node node4, and is idempotent. The independent, provider-wide restart protocol was executed and directly evidenced for all four managed nodes, each showing a changed boot identity and full recovery of the relevant service/network/tunnel state, with node3's end-to-end tunnel access re-verified after node1's reboot.",
+  "limitations": [
+    "Iterative VyOS/Ansible debugging left several short-lived test playbooks and interim WireGuard key/hostname states on node1 and node3; these were fully cleaned up and reverted before the final verified run, but reviewers relying only on the final report (not the full timeline) would not see this troubleshooting detail.",
+    "The 'show nat source rules' VyOS CLI command consistently returned 'is not valid' across the trace; this is a display-path quirk of the CLI syntax rather than evidence of a missing NAT rule, since 'show nat' and the nftables ruleset both confirm the masquerade rule is present and active."
+  ],
+  "command_stats": {
+    "total": 158,
+    "successful": 129,
+    "failed": 28,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "The executor's mutating actions were almost entirely purposeful: SSH bootstrapping (host-key generation, authorized_keys, enabling ssh.service) was a necessary prerequisite for Ansible management; static private-link addressing on node1/node2 and the WireGuard/firewall/NAT configuration on node1 directly implement the task; the app systemd unit on node2 and wg-quick client config on node3 directly implement the task. During debugging of a VyOS quirk (live wg0 key changes not taking effect, and a separate sudo/become privilege issue for the conf-mode scripts), the executor created several ad hoc test playbooks (/tmp/test_gw.yml, /tmp/t2.yml, /tmp/t3.yml) that made bounded, low-risk mutations to node1 (a temporary hostname change to 'node1-test' immediately reverted back to 'node1' in cmd-e112764a2d134d1e; interim wg0 private-key/address sets in cmd-0b6a3a192bb044c0 and cmd-043c3ba6bc6c49a8). These directly informed the fix (enabling ansible_become for the VyOS host) and were cleaned up: the test files were deleted (cmd-a8817b13e1104257, cmd-7f99a98f83f344c7) and the interim wg0/key state on node1 and node3 was explicitly torn down (cmd-0ce36eea22de4ae5, cmd-9c952f85de2c4b49) before the final clean playbook run that produced the verified end state. No abandoned files, failed services, or weakened security controls remain in the after-executor snapshot (no failed-services, clean dpkg state on all nodes, listening sockets match only the expected new services: sshd, demo-app on 10.10.20.2:8080, and wg0 on node1/node3).",
+    "evidence_ids": [
+      "cmd-e112764a2d134d1e",
+      "cmd-0b6a3a192bb044c0",
+      "cmd-043c3ba6bc6c49a8",
+      "cmd-a8817b13e1104257",
+      "cmd-7f99a98f83f344c7",
+      "cmd-0ce36eea22de4ae5",
+      "cmd-9c952f85de2c4b49",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

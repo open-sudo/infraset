@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Serve HTTPS on port 8443 on node1 with a valid, verifiable certificate",
+      "status": "satisfied",
+      "summary": "nginx installed, enabled, and listening on 8443 (and 80) confirmed both by curl -v full-chain TLS validation with SAN match and 200 OK response, and by the after-executor listening-sockets snapshot showing nginx bound to 0.0.0.0:8443/[::]:8443. Firewall port opened permanently and persisted after reboot.",
+      "evidence_ids": [
+        "cmd-2ca1e3d016924de8",
+        "cmd-b319e164456b40c0",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A systemd timer (cert-renew.timer, 30s interval) runs a renew-cert.sh script that checks expiry via openssl x509 -checkend and issues a new leaf cert when within the renewal threshold. A live renewal was directly observed: cert issued at 03:18:35 with notAfter 03:24:35 was renewed at 03:22:00 (before expiry) to a new cert with notAfter 03:28:00, confirmed via journalctl log entry and openssl x509 output showing serial change 1000->1001. A second automatic renewal after reboot (1001->1002) further confirms the mechanism is durable.",
+      "evidence_ids": [
+        "cmd-eba40668b6e34e3d",
+        "cmd-00e033c0393944b8",
+        "cmd-b0385826e74642da",
+        "cmd-47d710bec2304391",
+        "cmd-9847685489f145b2"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no downtime during rotation)",
+      "status": "satisfied",
+      "summary": "renew-cert.sh atomically installs the new cert/key then runs `systemctl reload nginx` (graceful reload, no listener drop). A 2-second-interval curl probe spanning the 03:22:00 renewal logged the cert serial flipping from 1000 to 1001 mid-stream with 85/85 requests returning HTTP 200 and 0 failures, directly demonstrating continuous availability through the rotation.",
+      "evidence_ids": [
+        "cmd-4e617cbda20d4b74",
+        "cmd-b0385826e74642da",
+        "cmd-47d710bec2304391"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol: healthy baseline, restart, recovery with changed boot identity, and continued/renewed service state",
+      "status": "satisfied",
+      "summary": "Pre-reboot baseline captured (boot_id, nginx/timer active, valid cert, HTTPS 200). Reboot command's ack returned before disconnection; subsequent exec calls failed with connection reset/timeout confirming an actual outage window; node became reachable again with a new boot_id and fresh uptime. Post-reboot state shows nginx and cert-renew.timer active+enabled, firewall port persisted, HTTPS 200, and a further automatic renewal (1001->1002) occurred unattended, proving the full stack including automation survives a restart. This is corroborated by the fixed global boot-identity snapshots differing between before_prepare and after_executor.",
+      "evidence_ids": [
+        "cmd-ed2ca88ec5a64ca6",
+        "cmd-93d1a17fc87d4d9d",
+        "cmd-8045060215d14787",
+        "cmd-6907d6335e704a7b",
+        "cmd-a4337a4455f7414f",
+        "cmd-27d0e09b6ec74467",
+        "cmd-a96400bbaae54c65",
+        "cmd-9847685489f145b2",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct evidence: nginx serves verifiable HTTPS on 8443, a systemd-timer-driven script automatically renews the certificate before expiry, and a live-request probe proves the reload-based rotation causes zero downtime. The mandatory restart protocol is also fully and coherently demonstrated (pre-reboot baseline, actual disconnection during reboot, new boot identity, and recovered/renewing service afterward), consistent with the fixed global boot-identity snapshots. Hygiene is generally clean; a small reverted CA-index test mutation and one leftover temp log file are the only minor blemishes.",
+  "limitations": [
+    "The demo CA is self-signed and locally generated (not from a real ACME/enterprise CA), which is a reasonable interpretation of 'automatically renewed' for this environment but differs from a production PKI setup.",
+    "One temp file, /tmp/renew-cert.ca.log, appears in the after-executor snapshot without an explicit executor command explaining its creation or a cleanup step removing it; its purpose and exact origin could not be confirmed from the timeline."
+  ],
+  "command_stats": {
+    "total": 39,
+    "successful": 32,
+    "failed": 6,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "One bounded, low-risk troubleshooting mutation occurred: cmd-a21d22ef55cd44b1 generated a test CSR/cert against the demo CA to validate the OpenSSL config, which added a spurious entry to the CA index/serial; this was promptly and fully reverted by cmd-5a852dd59bd0469e (index.txt and serial reset, temp files removed), so it left no residue. Final cleanup (cmd-d20e4e02e7974ecf) removed the probe script, probe logs, and a stray ca.cnf/reboot.log from /tmp, but the after-executor temporary-files snapshot shows one leftover file, /tmp/renew-cert.ca.log, that was not cleaned up -- a minor abandoned artifact. No failed services, no unsafe firewall exposure, and no package-health degradation were observed pre- vs post-executor; the added listening sockets (8443/80 for nginx) are the intended, required outcome of the task rather than unwanted residue.",
+    "evidence_ids": [
+      "cmd-a21d22ef55cd44b1",
+      "cmd-5a852dd59bd0469e",
+      "cmd-d20e4e02e7974ecf",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:failed-services",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

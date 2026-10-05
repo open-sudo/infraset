@@ -1,0 +1,137 @@
+{
+  "status": "completed",
+  "summary": "Configured OPNsense on node1 to port-forward TCP 80 on its LAN address (10.100.19.10, shared with node2/node3) to node2's HTTP service on 10.100.19.11:8080, with NAT reflection (hairpin) enabled so node3 reaches the service through node1's address rather than node2 directly. Verified via packet capture that node2 sees the request's source rewritten to node1's address, proving true hairpin NAT. All three nodes were then restarted one at a time per the mandatory protocol, with boot-identity changes confirmed and full recovery verified after each.",
+  "actions_performed": [
+    "Inspected node1 (OPNsense/FreeBSD), node2/node3 (AlmaLinux) networking; confirmed all three share 10.100.19.0/24 (node1=10.100.19.10 lan, node2=10.100.19.11, node3=10.100.19.12)",
+    "Found node2 had no HTTP service running; created/enabled a systemd unit (demo-http.service) serving python3 http.server on 0.0.0.0:8080, and opened port 8080 in firewalld",
+    "Studied OPNsense's MVC DNat/ForwardRule PHP source to determine correct config.xml schema and single-interface hairpin reflection semantics",
+    "Edited node1 /conf/config.xml: added NAT port-forward rule (interface=lan, destination=lanip:80 -> target 10.100.19.11:8080, pass=pass) and enabled system.enablenatreflectionhelper for hairpin source-NAT",
+    "Discovered and worked around OPNsense's anti-lockout protection excluding port 80 from rdr (webConfigurator http->https redirect); disabled system.webgui.disablehttpredirect while preserving SSH/HTTPS lockout protection",
+    "Applied via configctl filter reload; verified pfctl nat/rdr rules generated correctly",
+    "Verified end-to-end: node3 curl to 10.100.19.10:80 returns node2's content; tcpdump on node2 confirmed request source IP rewritten to 10.100.19.10 (true hairpin NAT, not accidental direct routing)",
+    "Captured pre-restart baselines (boot markers, service/NAT state) on all nodes",
+    "Restarted node1 via shutdown -r, polled until reachable, confirmed kern.boottime changed, and verified NAT/rdr rules and hairpin path recovered",
+    "Restarted node2 via systemctl reboot, confirmed boot_id changed, verified demo-http.service active and hairpin path recovered",
+    "Restarted node3 via systemctl reboot, confirmed boot_id changed, verified hairpin path still functional from node3"
+  ],
+  "evidence": [
+    {
+      "requirement": "HTTP service reachable on node2:8080 (baseline)",
+      "command_ids": [
+        "cmd-6b0e6eed44694273"
+      ],
+      "summary": "demo-http.service created, enabled, active; curl localhost:8080 returns node2-service-ok"
+    },
+    {
+      "requirement": "Port 8080 reachable from private network (firewalld)",
+      "command_ids": [
+        "cmd-07547e77501d40ce",
+        "cmd-b38238fb70c24d44"
+      ],
+      "summary": "firewalld was blocking 8080; opened the port and reloaded"
+    },
+    {
+      "requirement": "OPNsense NAT/reflection config applied on node1",
+      "command_ids": [
+        "cmd-def11388eb1a495a",
+        "cmd-fb24e098bba143c8",
+        "cmd-ef32ebd035734fae"
+      ],
+      "summary": "Added port-forward rule (lan:80 -> 10.100.19.11:8080) and enablenatreflectionhelper=yes to config.xml; filter reload OK"
+    },
+    {
+      "requirement": "Port 80 freed from anti-lockout no-rdr protection",
+      "command_ids": [
+        "cmd-c520a166e9e24d40",
+        "cmd-ad49cb04e16d4810",
+        "cmd-25089d0a2057499f"
+      ],
+      "summary": "Identified antilockout logic reserving port 80 for http->https redirect; disabled disablehttpredirect; pfctl confirms no-rdr for ssh/https only, rdr pass for http remains"
+    },
+    {
+      "requirement": "node3 reaches service via node1's outward-facing address (10.100.19.10:80), not node2 directly",
+      "command_ids": [
+        "cmd-a0b4fbbd26fc4bf0"
+      ],
+      "summary": "curl from node3 to 10.100.19.10:80 returns node2-service-ok after fix"
+    },
+    {
+      "requirement": "Proof of true hairpin NAT (source rewritten, not accidental direct L2 routing)",
+      "command_ids": [
+        "cmd-b4c2090675ed4f50"
+      ],
+      "summary": "tcpdump on node2 eth0 shows the connection's source IP as 10.100.19.10 (node1), not node3's real IP, confirming NAT reflection rewrote the source"
+    },
+    {
+      "requirement": "node1 pre-restart healthy baseline (boot marker + NAT config)",
+      "command_ids": [
+        "cmd-8c18cc2d1582469f"
+      ],
+      "summary": "kern.boottime=16:24:16; nat rule present=1; reflection helper=yes"
+    },
+    {
+      "requirement": "node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-95652df9d0fc4ec9",
+        "cmd-d62af08cd1e9476c",
+        "cmd-a0da8b612f834f61"
+      ],
+      "summary": "shutdown -r triggered and acked; subsequent poll timed out (node down); later poll shows kern.boottime=16:29:31, proving reboot occurred"
+    },
+    {
+      "requirement": "node1 post-restart recovery of NAT/hairpin",
+      "command_ids": [
+        "cmd-404461cdd9814ab5",
+        "cmd-21489cd36b9f47be"
+      ],
+      "summary": "pfctl shows rdr pass rule regenerated from config.xml after boot; node3 curl to 10.100.19.10:80 succeeds again"
+    },
+    {
+      "requirement": "node2 pre-restart healthy baseline (boot id + service)",
+      "command_ids": [
+        "cmd-e7c84735a0db47e1"
+      ],
+      "summary": "boot_id=f43afa1c...; demo-http.service active/enabled; curl localhost:8080 ok"
+    },
+    {
+      "requirement": "node2 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-1f6c9b4f38984a66",
+        "cmd-b0a43dd0daf54fe0",
+        "cmd-69bb1693b1484639"
+      ],
+      "summary": "systemctl reboot triggered (stream closed as expected); connection reset while down; new boot_id=ed259a63... confirms restart"
+    },
+    {
+      "requirement": "node2 post-restart recovery of service and hairpin path",
+      "command_ids": [
+        "cmd-f8889217af9f4496",
+        "cmd-9cbcaddc648e4d31"
+      ],
+      "summary": "demo-http.service active again; node3 curl to 10.100.19.10:80 still returns node2-service-ok"
+    },
+    {
+      "requirement": "node3 pre-restart healthy baseline (boot id + functional path)",
+      "command_ids": [
+        "cmd-de36823ad0734643"
+      ],
+      "summary": "boot_id=dfdea52d...; curl to 10.100.19.10:80 returns node2-service-ok"
+    },
+    {
+      "requirement": "node3 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-a0505b98b6f44e79",
+        "cmd-0bd78611687b4887",
+        "cmd-857d6e0ad38b446a"
+      ],
+      "summary": "systemctl reboot triggered; connection reset while down; new boot_id=2a5224ef... confirms restart"
+    },
+    {
+      "requirement": "node3 post-restart recovery / final end-to-end verification",
+      "command_ids": [
+        "cmd-6786d15f5ca4455a"
+      ],
+      "summary": "curl from node3 to 10.100.19.10:80 after its own reboot still returns node2-service-ok, full path healthy"
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+[[steps]]
+id = "install-source-mariadb"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+
+# The managed Ubuntu 16.04 image advertises ESM repositories, but this
+# disposable task has no ESM credentials. Disable those entries everywhere;
+# the public Xenial repositories carry the MariaDB packages and dependencies.
+for apt_source in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+  if [ -f "$apt_source" ]; then
+    if grep -q 'esm\.ubuntu\.com' "$apt_source"; then
+      case "$apt_source" in
+        /etc/apt/sources.list)
+          sudo -n sed -i \
+            '/esm\.ubuntu\.com/s/^/# disabled for InfraSet task: /' \
+            "$apt_source"
+          ;;
+        *)
+          sudo -n mv "$apt_source" "$apt_source.disabled"
+          ;;
+      esac
+    fi
+  fi
+done
+sudo -n find /var/lib/apt/lists -maxdepth 1 -type f -name '*esm*' -delete
+sudo -n apt-get \
+  -o Acquire::Retries=1 \
+  -o Acquire::http::Timeout=20 \
+  -o Acquire::https::Timeout=20 \
+  update
+sudo -n apt-get install -y mariadb-server mariadb-client
+sudo -n systemctl enable --now mysql
+sudo -n systemctl is-active mysql
+'''
+timeout_sec = 420
+
+[[steps]]
+id = "populate-source-database"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+sudo -n mysql <<'SQL'
+CREATE DATABASE IF NOT EXISTS legacy_shop;
+USE legacy_shop;
+
+CREATE TABLE IF NOT EXISTS customers (
+  customer_id INT UNSIGNED NOT NULL,
+  external_ref VARCHAR(32) NOT NULL,
+  full_name VARCHAR(120) NOT NULL,
+  email VARCHAR(160) NOT NULL,
+  status ENUM('active','paused','closed') NOT NULL,
+  created_at DATETIME NOT NULL,
+  PRIMARY KEY (customer_id),
+  UNIQUE KEY uq_customers_external_ref (external_ref),
+  UNIQUE KEY uq_customers_email (email)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS orders (
+  order_id BIGINT UNSIGNED NOT NULL,
+  customer_id INT UNSIGNED NOT NULL,
+  order_ref VARCHAR(32) NOT NULL,
+  total_cents INT UNSIGNED NOT NULL,
+  status ENUM('pending','paid','shipped','cancelled') NOT NULL,
+  created_at DATETIME NOT NULL,
+  PRIMARY KEY (order_id),
+  UNIQUE KEY uq_orders_ref (order_ref),
+  KEY ix_orders_customer_created (customer_id, created_at),
+  CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers (customer_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS order_items (
+  order_id BIGINT UNSIGNED NOT NULL,
+  line_no SMALLINT UNSIGNED NOT NULL,
+  sku VARCHAR(40) NOT NULL,
+  quantity SMALLINT UNSIGNED NOT NULL,
+  unit_price_cents INT UNSIGNED NOT NULL,
+  PRIMARY KEY (order_id, line_no),
+  CONSTRAINT fk_order_items_order FOREIGN KEY (order_id) REFERENCES orders (order_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS audit_events (
+  event_id BIGINT UNSIGNED NOT NULL,
+  entity_type VARCHAR(32) NOT NULL,
+  entity_id BIGINT UNSIGNED NOT NULL,
+  action VARCHAR(32) NOT NULL,
+  event_time DATETIME NOT NULL,
+  details VARCHAR(255) NOT NULL,
+  PRIMARY KEY (event_id),
+  KEY ix_audit_entity (entity_type, entity_id, event_time)
+) ENGINE=InnoDB;
+
+DELETE FROM audit_events;
+DELETE FROM order_items;
+DELETE FROM orders;
+DELETE FROM customers;
+
+INSERT INTO customers VALUES
+(101,'C-00101','Ada Lovelace','ada@example.test','active','2024-01-15 09:20:00'),
+(102,'C-00102','Grace Hopper','grace@example.test','active','2024-02-02 10:10:00'),
+(103,'C-00103','Edsger Dijkstra','edsger@example.test','paused','2024-02-21 13:45:00'),
+(104,'C-00104','Barbara Liskov','barbara@example.test','active','2024-03-04 08:05:00'),
+(105,'C-00105','Donald Knuth','donald@example.test','closed','2024-03-19 16:30:00'),
+(106,'C-00106','Margaret Hamilton','margaret@example.test','active','2024-04-11 11:00:00'),
+(107,'C-00107','Ken Thompson','ken@example.test','active','2024-05-08 14:25:00'),
+(108,'C-00108','Dennis Ritchie','dennis@example.test','active','2024-05-23 15:15:00');
+
+INSERT INTO orders VALUES
+(5001,101,'ORD-5001',12999,'paid','2024-06-01 12:00:00'),
+(5002,101,'ORD-5002',4500,'shipped','2024-06-03 12:30:00'),
+(5003,102,'ORD-5003',8800,'paid','2024-06-04 09:15:00'),
+(5004,103,'ORD-5004',1999,'cancelled','2024-06-05 17:40:00'),
+(5005,104,'ORD-5005',25000,'pending','2024-06-07 08:00:00'),
+(5006,106,'ORD-5006',7350,'shipped','2024-06-08 18:10:00'),
+(5007,107,'ORD-5007',3100,'paid','2024-06-09 10:05:00'),
+(5008,108,'ORD-5008',5600,'shipped','2024-06-10 11:45:00');
+
+INSERT INTO order_items VALUES
+(5001,1,'LAPTOP-STAND',1,8999),(5001,2,'USB-C-HUB',1,4000),
+(5002,1,'CABLE-2M',3,1500),
+(5003,1,'KEYBOARD-MECH',1,8800),
+(5004,1,'MOUSE-WIRELESS',1,1999),
+(5005,1,'MONITOR-27',2,12500),
+(5006,1,'DOCK-THUNDERBOLT',1,7350),
+(5007,1,'WEBCAM-HD',1,3100),
+(5008,1,'HEADSET-USB',2,2800);
+
+INSERT INTO audit_events VALUES
+(90001,'customer',101,'created','2024-01-15 09:20:00','imported from legacy CRM'),
+(90002,'customer',102,'created','2024-02-02 10:10:00','imported from legacy CRM'),
+(90003,'order',5001,'paid','2024-06-01 12:02:00','card settlement accepted'),
+(90004,'order',5002,'shipped','2024-06-04 07:15:00','warehouse dispatch confirmed'),
+(90005,'order',5004,'cancelled','2024-06-06 08:00:00','customer requested cancellation'),
+(90006,'order',5006,'shipped','2024-06-09 06:30:00','warehouse dispatch confirmed');
+SQL
+test "$(sudo -n mysql --batch --skip-column-names -e "SELECT COUNT(*) FROM legacy_shop.customers")" = 8
+test "$(sudo -n mysql --batch --skip-column-names -e "SELECT COUNT(*) FROM legacy_shop.orders")" = 8
+test "$(sudo -n mysql --batch --skip-column-names -e "SELECT COUNT(*) FROM legacy_shop.order_items")" = 9
+test "$(sudo -n mysql --batch --skip-column-names -e "SELECT COUNT(*) FROM legacy_shop.audit_events")" = 6
+'''
+timeout_sec = 300
+
+[[steps]]
+id = "confirm-destination-is-empty"
+stage = 30
+node = "node2"
+command = '''
+set -eu
+. /etc/os-release
+test "$ID" = ubuntu
+test "$VERSION_ID" = 24.04
+! systemctl is-active --quiet mysql
+! sudo -n mysql -e 'SHOW DATABASES' 2>/dev/null | grep -qx legacy_shop
+'''
+timeout_sec = 120

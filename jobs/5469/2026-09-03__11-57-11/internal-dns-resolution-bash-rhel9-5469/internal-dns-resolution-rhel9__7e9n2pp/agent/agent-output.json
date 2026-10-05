@@ -1,0 +1,103 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 as an internal DNS resolver (dnsmasq) resolving inventory-api.internal to node2's IP (10.100.121.11), forwarding all other queries upstream to 10.100.121.1. Configured node2 (via NetworkManager) to use node1 (10.100.121.10) as its DNS resolver. Verified both internal and external resolution work from node2 through node1. Completed the mandatory restart evidence protocol on both nodes: node1 was rebooted twice (first reboot exposed a dnsmasq boot-race against DHCP where the service failed to bind to the not-yet-assigned IP; fixed with a systemd drop-in adding After/Wants=network-online.target and Restart=on-failure; second reboot confirmed the fix holds, with dnsmasq starting cleanly and DNS resolution working immediately). node2 was rebooted once, with DNS resolver config and resolution confirmed intact afterward.",
+  "actions_performed": [
+    "Installed dnsmasq and bind-utils on node1 via dnf",
+    "Created /etc/dnsmasq.d/internal.conf on node1: address=/inventory-api.internal/10.100.121.11, listen-address=127.0.0.1,10.100.121.10, bind-interfaces, no-resolv, server=10.100.121.1",
+    "Enabled and started dnsmasq on node1; opened firewalld dns service and reloaded",
+    "Verified inventory-api.internal resolves to 10.100.121.11 and external names (redhat.com) still resolve via node1's dnsmasq",
+    "Configured node2's NetworkManager connection 'Wired connection 1' with ipv4.dns=10.100.121.10 and ipv4.ignore-auto-dns=yes; reactivated the connection so /etc/resolv.conf updated",
+    "Verified node2 resolves inventory-api.internal to node2's own IP and external domains, using node1 as resolver (no explicit @server)",
+    "Captured pre-restart boot_id and dnsmasq/firewalld health baseline on both nodes",
+    "Rebooted node1 via backgrounded systemctl reboot (ack returned before disconnect); polled until reachable; new boot_id confirmed restart; found dnsmasq had failed at boot due to a DHCP-address race",
+    "Diagnosed the failure via systemctl status/journal showing 'Cannot assign requested address'; added systemd drop-in /etc/systemd/system/dnsmasq.service.d/override.conf (After/Wants=network-online.target, Restart=on-failure, RestartSec=2), reloaded daemon, restarted dnsmasq",
+    "Verified firewalld rules persisted and DNS resolution (internal + external) worked after the fix",
+    "Rebooted node1 a second time to falsify/confirm the fix; polled until reachable; new boot_id confirmed restart; dnsmasq came up active automatically with correct internal and external resolution, no manual intervention needed",
+    "Captured pre-restart boot_id and DNS config baseline on node2",
+    "Rebooted node2 via backgrounded systemctl reboot (ack returned before disconnect); polled until reachable; new boot_id confirmed restart",
+    "Verified node2's /etc/resolv.conf still pointed at node1, and both inventory-api.internal and external DNS resolution worked post-restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 runs internal DNS resolver resolving inventory-api.internal to node2",
+      "command_ids": [
+        "cmd-c4249ce0dcf540f2",
+        "cmd-a66f649cd72f4c7c",
+        "cmd-df521ff7361c47d9",
+        "cmd-39bba404a6714f85",
+        "cmd-0dae1a9904494222",
+        "cmd-8da73b0b89ef46e0"
+      ],
+      "summary": "dnsmasq installed and configured on node1 with address=/inventory-api.internal/10.100.121.11; listening on node1's IP; firewall opened; dig from node1 confirms inventory-api.internal -> 10.100.121.11 and external names still resolve"
+    },
+    {
+      "requirement": "node2 configured to use node1 as DNS resolver for internal lookups",
+      "command_ids": [
+        "cmd-2d46286ac0574c00",
+        "cmd-795f73d715a74959",
+        "cmd-793c23b36f8340b2"
+      ],
+      "summary": "NetworkManager connection on node2 set with ipv4.dns=10.100.121.10, ignore-auto-dns=yes; /etc/resolv.conf shows nameserver 10.100.121.10; dig on node2 (no explicit server) resolves inventory-api.internal to 10.100.121.11 and external domains successfully"
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-ede0c8f5544740b8"
+      ],
+      "summary": "Captured node1 boot_id c2f29441... and confirmed dnsmasq/firewalld active before restart"
+    },
+    {
+      "requirement": "node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-733de65844504d84",
+        "cmd-5946e498a2ad4485",
+        "cmd-2132b4f730a94049",
+        "cmd-79be19bd256947d4",
+        "cmd-4968621c66084ff3"
+      ],
+      "summary": "Reboot command acknowledged before disconnect; node1 unreachable during reboot; reconnected with new boot_id 2c6cd2d4... confirming restart"
+    },
+    {
+      "requirement": "node1 post-restart service recovery (first reboot revealed and fixed a boot-race)",
+      "command_ids": [
+        "cmd-69697ea24e534012",
+        "cmd-87790a09f9a04983",
+        "cmd-b055ce2a314b4a58",
+        "cmd-b123df44016b4e8d",
+        "cmd-889831642ee34f5d",
+        "cmd-4d121db03e544fe4"
+      ],
+      "summary": "dnsmasq found failed post-reboot due to DHCP address race; diagnosed via journal; fixed with systemd override (network-online.target dependency + Restart=on-failure); verified dnsmasq active, firewall rules persisted, and DNS resolution (internal+external) restored"
+    },
+    {
+      "requirement": "node1 restart fix verified durable via second reboot",
+      "command_ids": [
+        "cmd-e05092ab70d34651",
+        "cmd-bf0992dd4faa482d",
+        "cmd-e05e4eab8d064f0d",
+        "cmd-1886eadcc6c74203",
+        "cmd-e1a9957dd3a54d79"
+      ],
+      "summary": "Second reboot of node1 acknowledged and completed; new boot_id 869ef798... confirms restart; dnsmasq and firewalld came up active automatically with correct DNS resolution, confirming the override fix persists across restarts"
+    },
+    {
+      "requirement": "node2 healthy baseline before restart",
+      "command_ids": [
+        "cmd-295eb24b79d24b02"
+      ],
+      "summary": "Captured node2 boot_id 583ddd53... and confirmed resolv.conf/DNS resolution working before restart"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and post-restart recovery",
+      "command_ids": [
+        "cmd-6d00e8cff1644018",
+        "cmd-8a9753b6423744bc",
+        "cmd-9efce603a4374c77",
+        "cmd-3055df7d1fb74fb1",
+        "cmd-6f12d1d0693444d3",
+        "cmd-0548bc58d4e146b1"
+      ],
+      "summary": "Reboot acknowledged before disconnect; node2 unreachable during reboot; reconnected with new boot_id 0f3f42a5... confirming restart; post-restart resolv.conf still points to node1, and inventory-api.internal plus external DNS resolve correctly"
+    }
+  ]
+}

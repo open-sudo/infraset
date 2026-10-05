@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "redundant-path",
+      "requirement": "A redundant path is built between node3's and node4's private networks using both independent transit networks (node1<->node2).",
+      "status": "satisfied",
+      "summary": "OSPF area 0 was configured on node1 (VyOS, native `set protocols ospf`) and node2 (OPNsense, via os-frr package + Quagga model in config.xml, rendered with `configctl template reload OPNsense/Quagga`). Full OSPF adjacency was established over both transit links (10.10.1.0/30 and 10.10.2.0/30) as directly shown in `show ip ospf neighbor` on both node1 and node2 (Full/DR and Full/Backup states on both interfaces). node3 and node4 were given static routes to each other's private subnet via persistent systemd-networkd drop-ins, and an end-to-end ping between 10.10.3.2 and 10.10.4.2 succeeded (0% loss) with the node1 route table showing two active ECMP nexthops (via eth1 and via eth2) to the remote subnet.",
+      "evidence_ids": [
+        "cmd-e0a6fb92534945f3",
+        "cmd-7c1e0cb3873b4fc9",
+        "cmd-c0b8aaa2d96f4f7c",
+        "cmd-06b851ca7ba2446e",
+        "cmd-fb285828c05740b5"
+      ]
+    },
+    {
+      "id": "failover-during-disruption",
+      "requirement": "Traffic between node3 and node4 continues when one transit network is taken out of service, demonstrated across a live disruption.",
+      "status": "satisfied",
+      "summary": "A continuous ping (0.3s interval) from node3 to node4 was started, then node1's eth1 (one transit link) was administratively disabled mid-stream. The ping log shows 81 consecutive replies with no gaps in the sequence numbers spanning the disruption, and node1's OSPF/route state confirms the route to node4's subnet failed over to the surviving eth2/vtnet2 path (eth1 marked inactive) within the observation window. This directly demonstrates a bounded live disruption with continuous reachability.",
+      "evidence_ids": [
+        "cmd-49942e4198994828",
+        "cmd-0302e1727cb64b98",
+        "cmd-787957a523584d3b",
+        "cmd-66d87d914d374df2",
+        "cmd-771cecc93b384a9a"
+      ]
+    },
+    {
+      "id": "recovery-after-transition",
+      "requirement": "Recovery is shown after the disrupted transit link is restored, with continued reachability across the whole disrupt/restore cycle.",
+      "status": "satisfied",
+      "summary": "Re-enabling node1's eth1 restored Full OSPF adjacency on both transit links and both ECMP nexthops in the node1 route table. The ping log confirms a total of 138 consecutive replies across the full disrupt-then-restore cycle with no additional gaps beyond the earlier continuous count, directly demonstrating recovery to the pre-disruption redundant state.",
+      "evidence_ids": [
+        "cmd-c844f8976bb6485e",
+        "cmd-88da553e5d9a496b"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task instruction are directly and coherently evidenced: a redundant OSPF-based path was established over both independent transit networks between node1 and node2, live disruption of one transit link (node1 eth1) was shown to preserve node3<->node4 reachability with zero packet loss via automatic OSPF failover to the surviving link, and restoring the disrupted link was shown to recover both the OSPF adjacency and dual-ECMP path with continued zero-loss reachability across the full cycle. Independently of the public task contract, the executor also ran a provider-wide restart protocol on all four managed nodes, each showing a pre-restart boot identity/healthy baseline, a restart action, a confirmed distinct post-restart boot identity, and recovered interface, OSPF, firewall, and end-to-end connectivity state \u2014 this is corroborated by the fixed before/after lifecycle snapshots, whose boot-identity deltas for all four nodes match the executor's own restart-protocol claims, providing an independent cross-check that strengthens confidence in the recorded transitions. Minor hygiene concerns exist around several bounded, mostly-reverted or reboot-cleared troubleshooting mutations during topology discovery, but none affected the final functional state.",
+  "limitations": [
+    "The lifecycle snapshot's before_prepare boot-identity for node2 (bsd-boottime ~Jun 15 2026) differs substantially from the boot time node2 itself reported early in the executor's own session (~Sep 30 02:52:32, close to session start), with no explicit reboot command recorded for that change; this discrepancy could not be independently explained from the captured evidence and is noted as a limitation rather than attributed to executor action.",
+    "Whether the temporary /tmp Python scripts on node2 (opnsense_config.py, opnsense_fw.py) were removed by the reboot's tmpfs reset versus some other mechanism could not be directly confirmed, only inferred from their absence in the after_executor snapshot.",
+    "Command outputs are bounded/truncated in places (e.g., long OSPF/config.xml dumps), so some supporting detail beyond the cited commands was not independently re-verified."
+  ],
+  "command_stats": {
+    "total": 122,
+    "successful": 100,
+    "failed": 21,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "The core configuration mutations (VyOS OSPF config, OPNsense config.xml edits for interfaces/OSPF/firewall) were all directly tied to satisfying the task's material outcomes and were retained appropriately. However, several bounded troubleshooting mutations during topology discovery did not contribute to the final solution (topology was ultimately established via STP bridge-id correlation, not via these probes): temporary non-routable IP assignments (10.222.9.x) on node2's vtnet1/2/3 (cmd-ac1b3002b0a44b82, cmd-2e6c6bac3c294577, cmd-a8ba098dd9624d1a) and on node3/node4's ens7 (cmd-e4c59846d26344c4, cmd-9ab47603938b475f, cmd-acb43d82a4e140ab, cmd-07d276270d4e4eda) to test unreachable probe addresses. Most of these were explicitly reverted (interface deletes in the same command); the later node3/node4 instances (cmd-acb43d82a4e140ab, cmd-07d276270d4e4eda) were not explicitly deleted but were implicitly superseded/cleared when the systemd-networkd drop-in was applied and the service restarted (cmd-d4bb0ec5c7b7496a, cmd-013cc955136c45d0), leaving no residue in the final state. Two ad hoc Python scripts written to /tmp on node2 (opnsense_config.py, opnsense_fw.py) were not explicitly removed by the executor, but the after_executor lifecycle temp-file snapshot for node2 does not show them, consistent with FreeBSD's tmpfs-backed /tmp being cleared by the node2 reboot performed later in the restart protocol \u2014 so no final residue remains, though this was incidental rather than a deliberate cleanup. Executor-created tcpdump capture files on node1/node3 were explicitly cleaned up at the end (cmd-dad5d4d352c7458a, cmd-9640aa1519d74094). No failed or conflicting services, no unsafe exposure, and no damaged package state were observed in either the before/after comparisons or the final health checks.",
+    "evidence_ids": [
+      "cmd-ac1b3002b0a44b82",
+      "cmd-2e6c6bac3c294577",
+      "cmd-a8ba098dd9624d1a",
+      "cmd-e4c59846d26344c4",
+      "cmd-9ab47603938b475f",
+      "cmd-acb43d82a4e140ab",
+      "cmd-07d276270d4e4eda",
+      "cmd-d4bb0ec5c7b7496a",
+      "cmd-013cc955136c45d0",
+      "cmd-dad5d4d352c7458a",
+      "cmd-9640aa1519d74094",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node4:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

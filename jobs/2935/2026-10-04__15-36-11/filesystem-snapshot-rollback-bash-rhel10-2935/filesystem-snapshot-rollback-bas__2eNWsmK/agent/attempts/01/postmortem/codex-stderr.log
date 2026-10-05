@@ -1,0 +1,177 @@
+OpenAI Codex v0.153.2
+--------
+workdir: /[REDACTED_ENCODED_BLOB]
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a1087f-6515-76e1-93b4-48630cbedbe2
+--------
+user
+You are a postmortem evaluator for an infrastructure benchmark.
+The managed cluster from executor attempt 1 is unavailable or must be treated
+as unavailable. Analyze only the redacted evidence embedded below. You have no
+cluster access and must not use tools, inspect the host, or propose that the old
+cluster be queried. Distinguish observed facts from hypotheses, state when evidence
+is insufficient, and produce concise advice for an executor starting on an
+identically specified but completely fresh cluster.
+
+Task instruction:
+On `node1`, keep application data under `/srv/data` recoverable through
+filesystem snapshots. After the directory is modified, restore the exact
+content captured by an earlier snapshot.
+
+Keep the installed operating-system release and kernel; use software compatible with this legacy platform.
+
+
+Provider-maintained platform references:
+<platform-reference fq_name='antrieb/primer'>
+## What this is
+
+Start-of-session primer for any LLM working with Antrieb. Read before your first `provision`. These are the platform's contracts — follow them and commands work; ignore them and you'll rediscover the same issues every session.
+
+## Research before theorizing
+
+Your mental model of the platform is probably wrong in subtle ways. Before proposing a cause, gather evidence:
+
+1. Run a diagnostic command on the actual VM.
+2. Paste the output.
+3. Let the evidence confirm or contradict your theory.
+
+Cheap high-value commands: `ip -4 addr`, `ip route`, `ip neigh`, `ss -tlnp`, `systemctl is-active <svc>`, `journalctl -u <svc> -n 30 --no-pager`, `curl -v localhost:<port>`, `tcpdump -i <iface> -nn -c 10 <filter>`.
+
+*"The platform is filtering my packets"* is a theory. *"Here is what `ip route` shows"* is evidence. Never propose an architectural fix before you've pasted the output that supports it.
+
+## Research the appliance — use web_search / WebFetch
+
+For specialized images (vyos, opnsense, sonic, helm-k3s, vault, terraform-aws, cloudformation-aws, ansible-controller), **fetch current docs before writing non-trivial commands**. Your training data is often 6–24 months behind. A 30-second doc fetch prevents a 10-turn debug loop of hallucinated CLI.
+
+Workflow: look at the image's `reference` field → `web_search` for the specific topic (*"VyOS 1.5 nat source rule"*) → `WebFetch` the top result → write commands grounded in what you read.
+
+Skip only for stable base Linux (ubuntu, alma, arch, centos, alpine). If you don't have web tools in this client, say so up front.
+
+## Falsify before committing
+
+When you add a rule (firewall, NAT, route, sysctl) because you think it fixes something, **prove it by removing it and confirming the issue returns**. If the problem doesn't come back without the rule, the rule was cargo-cult — delete it.
+
+- **Start with the minimum config** that could plausibly work.
+- When it doesn't work, debug with `tcpdump`/`ip route`/`conntrack -L` — don't stack more rules hoping one matches.
+- For every added rule, state *why* and what evidence proves it. If you can't, it shouldn't be there.
+
+## Fetch order for runbooks
+
+1. `@antrieb/primer` — always (this document, fetched at session start).
+2. `@antrieb/<category>-primer` — `@antrieb/networking-primer` for networking, future `@antrieb/database-primer` for DBs.
+3. `search type=runbook keywords=<task>` — apply any specific-scenario match.
+4. No specific match → `@antrieb/<image>-reference` for each specialized image in the topology. Won't be your exact scenario; will have current, correct syntax. **Adapt values, keep syntax.**
+
+When the task is to create or revise an image intentionally published in the `antrieb` namespace, also fetch `@antrieb/managed-image-contract`. It is a build-time standard, not a runtime fact about similarly named images.
+
+Never skip step 4 if step 3 matches. Never skip 1 or 2.
+
+## Shell is POSIX sh, not bash
+
+Every `exec` runs in `/bin/sh`. Bashisms fail, sometimes silently:
+
+- `. /path` — not `source /path`
+- `[ ... ]` — not `[[ ... ]]`
+- No arrays, `${var,,}`, process substitution `<(cmd)`, `$'...'`, `set -o pipefail`
+- `printf` over `echo -e`
+
+If you genuinely need bash, write to a tempfile and invoke `bash /tmp/script.sh` explicitly.
+
+## No TTY/PTTY
+
+`exec` does not allocate a TTY/PTTY. Do not run commands that require an interactive terminal or automate terminal prompts through stdin. Use non-interactive alternatives: `sudo -u USER -- COMMAND` instead of interactive `su`, `chpasswd` instead of `passwd`, and package-manager flags such as `DEBIAN_FRONTEND=noninteractive` and `-y`.
+
+Normal stdin use for pipes, heredocs, and base64 content transfer is supported.
+
+## Cluster env vars — already set
+
+Every exec pre-exports these. Don't re-discover:
+
+- `NODE_NAME`, `NODE_INDEX`, `NODE_IP`
+- `CLUSTER_HOSTS` — multiline `IP NAME` for every node. Drop into `/etc/hosts`:
+  `echo "$CLUSTER_HOSTS" | sudo tee -a /etc/hosts`
+- `CLUSTER_SSH_PUBKEY` / `CLUSTER_SSH_PRIVKEY` — per-cluster keypair for passwordless inter-node SSH:
+  ```
+  printf '%s\n' "$CLUSTER_SSH_PRIVKEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+  printf '%s\n' "$CLUSTER_SSH_PUBKEY" >> ~/.ssh/authorized_keys
+  ```
+
+## Image interfaces are exact-ANI facts
+
+Credential files, startup scripts, helper commands, execution privilege, predefined users, and passwords are **not universal platform facts**. They apply only when the exact image returned by `search type=image` declares them in `image_interface`.
+
+- Match the provisioned node's full ANI, including namespace and version.
+- If `image_interface.credentials` exists, load its declared `path` with POSIX `.` and use only the variables listed there. Do not print secret values.
+- If `image_interface.startup` exists, its declared path is the supported allocation-time helper.
+- If `image_interface.execution.privilegeEscalation` is `sudo-noninteractive`, use a trusted non-interactive sudo wrapper for privileged operations. Do not infer sudo support from the operating-system name.
+- If a field is absent, inspect the VM and its exact image description. Do not infer a path from a technology name such as MariaDB, PostgreSQL, Cassandra, or Vault.
+- `antrieb.managed-image/v1` is a **build-time contract** for creating managed images. Its conventions are not evidence that a user-owned or otherwise undeclared image implements them.
+
+Example: `antrieb:mariadb:v1` may declare `/etc/profile.d/antrieb-app.sh`; a user-created MariaDB image does not inherit that declaration merely because it also runs MariaDB.
+
+## Shipping long content through exec
+
+Anything beyond one line with quotes/newlines/metacharacters eventually breaks escaping. Use one of:
+
+1. **Base64** (preferred): `echo <BASE64> | base64 -d > /tmp/myfile`
+2. **Heredoc, unique delimiter**:
+   ```
+   cat > /tmp/cfg <<'ANTRIEB_EOF'
+   ...
+   ANTRIEB_EOF
+   ```
+3. **Serve between nodes**: one node runs `python3 -m http.server`, another `curl`s it.
+
+## Streaming / long-running commands
+
+`exec` is a synchronous await, capped at ~2 MB output. For commands that stream (`dhclient -v`, `tail -f`), run for minutes (`apt install`), or may hang, **redirect + background + poll** — the standard UNIX pattern:
+
+```
+# Launch, capture PID
+exec: cmd > /tmp/out.log 2>&1 & echo $! > /tmp/cmd.pid
+
+# Poll in subsequent exec calls (as often as you need to decide)
+exec: tail -30 /tmp/out.log
+
+# Stop early if you've seen enough
+exec: kill "$(cat /tmp/cmd.pid)" 2>/dev/null
+```
+
+Each call is small and fast. The LLM decides cadence and can act on partial output turn by turn. Don't treat this as a workaround — it's the supported streaming contract.
+
+## Small exec calls, not one huge script
+
+One logical step per exec, check `exit_code` before the next. A 50-line script returns pass/fail with no hint of which line broke. Small steps debug easier, recover easier, and translate into runbooks cleanly.
+
+## Provision timing
+
+`provision` returns in under a second, but:
+
+- Exec is available immed
+...[TRUNCATED 41628 CHARACTERS]...
+lable after the acknowledged reboot."}]}
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+mcp: harbor_antrieb/exec started
+mcp: harbor_antrieb/exec (completed)
+codex
+{"status":"blocked","summary":"The snapshot/rollback workflow succeeded before reboot: `/srv/data` was moved to XFS on LVM, snapshotted, deliberately modified, and restored byte-for-byte with original metadata. A verified recovery snapshot, `data_snap_restored`, was retained. However, node1 did not become reachable after its required safe reboot, so changed boot identity, post-restart health, and persistence cannot be claimed. No second reboot or unauthorized lifecycle action was attempted.","actions_performed":["Inventoried RHEL 10.0, kernel 6.12.0-55.9.1.el10_0, storage, services, access, SELinux, and initial data state.","Converted the unused 2 GiB swap partition into an LVM volume group with a 1 GiB XFS data LV and 480 MiB replacement swap LV.","Persistently mounted the data LV at `/srv/data` and validated `/etc/fstab`.","Created representative application data and captured an XFS-consistent LVM snapshot.","Mounted the snapshot read-only and verified its content and metadata.","Deliberately changed, deleted, and added files under `/srv/data`.","Merged the earlier snapshot and verified exact restoration through tree metadata, SHA-256 hashes, and explicit mutation checks.","Created and directly verified retained snapshot `data_snap_restored`.","Captured pre-restart health and boot identity, then scheduled exactly one native safe reboot.","Polled node1 repeatedly after reboot; command execution remained unavailable."],"evidence":[{"requirement":"Installed OS release and kernel were preserved","command_ids":["cmd-ad7d9ae9424c446c","cmd-65877d12985b4159"],"summary":"Before the required reboot, node1 remained RHEL 10.0 on kernel 6.12.0-55.9.1.el10_0."},{"requirement":"Keep application data under /srv/data recoverable through filesystem snapshots","command_ids":["cmd-97823eaf92304f38","cmd-653f1eeff28e4487","cmd-78875d02a55c4d8b","cmd-8ee75e74e95444b5"],"summary":"`/srv/data` was mounted from the XFS LVM data LV; snapshots were created from a frozen filesystem, directly mounted read-only, and verified. `data_snap_restored` was retained."},{"requirement":"Modify the directory after an earlier snapshot","command_ids":["cmd-2f02e96864574b3f"],"summary":"The config content and mode changed, the ledger was deleted, and a post-snapshot file was added."},{"requirement":"Restore the exact content captured by the earlier snapshot","command_ids":["cmd-7721fd7156474793","cmd-b9ef0fb948654078","cmd-d396088f24604068"],"summary":"Post-merge paths, permissions, ownership, sizes, and SHA-256 hashes matched the pre-snapshot baseline; deleted content returned and unwanted content disappeared."},{"requirement":"node1 mandatory restart sequence","command_ids":["cmd-65877d12985b4159","cmd-4f3645e1d8bf4f58","cmd-a936b70ba1124969","cmd-4b4e00ab4e664470"],"summary":"Healthy pre-restart boot identity and data/service state were captured, and the safe reboot timer was acknowledged. Downtime was observed, but node1 remained unreachable through the final poll. Changed boot identity and recovered post-restart state could not be captured."}]}
+tokens used
+65,769
+
+
+codex
+{"summary":"The core snapshot/rollback objective was demonstrated successfully before restart: `/srv/data` was on XFS/LVM, an earlier snapshot was verified, live data was changed, and merging the snapshot restored the recorded files, hashes, ownership, permissions, and directory structure. A verified snapshot of the restored state was also retained. The attempt became blocked only after scheduling a reboot: node1 stopped accepting commands and never returned during polling. The evidence cannot establish whether the guest failed to boot, booted without management connectivity, or was affected by a provider-side reachability problem. Persistence, post-reboot OS/kernel identity, and post-reboot snapshot health therefore remain unproven.","evidence":[{"source":"Pre-snapshot audit","finding":"`/srv/data` was an XFS filesystem on `/dev/mapper/vg_appdata-data`; the three baseline files, SHA-256 hashes, modes, owners, and sizes were recorded. Replacement swap and sshd were active with no failed units."},{"source":"Snapshot creation and direct mount","finding":"`data_snap_before_change` was created while XFS was frozen, mounted read-only with `nouuid`, and contained the same recorded tree and hashes as the baseline."},{"source":"Mutation audit","finding":"`application.conf` content and mode changed, `ledger.txt` was deleted, and `post-snapshot.txt` was added, proving modification occurred after the snapshot."},{"source":"Merge and restoration audit","finding":"After snapshot merge and remount, the original hashes, paths, modes, ownership, and sizes returned; the deleted ledger reappeared and the added file disappeared."},{"source":"Retained-snapshot audit","finding":"`data_snap_restored` existed as a 512 MiB snapshot and its direct read-only mount produced hashes matching the restored data."},{"source":"Restart audit","finding":"A transient systemd timer acknowledged one reboot. A check immediately afterward still showed the original boot ID; later checks timed out. No changed boot ID or post-restart health output was captured."},{"source":"Evidence limitation","finding":"The displayed manifest did not compare timestamps, ACLs, extended attributes, symlink targets, or SELinux contexts. Block-level snapshot merge strongly supports restoration, but the supplied direct proof of “exact metadata” is incomplete."}],"likely_causes":[{"cause":"The immediate blocker was failure of the execution/management path to return after the scheduled reboot; the evidence does not identify whether the failure was inside the guest or in provider connectivity.","confidence":"high"},{"cause":"The new persistent storage configuration may have delayed or blocked boot—for example, an incorrect `/etc/fstab` entry, failure to activate `vg_appdata`, or stale references to the repurposed swap partition. The relevant configuration and boot logs are absent, so this remains a hypothesis.","confidence":"medium"},{"cause":"A provider or management-plane reachability failure may have occurred even if the guest booted normally; command timeouts alone cannot distinguish this from a guest boot failure.","confidence":"medium"},{"cause":"XFS corruption or an incomplete snapshot merge caused the restart failure.","confidence":"low"}],"next_attempt_guidance":["Before changing storage, record `lsblk -f`, `blkid`, LVM state, `/etc/fstab`, `/proc/cmdline`, and any swap/resume references. Prefer unused storage over repurposing the system's existing swap partition.","If swap must be repurposed, replace every persistent old-swap reference, check for a stale resume UUID, and regenerate boot artifacts if the platform requires it.","Mount `/srv/data` using a stable UUID or validated LVM path. Before reboot, run `findmnt --verify --verbose`, exercise `mount -a`, verify `swapon --show`, confirm the VG/LVs are active, reload systemd configuration, and ensure no failed units exist.","Quiesce the application and freeze XFS only for snapshot creation. Directly mount the snapshot read-only with `nouuid` before mutation, then unmount the origin before merging and wait until the snapshot LV is fully retired.","For stronger exactness evidence, compare file hashes plus type, path, UID/GID, mode, size, timestamps, symlink targets, ACLs, extended attributes, and SELinux labels before mutation and after rollback.","Retain a verified recovery snapshot with sufficient free VG/COW capacity and record `Data%`; a full snapshot becomes unusable.","After the single reboot, require a changed boot ID and recheck OS release, kernel, `/srv/data` mount source/type, LVM snapshot state, swap, complete data manifest, sshd, and failed units before claiming persistence or completion."]}
+tokens used
+30,026

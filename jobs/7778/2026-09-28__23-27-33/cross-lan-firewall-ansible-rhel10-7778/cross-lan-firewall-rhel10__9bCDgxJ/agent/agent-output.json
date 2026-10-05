@@ -1,0 +1,107 @@
+{
+  "status": "completed",
+  "summary": "Implemented, via an Ansible playbook run from control_node node4, a policy that lets node2 (lan-a) reach node3 (lan-b) only on TCP/5432 while rejecting all other cross-LAN traffic, routed through node1 (VyOS). Also completed the mandatory one-at-a-time restart/recovery verification for all four managed nodes.",
+  "actions_performed": [
+    "Surveyed topology: node1 (VyOS 2026.04 rolling, eth0=mgmt/dhcp, eth1=lan-a, eth2=lan-b, unconfigured), node2 (RHEL10, enp1s0=mgmt, enp8s0=lan-a, unaddressed), node3 (RHEL10, enp1s0=mgmt, enp8s0=lan-b, unaddressed), node4 (Ubuntu 24.04 ansible-controller, control_node)",
+    "Established passwordless SSH from node4 to node1 (vyos user, via VyOS 'system login user vyos authentication public-keys') and to node2/node3 (root authorized_keys) using node4's existing keypair",
+    "Wrote /root/ansible/cross-lan-firewall/{inventory.ini,site.yml} on node4: nmcli-based static addressing for node2 (10.50.1.10/24) and node3 (10.50.2.10/24) with cross-subnet static routes via node1, a firewalld rich-rule on node3 scoping tcp/5432 inbound to source 10.50.1.0/24, and a VyOS shell task on node1 configuring eth1/eth2 addresses plus a zone-based firewall (zones LAN-A/LAN-B, rulesets LANA-TO-LANB allow tcp/5432 default-reject, LANB-TO-LANA allow established/related default-reject)",
+    "Discovered via VyOS conf_mode/firewall.py source that this rolling release requires 'firewall ipv4 name <ruleset>' (not 'firewall name'), 'firewall zone <z> member interface <if>' (not bare 'interface'), and valueless 'state established'/'state related' leaves; corrected the playbook accordingly and validated with commit+save",
+    "Ran the playbook to completion (idempotent on re-run) and functionally verified with real listeners/curl/ping: node2->node3:5432 succeeds, node2->node3:8000 and ICMP are rejected, node3->node2 initiated traffic is rejected",
+    "Diagnosed and fixed a false negative where node3's local firewalld (independent of VyOS) was rejecting the allowed 5432 traffic with 'admin prohibited', by adding a scoped rich-rule via ansible.posix.firewalld",
+    "Executed the mandatory node-restart evidence protocol on node1, node2, node3, node4 sequentially: captured boot_id + service/config baselines, issued a background-delayed native reboot (VyOS: /sbin/reboot; Linux: systemctl reboot) so the ack returned before disconnect, polled until exec was available again, confirmed boot_id changed and uptime reset to ~0, and re-verified interface/route/firewall config persistence and end-to-end policy behavior after each restart",
+    "Cleaned up all test HTTP listeners created for verification"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 can reach node3 on TCP/5432",
+      "command_ids": [
+        "cmd-cf024f4bff6749ad",
+        "cmd-1a61e0ffea694ee6",
+        "cmd-5e6f7b36af624b22"
+      ],
+      "summary": "curl from node2 to http://10.50.2.10:5432/ returns http_code=200 both before and after all node restarts"
+    },
+    {
+      "requirement": "All other traffic between lan-a and lan-b is rejected",
+      "command_ids": [
+        "cmd-cf024f4bff6749ad",
+        "cmd-5e6f7b36af624b22",
+        "cmd-3c726205f6f54a43",
+        "cmd-285e7c7082bc410d"
+      ],
+      "summary": "node2->node3:8000 curl times out (000) and ping gets ICMP Destination Port Unreachable from the VyOS router; node3-initiated connection into node2 gets Connection refused, confirming default-reject in both firewall.ipv4 rulesets"
+    },
+    {
+      "requirement": "Implementation done via Ansible",
+      "command_ids": [
+        "cmd-960c1bab63a243c3",
+        "cmd-c828f44fcbe24d50",
+        "cmd-8aa3ab5d5abe4f8e",
+        "cmd-8718747fb1464aec",
+        "cmd-ded0b3cb06db4959",
+        "cmd-fa69fae847554815",
+        "cmd-3b6fb545a1f54199",
+        "cmd-443c1ceb5bf54263"
+      ],
+      "summary": "Inventory and playbook authored on control_node node4; ansible-playbook syntax-check, ansible ping, and full/limited playbook runs all succeed and are idempotent on re-run"
+    },
+    {
+      "requirement": "VyOS firewall/zone config correctness on node1",
+      "command_ids": [
+        "cmd-d861a1172a39452d",
+        "cmd-b5f1033943564a2e",
+        "cmd-bd739b7840b243bf",
+        "cmd-bbcb3d324fa34e59",
+        "cmd-f17a924f8e66441b",
+        "cmd-499b91c33d144f44"
+      ],
+      "summary": "conf_mode/firewall.py inspected to determine correct 2026.04 rolling syntax; commit succeeded with zones LAN-A/LAN-B, rulesets LANA-TO-LANB/LANB-TO-LANA, and show firewall/show firewall zone confirm active config with hit counters incrementing correctly"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-6f27b83af1f54a09",
+        "cmd-1c946ae28a0c4d22",
+        "cmd-55e00731ab8049f4",
+        "cmd-dab94ffc86b341b4",
+        "cmd-d2e9e6322e1d485e",
+        "cmd-1a61e0ffea694ee6"
+      ],
+      "summary": "Baseline boot_id 50503c5d... and firewall/interface state captured; reboot acked and returned before disconnect; post-restart boot_id 9c1e95db... (changed) with uptime 0 min; interfaces, firewall rulesets and zones persisted via save, and functional policy re-verified"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-5ca02ac587d74100",
+        "cmd-86238e10f27f4a8c",
+        "cmd-2512f90dc6c34022",
+        "cmd-f3e33f24be7d4e58",
+        "cmd-2a7791ba04094c59"
+      ],
+      "summary": "Baseline boot_id 180a78a0... captured; reboot acked before disconnect; post-restart boot_id f296368e... (changed) with uptime 0 min; enp8s0 static IP/route persisted and curl to node3:5432 still returns 200"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b3e55432211c4449",
+        "cmd-bd568456a7de47b1",
+        "cmd-9929284306cc4cca",
+        "cmd-027848c800844c27",
+        "cmd-e9a7e5573e9245e9",
+        "cmd-5e6f7b36af624b22"
+      ],
+      "summary": "Baseline boot_id aad96cc9... and firewalld rich-rule captured; reboot acked before disconnect; post-restart boot_id 9c7c90ae... (changed) with uptime 0 min; enp8s0 IP/route and firewalld rich-rule persisted, full allow/reject policy re-verified end-to-end"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b9f3cc8c5c734e5e",
+        "cmd-f6097c324a5746db",
+        "cmd-632a3fdd35014028",
+        "cmd-245983927d8548a0",
+        "cmd-ee903b2702574dae"
+      ],
+      "summary": "Baseline boot_id 6fd57414... and ansible tooling/files captured; reboot acked before disconnect; post-restart boot_id d7d07726... (changed) with uptime 0 min; ansible-playbook and inventory files intact, ansible ping to node1/node2/node3 succeeds post-restart"
+    }
+  ]
+}

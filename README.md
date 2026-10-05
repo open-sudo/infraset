@@ -92,9 +92,9 @@ findings rest on is already published.
 ### Mode 2: run tasks on community images
 
 Execute tasks live to capture new traces. Antrieb provisions the cluster, Harbor
-drives the run, and the results land under `jobs/` in the same shape as the
-published data. This covers Alpine, AlmaLinux, CentOS Stream, Ubuntu, and the four
-network platforms: VyOS, OpenWrt, SONiC and OPNsense.
+drives the run, and the results land under a scenario ID and timestamp below `jobs/`.
+This covers Alpine, AlmaLinux, CentOS Stream, Ubuntu, and the four network
+platforms: VyOS, OpenWrt, SONiC and OPNsense.
 
 **Requires an Antrieb API key** for the provisioning and lifecycle loop. Antrieb
 is free to use; create a key in the [dashboard](https://antrieb.sh/dash).
@@ -110,6 +110,12 @@ boot, so they need an account of your own.
 and password in `$HOME/credentials.env` as `REDHAT_USERNAME` and
 `REDHAT_PASSWORD`. Without them the nodes cannot register, and the run fails
 before the task starts.
+
+## Task variant metadata
+
+Each task includes a searchable `variant.toml` descriptor. See the
+[metadata schema and index commands](docs/variant-metadata.md) for use-case keys,
+language and OS fields, prompt fingerprints, and scenario IDs.
 
 ## Running a task
 
@@ -132,18 +138,31 @@ before running tasks:
 chmod 600 "$HOME/credentials.env"
 ```
 
-Run a task from the repository root:
+Run a task or a whole scenario from the repository root:
 
 ```bash
-./run-task.sh ./tasks/mixed-os-scenarios/greenfield/haproxy-nodejs-ubuntu16
+./run-task.sh --transport direct ./tasks/5469/centralized-log-collector-bash-rhel7-5469
+./run-task.sh --transport trentina ./tasks/5782
 ```
 
-Set `CREDENTIALS_FILE` to use a different credential-file path.
+Each collection has its own persistent scenario ID; see the
+[scenario directory](tasks/README.md). Tasks live at
+`tasks/<id>/<usecase>-<language>-<os>-<id>/`. The runner inherits the ID from the
+scenario folder. There is no `--id` option or per-execution ID generation.
 
-The runner fetches Harbor and `harbor-antrieb` automatically. Results are stored
-under `jobs/`, mirroring the task's path under `tasks/`—for example, the task
-above records its results under
-`jobs/mixed-os-scenarios/greenfield/haproxy-nodejs-ubuntu16/`.
+Use `--transport trentina` for the local Trentina gateway or `--transport direct`
+for direct Antrieb execution. Executor mode defaults to interactive; use
+`--mode batch` to group compatible changes into non-interactive Bash scripts:
+
+```bash
+./run-task.sh --transport direct --mode batch ./tasks/5469
+```
+
+Set `CREDENTIALS_FILE` to use a different credential-file path. The runner fetches
+Harbor and `harbor-antrieb` automatically. New results are stored under
+`jobs/<id>/<timestamp>/<usecase>-<language>-<os>-<id>/`; timestamps preserve rerun history.
+Existing jobs use this same layout. Each timestamp folder contains the jobs for
+that scenario and run; scenario IDs are also recorded in each `variant.toml`.
 
 ## Creating a task
 
@@ -164,21 +183,27 @@ The skill generates the task instructions, topology, preparation, and evaluation
 files. Run the generated task with:
 
 ```bash
-./run-task.sh ./tasks/<category>/<generated-task-name>
+./run-task.sh ./tasks/<id>/<usecase>-<language>-<os>-<id>
 ```
 
 ## Exploring results
+
+The generated [job index](jobs/INDEX.md) lists every job by scenario and batch,
+with OS, language, execution settings, status, attempts, revisions, and links to saved artifacts.
+`run-task.sh` refreshes it when jobs start and finish, including failed and
+interrupted runs. Rebuild it manually with
+`python3.11 scripts/generate_job_index.py`. Do not edit the index by hand.
 
 Task definitions are in the [tasks directory](https://github.com/open-sudo/infraset/tree/main/tasks); execution results are in the [jobs directory](https://github.com/open-sudo/infraset/tree/main/jobs). The same
 results are published in the [InfraSet Hugging Face dataset](https://huggingface.co/datasets/infraset/infraset),
 which is the easiest place to browse or download them.
 
-The [metrics directory](metrics) carries the aggregated view: one page per task
-category, each reporting executor commands, completion time, and operational
-hygiene for every task and operating system, with each cell linking to the
-analysis of the job it came from. [Cluster provisioning
-performance](metrics/cluster-provisioning-performance.md) covers how long
-Antrieb takes to create the disposable clusters these tasks run on.
+The [metrics directory](metrics) mirrors `jobs/<scenario-id>/<timestamp>/`.
+Each timestamp folder contains category and provisioning reports for that exact
+execution, with links to the source jobs. Scenario-level comparisons live directly
+under `metrics/<scenario-id>/`. Explicit `--aggregate` reports are also stored at
+scenario level with an `aggregate-` prefix; they combine runs and may mix execution
+settings. Use timestamped reports when comparing transports or models.
 
 Use your preferred analysis tool to investigate:
 

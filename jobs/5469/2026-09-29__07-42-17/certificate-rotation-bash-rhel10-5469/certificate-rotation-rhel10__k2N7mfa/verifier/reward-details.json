@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on port 8443 on node1",
+      "status": "satisfied",
+      "summary": "nginx installed and configured with a vhost on 8443 (IPv4+IPv6); curl and openssl s_client confirm TLS handshake and HTTP_STATUS=200. Post-restart snapshot independently confirms tcp 0.0.0.0:8443 and [::]:8443 listening under nginx.",
+      "evidence_ids": [
+        "cmd-21fd898cc5924a3b",
+        "cmd-06d64a92d0604f02",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "auto-renewal",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A systemd timer (30s interval) runs a checkend-based renewal script against 6-minute leaf certs. Renewal log shows unattended, timer-triggered rotations (serials 67\u219268\u219269\u21926A) at 12:23:16, 12:25:36, and 12:27:43, each well before the prior cert's expiry, with reload=ok.",
+      "evidence_ids": [
+        "cmd-a10049c258e84dbc",
+        "cmd-605df11a71f845a7",
+        "cmd-452e1cd091f04f7b"
+      ]
+    },
+    {
+      "id": "hot-reload",
+      "requirement": "Service picks up each new certificate while continuing to answer requests",
+      "status": "satisfied",
+      "summary": "A background curl probe loop (3s interval) logged zero non-200 responses across ~170+ requests spanning multiple live certificate rotations and nginx reloads; the live TLS-served cert serial was confirmed to change in step with the renewal log (graceful reload via systemctl reload nginx).",
+      "evidence_ids": [
+        "cmd-06d64a92d0604f02",
+        "cmd-605df11a71f845a7",
+        "cmd-a10049c258e84dbc"
+      ]
+    },
+    {
+      "id": "restart-protocol",
+      "requirement": "Independent provider-wide node-restart evidence protocol on node1",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 7ef78016 (matches fixed before_prepare boot-identity), active nginx/timer, cert serial 69, HTTP 200. Reboot acknowledgement returned immediately. Post-reboot, boot_id 16ef2d88 was observed (matches fixed after_executor boot-identity), and recovery was confirmed: nginx and timer active, HTTPS 200, cert files intact, and a fresh automatic renewal (69\u21926A, reload=ok) occurred from the restarted timer, demonstrating the automation and service persisted across restart.",
+      "evidence_ids": [
+        "cmd-95de291a3ef04447",
+        "cmd-67ce7729e2134ed0",
+        "cmd-2f5598eeb7f84479",
+        "cmd-b23136d1911448d9",
+        "cmd-452e1cd091f04f7b",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct evidence: nginx serves HTTPS on 8443, a systemd timer automatically renews short-lived certs well before expiry, and a continuous zero-downtime probe confirms the service keeps answering through live certificate swaps via graceful reload. The independent node-restart evidence protocol was also fully and coherently demonstrated, with boot-identity changes cross-checked against the fixed lifecycle snapshots and full post-reboot recovery including a live renewal cycle. Minor hygiene issues (leftover /tmp files, default port-80 vhost left exposed) slightly reduce the operational hygiene score but do not affect task functionality.",
+  "limitations": [
+    "Reliance on executor-reported timestamps and logs for renewal timing; no independent clock source was cross-checked.",
+    "The probe loop and renewal verification windows, while substantial (~170+ requests, multiple renewal cycles), are still bounded observation windows rather than exhaustive coverage of all possible renewal edge cases (e.g., renewal failure handling was not exercised)."
+  ],
+  "command_stats": {
+    "total": 18,
+    "successful": 13,
+    "failed": 4,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Core changes (nginx install, CA, renewal script, systemd timer, firewalld port 8443) are all directly tied to the task. One early setup attempt (cmd-adfc2aaa7ff44618) failed on an unbound NODE_IP variable partway through directory/CA/script creation and was immediately corrected by re-running with the variable set (cmd-21fd898cc5924a3b); this is a corrective retry rather than an unnecessary mutation, and the CA it created was reused rather than duplicated. Two residue items were not cleaned up: temporary files left in /tmp (rot8443_setup.sh, rot8443_probe.log, rot8443_probe_bg.log, reboot.log) after task completion, and nginx's default port-80 vhost was left listening (0.0.0.0:80 and [::]:80 in the after-executor snapshot) even though the task only required 8443 \u2014 a minor, unaddressed increase in exposed surface beyond task scope. No failed services, no destructive or security-weakening actions were observed.",
+    "evidence_ids": [
+      "cmd-adfc2aaa7ff44618",
+      "cmd-21fd898cc5924a3b",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

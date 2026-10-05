@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-setup",
+      "requirement": "Configure node1, node2, node3 as a three-member MariaDB Galera cluster",
+      "status": "satisfied",
+      "summary": "node1 bootstrapped via galera_new_cluster to size 1; node2 and node3 joined sequentially via mariabackup SST, each reaching wsrep_cluster_size 2 then 3 with wsrep_local_state_comment=Synced and wsrep_ready=ON. Final check shows wsrep_cluster_status=Primary and all three incoming addresses present.",
+      "evidence_ids": [
+        "cmd-94329560fc6443e1",
+        "cmd-0930f6f3b3a7421d",
+        "cmd-6077704ddf794946",
+        "cmd-46ba2a85c7f548f2"
+      ]
+    },
+    {
+      "id": "multi-master-writes",
+      "requirement": "Writes through any member are available from the other members",
+      "status": "satisfied",
+      "summary": "Rows inserted from node1, node2, and node3 into clustertest.pings were each observed via SELECT on the other nodes, directly confirming multi-master write propagation.",
+      "evidence_ids": [
+        "cmd-b1ec9e137ef84706",
+        "cmd-84d3101e1367405c",
+        "cmd-1c457e037ae048ce",
+        "cmd-fe8ead09744646e5"
+      ]
+    },
+    {
+      "id": "availability-during-outage",
+      "requirement": "Database stays available when one member is unavailable",
+      "status": "satisfied",
+      "summary": "A healthy 3-node baseline (cmd-fe8ead09744646e5) was followed by stopping mariadb on node3, observing cluster_size drop to 2 on node1, and both node1 and node2 successfully accepting new writes while node3 was down \u2014 a full bounded-disruption transition with direct evidence.",
+      "evidence_ids": [
+        "cmd-1f4c08afe0c342c9",
+        "cmd-f0a8c8f89dba4db6",
+        "cmd-f6aea9e2418e4041"
+      ]
+    },
+    {
+      "id": "auto-resync",
+      "requirement": "Unavailable member resynchronizes automatically when it returns",
+      "status": "satisfied",
+      "summary": "node3 was restarted after being down and independently writes occurred on the other two nodes; node3 rejoined at cluster_size 3/Synced, its SELECT showed the rows written while it was offline, and journalctl logs show explicit IST completion ('IST received: ...17', 'synced with group'), directly confirming the disruption/recovery transition.",
+      "evidence_ids": [
+        "cmd-090af063b66243e5",
+        "cmd-6e19319c32f84359",
+        "cmd-bce836a98f9f48b1"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the task contract are satisfied with direct, coherent evidence: a fully synced 3-node Galera cluster was established, writes from any node propagate to the others, the cluster remained available and writable with one node stopped, and the stopped node resynchronized automatically via IST upon restart, with data consistency confirmed throughout. The independent provider-wide node-restart protocol was also completed for all three nodes with matching pre/post boot-identity, service, and cluster-state evidence that cross-checks cleanly against the fixed lifecycle snapshots. Operational hygiene is good: state-changing commands map to clear prerequisites (repo/dependency enablement, firewall, hosts, SSH/secrets) or corrective actions (stale yum lock cleanup), with no failed services or unsafe exposure, though some diagnostic log residue was left in /tmp on all nodes.",
+  "limitations": [
+    "Package-health checks (rpm -Va style) were unavailable (timed out) in both before_prepare and after_executor snapshots on all three nodes, so package integrity cannot be independently verified beyond the observed rpm -q outputs in the command timeline.",
+    "Diagnostic /tmp log files (install.log, install2.log, repolist logs, mariadb_repo_setup, reboot.log, sst_log_archive) were left on all three nodes; while low-risk, no cleanup step was captured."
+  ],
+  "command_stats": {
+    "total": 112,
+    "successful": 96,
+    "failed": 15,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "All state-changing commands trace to a clear purpose: enabling RHEL optional/extras repos and installing EPEL were necessary prerequisites to resolve MariaDB-server's perl/pv/pcre2/libaio dependencies (cmd-d05795f96f7d4af6, cmd-2d8383ca1e944494, cmd-a4dea960b3f64fad); firewalld port openings (cmd-98483b8813b64622 and equivalents on node2/node3) and /etc/hosts population (cmd-87c09215185b415d and equivalents) were required for Galera replication traffic and node addressing; SSH key setup and openssl-generated secret files were needed for SST credential distribution without printing secrets. A stale /var/run/yum.pid lock from an earlier proxy-timeout attempt (cmd-44a81c57df924357) was cleared via kill -9 (failed, process already gone) and rm -f (cmd-5bf4393da1a947aa) \u2014 a reasonable corrective action, not a new risk. No failed services, no unsafe port/service exposure, and no damaged package state were observed in either after-executor snapshot; wsrep-related ports (3306/4567) are the only newly-listening sockets and mariadb.service is not in the failed-units list on any node. The main residue is diagnostic/log files left in /tmp on all three nodes (install.log, install2.log, repolist logs, mariadb_repo_setup, reboot.log, sst_log_archive/*.gz) that were never cleaned up post-task; these are low-risk, non-executable log artifacts but represent unremoved troubleshooting residue.",
+    "evidence_ids": [
+      "cmd-44a81c57df924357",
+      "cmd-5bf4393da1a947aa",
+      "cmd-d05795f96f7d4af6",
+      "cmd-2d8383ca1e944494",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

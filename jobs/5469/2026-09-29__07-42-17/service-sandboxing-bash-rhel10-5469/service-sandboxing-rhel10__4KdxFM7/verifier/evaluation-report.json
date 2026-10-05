@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Run a long-running background worker as a managed systemd service named inventory-worker on node1",
+      "status": "satisfied",
+      "summary": "systemctl status confirms inventory-worker.service is loaded, enabled, and active (running) with a persistent loop process (main pid + sleep child), and continuous heartbeat writes every 5s over the observed window. Post-restart the same unit auto-starts and resumes writing, confirming a genuine managed, persistent service rather than a one-off process.",
+      "evidence_ids": [
+        "cmd-39867153c5bb4f00",
+        "cmd-10b96a0aae524ac5",
+        "cmd-bbc7cbb1457f40ab"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Service confined so it writes only inside /var/lib/inventory",
+      "status": "satisfied",
+      "summary": "systemctl show confirms ProtectSystem=strict, ReadWritePaths=/var/lib/inventory, DynamicUser=yes, StateDirectory=inventory. A negative control using the identical sandbox properties attempting to write to /etc fails with 'Read-only file system' (confirmed via journalctl showing ExecMainStatus failure), while an identical-sandbox positive control writing inside /var/lib/inventory succeeds and is visible in the log tail. The main service's own log file also only grows inside /var/lib/inventory across the whole trace.",
+      "evidence_ids": [
+        "cmd-39867153c5bb4f00",
+        "cmd-cda79378041e4e89",
+        "cmd-10b96a0aae524ac5"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Service gains no new privileges",
+      "status": "satisfied",
+      "summary": "systemctl show reports NoNewPrivileges=yes and /proc/<pid>/status shows NoNewPrivs:1 for the running service. An identical-sandbox transient unit attempting sudo escalation is rejected with the kernel-level 'no new privileges flag is set' message, directly demonstrating the restriction is enforced, not just configured.",
+      "evidence_ids": [
+        "cmd-39867153c5bb4f00",
+        "cmd-10b96a0aae524ac5"
+      ]
+    }
+  ],
+  "overall_summary": "The executor deployed inventory-worker as a systemd-managed, persistent background service on node1, confined with DynamicUser + ProtectSystem=strict + ReadWritePaths=/var/lib/inventory + NoNewPrivileges=yes, plus substantial additional hardening. All three material outcomes (managed persistent service, write confinement, no-new-privileges) are directly demonstrated via live command output and negative/positive controls executed under the identical sandbox, not just configuration inspection. The independent node-restart evidence protocol was also completed for node1: pre-restart boot_id and healthy state were captured, a native reboot was acknowledged and observed to disconnect the node, a differing post-restart boot_id was captured, and the service was confirmed to auto-start with a new PID and resume writing to the same data file \u2014 satisfying the full pre/ack/post/recovery chain for the one managed node.",
+  "limitations": [
+    "Evidence collection is limited to the commands and snapshots provided; no independent live inspection was possible.",
+    "The negative-control write test using --pipe (cmd-226d57b9799d481a) failed due to a connection reset before yielding a clean pass/fail signal, though the immediately following retry (cmd-cda79378041e4e89) cleanly demonstrated the same blocked-write behavior."
+  ],
+  "command_stats": {
+    "total": 11,
+    "successful": 8,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All state-changing executor commands map clearly to task setup (worker script, systemd unit, enable/start) or to bounded, self-cleaning verification (systemd-run --collect transient units for negative/positive/privilege-escalation controls, which are automatically removed by systemd after completion and leave no residue). One verification attempt (cmd-226d57b9799d481a) failed with 'Connection reset by peer' due to a transient connectivity hiccup rather than a bad mutation, and was immediately and successfully retried with the same collected, self-cleaning transient units (cmd-cda79378041e4e89, cmd-10b96a0aae524ac5); no leftover units or files resulted. The native reboot (cmd-d798d76c5bda41b1) is a necessary part of the mandated restart-evidence protocol. After-executor snapshot shows no failed services, no unexpected listening sockets, and only expected systemd-private tmp dirs plus a reboot.log tied to the sanctioned reboot \u2014 no unnecessary or unexplained mutations or residue.",
+    "evidence_ids": [
+      "cmd-226d57b9799d481a",
+      "cmd-cda79378041e4e89",
+      "cmd-10b96a0aae524ac5",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node2's HTTP service on port 8080 is published on node1's outward-facing address (10.100.182.10) on TCP port 80 via NAT port-forward",
+      "status": "satisfied",
+      "summary": "Executor added a DNAT/port-forward rule in node1's config.xml (interface lan, tcp/80 -> 10.100.182.11:8080), reloaded pf, and confirmed via pfctl -s nat that 'rdr on vtnet0 inet proto tcp from any to (vtnet0) port = http -> 10.100.182.11 port 8080' is active. An anti-lockout rule initially intercepted port 80 traffic to the GUI (301 redirect observed), which was diagnosed and resolved by setting system/webgui/noantilockout=1. End-to-end curl from node3 to http://10.100.182.10:80/ returned HTTP 200 with node2's exact content both before and after node1's restart.",
+      "evidence_ids": [
+        "cmd-ee2d34e5c20348bb",
+        "cmd-982311404b3d4ff0",
+        "cmd-ce05d4f2506d4efd",
+        "cmd-6126701090d047a4",
+        "cmd-f7d13edb287b4e22",
+        "cmd-2a666b1b710942d5",
+        "cmd-fb9d5f3b5e784403"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "node3, which shares the private network with node2, reaches the service through node1's outward-facing address rather than by contacting node2 directly (hairpin NAT reflection)",
+      "status": "satisfied",
+      "summary": "The port-forward alone only creates an rdr rule, which does not by itself enable hairpin traversal for a client on the same LAN as the target; the executor identified via OPNsense source inspection (ForwardRule.php/Plugin.php) that the system-level enablenatreflectionhelper flag was required to generate the reflection SNAT rule. After setting it, pfctl -s nat showed the added 'nat on vtnet0 ... to 10.100.182.11 port = http-alt -> (vtnet0) ... round-robin' reflection rule, and node3's curl to 10.100.182.10:80 returned 200 with node2's content, confirmed again after all three nodes were restarted.",
+      "evidence_ids": [
+        "cmd-8026d9851ba34365",
+        "cmd-eecc82df3ec8405b",
+        "cmd-1835952932174759",
+        "cmd-82017ac10e3b4fec",
+        "cmd-2a666b1b710942d5",
+        "cmd-2634c956667a4818"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node2 actually runs a healthy HTTP service on TCP port 8080 (prerequisite implied by the task's stated premise)",
+      "status": "satisfied",
+      "summary": "The task assumed node2 already runs an HTTP service on 8080, but no such service existed at task start (confirmed by ss/systemctl/find showing nothing listening on 8080). The executor created a persistent systemd unit (node2-http.service, python3 http.server bound to 0.0.0.0:8080, enabled+Restart=always) and opened firewalld 8080/tcp, then verified it was active, listening, and returning 200 locally and from node3 directly, including after node2's restart.",
+      "evidence_ids": [
+        "cmd-2bf04bfb9c3e4958",
+        "cmd-51da3f607f6c42e6",
+        "cmd-b7b4c5c505144cd8",
+        "cmd-55b9e3153a1d4527",
+        "cmd-8083d87699f44300",
+        "cmd-ff9411b7233f4c4f"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Provider-wide node-restart evidence protocol on all three managed nodes (baseline, ack, changed boot identity, recovered state)",
+      "status": "satisfied",
+      "summary": "Each node has a complete chain: node1 pre-restart kern.boottime (1788626762) -> reboot ack -> post-restart kern.boottime (1788627338) -> pf NAT/reflection rules present and node3-to-node1 hairpin path returning 200; node2 pre-restart boot_id (21de1f79) -> reboot ack -> post-restart boot_id (12cb14c0) -> node2-http.service active, listening, 200, firewalld port open; node3 pre-restart boot_id (8f258838) -> reboot ack -> post-restart boot_id (4d925a1b) -> full end-to-end hairpin path 200 plus direct-to-node2 200. The fixed after-executor lifecycle snapshot independently corroborates all three post-restart boot identities.",
+      "evidence_ids": [
+        "cmd-fc040b8088ae4dbb",
+        "cmd-debad215f0ab4d81",
+        "cmd-3e70c4560f584591",
+        "cmd-a11fee1d5f724ba9",
+        "cmd-fb9d5f3b5e784403",
+        "cmd-b74ce49b05644bef",
+        "cmd-5c7146b265444c5a",
+        "cmd-93475cf753f24cb4",
+        "cmd-ff9411b7233f4c4f",
+        "cmd-7dd3d741dd534241",
+        "cmd-1ad895c09bff4262",
+        "cmd-6eeda4f81d8e425b",
+        "cmd-2634c956667a4818"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied all material outcomes of the task: it stood up the previously-absent HTTP service on node2 (the task's premise had assumed it already existed), configured a DNAT port-forward on node1 publishing the service on TCP port 80 of node1's address, and \u2014 after correctly diagnosing that the legacy natreflection=enable flag alone was insufficient \u2014 enabled the system-level NAT reflection helper so node3 can reach the service via node1's address rather than node2 directly. End-to-end functional verification (node3 curl returning node2's content through node1) was captured both before and after a full one-at-a-time restart of all three nodes, with complete boot-identity and recovery evidence for each, corroborated by the fixed lifecycle snapshots.",
+  "limitations": [
+    "Whether the task intends for direct node3->node2:8080 access to be blocked (forcing traffic exclusively through node1) versus merely enabling reachability via node1 alongside continued direct access is ambiguous from the instruction wording; the executor left direct access working, which is a defensible reading but not independently confirmed as the intended design.",
+    "Leftover diagnostic files (tcpdump logs/pid files, reboot.log) on node2/node3 and a config backup file on node1 were not cleaned up after troubleshooting; these are low-risk but represent minor unaddressed residue.",
+    "The security tradeoff of disabling the anti-lockout protection (noantilockout=1) to enable port-80 forwarding was necessary for the task but is a persistent, non-reverted change to a built-in safety mechanism."
+  ],
+  "command_stats": {
+    "total": 77,
+    "successful": 68,
+    "failed": 8,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most state-changing commands were clearly tied to satisfying the material outcomes: creating the node2 HTTP systemd unit, opening firewalld 8080/tcp, editing node1's config.xml for the port-forward and reflection rules, and the mandated restarts. A config backup (/conf/config.xml.bak-preforward, cmd-ee2d34e5c20348bb) was made before editing, a reasonable safety practice, though it was never removed afterward (minor, low-risk residue outside the general /tmp inventory). Extensive tcpdump-based diagnostics on node1 and node3 (cmd-593237bafc384345, cmd-f593543595fa463b, cmd-6cbd615d2f84467b, cmd-823c9628fc0f4ff3, cmd-bebbf1a11af947a5, cmd-c66cc601d4da47ce) were bounded (-c packet limits) and directly served diagnosing the hairpin failure, but left several log/pid files under /tmp on node3 (cap3.log, cap3.pid, cap3b.log, cap3b.pid, capall.log, capall.pid, capping.log, pingout.log) that were not cleaned up, visible as residue in the after-executor snapshot. One command (cmd-28a7a165b08f48cc) failed with a proxy timeout mid-troubleshooting but caused no lasting harm. Most notably, the executor disabled a security-relevant protection \u2014 setting system/webgui/noantilockout=1 (cmd-f7d13edb287b4e22) \u2014 to let port 80 be redirected instead of reserved for the admin GUI anti-lockout rule; this was necessary to satisfy the port-80 forwarding requirement but does weaken a built-in safeguard against admin lockout and was retained in the final config.",
+    "evidence_ids": [
+      "cmd-ee2d34e5c20348bb",
+      "cmd-593237bafc384345",
+      "cmd-f593543595fa463b",
+      "cmd-6cbd615d2f84467b",
+      "cmd-823c9628fc0f4ff3",
+      "cmd-bebbf1a11af947a5",
+      "cmd-c66cc601d4da47ce",
+      "cmd-28a7a165b08f48cc",
+      "cmd-f7d13edb287b4e22",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

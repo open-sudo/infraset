@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "unprivileged-user-container",
+      "requirement": "Containerized web application runs as the unprivileged account appsvc",
+      "status": "satisfied",
+      "summary": "appsvc did not exist beforehand (cmd-02e9a3b4c1e2468f), was created with nologin shell and dedicated subuid/subgid ranges (cmd-f01d004343b34c84), and the nginx:alpine container is pulled and run entirely under that account via rootless podman inside a per-user systemd unit (cmd-ace3156a99754816, cmd-0e8d8f5bd86f46a2, cmd-c1c924a5d8ce4e83). Post-reboot process listing confirms the container's process tree (podman/slirp4netns/conmon) is owned by appsvc (cmd-4561b45938904d3d).",
+      "evidence_ids": [
+        "cmd-02e9a3b4c1e2468f",
+        "cmd-f01d004343b34c84",
+        "cmd-ace3156a99754816",
+        "cmd-0e8d8f5bd86f46a2",
+        "cmd-c1c924a5d8ce4e83",
+        "cmd-4561b45938904d3d"
+      ]
+    },
+    {
+      "id": "port-8080",
+      "requirement": "Application serves on port 8080",
+      "status": "satisfied",
+      "summary": "podman run maps -p 8080:80 in the unit file, ss shows a LISTEN socket on *:8080 owned by rootlessport both before and after reboot, and curl returns HTTP 200 with nginx welcome content in both windows. The fixed lifecycle after_executor listening-sockets snapshot independently corroborates the new *:8080 listener appearing relative to before_prepare.",
+      "evidence_ids": [
+        "cmd-0e8d8f5bd86f46a2",
+        "cmd-380e0b031df7484f",
+        "cmd-4561b45938904d3d",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "starts-at-boot",
+      "requirement": "Application starts at boot (survives a restart), running under systemd with boot-time enablement",
+      "status": "satisfied",
+      "summary": "webapp.service was enabled (WantedBy=default.target, systemctl --user enable --now) prior to any restart. A genuine reboot was captured end-to-end: baseline boot_id 901ef286... and active service/HTTP 200 (cmd-e749d54dde534580), reboot issued (cmd-240d7419683a43a1), a connection-reset during the outage window (cmd-2e837448a72149ff), a new boot_id 18574b17... after recovery (cmd-266141ea98134681), and the service confirmed active+enabled with port 8080 serving HTTP 200 again post-reboot (cmd-23794234221e47bd, cmd-4561b45938904d3d). The fixed global boot-identity snapshots independently confirm the same before/after boot_id transition.",
+      "evidence_ids": [
+        "cmd-c1c924a5d8ce4e83",
+        "cmd-e749d54dde534580",
+        "cmd-240d7419683a43a1",
+        "cmd-2e837448a72149ff",
+        "cmd-266141ea98134681",
+        "cmd-23794234221e47bd",
+        "cmd-4561b45938904d3d",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "no-active-login-session",
+      "requirement": "The service runs while appsvc has no active login session (via linger, not an interactive session)",
+      "status": "satisfied",
+      "summary": "loginctl enable-linger appsvc set Linger=yes (cmd-c1f41ca12db74b8e). Both immediately after deployment and after the full reboot, loginctl list-sessions reports 'No sessions' while webapp.service remains active, confirming the service is sustained by linger rather than an interactive login, across a real restart boundary.",
+      "evidence_ids": [
+        "cmd-c1f41ca12db74b8e",
+        "cmd-7186b15cccd44b0d",
+        "cmd-23794234221e47bd"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the task \u2014 rootless containerized web app under unprivileged appsvc, serving on port 8080, boot-time startup via systemd linger, and absence of an active login session \u2014 are directly and coherently demonstrated, including a genuine reboot with boot_id change independently corroborated by the fixed lifecycle snapshots. This restart also fulfills the provider-wide node-restart evidence protocol for the sole managed node (node1), since pre-restart healthy state, the reboot acknowledgement, a differing post-restart boot_id, and full service/port/session recovery were all captured. No unnecessary or unreverted mutations were found in the executor's command trace.",
+  "limitations": [
+    "The polling window between issuing the reboot and observing the new boot_id was brief (~7 seconds across two commands), though the boot_id change and fresh /tmp systemd-private directories corroborate a genuine reboot rather than a service restart.",
+    "Package-health and failed-services checks are shallow (manager identification and empty failed-unit list) and do not deeply validate podman/dependency package consistency, though no anomalies were reported in either snapshot."
+  ],
+  "command_stats": {
+    "total": 17,
+    "successful": 15,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.97,
+    "summary": "Reviewed all 17 chronological commands. All state-changing actions (apt-get install podman/uidmap/slirp4netns, useradd appsvc, enable-linger, podman pull, writing webapp.service, systemctl --user enable --now, and the systemctl reboot) map directly to satisfying the task's material outcomes or to the mandatory restart-evidence protocol; none were retained troubleshooting experiments or unrelated mutations. The two non-zero/anomalous outcomes are expected discovery (cmd-02e9a3b4c1e2468f, appsvc lookup failing pre-creation) and an expected connection reset during the reboot window (cmd-2e837448a72149ff), not failures. The fixed lifecycle diff shows only the intended additions (new boot_id, port 8080 listener, session-scoped /tmp systemd-private dirs from the new boot) and no failed services or package-health regressions between before_prepare and after_executor.",
+    "evidence_ids": [
+      "cmd-02e9a3b4c1e2468f",
+      "cmd-2e837448a72149ff",
+      "global:before_prepare:node1:failed-services",
+      "global:after_executor:node1:failed-services",
+      "global:before_prepare:node1:package-health",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

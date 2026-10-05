@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-publish-port80",
+      "requirement": "Publish node4's port-8080 HTTP service on TCP port 80 of node2's transit address",
+      "status": "satisfied",
+      "summary": "node2's config.xml was edited to add a DNAT/port-forward rule (vtnet1/transit:80 -> 10.10.3.2:8080) with a matching pass filter rule, applied via configctl and confirmed active with pfctl -s nat showing 'rdr pass on vtnet1 ... port = http -> 10.10.3.2 port 8080'. Direct curl from node2 to 10.10.2.2:80 (its own transit address) succeeds and returns node4's content, both before and after node2's restart.",
+      "evidence_ids": [
+        "cmd-f1273c54a6554ffd",
+        "cmd-47fd63282c8941c9",
+        "cmd-32daed1bbde14421",
+        "cmd-aa9c356a8e024851",
+        "cmd-d68e0dd4a9884729",
+        "cmd-20feb61d124f4364"
+      ]
+    },
+    {
+      "id": "req-2-node4-service",
+      "requirement": "node4 runs an HTTP service on port 8080 that is the thing being published",
+      "status": "satisfied",
+      "summary": "Discovery commands showed no HTTP listener existed on node4 at task start, contradicting the task's premise. The executor created and enabled a systemd unit (node4-http.service) serving /srv/www on 0.0.0.0:8080 and opened firewalld port 8080/tcp, then confirmed the listener via ss and a successful direct curl from node2. This is a reasonable, disclosed adaptation to make the stated topology real rather than an unrequested embellishment.",
+      "evidence_ids": [
+        "cmd-761d630d6513426f",
+        "cmd-4cf874613c9f41e1",
+        "cmd-557c7c90e7bb43a5",
+        "cmd-d318db1e190745e9",
+        "cmd-517aa1ebc6b147f3"
+      ]
+    },
+    {
+      "id": "req-3-node1-route",
+      "requirement": "node1 is given a route to node2's transit address",
+      "status": "satisfied",
+      "summary": "node1's eth1 was statically addressed on the transit subnet (10.10.2.1/24), giving it a directly-connected kernel route to 10.10.2.0/24 that includes node2's transit address 10.10.2.2, which is sufficient reachability. A curl from node1 directly to http://10.10.2.2:80/ succeeds after the transit-side asymmetric-routing fix (node2's return route to 10.10.1.0/24 via node1) was applied, and again after node1's restart.",
+      "evidence_ids": [
+        "cmd-9064f401b7d04e60",
+        "cmd-f19875b063b546ff",
+        "cmd-7eedef5395e246f4",
+        "cmd-7770558c00ca4dbb",
+        "cmd-48576c1c5e6445e7"
+      ]
+    },
+    {
+      "id": "req-4-node3-via-node2",
+      "requirement": "node3 on lan-a reaches the service by asking node2 rather than by addressing node4 itself",
+      "status": "satisfied",
+      "summary": "node3 was given a static route to 10.10.2.0/24 via node1 (10.10.1.1) and successfully curls http://10.10.2.2:80/ and receives node4's content, both immediately after configuration and after all four nodes were restarted. node3's route table only shows a route to 10.10.1.0/24 (its own segment) and 10.10.2.0/24 via node1 \u2014 it has no route to node4's lan-b subnet (10.10.3.0/24), so it cannot address node4 directly and must transit node2.",
+      "evidence_ids": [
+        "cmd-76235dbc28c74301",
+        "cmd-0d5b744edead48b4",
+        "cmd-490425621fe24954",
+        "cmd-67f16bc5634c49ca",
+        "cmd-39b1167db770424d"
+      ]
+    },
+    {
+      "id": "req-5-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (node1-node4) after task completion",
+      "status": "satisfied",
+      "summary": "For each of node1, node2, node3, and node4, the trace shows a pre-restart healthy baseline (boot_id or kern.boottime plus interface/service/route state), an explicit restart command, a bounded unreachable window, a distinct post-restart boot identity, and recovered interface addressing, routing, NAT/pf rules, and end-to-end curl reachability. This is corroborated by the fixed global before_prepare/after_executor boot-identity snapshots, which show a differing boot_id/kern.boottime for all four nodes.",
+      "evidence_ids": [
+        "cmd-7540d3eb78674054",
+        "cmd-8899b5c217c34a52",
+        "cmd-33f489bf71c74827",
+        "cmd-c42bad1f4bcd4c02",
+        "cmd-3d5772f8b49e43f6",
+        "cmd-73df834925044d34",
+        "cmd-9c7c25b8627a4b2d",
+        "cmd-4af0b925877b4968",
+        "cmd-20feb61d124f4364",
+        "cmd-25347fbda0a04c75",
+        "cmd-a29103892a7b4a5a",
+        "cmd-43c98405ccba4a3a",
+        "cmd-2c9481f91a6a443e",
+        "cmd-01698100543f448a",
+        "cmd-48576c1c5e6445e7",
+        "cmd-5c5a463366d44d01",
+        "cmd-9e30040f014a471d",
+        "cmd-cbfe221c63fe4020",
+        "cmd-39b1167db770424d",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task were satisfied with direct, coherent evidence: node4's port-8080 service (created by the executor since none pre-existed) is published on node2's transit address port 80 via a verified NAT rule, node1 has effective reachability to that address, and node3 demonstrably reaches the service by transiting node2 (curl succeeds via 10.10.2.2:80) while lacking any direct route to node4's subnet. All four nodes were also carried through the mandatory restart protocol with pre-restart baselines, restart acknowledgements, distinct post-restart boot identities, and full recovery of addressing, NAT/routing state, and end-to-end service reachability, cross-checked against the fixed global before/after boot-identity snapshots. Hygiene is good; the only unnecessary residue is a diagnostic tcpdump package install on node4 that was never removed.",
+  "limitations": [
+    "The node2 config.xml edits and static-route addition were applied via base64-encoded inline Python scripts (cmd-f1273c54a6554ffd, cmd-f19875b063b546ff) whose exact source is not shown in the trace; correctness is inferred from the resulting pfctl/netstat output rather than the edit script itself.",
+    "node1's 'route to node2's transit address' is a directly-connected interface route rather than an explicitly configured static route, since node1 sits on the transit segment; this satisfies the requirement functionally but is a different mechanism than a classic routed hop.",
+    "The before_prepare and after_prepare snapshots are identical (prepare was disabled/static), so preparer-vs-executor state separation relies entirely on the before_prepare vs after_executor diff."
+  ],
+  "command_stats": {
+    "total": 136,
+    "successful": 119,
+    "failed": 17,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.88,
+    "summary": "The trace is dominated by read-only L2/route discovery (arping, tcpdump captures, ip/ifconfig/nmcli show commands) that caused no state change. State-changing commands were almost all directly tied to the material outcomes: enabling node2's vtnet1/vtnet2 interfaces (cmd-9d757591dd5a4bd1) which were administratively down and blocking the task; addressing lan-a/transit/lan-b interfaces on node1/node2/node3/node4; editing node2's config.xml for the NAT/port-forward and static route (cmd-f1273c54a6554ffd, cmd-f19875b063b546ff) with configctl applies; creating node4's HTTP service and firewalld rule to satisfy the task's premise (cmd-557c7c90e7bb43a5, cmd-d318db1e190745e9); and adding return-path static routes on node2/node3/node4 to fix asymmetric routing that was blocking the port-forward from working end-to-end (cmd-12c11e80b2d84b09, cmd-67f16bc5634c49ca, cmd-76235dbc28c74301, cmd-f19875b063b546ff). One minor unnecessary mutation: `dnf install -y tcpdump` on node4 (cmd-662f476111ed4f62) installed a package purely for a diagnostic packet capture during troubleshooting; it was not reverted and remains installed, though it is low-risk, standard tooling with no security or functional impact. A brief `ip link set eth1 down; up` toggle on node1 (cmd-22c417c00a344c19) was bounded and self-reverted with no residue. No abandoned services, failed units, or damaged package state were observed in the after_executor snapshot (failed-services empty on all nodes, package-health 'observed' on RHEL nodes).",
+    "evidence_ids": [
+      "cmd-9d757591dd5a4bd1",
+      "cmd-f1273c54a6554ffd",
+      "cmd-f19875b063b546ff",
+      "cmd-557c7c90e7bb43a5",
+      "cmd-d318db1e190745e9",
+      "cmd-12c11e80b2d84b09",
+      "cmd-67f16bc5634c49ca",
+      "cmd-76235dbc28c74301",
+      "cmd-662f476111ed4f62",
+      "cmd-22c417c00a344c19",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node4:failed-services",
+      "global:after_executor:node3:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

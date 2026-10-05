@@ -1,0 +1,81 @@
+{
+  "status": "completed",
+  "summary": "On node1, set up LVM-backed /srv/data (loopback-backed vgdata/datalv, since the node had no spare disk or existing LVM), populated it with application data, took an LVM snapshot, then corrupted/deleted/added files to simulate drift. Restored the exact pre-modification content via lvconvert --merge (a real LVM snapshot rollback) and verified it byte-for-byte identical to the baseline via sha256sum. The loop device / VG were made boot-persistent (systemd unit ordered before local-fs.target + fstab entry with x-systemd.requires) so /srv/data survives restarts. Completed the mandatory node1 restart sequence: captured a pre-restart boot_id and verified-healthy baseline, issued a native reboot, polled through the outage, confirmed the boot_id changed, and verified /srv/data remounted with all data still checksum-matching the snapshot baseline.",
+  "actions_performed": [
+    "Inspected node1 disk/filesystem layout: single XFS root partition, no LVM, no spare disk (cmd-a862e7bf4ef04024, cmd-578695db6432404c)",
+    "Created loopback-backed PV/VG/LV (vgdata/datalv, XFS) and mounted at /srv/data (cmd-e939c3a467034183, cmd-259aa52e60264352)",
+    "Made the loop device + VG activation boot-persistent via snaplab-loop.service (ordered before local-fs.target) and an /etc/fstab entry with x-systemd.requires, then verified remount works (cmd-8d9b6324c7aa4313, cmd-11e404921e734181, cmd-74c35ff6910344e2)",
+    "Populated /srv/data with representative application data (config, uploads, VERSION) and recorded a sha256 baseline (cmd-ffe40bb4cbf042b0)",
+    "Created LVM snapshot datalv_snap capturing the healthy baseline (cmd-17b8e19f45754229)",
+    "Modified /srv/data: corrupted config, deleted file_3.dat, added junk file, changed VERSION (cmd-e613b2b38c634a06)",
+    "Restored via lvconvert --merge (snapshot rollback), unmounting/remounting /srv/data (cmd-b6f4456dea1d4866)",
+    "Verified restored content is byte-identical to the pre-modification baseline via sha256sum -c and diff (cmd-4b7ad3f0f00a4409)",
+    "Captured pre-restart boot_id and re-verified healthy checksummed state (cmd-6e102e4b58f4400a)",
+    "Issued shutdown -r now on node1; acknowledgement returned as the connection dropped (cmd-7e5ef62052ee432d)",
+    "Polled node1 through the outage until reachable again (cmd-ab38d1095fe44b42, cmd-ebc8d91401974954, cmd-15d33c4c93b84854)",
+    "Confirmed boot_id changed post-restart, proving an actual reboot occurred (cmd-491d110dd3f74a49)",
+    "Verified post-restart recovery: loop device reattached, VG/LV active, /srv/data mounted, and all files checksum-match the original snapshot baseline (cmd-303416e5bb3b4b27)"
+  ],
+  "evidence": [
+    {
+      "requirement": "Healthy baseline with application data under /srv/data before modification",
+      "command_ids": [
+        "cmd-ffe40bb4cbf042b0"
+      ],
+      "summary": "Populated /srv/data/app with config, uploads, and VERSION files; recorded sha256 baseline.sha256 for all files"
+    },
+    {
+      "requirement": "Filesystem snapshot capturing the baseline state",
+      "command_ids": [
+        "cmd-17b8e19f45754229"
+      ],
+      "summary": "Created LVM snapshot vgdata/datalv_snap of the origin LV datalv while it held the healthy baseline content"
+    },
+    {
+      "requirement": "Directory is modified after the snapshot",
+      "command_ids": [
+        "cmd-e613b2b38c634a06"
+      ],
+      "summary": "Corrupted settings.conf, deleted file_3.dat, added unexpected_junk.txt, and changed VERSION to a broken value; listing shows the altered file set"
+    },
+    {
+      "requirement": "Restore exact content captured by the earlier snapshot",
+      "command_ids": [
+        "cmd-b6f4456dea1d4866",
+        "cmd-4b7ad3f0f00a4409"
+      ],
+      "summary": "lvconvert --merge rolled datalv back to the snapshot state; post-restore sha256sum -c against baseline.sha256 and diff of full checksum listings both confirm byte-for-byte identical content, including the restored file_3.dat and original VERSION/config"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline and boot identity for node1",
+      "command_ids": [
+        "cmd-6e102e4b58f4400a"
+      ],
+      "summary": "Captured boot_id 4cee4ea8-... plus confirmation /srv/data was mounted and all files still matched baseline.sha256 before rebooting"
+    },
+    {
+      "requirement": "Restart acknowledgement for node1",
+      "command_ids": [
+        "cmd-7e5ef62052ee432d"
+      ],
+      "summary": "shutdown -r now issued; exec stream closed as the node went down, acknowledging the restart command was accepted"
+    },
+    {
+      "requirement": "Changed boot identity proving node1 actually restarted",
+      "command_ids": [
+        "cmd-ab38d1095fe44b42",
+        "cmd-ebc8d91401974954",
+        "cmd-15d33c4c93b84854",
+        "cmd-491d110dd3f74a49"
+      ],
+      "summary": "Node1 was unreachable across several polls during the reboot, then came back with boot_id 960b2d87-..., differing from the pre-restart 4cee4ea8-... value"
+    },
+    {
+      "requirement": "Post-restart recovery of /srv/data and its data",
+      "command_ids": [
+        "cmd-303416e5bb3b4b27"
+      ],
+      "summary": "After restart: snaplab-loop.service active, loop0 reattached, vgdata/datalv active, /srv/data mounted via fstab, and sha256sum -c against baseline.sha256 shows all files still OK"
+    }
+  ]
+}

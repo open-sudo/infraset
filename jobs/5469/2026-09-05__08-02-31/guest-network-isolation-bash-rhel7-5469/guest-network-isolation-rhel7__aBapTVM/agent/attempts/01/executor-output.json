@@ -1,0 +1,90 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OpenWrt) as the router between lan-a (node2, trusted) on eth1/10.10.1.0/24 and lan-b (node3, guest) on eth2/10.10.2.0/24. Created firewall zones lan_a (forward=ACCEPT, full access) and lan_b (forward=REJECT), with only a lan_a\u2192lan_b forwarding rule so trusted hosts can reach guest hosts but not vice versa. dnsmasq now listens on both new interfaces so guests can resolve DNS via node1. Verified end-to-end: guest\u2192trusted blocked (node1 sends TCP RST via handle_reject), trusted\u2192guest succeeds, and DNS from node1 works from both sides. Restarted all three nodes one at a time, proved boot-id change on each, and confirmed full recovery of interfaces, firewall config, forwarding rule, and DNS service afterward.",
+  "actions_performed": [
+    "Inspected node1/node2/node3 topology and confirmed eth0 is shared management network, eth1(node2)/eth1(node3)/eth1+eth2(node1) are unconfigured cross-links",
+    "Configured node1 UCI network interfaces lan_a (eth1, 10.10.1.1/24) and lan_b (eth2, 10.10.2.1/24)",
+    "Configured node2 eth1 as 10.10.1.10/24 with static route to 10.10.2.0/24 via node1, using nmcli",
+    "Configured node3 eth1 as 10.10.2.10/24 with static route to 10.10.1.0/24 via node1, using nmcli",
+    "Added OpenWrt firewall zones lan_a (forward=ACCEPT) and lan_b (forward=REJECT) and a single lan_a->lan_b forwarding rule; reloaded firewall",
+    "Added dhcp UCI sections for lan_a/lan_b (DHCP disabled, DNS listening enabled) and restarted dnsmasq; confirmed it listens on 10.10.1.1:53 and 10.10.2.1:53",
+    "Adjusted node2/node3 firewalld to put eth1 in the trusted zone so host-local firewalls did not mask the router-level test",
+    "Ran functional tests: guest(node3)->trusted(node2:8000) rejected with TCP RST from node1; trusted(node2)->guest(node3:8000) succeeded; DNS query from each host to node1 succeeded",
+    "Inspected node1 nftables ruleset to confirm forward_lan_b falls through to handle_reject (TCP RST) while forward_lan_a jumps to accept_to_lan_b",
+    "Cleaned up temporary test HTTP servers on node2/node3",
+    "Captured pre-restart boot_id/uptime/config baselines on all three nodes",
+    "Restarted node1, node2, node3 sequentially (native reboot, one at a time), polled until exec access returned, and verified changed boot_id on each",
+    "Post-restart verified node1 interfaces/firewall zones/forwarding rule/dnsmasq intact, and re-verified DNS reachability from node2 and node3 to node1 after their own reboots"
+  ],
+  "evidence": [
+    {
+      "requirement": "Trusted (lan-a/node2) hosts have full access to guest (lan-b/node3) hosts",
+      "command_ids": [
+        "cmd-a93c97870b6f41d3",
+        "cmd-a451dca3512d4814",
+        "cmd-7342196bea1545e7",
+        "cmd-f5f133149ec74305"
+      ],
+      "summary": "node1 nftables shows forward_lan_a jumps to accept_to_lan_b; after clearing node2's local firewalld interference, curl from node2 to node3:8000 succeeded with a full directory listing"
+    },
+    {
+      "requirement": "Guest (lan-b/node3) hosts cannot open connections to trusted (lan-a/node2) hosts",
+      "command_ids": [
+        "cmd-3ba1f4511cbd478f",
+        "cmd-2ab18e02ecae4a03"
+      ],
+      "summary": "curl from node3 to node2:8000 got 'Connection refused' (TCP RST); node1's forward chain confirmed to fall through to handle_reject for lan_b-sourced traffic with no lan_b->lan_a forwarding entry present"
+    },
+    {
+      "requirement": "Guests can reach services node1 itself offers, e.g. DNS",
+      "command_ids": [
+        "cmd-0cb2c28aad4f4330",
+        "cmd-6d33b5052b5c4c12"
+      ],
+      "summary": "dnsmasq listens on 10.10.2.1:53 (lan-b) and a raw DNS query from node3 to 10.10.2.1:53 returned a valid response"
+    },
+    {
+      "requirement": "Trusted hosts can also reach node1's own services",
+      "command_ids": [
+        "cmd-afec77ee05b44b2c"
+      ],
+      "summary": "DNS query from node2 to 10.10.1.1:53 returned a valid response"
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-7d4542de290042c6"
+      ],
+      "summary": "Captured boot_id 1e8aa2b7-..., interface state, firewall zone/forwarding config, and running dnsmasq PIDs prior to restart"
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-982d02354b574318",
+        "cmd-32aa19f223264438",
+        "cmd-49ec4f9cc2de4a0d"
+      ],
+      "summary": "Reboot scheduled and acknowledged before disconnect; boot_id changed to 63c871d1-...; post-restart interfaces, firewall zones/forwarding, and dnsmasq all confirmed intact"
+    },
+    {
+      "requirement": "node2 healthy baseline, restart, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-75d4af033ba44121",
+        "cmd-b377d849c3ca4f93",
+        "cmd-9032113879144729",
+        "cmd-0f75d709f19242d5"
+      ],
+      "summary": "Baseline boot_id 73bafeef-...; reboot acknowledged; boot_id changed to 56b13c4b-...; post-restart eth1 IP/route/NM connection intact and DNS query to node1 succeeded"
+    },
+    {
+      "requirement": "node3 healthy baseline, restart, changed boot identity, and recovery",
+      "command_ids": [
+        "cmd-abd02c7d13f54eec",
+        "cmd-bad9c9065ffb4c75",
+        "cmd-9729ea46e3a5471e",
+        "cmd-79f8ccfa64c5483c"
+      ],
+      "summary": "Baseline boot_id d7a80301-...; reboot acknowledged, confirmed unreachable mid-reboot; boot_id changed to da58a7c1-...; post-restart eth1 IP/route/NM connection intact and DNS query to node1 succeeded"
+    }
+  ]
+}

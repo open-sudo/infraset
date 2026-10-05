@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node3 has a single, stable gateway address for reaching node4's LAN",
+      "status": "satisfied",
+      "summary": "Ansible-managed static route on node3 (10.50.20.0/24 via 10.50.10.1 dev ens7) uses the fixed VRRP VIP as gateway regardless of which router holds it. Confirmed by route dump and successful ping to node4 across multiple observation points (initial, mid-failover, post-failback, post full-cluster-restart, and after idempotent re-run).",
+      "evidence_ids": [
+        "cmd-bb75da2dbd73476e",
+        "cmd-79f9ef6396d54009",
+        "cmd-0c4d9fb17db9414f",
+        "cmd-1bc88488c24e457c",
+        "cmd-8420e623ce144390"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Gateway stays available when either router (node1 or node2) is down",
+      "status": "satisfied",
+      "summary": "node1's eth1/eth2 were taken link-down; node2 assumed VRRP MASTER for both VIPs within ~5-10s and node3->node4 ping continued with 0% loss throughout the outage window, directly demonstrating the healthy baseline, disruption, and continued service during the disruption.",
+      "evidence_ids": [
+        "cmd-1fc0e07f4fc64090",
+        "cmd-41e61283bee24a82",
+        "cmd-c5f0d79310b44122",
+        "cmd-79f9ef6396d54009"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Gateway prefers node1 while node1 is healthy (including after a router recovers)",
+      "status": "satisfied",
+      "summary": "node1 was configured with higher VRRP priority (200 vs 100) and held MASTER before the outage; after node1's links were restored it preempted node2 and reclaimed MASTER for both VRRP groups within seconds, with node2 reverting to BACKUP, and connectivity from node3 to node4 was maintained throughout.",
+      "evidence_ids": [
+        "cmd-1fc0e07f4fc64090",
+        "cmd-e3263d54555d4b17",
+        "cmd-62e67c61320b4576",
+        "cmd-0c4d9fb17db9414f"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Implementation is done using Ansible",
+      "status": "satisfied",
+      "summary": "An Ansible project (inventory.ini, ansible.cfg, playbook.yml) was authored on the control node and used to configure VyOS VRRP groups and the node3/node4 static routes; a later idempotent re-run showed no unexpected changes, confirming the configuration is Ansible-managed rather than a one-off manual change.",
+      "evidence_ids": [
+        "cmd-d4990bc7f0d948e5",
+        "cmd-602947d052b64d37"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built an Ansible playbook that configures VyOS VRRP (priority 200 on node1, 100 on node2) to give node3 a single, always-reachable gateway VIP (10.50.10.1) toward node4's LAN, and static routes on node3/node4 pointing at their respective local VIPs. Direct evidence shows the gateway address is stable, survives a node1 outage via VRRP failover to node2 with no ping loss, and node1 preempts back to MASTER on recovery, satisfying the 'prefer node1 while healthy' requirement. The provider-wide restart protocol was executed on all five nodes with matching pre/post boot-identity changes cross-checked against the fixed lifecycle snapshots, and configuration/connectivity fully recovered after each reboot, including a final idempotent playbook re-run confirming no drift.",
+  "limitations": [
+    "One manual out-of-band VyOS configuration commit on node1 (cmd-d4da782f4eb1408d) occurred during troubleshooting before the executor adopted 'become: yes' in the playbook; it happened to match the final Ansible-managed value so it caused no conflict, but it was not itself an Ansible action.",
+    "Ansible module execution against node3/node4 initially failed due to Python 2/3 interpreter incompatibilities on the aged Ubuntu 16.04 images; the executor worked around this using ansible.builtin.raw for the node3/node4 tasks rather than a standard Python-backed module, which is a valid but less idiomatic Ansible approach.",
+    "The provider-wide node-restart evidence protocol is independent of the public task contract; while its evidence is coherent and consistent with the fixed lifecycle boot-identity snapshots, it does not itself factor into the material-outcome scoring above."
+  ],
+  "command_stats": {
+    "total": 137,
+    "successful": 108,
+    "failed": 29,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing troubleshooting during topology discovery (temporary IP addresses on eth1/eth2/ens7 used to probe L2 adjacency) was bounded and fully reverted (e.g. cmd-c2d51ae1a5604aef/cmd-903fca0c59ed45b0 added, cmd-71ac3c0c8fbc4d20/cmd-94d2e314549145e0/cmd-cee142fc055842f3/cmd-4fe6828aef8f4f16/cmd-e2d13e30e88940de/cmd-f981ec377cb54051 removed). One unnecessary mutation of note: cmd-d4da782f4eb1408d performed a manual VyOS 'configure/set/commit/save' on node1 outside Ansible (setting eth1 address 10.50.10.2/24) while diagnosing SSH/sudo permission issues, before the executor switched the playbook to become:yes and applied the same configuration idempotently via Ansible (cmd-d4990bc7f0d948e5). The live address was later removed with a plain 'ip addr del' (cmd-f981ec377cb54051), but the underlying committed VyOS config value was identical to what Ansible subsequently enforced, so it produced no conflicting residue, only a redundant manual state change with no clear necessity once the become fix was found. No abandoned files, failed services, unsafe exposure, or damaged package state were observed; the final after_executor snapshot shows no unexpected residue beyond expected boot-id/ephemeral systemd-private tmp changes from restarts.",
+    "evidence_ids": [
+      "cmd-d4da782f4eb1408d",
+      "cmd-f981ec377cb54051",
+      "cmd-d4990bc7f0d948e5",
+      "cmd-c2d51ae1a5604aef",
+      "cmd-903fca0c59ed45b0",
+      "cmd-71ac3c0c8fbc4d20",
+      "cmd-94d2e314549145e0"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

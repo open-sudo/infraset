@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Join node1, node2, and node3 into a single RabbitMQ cluster",
+      "status": "satisfied",
+      "summary": "RabbitMQ 4.2.9 installed on all three nodes; node2 and node3 joined node1's cluster (cmd-e7f2db13d12447bd, cmd-25c2e3922e4043ae), confirmed by cluster_status showing all three as disk/running nodes (cmd-71c5a93669b1462a). The cluster was later disrupted and fully rebuilt during troubleshooting, but the final observed state (cmd-b4a0333a66f94910, cmd-b97654c0ae454052) again shows all three nodes as disk and running members, and this is cross-checked by the fixed after-executor lifecycle snapshot showing consistent post-reboot boot IDs for all three nodes with active rabbitmq-server listeners.",
+      "evidence_ids": [
+        "cmd-1ce681782a094dd4",
+        "cmd-8ea16c13f8014fc3",
+        "cmd-2b75bc81e9e64f46",
+        "cmd-e7f2db13d12447bd",
+        "cmd-25c2e3922e4043ae",
+        "cmd-71c5a93669b1462a",
+        "cmd-b97654c0ae454052",
+        "cmd-b4a0333a66f94910"
+      ]
+    },
+    {
+      "id": "payments-vhost-and-account",
+      "requirement": "Create a payments virtual host and an application account able to publish and consume there",
+      "status": "satisfied",
+      "summary": "The payments vhost was created with default_queue_type=quorum (cmd-9317d44c582a43e8, cmd-90a482c925e24428) and the app_payments user was granted configure/write/read=.* on payments (cmd-5fe6e888b0c44d2d). After a full cluster rebuild mid-task, both were recreated identically (cmd-b97654c0ae454052) and confirmed present in the final state (cmd-b4a0333a66f94910). The account was also tagged 'management' to allow HTTP API use for testing, and the default guest account was removed \u2014 a reasonable scope adjustment for verification purposes.",
+      "evidence_ids": [
+        "cmd-9317d44c582a43e8",
+        "cmd-90a482c925e24428",
+        "cmd-5fe6e888b0c44d2d",
+        "cmd-b97654c0ae454052",
+        "cmd-b4a0333a66f94910"
+      ]
+    },
+    {
+      "id": "durable-message-survival",
+      "requirement": "Messages published to a durable queue must survive the loss of any one node and stay consumable from the remaining nodes",
+      "status": "satisfied",
+      "summary": "A durable quorum queue 'orders' was declared with replicas on all three nodes (cmd-270a5fbf1d1c4b26). Two durable messages were published, node3 was stopped (cmd-0af890b43bca47a0), cluster remained available at 2/3 nodes, and both pre-existing messages were consumed successfully from node2 (cmd-2e6c265f70bf4075). A new message was published during the outage (cmd-5762072f351f4e34), node3 was restarted and rejoined (cmd-556be86a26684e59, cmd-c40b7c86b215463a), full 3/3 replica sync was confirmed (cmd-b2da54c6ca654eba), and the message published during the outage was consumed directly from the recovered node3 (cmd-c32c53b5ddac4229), directly demonstrating the full disruption/recovery cycle.",
+      "evidence_ids": [
+        "cmd-2a487d401bdf4ee5",
+        "cmd-0af890b43bca47a0",
+        "cmd-d719798cf13749a2",
+        "cmd-2e6c265f70bf4075",
+        "cmd-5762072f351f4e34",
+        "cmd-556be86a26684e59",
+        "cmd-c40b7c86b215463a",
+        "cmd-b2da54c6ca654eba",
+        "cmd-c32c53b5ddac4229"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (independent check, not part of the public contract)",
+      "status": "satisfied",
+      "summary": "For each node, a pre-reboot boot_id and healthy state were captured, a native `reboot` was issued and confirmed via connection disruption, a changed post-reboot boot_id was observed, and RabbitMQ service, cluster membership, vhost/user/permissions, and quorum queue data were all confirmed recovered before moving to the next node (node1: cmd-cebdd75da38f4b7e/cmd-7988ef53fcc44f81/cmd-51e3845ded1448b6/cmd-310d564b927348a0/cmd-8993e6bdd4054bd1/cmd-ac4a2a4481cd4729; node2: cmd-f18b5430466c4c1c/cmd-9407712f9e6d44ef/cmd-fb0176a22d2b495d; node3: cmd-253802cfeef24f47/cmd-2813dcee59904539/cmd-b4a0333a66f94910). A final cross-node publish/consume round-trip (cmd-6b209831e47740fc, cmd-6b285ab792a34537, cmd-494efe85a5074c59) confirmed both the pre-reboot and a new message were intact. The independent fixed after-executor lifecycle snapshot corroborates changed boot IDs for all three nodes, matching the executor-reported values.",
+      "evidence_ids": [
+        "cmd-cebdd75da38f4b7e",
+        "cmd-7988ef53fcc44f81",
+        "cmd-51e3845ded1448b6",
+        "cmd-310d564b927348a0",
+        "cmd-8993e6bdd4054bd1",
+        "cmd-ac4a2a4481cd4729",
+        "cmd-f18b5430466c4c1c",
+        "cmd-9407712f9e6d44ef",
+        "cmd-fb0176a22d2b495d",
+        "cmd-253802cfeef24f47",
+        "cmd-2813dcee59904539",
+        "cmd-b4a0333a66f94910",
+        "cmd-6b209831e47740fc",
+        "cmd-6b285ab792a34537",
+        "cmd-494efe85a5074c59",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material task outcomes are directly satisfied by evidence: a working three-node RabbitMQ cluster, a payments vhost with a scoped application account, and demonstrated durable-message survival across a bounded node outage with full recovery. The independently required node-restart protocol is also well evidenced for all three nodes with cross-checked boot-identity changes and confirmed post-reboot cluster/data recovery. However, the path to this end state involved a cluster-wide SELinux security downgrade that was never reverted, and two unnecessary systemd-level restart experiments that triggered cluster desynchronization requiring a full, destructive data wipe and rebuild \u2014 none of which were required by the task and which meaningfully lower the operational hygiene score despite the final functional outcome being sound.",
+  "limitations": [
+    "SELinux was left in Permissive mode on all three nodes rather than being restored to Enforcing with a proper policy exception, which is a persisted security-relevant change outside the task's explicit scope.",
+    "The app_payments account was granted the 'management' tag (HTTP API/administrative visibility) beyond pure AMQP publish/consume rights, as a workaround for rabbitmqadmin access; this is broader than strictly required by 'can publish and consume'.",
+    "The mid-task Khepri-related cluster breakage and full data wipe/rebuild indicate some fragility in the chosen RabbitMQ build/version on this OS image; while the final state is verified, an evaluator relying only on the final snapshot would not see how close the process came to data loss during troubleshooting."
+  ],
+  "command_stats": {
+    "total": 181,
+    "successful": 163,
+    "failed": 18,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.4,
+    "summary": "Multiple unnecessary mutations occurred during troubleshooting, some of which were self-inflicted and had significant blast radius, though the executor recovered and the final task outcome was achieved. (1) SELinux was permanently switched from Enforcing to Permissive on all three nodes (cmd-7859f30fbe844056, cmd-5bdd2bcf34a24415, cmd-cb88770cd32b4a96) to work around an execmem AVC denial for beam.smp; this weakens a security control cluster-wide and was left in place rather than being addressed with a scoped SELinux policy fix. (2) Two experimental `systemctl restart rabbitmq-server` invocations (cmd-c2667e90c2024365 on node3, cmd-648a435239fb4ce2 on node2) were run purely to probe a suspected Khepri persistence bug; both caused the target node to silently drop out of the cluster (each showing 'Running Nodes: <self only>' afterward), which is unrelated to any material task requirement (OS reboots, not systemd restarts, are what the mandatory protocol required) and directly caused a cascading failure. (3) Recovering from that cascade required a destructive full wipe of `/var/lib/rabbitmq/mnesia/*` on all three nodes (cmd-1acf49150eb94784, cmd-84cb0e5cd3044498, cmd-8078444f065246d0) and a full rebuild of the cluster, vhost, user, and queue from scratch (cmd-b6ec6ba7e0964e83 through cmd-270a5fbf1d1c4b26) \u2014 a broad, destructive corrective action, though it was fully completed and left the system in the required end state. No other unmanaged residue, failed services, or unsafe exposure was observed in the final lifecycle diff beyond expected RabbitMQ ports and reboot.log files.",
+    "evidence_ids": [
+      "cmd-7859f30fbe844056",
+      "cmd-5bdd2bcf34a24415",
+      "cmd-cb88770cd32b4a96",
+      "cmd-c2667e90c2024365",
+      "cmd-648a435239fb4ce2",
+      "cmd-1acf49150eb94784",
+      "cmd-84cb0e5cd3044498",
+      "cmd-8078444f065246d0",
+      "cmd-b6ec6ba7e0964e83",
+      "cmd-270a5fbf1d1c4b26",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

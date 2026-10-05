@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 becomes the DNS resolver for the shared network, answering authoritatively for inventory.internal with node2's address, and forwarding all other queries upstream",
+      "status": "satisfied",
+      "summary": "Ansible-applied VyOS config sets service dns forwarding listen-address 10.100.246.10, allow-from 10.100.246.0/24, upstream name-servers 1.1.1.1 and 9.9.9.9, and authoritative-domain inventory.internal -> a @ address 10.100.246.11 (cmd-8b074c5ed7ab4b0a). pdns_recursor confirmed listening on node1's LAN IP:53 (cmd-17e3367eef554a90). Functional verification from node3 shows inventory.internal resolving to 10.100.246.11 and example.com resolving via upstream forwarding (cmd-7812f057f46f4106), confirming both the authoritative record and upstream forwarding behavior end-to-end.",
+      "evidence_ids": [
+        "cmd-8b074c5ed7ab4b0a",
+        "cmd-17e3367eef554a90",
+        "cmd-7812f057f46f4106",
+        "cmd-491cd8c950674c0c"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node2 and node3 are configured to resolve through node1",
+      "status": "satisfied",
+      "summary": "Playbook used community.general.nmcli to set DNS to 10.100.246.10 and disable auto-DNS on both nodes; resolv.conf on both shows 'nameserver 10.100.246.10' (cmd-8b074c5ed7ab4b0a play 2 output, cmd-f7bbaac4c5544207, cmd-117562504ab843a1). Resolution of inventory.internal and example.com confirmed working through node1 on both clients, including after a subsequent reboot of each client, showing the configuration is durable.",
+      "evidence_ids": [
+        "cmd-8b074c5ed7ab4b0a",
+        "cmd-491cd8c950674c0c",
+        "cmd-7812f057f46f4106",
+        "cmd-f7bbaac4c5544207",
+        "cmd-117562504ab843a1"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Implementation is done using Ansible",
+      "status": "satisfied",
+      "summary": "An inventory.ini and playbook.yml were authored on the control node (node4) and executed with ansible-playbook, targeting node1 (VyOS) and node2/node3 (CentOS). The playbook was run successfully and re-run idempotently with no unexpected changes (cmd-8b074c5ed7ab4b0a, cmd-e18bc34d60e7478f).",
+      "evidence_ids": [
+        "cmd-24b6e989235a4d3a",
+        "cmd-37681d809fe14363",
+        "cmd-8b074c5ed7ab4b0a",
+        "cmd-e18bc34d60e7478f"
+      ]
+    },
+    {
+      "id": "req-4-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all managed nodes (node1-node4): pre-restart healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Each node has a captured pre-restart boot_id, a reboot command, a post-restart boot_id that differs from baseline, and recovered functional state: node1 (baseline 9d3cb897 -> 92115f91, cmd-30df2e48f7d44cd8/cmd-54c9c6450c804eb4/cmd-c127eeeb7ade4e5a/cmd-9529a0ff5828431d, pdns-recursor active and config persisted in /config/config.boot); node2 (4cee4ea8 -> 8c759735, cmd-32d744e3dc6c48b2/cmd-c9a75bb34bc048a7/cmd-45184ac4644f4cb9/cmd-f7bbaac4c5544207, resolv.conf and resolution intact); node3 (71f12f87 -> c4a83014, cmd-898bae27b11a4e07/cmd-be6bde51cfc746f8/cmd-25e8fb65ef4d4fc5/cmd-117562504ab843a1); node4 (d3d54083 -> c754bd17, cmd-3a9664b7984945cd/cmd-2c1cd6c125674192/cmd-dd05b56488d540d7/cmd-e18bc34d60e7478f, full playbook re-run succeeded). Fixed lifecycle boot-identity snapshots (global:after_executor:*:boot-identity) independently corroborate all four changed boot IDs. One quality caveat: after_executor snapshots show a new 'NetworkManager-wait-online.service' failed unit on node2 and node3 post-restart that was not present at baseline; this is noted as a limitation but the core DNS client functionality was still verified working post-restart.",
+      "evidence_ids": [
+        "cmd-30df2e48f7d44cd8",
+        "cmd-54c9c6450c804eb4",
+        "cmd-c127eeeb7ade4e5a",
+        "cmd-9529a0ff5828431d",
+        "cmd-32d744e3dc6c48b2",
+        "cmd-c9a75bb34bc048a7",
+        "cmd-45184ac4644f4cb9",
+        "cmd-f7bbaac4c5544207",
+        "cmd-898bae27b11a4e07",
+        "cmd-be6bde51cfc746f8",
+        "cmd-25e8fb65ef4d4fc5",
+        "cmd-117562504ab843a1",
+        "cmd-3a9664b7984945cd",
+        "cmd-2c1cd6c125674192",
+        "cmd-dd05b56488d540d7",
+        "cmd-e18bc34d60e7478f",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully implemented node1 as an authoritative+forwarding DNS resolver for inventory.internal (pointing to node2) with upstream forwarding, and pointed node2/node3 at it via Ansible, with functional verification of both authoritative and forwarded resolution. The provider-wide restart protocol was completed for all four nodes with clear pre/post boot-identity evidence and recovered service/config state, corroborated by the fixed lifecycle snapshots. Hygiene is moderate: an unused root SSH key and a leftover temp script remain on node1 from abandoned troubleshooting approaches, and two CentOS nodes show a new failed NetworkManager-wait-online unit after reboot that wasn't investigated.",
+  "limitations": [
+    "NetworkManager-wait-online.service is shown as failed in the after_executor snapshot for node2 and node3 but was not investigated or explained by the executor; its impact on DNS resolution appears negligible based on the passing getent checks, but it is unexplained residual state from the restart cycle.",
+    "It cannot be fully confirmed from the trace whether /tmp/vyos_dns.sh and the root-added SSH key on node1 were ever removed, since no cleanup command targeting them was observed."
+  ],
+  "command_stats": {
+    "total": 84,
+    "successful": 73,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.6,
+    "summary": "Most exploratory/failed commands during VyOS 'configure' session troubleshooting (e.g. cmd-780a2428975543f4, cmd-e9dfe81682c64237, cmd-9e948103768d4005, cmd-04e8916c9d344c3a, cmd-c7dddd8ce7a24f9c) did not persist any state (commits failed or were rejected) and are acceptable diagnostic churn. However, three residue items stand out: (1) cmd-6a5ab5c61e734be4 added the cluster SSH public key to /root/.ssh/authorized_keys on node1 (VyOS) to test root SSH login; this path was abandoned in favor of the vyos user + become, so the root key remains as unused, unreferenced access residue that was never cleaned up. (2) cmd-4fb937bc90804203 wrote /tmp/vyos_dns.sh to node1 as part of an SSH-based workaround that was superseded by the become-based Ansible task; the script file was not removed afterward. (3) The after_executor lifecycle snapshot shows a new failed unit, NetworkManager-wait-online.service, on both node2 and node3 that was not present at baseline, surfacing only after the mandated restart cycle; this was not explicitly diagnosed or remediated by the executor. None of these are destructive, broad, or security-weakening beyond the unused root key, and core task functionality was unaffected, but they represent unresolved residue.",
+    "evidence_ids": [
+      "cmd-6a5ab5c61e734be4",
+      "cmd-4fb937bc90804203",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

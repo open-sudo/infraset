@@ -1,0 +1,87 @@
+---
+- name: Configure VyOS node1 as router between lan-a and lan-b
+  hosts: node1
+  gather_facts: false
+  vars:
+    lan_a_router_addr: 10.60.10.254/24
+    lan_b_router_addr: 10.60.20.254/24
+  tasks:
+    - name: Assign lan-a (eth1) and lan-b (eth2) addresses, commit and save
+      ansible.builtin.shell: |
+        source /opt/vyatta/etc/functions/script-template
+        configure
+        set interfaces ethernet eth1 address {{ lan_a_router_addr }}
+        set interfaces ethernet eth2 address {{ lan_b_router_addr }}
+        commit
+        save
+        exit
+      args:
+        executable: /bin/bash
+      register: vyos_result
+      changed_when: "'No changes' not in vyos_result.stdout"
+
+- name: Configure node2 lan-a interface and route to lan-b via node1
+  hosts: node2
+  become: true
+  vars:
+    lan_a_addr: 10.60.10.10/24
+    lan_a_gw: 10.60.10.254
+    lan_b_cidr: 10.60.20.0/24
+  tasks:
+    - name: Set static address on enp8s0 (lan-a) with route to lan-b
+      community.general.nmcli:
+        conn_name: "Wired connection 2"
+        ifname: enp8s0
+        type: ethernet
+        method4: manual
+        ip4: "{{ lan_a_addr }}"
+        routes4:
+          - "{{ lan_b_cidr }} {{ lan_a_gw }}"
+        zone: trusted
+        autoconnect: true
+        state: present
+
+    - name: Activate lan-a connection
+      ansible.builtin.command: nmcli con up "Wired connection 2"
+      changed_when: true
+
+    - name: Put enp8s0 (lan-a) into the trusted firewalld zone so lan-b traffic is not filtered
+      ansible.posix.firewalld:
+        zone: trusted
+        interface: enp8s0
+        permanent: true
+        immediate: true
+        state: enabled
+
+- name: Configure node3 lan-b interface and route to lan-a via node1
+  hosts: node3
+  become: true
+  vars:
+    lan_b_addr: 10.60.20.10/24
+    lan_b_gw: 10.60.20.254
+    lan_a_cidr: 10.60.10.0/24
+  tasks:
+    - name: Set static address on enp8s0 (lan-b) with route to lan-a
+      community.general.nmcli:
+        conn_name: "Wired connection 2"
+        ifname: enp8s0
+        type: ethernet
+        method4: manual
+        ip4: "{{ lan_b_addr }}"
+        routes4:
+          - "{{ lan_a_cidr }} {{ lan_b_gw }}"
+        zone: trusted
+        autoconnect: true
+        state: present
+
+    - name: Activate lan-b connection
+      ansible.builtin.command: nmcli con up "Wired connection 2"
+      changed_when: true
+
+    - name: Put enp8s0 (lan-b) into the trusted firewalld zone so lan-a traffic is not filtered
+      ansible.posix.firewalld:
+        zone: trusted
+        interface: enp8s0
+        permanent: true
+        immediate: true
+        state: enabled

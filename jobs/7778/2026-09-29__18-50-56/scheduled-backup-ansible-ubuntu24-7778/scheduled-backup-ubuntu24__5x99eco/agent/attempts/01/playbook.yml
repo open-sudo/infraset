@@ -1,0 +1,71 @@
+---
+- name: Generate dedicated backup SSH keypair on the backup target
+  hosts: backup_target
+  vars:
+    backup_key_path: /root/.ssh/inventory_backup_key
+  tasks:
+    - name: Ensure .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: "0700"
+
+    - name: Generate ed25519 keypair for the backup job (idempotent)
+      ansible.builtin.command:
+        cmd: ssh-keygen -t ed25519 -f {{ backup_key_path }} -N "" -C "inventory-backup@node1"
+        creates: "{{ backup_key_path }}"
+
+    - name: Read generated public key
+      ansible.builtin.slurp:
+        src: "{{ backup_key_path }}.pub"
+      register: backup_pubkey_raw
+
+    - name: Expose public key as a fact for later plays
+      ansible.builtin.set_fact:
+        backup_pubkey: "{{ backup_pubkey_raw.content | b64decode | trim }}"
+
+- name: Authorize the backup target's key on the backup source
+  hosts: backup_source
+  tasks:
+    - name: Install node1's backup public key into node2's authorized_keys
+      ansible.builtin.authorized_key:
+        user: root
+        state: present
+        key: "{{ hostvars[groups['backup_target'][0]].backup_pubkey }}"
+        comment: inventory-backup-from-node1
+
+- name: Deploy the nightly inventory backup job on the backup target
+  hosts: backup_target
+  vars:
+    backup_key_path: /root/.ssh/inventory_backup_key
+    backup_dest_dir: /var/backups/inventory
+    backup_source_dir: /srv/inventory/data
+    backup_retain_days: 7
+    backup_source_host: "{{ hostvars[groups['backup_source'][0]].ansible_host }}"
+    backup_script_path: /usr/local/sbin/inventory-backup.sh
+    backup_ssh_key: "{{ backup_key_path }}"
+  tasks:
+    - name: Ensure backup destination directory exists
+      ansible.builtin.file:
+        path: "{{ backup_dest_dir }}"
+        state: directory
+        mode: "0750"
+        owner: root
+        group: root
+
+    - name: Deploy the backup script
+      ansible.builtin.template:
+        src: templates/inventory-backup.sh.j2
+        dest: "{{ backup_script_path }}"
+        mode: "0750"
+        owner: root
+        group: root
+
+    - name: Install the nightly cron job
+      ansible.builtin.cron:
+        name: "Nightly inventory data backup (node2 -> node1)"
+        minute: "0"
+        hour: "2"
+        user: root
+        job: "{{ backup_script_path }} >> /var/log/inventory-backup.log 2>&1"
+        state: present

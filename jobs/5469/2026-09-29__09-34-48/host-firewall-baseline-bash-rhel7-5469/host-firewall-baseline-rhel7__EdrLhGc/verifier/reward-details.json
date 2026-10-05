@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Enable a persistent (survives reload/permanent config) firewall on node1",
+      "status": "satisfied",
+      "summary": "firewalld was active/enabled at baseline; executor added --permanent rules and reloaded (cmd-0d50fd980ebc42fb), then verified both runtime and --permanent firewall-cmd --list-all show the rules (cmd-1bc8ae4e16f3497d), and systemctl is-enabled firewalld returns 'enabled'.",
+      "evidence_ids": [
+        "cmd-ed2d7f30b4db413f",
+        "cmd-0d50fd980ebc42fb",
+        "cmd-1bc8ae4e16f3497d"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Firewall permits SSH",
+      "status": "satisfied",
+      "summary": "ssh service present in both runtime and permanent zone config before and after the change; iptables IN_public_allow shows ACCEPT for tcp dport 22.",
+      "evidence_ids": [
+        "cmd-ed2d7f30b4db413f",
+        "cmd-1bc8ae4e16f3497d",
+        "cmd-a625963e78b14bf2"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Firewall permits TCP port 8080",
+      "status": "satisfied",
+      "summary": "firewall-cmd --permanent --add-port=8080/tcp applied and reloaded; runtime and permanent config list 8080/tcp; iptables IN_public_allow shows ACCEPT for tcp dport 8080; a live connect test to a real listener on 8080 succeeded (cmd-6bf84e57b6084174).",
+      "evidence_ids": [
+        "cmd-0d50fd980ebc42fb",
+        "cmd-1bc8ae4e16f3497d",
+        "cmd-a625963e78b14bf2",
+        "cmd-6bf84e57b6084174"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Firewall rejects unrelated inbound connections",
+      "status": "satisfied",
+      "summary": "iptables INPUT chain falls through to a final REJECT --reject-with icmp-host-prohibited rule after the allow chain (cmd-386f6cb7b2f046f5); a live connection attempt to an unrelated port (9999) was refused both before and after reboot (cmd-6bf84e57b6084174, cmd-b17445975a8e4c8a).",
+      "evidence_ids": [
+        "cmd-386f6cb7b2f046f5",
+        "cmd-6bf84e57b6084174",
+        "cmd-b17445975a8e4c8a"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Configuration and enforcement persist across a reboot",
+      "status": "satisfied",
+      "summary": "Healthy baseline captured (boot_id 33b0e84c..., firewalld active/enabled, ssh+ only) prior to restart (cmd-bdabb579dca04908); reboot was acknowledged and actually occurred, evidenced by a changed boot_id (7c2a91c8...) after reconnect (cmd-5c971f891bef4303, cmd-cd7c3d60b6d74e61, cmd-8c8e6d4903614548); post-reboot state shows firewalld active/enabled with the same permanent ssh+8080/tcp configuration (cmd-d32a823d04484d76), and a fresh live connectivity test after reboot again shows 8080 accepting and 9999 refused (cmd-874b60c2cbba49f5, cmd-b17445975a8e4c8a), directly demonstrating the required pre-disruption/disruption/recovery transition.",
+      "evidence_ids": [
+        "cmd-bdabb579dca04908",
+        "cmd-5c971f891bef4303",
+        "cmd-cd7c3d60b6d74e61",
+        "cmd-8c8e6d4903614548",
+        "cmd-d32a823d04484d76",
+        "cmd-874b60c2cbba49f5",
+        "cmd-b17445975a8e4c8a",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task \u2014 a persistent firewalld configuration on node1 permitting SSH and TCP/8080 while rejecting all other inbound traffic \u2014 are satisfied with direct, corroborating evidence: firewall-cmd runtime and permanent listings, the underlying iptables ACCEPT/REJECT chain, and live TCP connection tests distinguishing an allowed port (8080) from a rejected one (9999). The mandatory reboot-evidence protocol was also correctly executed and directly demonstrates the pre-restart healthy baseline, the restart transition (changed boot_id), and post-restart recovery of both firewalld state and enforced connectivity behavior, consistent with the fixed lifecycle boot-identity snapshots. The only minor issue is a small amount of leftover temporary log residue (/tmp/listener.log, /tmp/listener2.log, /tmp/reboot.log) from evidence-collection activities that was not cleaned up.",
+  "limitations": [
+    "Package-health checks timed out at both before-prepare and after-executor snapshots, so native package consistency could not be cross-checked as a hygiene signal.",
+    "It cannot be conclusively confirmed whether the first test listener process was terminated cleanly before the reboot, since the pkill cleanup command itself exited via signal (rc 143); this is inconsequential because the subsequent reboot would have removed any lingering process regardless.",
+    "No IPv6-specific connectivity test was captured, though the firewalld zone configuration and iptables rules shown apply to the active interface generally."
+  ],
+  "command_stats": {
+    "total": 20,
+    "successful": 14,
+    "failed": 6,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "The single required node restart (node1, also the only managed node) is well-evidenced: baseline boot_id/health, restart acknowledgement, changed boot_id, and recovered firewall/service state, matching the fixed before/after-executor boot-identity cross-check (33b0e84c... -> 7c2a91c8...). Several early state-changing attempts to verify port 8080 were bounded troubleshooting directly tied to producing the connectivity evidence required by the task (starting 'nc' which failed with command-not-found leaving no state, a failed python3 listener attempt with no mutation, then a working python listener in cmd-be7b0af5091e4580 and a second one post-reboot in cmd-874b60c2cbba49f5); these are legitimate, low-risk, and in-scope for collecting final evidence. However, cleanup was incomplete: the after-executor temporary-files snapshot shows /tmp/listener.log, /tmp/listener2.log, and /tmp/reboot.log left behind (not present at before-prepare), and the pkill cleanup command (cmd-65a088bec45a4c17) itself terminated with a signal (rc 143), so it is unclear the first listener process was cleanly killed before reload (though the subsequent reboot would have removed it regardless). This is minor, non-destructive residue from evidence-collection activity, not unrelated or risky mutation, so it is penalized lightly rather than heavily.",
+    "evidence_ids": [
+      "cmd-a625963e78b14bf2",
+      "cmd-2d9e87d05b0043f8",
+      "cmd-be7b0af5091e4580",
+      "cmd-65a088bec45a4c17",
+      "cmd-874b60c2cbba49f5",
+      "cmd-b17445975a8e4c8a",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

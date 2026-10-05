@@ -1,0 +1,59 @@
+{
+  "status": "completed",
+  "summary": "Created an SSH CA on node1, signed the host's ed25519 key into a certificate, configured sshd to present it via HostCertificate, diagnosed and fixed an SELinux mislabeling issue that initially blocked sshd from loading the cert, and verified end-to-end that a client trusting only the CA key (no pinned host key) connects successfully. Performed the mandatory single-node restart, confirming the boot identity changed and all state (sshd, certificate config, CA-trust connectivity) recovered afterward.",
+  "actions_performed": [
+    "Captured baseline: sshd active, existing host keys, boot_id/machine-id on node1 (cmd-5e2a1ad4104043a2)",
+    "Generated ED25519 SSH CA keypair at /etc/ssh/ca/ssh_ca on node1",
+    "Signed the host's ssh_host_ed25519_key.pub with the CA (ssh-keygen -s -h, principals node1/NODE_NAME/NODE_IP/localhost, 10y validity) into /etc/ssh/ssh_host_ed25519_key-cert.pub",
+    "Configured /etc/ssh/sshd_config with HostCertificate and HostKey directives, validated with sshd -t, restarted sshd (cmd-c529a913d0da46ec)",
+    "Diagnosed failure: sshd logged 'Could not load host certificate' because the cert file had SELinux context tmp_t instead of sshd_key_t (cmd-1012b120022e4ad6, cmd-17faa2ae00054854)",
+    "Fixed SELinux labeling via restorecon and restarted sshd; confirmed via ssh -vv that the server now offers ssh-ed25519-cert-v01@openssh.com and a client with only a @cert-authority line in known_hosts (no pinned host key) accepts and matches it (cmd-f3984e6548b64f22)",
+    "Ran a full authenticated SSH connection using CA-trust-only known_hosts plus the cluster keypair, confirming successful connect without host-key pinning (cmd-a78e7571de4049c1)",
+    "Captured pre-restart boot_id and healthy sshd/certificate state (cmd-62fa3b9d65be49bc)",
+    "Issued sudo systemctl reboot on node1, backgrounded so the acknowledgement returned before disconnect (cmd-e6a2cc1719954fe4)",
+    "Polled node1: first poll timed out (node down) (cmd-13f04eaa7e4149dc), second poll succeeded with a new boot_id, proving the restart occurred (cmd-3729cf5539ca4f6b)",
+    "Post-restart verification: sshd active, HostCertificate/HostKey config intact, cert file present with correct SELinux context, and a fresh CA-trust-only SSH client connection succeeded (cmd-ecdb5806a797422d)"
+  ],
+  "evidence": [
+    {
+      "requirement": "SSH CA created and host certificate generated and installed on node1",
+      "command_ids": [
+        "cmd-c529a913d0da46ec"
+      ],
+      "summary": "CA keypair generated, host ed25519 key signed into a 10-year host certificate with correct principals, sshd configured with HostCertificate/HostKey and restarted"
+    },
+    {
+      "requirement": "Client connects trusting only the CA, without pinning the host key",
+      "command_ids": [
+        "cmd-1012b120022e4ad6",
+        "cmd-17faa2ae00054854",
+        "cmd-f3984e6548b64f22",
+        "cmd-a78e7571de4049c1"
+      ],
+      "summary": "Initial attempt failed due to SELinux mislabeling (tmp_t) blocking sshd from loading the cert; after restorecon fix, ssh -vv debug output shows the server offering the ed25519 cert and the client (with only a @cert-authority line, no pinned host key) matching and trusting it; a full authenticated connection succeeded end-to-end"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline on node1",
+      "command_ids": [
+        "cmd-62fa3b9d65be49bc"
+      ],
+      "summary": "Captured boot_id dfdea52d..., sshd active, and certificate still valid/served before reboot"
+    },
+    {
+      "requirement": "Node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-e6a2cc1719954fe4",
+        "cmd-13f04eaa7e4149dc",
+        "cmd-3729cf5539ca4f6b"
+      ],
+      "summary": "systemctl reboot acknowledged and backgrounded before disconnect; node unreachable on first poll, then reachable with a new boot_id (4d100cc9...), proving a real restart"
+    },
+    {
+      "requirement": "Post-restart recovery of services, certificate config, and CA-trust connectivity",
+      "command_ids": [
+        "cmd-ecdb5806a797422d"
+      ],
+      "summary": "After reboot: sshd active, HostCertificate/HostKey directives intact, cert file present with correct SELinux context, and a fresh SSH connection using only CA-trust known_hosts succeeded"
+    }
+  ]
+}

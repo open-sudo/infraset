@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Deploy/run a 3-member MariaDB Galera cluster across node1, node2, node3 holding application data",
+      "status": "satisfied",
+      "summary": "Cluster was built from scratch (no pre-existing cluster), bootstrapped on node1, joined by node2/node3, and appdb.orders created with 3 committed rows. All three nodes directly confirmed wsrep_cluster_size=3, wsrep_cluster_status=Primary, wsrep_local_state_comment=Synced, with the data replicated and readable on every node.",
+      "evidence_ids": [
+        "cmd-b9388034098f4500",
+        "cmd-bfcd468bb0f04ded",
+        "cmd-ca852e2ba89e4e00",
+        "cmd-00911036d20140b3",
+        "cmd-31921fb3bc704a60",
+        "cmd-a51b4f3b3a794f51"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Cluster brought down completely for the maintenance window",
+      "status": "satisfied",
+      "summary": "mariadb was stopped in order (node3, node2, node1) with each node confirmed 'inactive' via systemctl is-active, directly demonstrating a full, bounded disruption. node1's grastate.dat was captured showing the highest seqno (11) with safe_to_bootstrap=1, correctly identifying the safe bootstrap source.",
+      "evidence_ids": [
+        "cmd-5a690d12b3b54e19",
+        "cmd-e7f9896bc35f49cc",
+        "cmd-9971ba1c578f4fe6",
+        "cmd-d06eee5d99d64b90",
+        "cmd-de9f26230d8e4ddc"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Cluster brought back up afterward with every committed write present and all three members serving again",
+      "status": "satisfied",
+      "summary": "node1 was bootstrapped (cluster_size=1, Primary), node2 joined (cluster_size=2), node3 joined (cluster_size=3), all Synced. All 3 pre-maintenance rows were directly verified present on node1, and replication to node2/node3 (including a new post-restart write) was directly confirmed by SELECT queries on each node, demonstrating both data durability and full 3-member service restoration.",
+      "evidence_ids": [
+        "cmd-dec5ac0ea2e443b5",
+        "cmd-0df1fa8989534ec8",
+        "cmd-b49873eb7ec34d10",
+        "cmd-d9f7149b9b154266",
+        "cmd-7c61815c7a0e401e",
+        "cmd-859ef9f8bf36473f"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Provider-wide node-restart evidence protocol on all managed nodes (independent check)",
+      "status": "satisfied",
+      "summary": "Each node (node3, node2, node1, sequentially) shows a pre-restart boot_id baseline, a native `reboot` acknowledgement, transient connection failures during the restart, a distinct post-restart boot_id, and recovered mariadb service in Synced state with cluster_size=3 and all data rows intact. The final boot_ids match the fixed after-executor snapshot boot-identity observations exactly, and a final cross-node write/read check after all three restarts confirms full quorum and data consistency.",
+      "evidence_ids": [
+        "cmd-0e2c5c9a97de4320",
+        "cmd-c9a58e90035c4c6d",
+        "cmd-d20305e5c4dd434a",
+        "cmd-5ce7ac8455b14baa",
+        "cmd-ea94fac9415d40ff",
+        "cmd-fe920d36e47a4121",
+        "cmd-37cfcada635341ee",
+        "cmd-a8ea53b627f54928",
+        "cmd-a62b086790b94135",
+        "cmd-64b3e24716174d0c",
+        "cmd-e90c512c52d94e62",
+        "cmd-e73f742352994e5f",
+        "cmd-ee9f452e3a734d29",
+        "cmd-ab5a024ae7de4b64",
+        "cmd-323ddf88602340e3",
+        "cmd-775d693aef0343e9",
+        "cmd-ce2fb7f20a694662",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a fresh 3-member MariaDB Galera cluster (none pre-existed), populated it with committed application data, performed a full clean shutdown of all three nodes for the maintenance window, and brought the cluster back up with every original committed write intact and all three nodes serving and Synced. The mandatory per-node reboot evidence protocol was also completed for all three nodes with directly observed pre/post boot-identity changes, service recovery, and data integrity, cross-verified against the fixed after-executor snapshot. One corrective mutation (a datadir wipe on node1 to fix a failed first bootstrap caused by a config-ordering bug) occurred before any application data existed and was reasonable; a generated credentials file was left in /root as minor residue. All material task outcomes are satisfied with direct, coherent evidence.",
+  "limitations": [
+    "The only cluster pre-check evidence for 'currently holding application data' comes from a freshly-created appdb.orders table rather than a pre-existing production dataset, since the task environment had no cluster or data at the start; this is consistent with the environment's fresh-build baseline rather than a gap in the executor's work.",
+    "Evidence for connection loss during each reboot relies on transport-level errno timeouts/resets rather than an explicit systemd shutdown log, though this is standard indirect evidence for a live reboot and is corroborated by the boot_id change and the fixed after-executor snapshot."
+  ],
+  "command_stats": {
+    "total": 78,
+    "successful": 67,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Command trace shows a mostly clean build with one legitimate corrective mutation and minor low-risk residue. During initial Galera bootstrap the executor discovered a config-ordering bug (99-galera-custom.cnf loaded before galera.cnf, so wsrep_on=0 silently won); it corrected this by renaming the file to sort last on all three nodes (cmd-f2b307729a7f4271, cmd-0ff52fc60da943dc, cmd-fad5a98edca9484d) and, on node1 only, ran `rm -rf /var/lib/mysql/*` to reset the datadir before re-bootstrapping (cmd-f2b307729a7f4271). This occurred before any application data existed (cluster_size was still 0/failed), so it is a bounded corrective action to fix a failed first attempt, not destructive of committed data. Firewall port openings (3306/4567/4568/4444) on all three nodes were necessary prerequisites for Galera replication and are retained, which is expected. A plaintext generated password was written to /root/.app_db_pw (cmd-cf9ae611d30041d0) and left in place; this is minor residue not requested by the task but low-risk (root-only file, not exposed). No failed services, no unrecovered mutations, and no unnecessary experiments unrelated to the outcome were observed; the after-executor snapshot confirms no failed-services and only expected new listening sockets (3306/4567 for mariadbd) plus expected bounded temp files.",
+    "evidence_ids": [
+      "cmd-f2b307729a7f4271",
+      "cmd-0ff52fc60da943dc",
+      "cmd-fad5a98edca9484d",
+      "cmd-cf9ae611d30041d0",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

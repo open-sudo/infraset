@@ -1,0 +1,88 @@
+{
+  "status": "completed",
+  "summary": "Configured PostgreSQL 16 streaming replication on node1 (primary, writable), node2 and node3 (standbys), all AlmaLinux 9.6. Replication traffic is TLS-only over a self-signed cluster CA created for this task; the primary only accepts replication connections presenting a client certificate issued by that CA (hostssl + cert auth, verify-full). Falsification tests confirmed non-SSL, SSL-without-client-cert, and certs from an untrusted CA are all rejected, while CA-signed certs succeed. Completed the mandatory restart protocol on all three nodes (standbys first, primary last), each showing a changed boot_id and full recovery of the PostgreSQL service, replication streaming/slots, TLS client-cert identity, and replicated data.",
+  "actions_performed": [
+    "Installed PGDG repo and postgresql16-server/postgresql16 on node1, node2, node3",
+    "Generated a cluster CA (ca.key/ca.crt) on node1; issued server certs for node1/node2/node3 (CN+SAN) and a client cert for role 'replicator' (CN=replicator), all signed by the CA",
+    "Distributed CA cert, server certs, and replicator client cert to each node's PGDATA over cluster SSH; fixed ownership/permissions",
+    "Configured postgresql.conf on all nodes: ssl=on with ssl_cert_file/ssl_key_file/ssl_ca_file, wal_level=replica, max_wal_senders, max_replication_slots, hot_standby",
+    "Configured pg_hba.conf on node1 to accept replication only via hostssl+cert auth from node2/node3 IPs, rejecting all other replication attempts",
+    "Opened firewalld port 5432/tcp on all three nodes",
+    "Started node1 as primary; created 'replicator' role, two physical replication slots, and appdb.demo table with baseline data",
+    "Ran pg_basebackup -R from node1 to node2 and node3 over verify-full TLS using the replicator client cert; wired primary_conninfo/primary_slot_name; started both as standbys",
+    "Verified live replication (insert on primary visible on both standbys) and pg_stat_ssl showing ssl=t, client_dn=/CN=replicator",
+    "Falsified security controls: sslmode=disable rejected (no encryption), sslmode=require without client cert rejected (valid client certificate required), cert signed by a rogue CA rejected (unknown ca), CA-signed cert succeeded",
+    "Executed mandatory restart protocol: captured boot_id + health baseline on all nodes, restarted node2, node3, then node1 one at a time via 'sudo reboot', polled until exec available, confirmed changed boot_id and full recovery (service active, replication streaming/slots re-established over TLS, data consistent) after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "PostgreSQL installed and streaming replication configured node1(primary)->node2/node3(standbys)",
+      "command_ids": [
+        "cmd-fa13d326e6894101",
+        "cmd-997b8ffefb344846",
+        "cmd-75bb824838ea4d2d",
+        "cmd-c73e92fbf83045d6",
+        "cmd-fabb91d26caf4f3e",
+        "cmd-abd0e73a5d094bea",
+        "cmd-06affe202f0e412e",
+        "cmd-9b31da89ab2749a3",
+        "cmd-a4e1da589065416e"
+      ],
+      "summary": "PG16 installed on all nodes; node1 started as primary with replicator role/slots; base backups streamed to node2/node3 which came up in recovery; inserted row on primary replicated to both standbys"
+    },
+    {
+      "requirement": "Replication traffic carried over TLS using a cluster-created CA",
+      "command_ids": [
+        "cmd-f8b51914a9fd4c37",
+        "cmd-945f7b8488aa4e85",
+        "cmd-23ccb7675f5c4d80",
+        "cmd-b56c6648bd654e0f"
+      ],
+      "summary": "Generated CA and per-node/client certs signed by it; pg_stat_ssl confirms ssl=t and client_dn=/CN=replicator for both standby connections, both before and after node2 restart"
+    },
+    {
+      "requirement": "Only accept replication connections presenting a certificate issued by the cluster CA",
+      "command_ids": [
+        "cmd-70a9b1babc9f443a",
+        "cmd-506268fa4599457e",
+        "cmd-437af204eaa74342",
+        "cmd-fc91ae9607cd45d4"
+      ],
+      "summary": "Falsification: no-SSL replication rejected ('no encryption'), SSL without client cert rejected ('valid client certificate' required), CA-signed cert succeeds, rogue self-signed cert rejected ('unknown ca')"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, changed boot identity, recovered primary + replication",
+      "command_ids": [
+        "cmd-b47beebbb4fb4a7f",
+        "cmd-08d4a97885064ad3",
+        "cmd-ce1663198c364e01",
+        "cmd-b06b98cb22e74e8b",
+        "cmd-bdf9d51f72e24268",
+        "cmd-21b5a2a4790d4714"
+      ],
+      "summary": "Baseline boot_id d2c97bf5...; reboot acknowledged then connection dropped; post-restart boot_id 847eeb54... (changed); primary active, not in recovery, both standbys reconnected over TLS with CA cert, new insert replicated to both standbys"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, changed boot identity, recovered standby + rejoined replication",
+      "command_ids": [
+        "cmd-2a2a198af12646bb",
+        "cmd-5fc87689a68542c9",
+        "cmd-e68808094d994328",
+        "cmd-45d846054f104670",
+        "cmd-50d9dc520b1d47f8"
+      ],
+      "summary": "Baseline boot_id 18d6ac04...; reboot issued (stream closed); connection timed out mid-reboot; post-restart boot_id 5415665d... (changed); service active, pg_is_in_recovery=t, data intact"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, changed boot identity, recovered standby + rejoined replication",
+      "command_ids": [
+        "cmd-d64cbd6b86a64103",
+        "cmd-1945210fcdf74f8c",
+        "cmd-afcb780f68e04b7f",
+        "cmd-155522632b2646e4",
+        "cmd-e69746e89023438a"
+      ],
+      "summary": "Baseline boot_id d527ba47...; reboot issued (stream closed); connection timed out mid-reboot; post-restart boot_id 97d8792d... (changed); service active, pg_is_in_recovery=t, data intact"
+    }
+  ]
+}

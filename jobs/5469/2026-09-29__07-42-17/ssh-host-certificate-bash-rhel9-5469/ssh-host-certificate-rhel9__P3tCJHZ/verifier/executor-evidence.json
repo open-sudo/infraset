@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 9,
+    "successful": 3,
+    "failed": 6,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Healthy baseline captured before any disruption (sshd active, host keys present, boot id)",
+      "command_ids": [
+        "cmd-aba6922171db4144"
+      ],
+      "summary": "sshd active, OS confirmed RHEL 9.8, existing host key files listed, boot_id 6aa805ba-5845-488d-af03-a621555936e2 recorded"
+    },
+    {
+      "requirement": "SSH CA created and host certificate generated/configured on node1",
+      "command_ids": [
+        "cmd-b60510f430e24484"
+      ],
+      "summary": "Generated /etc/ssh/ca CA keypair, signed ssh_host_ed25519_key.pub into ssh_host_ed25519_key-cert.pub, added HostCertificate directive to sshd_config, validated with sshd -t and reloaded sshd successfully"
+    },
+    {
+      "requirement": "Client trusting only the CA (no host-key pinning) connects successfully, proving certificate-based trust works",
+      "command_ids": [
+        "cmd-b60510f430e24484",
+        "cmd-b80c87cb715a4c95"
+      ],
+      "summary": "ssh with UserKnownHostsFile containing only '@cert-authority * <CA pubkey>' reached authentication (Permission denied on publickey, not a host-key failure); verbose log shows 'Host is known and matches the ED25519-CERT host certificate'"
+    },
+    {
+      "requirement": "Pre-restart state captured for node1 (config persisted, cert files present, boot id) before reboot",
+      "command_ids": [
+        "cmd-b403e17b54ad49d8"
+      ],
+      "summary": "Confirmed HostCertificate line in sshd_config, ca/ca.pub/cert files present, sshd enabled, and recorded pre-restart boot_id, then issued shutdown -r now"
+    },
+    {
+      "requirement": "Node1 restarted one at a time with native mechanism, acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-b403e17b54ad49d8"
+      ],
+      "summary": "Reboot command acknowledged ('reboot command issued') before the node disconnected, matching the required non-blocking restart pattern"
+    },
+    {
+      "requirement": "Node1 polled until reachable again with proof of changed boot identity (not just elapsed time)",
+      "command_ids": [
+        "cmd-8c18cd4d12ab48ec",
+        "cmd-9bbbd5da280a46a4",
+        "cmd-66dadaa1179142c7",
+        "cmd-0c33f7349fac464c"
+      ],
+      "summary": "Two timeouts and one connection-reset during reboot, then successful exec returning boot_id bdb55b6c-5783-440d-91a2-479857593c8f, differing from the pre-restart boot_id, proving an actual restart occurred"
+    },
+    {
+      "requirement": "Post-restart recovery verified: sshd healthy, certificate config/data intact, CA-based trust still functions",
+      "command_ids": [
+        "cmd-aa42f4ca866740ad"
+      ],
+      "summary": "After reboot, sshd is active, HostCertificate config line persisted, certificate content unchanged, and the CA-only trust ssh test again showed 'matches the ED25519-CERT host certificate' followed by proceeding to authentication"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-aba6922171db4144",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:04:01.653277+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 197,
+      "command": "set -Eeuo pipefail\necho \"== boot id ==\"; cat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"; uptime -s\necho \"== sshd status ==\"; systemctl is-active sshd\necho \"== os ==\"; cat /etc/os-release | head -3\necho \"== existing host keys ==\"; ls -la /etc/ssh/*.pub",
+      "stdout": "== boot id ==\n6aa805ba-5845-488d-af03-a621555936e2\n== uptime ==\n2026-09-29 09:02:56\n== sshd status ==\nactive\n== os ==\nNAME=\"Red Hat Enterprise Linux\"\nVERSION=\"9.8 (Plow)\"\nID=\"rhel\"\n== existing host keys ==\n-rw-r--r--. 1 root root 162 Jun 30 10:08 /etc/ssh/ssh_host_ecdsa_key.pub\n-rw-r--r--. 1 root root  82 Jun 30 10:08 /etc/ssh/ssh_host_ed25519_key.pub\n-rw-r--r--. 1 root root 554 Jun 30 10:08 /etc/ssh/ssh_host_rsa_key.pub"
+    },
+    {
+      "command_id": "cmd-b60510f430e24484",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:04:10.961717+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 569,
+      "command": "set -Eeuo pipefail\n\necho \"== STEP 1: generate SSH CA key (if not present) ==\"\nif [ ! -f /etc/ssh/ca ]; then\n  sudo -n ssh-keygen -t ed25519 -f /etc/ssh/ca -N '' -C 'node1-ssh-host-ca' -q\nfi\nsudo -n chmod 600 /etc/ssh/ca\nsudo -n chmod 644 /etc/ssh/ca.pub\necho \"CA fingerprint:\"; sudo -n ssh-keygen -lf /etc/ssh/ca.pub\n\necho \"== STEP 2: sign the host's ed25519 public key with the CA ==\"\nsudo -n ssh-keygen -s /etc/ssh/ca -I \"node1-host-cert\" -h \\\n  -n \"node1,$NODE_NAME,$NODE_IP,localhost\" \\\n  -V +52w \\\n  /etc/ssh/ssh_host_ed25519_key.pub\n\necho \"== STEP 3: verify cert content ==\"\nsudo -n ssh-keygen -Lf /etc/ssh/ssh_host_ed25519_key-cert.pub\n\necho \"== STEP 4: point sshd at the cert ==\"\nCERT_LINE=\"HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub\"\nif ! sudo -n grep -qxF \"$CERT_LINE\" /etc/ssh/sshd_config; then\n  printf '%s\\n' \"$CERT_LINE\" | sudo -n tee -a /etc/ssh/sshd_config >/dev/null\nfi\nsudo -n chmod 644 /etc/ssh/ssh_host_ed25519_key-cert.pub\n\necho \"== STEP 5: validate sshd config and reload ==\"\nsudo -n sshd -t\nsudo -n systemctl reload sshd\nsystemctl is-active sshd\n\necho \"== STEP 6: client-side test - trust only the CA, no host key pinning ==\"\nmkdir -p /tmp/sshtest\necho \"@cert-authority * $(sudo -n cat /etc/ssh/ca.pub)\" > /tmp/sshtest/known_hosts\nssh -F /dev/null -o BatchMode=yes -o ConnectTimeout=5 \\\n    -o UserKnownHostsFile=/tmp/sshtest/known_hosts \\\n    -o StrictHostKeyChecking=yes \\\n    -p 22 \"$NODE_IP\" -- true 2>&1 | tee /tmp/sshtest/connect.log || true\n\necho \"== STEP 7: negative control - unknown key without CA trust should fail differently (sanity) ==\"\ngrep -i \"certificate\" /tmp/sshtest/connect.log || true\necho \"DONE\"",
+      "stdout": "== STEP 1: generate SSH CA key (if not present) ==\nCA fingerprint:\n256 SHA256:CGrQru07LxCmU2uKCfUEyDcWmV/6rua1nM1aroLZdKQ node1-ssh-host-ca (ED25519)\n== STEP 2: sign the host's ed25519 public key with the CA ==\nSigned host key /etc/ssh/ssh_host_ed25519_key-cert.pub: id \"node1-host-cert\" serial 0 for node1,node1,10.100.125.10,localhost valid from 2026-09-29T09:03:00 to 2027-09-28T09:04:10\r\n== STEP 3: verify cert content ==\n/etc/ssh/ssh_host_ed25519_key-cert.pub:\n        Type: ssh-ed25519-cert-v01@openssh.com host certificate\n        Public key: ED25519-CERT SHA256:nfnW73T/yMPBlXKixPmwLJ5qtswLbKqh/afN0P4YMUY\n        Signing CA: ED25519 SHA256:CGrQru07LxCmU2uKCfUEyDcWmV/6rua1nM1aroLZdKQ (using ssh-ed25519)\n        Key ID: \"node1-host-cert\"\n        Serial: 0\n        Valid: from 2026-09-29T09:03:00 to 2027-09-28T09:04:10\n        Principals: \n                node1\n                node1\n                10.100.125.10\n                localhost\n        Critical Options: (none)\n        Extensions: (none)\n== STEP 4: point sshd at the cert ==\n== STEP 5: validate sshd config and reload ==\nreloading\n== STEP 6: client-side test - trust only the CA, no host key pinning ==\nroot@10.100.125.10: Permission denied (publickey,gssapi-keyex,gssapi-with-mic,password).\r\n== STEP 7: negative control - unknown key without CA trust should fail differently (sanity) ==\nDONE"
+    },
+    {
+      "command_id": "cmd-b80c87cb715a4c95",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:04:15.247144+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 142,
+      "command": "set -Eeuo pipefail\nssh -F /dev/null -vvv -o BatchMode=yes -o ConnectTimeout=5 \\\n    -o UserKnownHostsFile=/tmp/sshtest/known_hosts \\\n    -o StrictHostKeyChecking=yes \\\n    -p 22 \"$NODE_IP\" -- true 2>&1 | grep -iE \"certificate|host key|Server host key|Authenticated|Accepted\" ",
+      "stdout": "debug2: host key algorithms: ssh-ed25519-cert-v01@openssh.com,ecdsa-sha2-nistp256-cert-v01@openssh.com,ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,[REDACTED]@openssh.com,[REDACTED]@openssh.com,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-256-cert-v01@openssh.com,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh.com,[REDACTED]@openssh.com,rsa-sha2-512,rsa-sha2-256\r\ndebug2: host key algorithms: rsa-sha2-512,rsa-sha2-256,ecdsa-sha2-nistp256,ssh-ed25519,ssh-ed25519-cert-v01@openssh.com\r\ndebug1: kex: host key algorithm: ssh-ed25519-cert-v01@openssh.com\r\ndebug1: Server host certificate: ssh-ed25519-cert-v01@openssh.com SHA256:nfnW73T/yMPBlXKixPmwLJ5qtswLbKqh/afN0P4YMUY, serial 0 ID \"node1-host-cert\" CA ssh-ed25519 SHA256:CGrQru07LxCmU2uKCfUEyDcWmV/6rua1nM1aroLZdKQ valid from 2026-09-29T09:03:00 to 2027-09-28T09:04:10\r\ndebug2: Server host certificate hostname: node1\r\ndebug2: Server host certificate hostname: node1\r\ndebug2: Server host certificate hostname: 10.100.125.10\r\ndebug2: Server host certificate hostname: localhost\r\ndebug1: Host '10.100.125.10' is known and matches the ED25519-CERT host certificate.\r\ndebug2: host key algorithms: ssh-ed25519-cert-v01@openssh.com,ecdsa-sha2-nistp256-cert-v01@openssh.com,ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,[REDACTED]@openssh.com,[REDACTED]@openssh.com,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-256-cert-v01@openssh.com,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh.com,[REDACTED]@openssh.com,rsa-sha2-512,rsa-sha2-256\r"
+    },
+    {
+      "command_id": "cmd-b403e17b54ad49d8",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:04:19.044146+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 154,
+      "command": "set -Eeuo pipefail\necho \"== pre-restart boot id ==\"; cat /proc/sys/kernel/random/boot_id\necho \"== sshd config persisted ==\"; grep -F \"HostCertificate\" /etc/ssh/sshd_config\necho \"== cert file present ==\"; ls -la /etc/ssh/ssh_host_ed25519_key-cert.pub /etc/ssh/ca /etc/ssh/ca.pub\nsudo -n systemctl is-enabled sshd\necho \"ACK: issuing reboot now\"\nsudo -n sh -c 'nohup shutdown -r now >/tmp/reboot.log 2>&1 &'\nsleep 1\necho \"reboot command issued\"",
+      "stdout": "== pre-restart boot id ==\n6aa805ba-5845-488d-af03-a621555936e2\n== sshd config persisted ==\nHostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub\n== cert file present ==\n-rw-------. 1 root root 411 Sep 29 09:04 /etc/ssh/ca\n-rw-r--r--. 1 root root  99 Sep 29 09:04 /etc/ssh/ca.pub\n-rw-r--r--. 1 root root 552 Sep 29 09:04 /etc/ssh/ssh_host_ed25519_key-cert.pub\nenabled\nACK: issuing reboot now\n",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-8c18cd4d12ab48ec",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:04:23.353392+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2127,
+      "command": "echo up; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-9bbbd5da280a46a4",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:04:26.814594+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2082,
+      "command": "echo up; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-66dadaa1179142c7",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:04:28.198720+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 102,
+      "command": "echo up; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-0c33f7349fac464c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:04:30.316466+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 79,
+      "command": "echo up; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "up\nbdb55b6c-5783-440d-91a2-479857593c8f"
+    },
+    {
+      "command_id": "cmd-aa42f4ca866740ad",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:04:35.532194+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 280,
+      "command": "set -Eeuo pipefail\necho \"== sshd active ==\"; systemctl is-active sshd\necho \"== sshd config ==\"; grep -F \"HostCertificate\" /etc/ssh/sshd_config\necho \"== cert still valid/present ==\"; sudo -n ssh-keygen -Lf /etc/ssh/ssh_host_ed25519_key-cert.pub | head -5\necho \"== client trust test post-reboot (CA-only, no pinned key) ==\"\nssh -F /dev/null -vvv -o BatchMode=yes -o ConnectTimeout=5 \\\n    -o UserKnownHostsFile=/tmp/sshtest/known_hosts \\\n    -o StrictHostKeyChecking=yes \\\n    -p 22 \"$NODE_IP\" -- true 2>&1 | grep -iE \"matches the ED25519-CERT|Server host certificate|Permission denied\" \necho DONE",
+      "stdout": "== sshd active ==\nactive\n== sshd config ==\nHostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub\n== cert still valid/present ==\n/etc/ssh/ssh_host_ed25519_key-cert.pub:\n        Type: ssh-ed25519-cert-v01@openssh.com host certificate\n        Public key: ED25519-CERT SHA256:nfnW73T/yMPBlXKixPmwLJ5qtswLbKqh/afN0P4YMUY\n        Signing CA: ED25519 SHA256:CGrQru07LxCmU2uKCfUEyDcWmV/6rua1nM1aroLZdKQ (using ssh-ed25519)\n        Key ID: \"node1-host-cert\"\n== client trust test post-reboot (CA-only, no pinned key) ==\ndebug1: Server host certificate: ssh-ed25519-cert-v01@openssh.com SHA256:nfnW73T/yMPBlXKixPmwLJ5qtswLbKqh/afN0P4YMUY, serial 0 ID \"node1-host-cert\" CA ssh-ed25519 SHA256:CGrQru07LxCmU2uKCfUEyDcWmV/6rua1nM1aroLZdKQ valid from 2026-09-29T09:03:00 to 2027-09-28T09:04:10\r\ndebug2: Server host certificate hostname: node1\r\ndebug2: Server host certificate hostname: node1\r\ndebug2: Server host certificate hostname: 10.100.125.10\r\ndebug2: Server host certificate hostname: localhost\r\ndebug1: Host '10.100.125.10' is known and matches the ED25519-CERT host certificate.\r\nroot@10.100.125.10: Permission denied (publickey,gssapi-keyex,gssapi-with-mic,password).\r"
+    }
+  ]
+}

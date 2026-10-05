@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node2 (lan-a) can reach node3 (lan-b) on TCP/5432",
+      "status": "satisfied",
+      "summary": "curl from node2 to http://10.50.2.10:5432/ returns http_code=200 in the initial functional test (cmd-cf024f4bff6749ad), and again after node1's restart (cmd-1a61e0ffea694ee6, post-restart 5432_http_code=200) and after all four nodes were restarted (cmd-5e6f7b36af624b22, http_code=200). VyOS hit counters on the LANA-TO-LANB accept rule also increment (cmd-499b91c33d144f44, cmd-6f27b83af1f54a09), confirming the packets traverse the intended rule.",
+      "evidence_ids": [
+        "cmd-cf024f4bff6749ad",
+        "cmd-1a61e0ffea694ee6",
+        "cmd-5e6f7b36af624b22",
+        "cmd-499b91c33d144f44",
+        "cmd-6f27b83af1f54a09"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "All other traffic between lan-a and lan-b is rejected",
+      "status": "satisfied",
+      "summary": "node2->node3:8000 curl returns http_code=000 and ICMP ping from node2 to node3 gets 'Destination Port Unreachable' from the VyOS router (cmd-cf024f4bff6749ad, cmd-5e6f7b36af624b22, repeated after restarts). A reverse-direction test (node3 initiating a new TCP connection into node2, which only has an established/related-only accept rule) results in a refused connection consistent with the VyOS reject-action RST (cmd-3c726205f6f54a43, cmd-285e7c7082bc410d). VyOS 'show firewall' output confirms both LANA-TO-LANB and LANB-TO-LANA rulesets have default-action reject with only the intended rule 10 permitted (cmd-f17a924f8e66441b, cmd-499b91c33d144f44).",
+      "evidence_ids": [
+        "cmd-cf024f4bff6749ad",
+        "cmd-5e6f7b36af624b22",
+        "cmd-3c726205f6f54a43",
+        "cmd-285e7c7082bc410d",
+        "cmd-f17a924f8e66441b",
+        "cmd-499b91c33d144f44"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Implementation is done via Ansible",
+      "status": "satisfied",
+      "summary": "An Ansible inventory and playbook (site.yml) were authored on control_node node4 and executed against node1/node2/node3 (cmd-960c1bab63a243c3, cmd-c828f44fcbe24d50, cmd-8aa3ab5d5abe4f8e). Syntax-check, ad-hoc ping, and full playbook runs all succeeded, and a later re-run was idempotent (no unexpected changes) (cmd-ded0b3cb06db4959, cmd-fa69fae847554815, cmd-3b6fb545a1f54199, cmd-443c1ceb5bf54263).",
+      "evidence_ids": [
+        "cmd-960c1bab63a243c3",
+        "cmd-c828f44fcbe24d50",
+        "cmd-8aa3ab5d5abe4f8e",
+        "cmd-ded0b3cb06db4959",
+        "cmd-fa69fae847554815",
+        "cmd-3b6fb545a1f54199",
+        "cmd-443c1ceb5bf54263"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all managed nodes (node1-4) with healthy baseline, restart, changed boot identity, and recovered functional state",
+      "status": "satisfied",
+      "summary": "For each node: a pre-restart boot_id and health baseline was captured, a background-delayed native reboot was issued and acknowledged before disconnect, the trace shows connection failures during the outage window, and a new boot_id was observed afterward (node1: 50503c5d...->9c1e95db..., node2: 180a78a0...->f296368e..., node3: aad96cc9...->9c7c90ae..., node4: 6fd57414...->d7d07726...), consistent with the fixed after-executor lifecycle snapshot. Functional/firewall/config state was re-verified post-restart on each node (interface/firewall config on node1, static IP+curl on node2, static IP+firewalld+curl on node3, ansible tooling+ping on node4).",
+      "evidence_ids": [
+        "cmd-6f27b83af1f54a09",
+        "cmd-1c946ae28a0c4d22",
+        "cmd-dab94ffc86b341b4",
+        "cmd-d2e9e6322e1d485e",
+        "cmd-1a61e0ffea694ee6",
+        "cmd-5ca02ac587d74100",
+        "cmd-86238e10f27f4a8c",
+        "cmd-f3e33f24be7d4e58",
+        "cmd-2a7791ba04094c59",
+        "cmd-b3e55432211c4449",
+        "cmd-bd568456a7de47b1",
+        "cmd-027848c800844c27",
+        "cmd-e9a7e5573e9245e9",
+        "cmd-5e6f7b36af624b22",
+        "cmd-b9f3cc8c5c734e5e",
+        "cmd-f6097c324a5746db",
+        "cmd-245983927d8548a0",
+        "cmd-ee903b2702574dae",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor implemented the required cross-LAN firewall policy entirely via an Ansible playbook run from node4, with direct, repeated functional evidence (before and after full restart of all four nodes) that node2 can reach node3 on TCP/5432 while all other cross-LAN traffic (other TCP ports, ICMP, and reverse-direction connections) is rejected by VyOS's zone-based firewall. The mandatory node-restart evidence protocol was completed for all four nodes with clear boot-identity changes and recovered functional state. Operational hygiene is good: the one non-firewall mutation (a firewalld rich-rule on node3) was a necessary fix for a real blocking issue discovered during verification, and all test listeners/captures were cleaned up, leaving only trivial /tmp log residue.",
+  "limitations": [
+    "The node1 (VyOS) restart evidence relies on repeated polling that surfaced expected connection-timeout/reset errors during the outage window rather than a single explicit 'down' observation, but the before/after boot_id change and functional re-verification make the transition clear.",
+    "The 'connection refused' result for node3-initiated traffic into node2 (cmd-285e7c7082bc410d) is plausible evidence of the VyOS reject-action RST but could theoretically also originate from node2's local stack; no packet capture was taken on that specific test to fully disambiguate the source of the RST.",
+    "Minor /tmp log residue (reboot.log, tcpdump.log) was left on node2 and node3 after the restart tests; this is low-risk and does not affect functional correctness."
+  ],
+  "command_stats": {
+    "total": 112,
+    "successful": 93,
+    "failed": 19,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "State-changing actions were tightly scoped to the task: nmcli static addressing on node2/node3 (required because lan-a/lan-b have dhcp:false), a VyOS zone-firewall config on node1 (the core requirement), and an additional firewalld rich-rule on node3 (cmd-8718747fb1464aec/cmd-443c1ceb5bf54263) added after discovering node3's local firewall independently blocked the allowed port \u2014 a legitimate corrective fix, not an unnecessary mutation. An initial attempt at the VyOS config used incorrect 'firewall name'/'interface' syntax and failed to commit (cmd-a2f02d8155024658), so no persisted bad state resulted; it was corrected in a follow-up run. Several ephemeral HTTP test listeners and one Python socket probe were started on node2/node3 for verification and were explicitly killed afterward (cmd-1887dda85d254969, cmd-1a08c0dde6de4e47, cmd-12349c09c0f14737, cmd-174a3467073a4684). tcpdump packet captures on node1 (cmd-4ca84ae804d64a39, cmd-cfc5298dd9d2437a) were read-only diagnostics and the processes were stopped (pkill) before task completion (cmd-ce9f545296f64328). Minor residue remains: /tmp/reboot.log and /tmp/tcpdump.log files left behind on node2/node3 (visible in after_executor temporary-files diff), a low-risk, non-destructive leftover from the restart helper scripts.",
+    "evidence_ids": [
+      "cmd-8718747fb1464aec",
+      "cmd-443c1ceb5bf54263",
+      "cmd-a2f02d8155024658",
+      "cmd-1887dda85d254969",
+      "cmd-1a08c0dde6de4e47",
+      "cmd-12349c09c0f14737",
+      "cmd-174a3467073a4684",
+      "cmd-4ca84ae804d64a39",
+      "cmd-ce9f545296f64328",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

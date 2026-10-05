@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-3-node",
+      "requirement": "Run a three-member MariaDB Galera cluster on node1/node2/node3 holding application data",
+      "status": "satisfied",
+      "summary": "node1 was bootstrapped as a Galera cluster founder (wsrep_cluster_status=Primary, wsrep_ready=ON) after the executor discovered the stock Ubuntu mariadb-server-10.0 package lacked wsrep support and switched to the official MariaDB 10.1 i386 repo. appdb.orders was seeded with data on node1. node2 and node3 were started and directly observed joining via automatic SST, with wsrep_cluster_size growing to 2 then 3, wsrep_local_state_comment=Synced on each, and SELECT queries confirming the seeded rows were present on both. A write issued on node3 was observed replicated back to node1, confirming multi-master behavior across the three-node cluster.",
+      "evidence_ids": [
+        "cmd-1b6155d462254dad",
+        "cmd-1c9ad623148b4675",
+        "cmd-ab76c01f9e544986",
+        "cmd-f5f9fe6e34284a8a",
+        "cmd-b5a8ce7f015f4583",
+        "cmd-bd815795134849cd",
+        "cmd-eb39cfaeab57414c",
+        "cmd-253dea8cf85e4fae",
+        "cmd-83864f7d8c2340df"
+      ]
+    },
+    {
+      "id": "node4-joins-with-data",
+      "requirement": "Add node4 as a fourth cluster member carrying the data that already exists",
+      "status": "satisfied",
+      "summary": "node4 was installed identically to the other nodes from the MariaDB 10.1 repo. An initial join attempt failed (wsrep_cluster_size=0, Disconnected, table not found) because node4's fresh install only included /etc/mysql/conf.d rather than the mariadb.conf.d path used for the galera config, silently dropping the wsrep options; this was directly diagnosed via my_print_defaults showing no wsrep options and corrected by moving the config file to the included conf.d path and reinitializing the datadir. After the fix, node4 joined with wsrep_cluster_size=4, wsrep_local_state_comment=Synced, wsrep_cluster_status=Primary, and a SELECT on appdb.orders returned all pre-existing rows seeded on node1 and replicated to node2/node3.",
+      "evidence_ids": [
+        "cmd-095a9879932e43d0",
+        "cmd-ae02d13dbf684007",
+        "cmd-680e3a10798641e4",
+        "cmd-450a22144d444f89",
+        "cmd-89d4399faba840d7",
+        "cmd-d4ad18ceda3f42cd"
+      ]
+    },
+    {
+      "id": "node4-accepts-writes",
+      "requirement": "node4 should accept writes like the other members",
+      "status": "satisfied",
+      "summary": "An INSERT was executed directly against node4's mysql instance, and the new row was immediately visible via SELECT on node1, node2, and node3, along with wsrep_cluster_size=4 confirmed on each, directly demonstrating that node4 accepts and replicates writes like the founding members.",
+      "evidence_ids": [
+        "cmd-a2e085d4964d404b",
+        "cmd-fe9492c3cf254993",
+        "cmd-e43f64ca869c4c87",
+        "cmd-3d6bd0bef4564415"
+      ]
+    },
+    {
+      "id": "provider-restart-protocol",
+      "requirement": "Independent provider-wide node-restart evidence protocol executed on every managed node (node1-node4)",
+      "status": "satisfied",
+      "summary": "For all four nodes, the trace shows a pre-restart boot_id and healthy wsrep/cluster-size baseline, an explicit restart acknowledgement via `systemctl reboot`, direct observation of a changed boot_id and low uptime after reconnection, and a recovered state showing mysql active, wsrep_cluster_status=Primary, wsrep_local_state_comment=Synced, wsrep_cluster_size=4, and intact appdb.orders data (via row count or full SELECT). Restarts were performed sequentially with only one node ever offline at a time, and a final cross-node write/read check after all four restarts (insert on node1, verified on node4) confirms end-to-end consistency was preserved through the full restart cycle. Boot-identity values in the fixed lifecycle snapshots (before_prepare/after_executor) match the executor's own baseline and final boot_id values for all four nodes, corroborating the restart evidence independently.",
+      "evidence_ids": [
+        "cmd-9b179433c64c47dc",
+        "cmd-5e983bee2bda41fc",
+        "cmd-5f2cded26bbd4b1f",
+        "cmd-4fb57da8624441f6",
+        "cmd-aebdfe9f6ee049b7",
+        "cmd-20ad0900008d411e",
+        "cmd-05f41675be5d4d7a",
+        "cmd-de1bd737050f4b8b",
+        "cmd-5783483f1216477b",
+        "cmd-dac59d7020894135",
+        "cmd-c82af97746ba47c9",
+        "cmd-b9700fa8216148ca",
+        "cmd-2cc8954144fe4805",
+        "cmd-db5474b21ff4424b",
+        "cmd-8a8f704969d547b7",
+        "cmd-916a1dde87b14c92",
+        "cmd-d8878d7c99f645ec",
+        "cmd-4ed1bcc53aeb4f60",
+        "cmd-73b7f506a3c64f20",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:before_prepare:node4:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a working four-member MariaDB Galera cluster from scratch, correctly diagnosing and working around an environment defect (the default Ubuntu i386 mariadb-server package lacking wsrep support) by switching to the official MariaDB 10.1 repository. All three core task outcomes \u2014 the initial three-node cluster holding application data, node4 joining with existing data intact, and node4 accepting and replicating writes \u2014 are directly and coherently evidenced by command output (wsrep status variables, SELECT results, and cross-node write propagation). The independently-required node-restart evidence protocol was also completed for all four nodes with clear before/after boot-identity, acknowledgement, and recovered-state evidence, corroborated by the fixed lifecycle snapshots. Numerous troubleshooting mutations occurred along the way, but each is traceable to a genuine, diagnosed obstacle and none left residue or unresolved failures in the final state.",
+  "limitations": [
+    "Quorum/availability during each individual node's restart (e.g., cluster status as observed from the other three nodes while one node was down) was not directly captured mid-restart; only the pre-restart baseline and post-restart recovered state on the restarting node itself were captured, so the transient degraded-quorum window is inferred from the executor's narrative rather than directly observed.",
+    "The wsrep_cluster_size=4 value reported immediately after each individual node's restart (before all four had been restarted) implies the other three nodes were already at cluster_size 4 pre-restart, which is consistent with the timeline, but no independent SHOW STATUS was captured on the non-restarting peers during each restart window to directly confirm they retained quorum throughout."
+  ],
+  "command_stats": {
+    "total": 138,
+    "successful": 110,
+    "failed": 28,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "The executor's command trace includes a substantial number of state-changing commands driven by real obstacles in this Ubuntu 16.04 i386 image (the stock mariadb-server-10.0 package genuinely lacked wsrep support, requiring purge/reinstall from the official MariaDB 10.1 repo; the postinst debconf failures required debconf-set-selections workarounds; node4's config include-path mismatch required moving the file and reinitializing its datadir). Each of these mutations traces to a diagnosed root cause and was necessary to reach the working cluster state, rather than being an abandoned experiment. The `rm -rf /var/lib/mysql/*` and `/var/lib/mysql` operations (cmd-2d18c005142d4ad4, cmd-d54ad66f2b014ec4, cmd-89d4399faba840d7) were performed on datadirs that were not yet holding committed application data at the time (pre-bootstrap or pre-join), so they are low-risk resets rather than destructive data loss. `systemctl enable mysql` failed on all four nodes (cmd-fee86fd7fc494c79 and siblings) due to a broken SysV/systemd symlink chain in the base image; the executor correctly used `update-rc.d`/verified rc2.d symlinks as a working alternative rather than leaving the failure unaddressed. The after-executor lifecycle snapshot shows no unexplained residue: differences from before-prepare are limited to expected boot-identity changes and transient systemd-private temp directories from the reboots, with no failed services, no unexpected listening sockets, and no reported package-health anomalies on any node.",
+    "evidence_ids": [
+      "cmd-2d18c005142d4ad4",
+      "cmd-d54ad66f2b014ec4",
+      "cmd-89d4399faba840d7",
+      "cmd-fee86fd7fc494c79",
+      "cmd-c3c2ded5b452408b",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node4:failed-services",
+      "global:after_executor:node4:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

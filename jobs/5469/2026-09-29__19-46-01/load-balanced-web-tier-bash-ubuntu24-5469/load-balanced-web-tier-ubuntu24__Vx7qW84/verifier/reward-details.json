@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Inventory web application running on node2, listening on port 8080",
+      "status": "satisfied",
+      "summary": "app.py deployed to /opt/inventory-app, systemd unit inventory-app.service created, enabled, and active; curl to 127.0.0.1:8080/inventory returned node2 JSON. Confirmed independently in the after_executor lifecycle snapshot showing python3 listening on 0.0.0.0:8080 on node2.",
+      "evidence_ids": [
+        "cmd-71db7620758348a4",
+        "cmd-21fa712d21614c19",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Inventory web application running on node3, listening on port 8080",
+      "status": "satisfied",
+      "summary": "Same app deployed and systemd-managed on node3; curl to 127.0.0.1:8080/inventory returned node3 JSON, confirmed active. Cross-checked by after_executor snapshot showing python3 on 0.0.0.0:8080 on node3.",
+      "evidence_ids": [
+        "cmd-4985ef4d3d0d4c28",
+        "cmd-17993b9fdd064591",
+        "global:after_executor:node3:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node1 load-balances incoming HTTP requests on port 80 across both backends (node2:8080, node3:8080)",
+      "status": "satisfied",
+      "summary": "nginx installed on node1, upstream block configured for 10.100.3.11:8080 and 10.100.3.12:8080, config validated (nginx -t) and reloaded. Repeated curl tests show requests alternating/splitting between node2 and node3 (10/10 split confirmed in a spaced 20-request test). after_executor snapshot confirms nginx listening on 0.0.0.0:80 and [::]:80 on node1.",
+      "evidence_ids": [
+        "cmd-98c8a0190ac14ec0",
+        "cmd-0d35afe8c3b24e8d",
+        "cmd-22e82eea587b4375",
+        "cmd-837164e02b73464c",
+        "cmd-896a55ad05ad4958",
+        "cmd-2b181ae1a7114b87",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "(Independent protocol) Provider-wide node-restart evidence for node2: pre-restart baseline, restart acknowledgement, changed boot identity, recovered service state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 17b362d1 captured with inventory-app active; systemctl reboot issued and acknowledged (stream closed as expected); post-restart boot_id cf564f63 differs from baseline, inventory-app active and serving again, and node1 continued/reconnected traffic to node2. Boot ids match the fixed before_prepare and after_executor snapshots for node2.",
+      "evidence_ids": [
+        "cmd-100b30b040dc4f3f",
+        "cmd-3d29072b89e44870",
+        "cmd-abefc7cefbf744cc",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "(Independent protocol) Provider-wide node-restart evidence for node3",
+      "status": "satisfied",
+      "summary": "Baseline boot_id c0691b74 captured with service active; reboot acknowledged; an immediate follow-up check failed with connection reset (node still rebooting, expected transient), then a subsequent check confirmed new boot_id 6844d1d8, inventory-app active, and node1 continuing to serve via node2 during the outage. Boot ids match fixed snapshots.",
+      "evidence_ids": [
+        "cmd-f37e5897b5274bb3",
+        "cmd-ad85c15d804c4bdd",
+        "cmd-565e90ab309a4cc9",
+        "cmd-34b60980f8a14e3f",
+        "cmd-73315981181c4bb6",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    },
+    {
+      "id": "req-6",
+      "requirement": "(Independent protocol) Provider-wide node-restart evidence for node1 (load balancer)",
+      "status": "satisfied",
+      "summary": "Baseline boot_id b19a635d captured with nginx active; reboot acknowledged; an immediate follow-up check failed with connection reset (expected transient during boot), then a subsequent check confirmed new boot_id 97bc4d10, nginx active and successfully proxying to node2. A final 10-request distribution check (6/4 split) confirms full LB recovery across both backends. Boot ids match fixed snapshots.",
+      "evidence_ids": [
+        "cmd-7a88ef9d86c34429",
+        "cmd-85fb0e0dab324609",
+        "cmd-69e2829fed9b4c13",
+        "cmd-8d072fbcc5c5449d",
+        "cmd-e15390911bfb4e78",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task contract are satisfied with direct evidence: the inventory app runs as a systemd-managed service on node2 and node3 (port 8080, verified via curl and listening-socket snapshots), and node1's nginx configuration load-balances port 80 traffic across both backends (verified via upstream config, validation, reload, and repeated distribution checks showing near-even splits). The independent provider-wide node-restart protocol was also executed and evidenced for all three nodes, each showing a pre-restart baseline, restart acknowledgement, a changed boot identity consistent with the fixed lifecycle snapshots, and recovered service/LB state after the restart, including continued availability of the surviving backend during each single-node outage.",
+  "limitations": [
+    "Load distribution checks used curl loops from node1 itself rather than an external client, so client-perceived load balancing was not independently verified from outside the cluster.",
+    "The nginx upstream uses default round-robin without health checks or failover directives (e.g., max_fails), so true automatic failover behavior if a backend becomes fully unresponsive (not just rebooted) was not exercised or evidenced."
+  ],
+  "command_stats": {
+    "total": 28,
+    "successful": 23,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.97,
+    "summary": "All state-changing commands map clearly to task requirements or the mandated restart protocol: app deployment and systemd unit creation on node2/node3 (cmd-71db7620758348a4, cmd-21fa712d21614c19, cmd-4985ef4d3d0d4c28, cmd-17993b9fdd064591), nginx install/config/reload on node1 (cmd-98c8a0190ac14ec0, cmd-0d35afe8c3b24e8d), and three sequential reboots for the restart protocol (cmd-3d29072b89e44870, cmd-ad85c15d804c4bdd, cmd-85fb0e0dab324609). Removal of the default nginx site was a necessary, low-risk step to avoid a conflicting default_server block. No unnecessary mutations, abandoned files, failed services, or unsafe exposure were found; after_executor snapshot shows failed-services empty on all nodes and package-health clean (dpkg). Temp file differences are only systemd-private directories tied to boot_id and are expected post-reboot artifacts, not residue.",
+    "evidence_ids": [
+      "cmd-0d35afe8c3b24e8d",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

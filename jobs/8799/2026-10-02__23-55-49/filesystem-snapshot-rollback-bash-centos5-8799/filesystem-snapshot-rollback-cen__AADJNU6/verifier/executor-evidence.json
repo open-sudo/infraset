@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 20,
+    "successful": 12,
+    "failed": 8,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Legacy OS and storage compatibility",
+      "command_ids": [
+        "cmd-eb4da03a9b204539",
+        "cmd-9c2215e5a37241c8"
+      ],
+      "summary": "Shows CentOS 5.11, kernel 2.6.18-398.el5, ext3 storage, available rsync, and the unchanged release/kernel after rollback."
+    },
+    {
+      "requirement": "Snapshot mechanism installed",
+      "command_ids": [
+        "cmd-91f32a551500469b"
+      ],
+      "summary": "Shows the snapshot utility, protected snapshot directories, and initial application data."
+    },
+    {
+      "requirement": "Earlier filesystem snapshot captured",
+      "command_ids": [
+        "cmd-24ef37d0f40a4ac1"
+      ],
+      "summary": "Shows snapshot inventory, SHA-256 hashes, ownership, permissions, sizes, and an empty live-versus-snapshot delta."
+    },
+    {
+      "requirement": "Directory modified and restored exactly",
+      "command_ids": [
+        "cmd-021c4312dda24d66",
+        "cmd-9c2215e5a37241c8"
+      ],
+      "summary": "Proves deliberate divergence, followed by restoration of original files, hashes, permissions, contents, deletion of the extra file, and an empty metadata-aware rsync delta."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-e49f5911e1f44580",
+        "cmd-e6d0b32d92b1450f",
+        "cmd-1e2a5d96c15a4c4f",
+        "cmd-7a86c7075fbe45a2"
+      ],
+      "summary": "Captures the healthy baseline boot ID and data, reboot acknowledgement, changed boot ID, and post-restart SSH, snapshot, data, OS, kernel, and filesystem recovery."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-eb4da03a9b204539",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:39:40.400850+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 365,
+      "command": "set -eu\nprintf 'NODE=%s IP=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf '%s\\n' '--- release/kernel ---'\ncat /etc/redhat-release\nuname -r\nprintf '%s\\n' '--- boot identity ---'\ncat /proc/sys/kernel/random/boot_id 2>/dev/null || cat /proc/stat | sed -n 's/^btime /btime=/p'\nprintf '%s\\n' '--- mounts/filesystems ---'\ndf -T / /srv 2>&1 || true\nmount\nprintf '%s\\n' '--- block/lvm ---'\ncommand -v lvs || true\ncommand -v vgs || true\ncommand -v lvcreate || true\n[ -x /sbin/lvs ] && /sbin/lvs --units m -o vg_name,lv_name,lv_size,origin,snap_percent 2>&1 || true\n[ -x /sbin/vgs ] && /sbin/vgs --units m -o vg_name,vg_size,vg_free 2>&1 || true\nprintf '%s\\n' '--- snapshot-capable tools ---'\nfor c in rsync cp tar sha256sum md5sum; do command -v \"$c\" || true; done\nprintf '%s\\n' '--- data ---'\nls -la /srv /srv/data 2>&1 || true\nfind /srv/data -xdev -maxdepth 3 -type f -print 2>/dev/null | sort | head -100",
+      "stdout": "NODE=node1 IP=10.100.28.10\n--- release/kernel ---\nCentOS release 5.11 (Final)\n2.6.18-398.el5\n--- boot identity ---\n5f58ac8e-9bcd-4197-8000-000000000000\n--- mounts/filesystems ---\nFilesystem    Type   1K-blocks      Used Available Use% Mounted on\n/dev/vda2     ext3    19537456   1093628  17435348   6% /\n/dev/vda2     ext3    19537456   1093628  17435348   6% /\n/dev/vda2 on / type ext3 (rw)\nproc on /proc type proc (rw)\nsysfs on /sys type sysfs (rw)\ndevpts on /dev/pts type devpts (rw,gid=5,mode=620)\n/dev/vda1 on /boot type ext3 (rw)\ntmpfs on /dev/shm type tmpfs (rw)\nnone on /proc/sys/fs/binfmt_misc type binfmt_misc (rw)\nsunrpc on /var/lib/nfs/rpc_pipefs type rpc_pipefs (rw)\n--- block/lvm ---\n--- snapshot-capable tools ---\n/usr/bin/rsync\n/bin/cp\n/bin/tar\n/usr/bin/sha256sum\n/usr/bin/md5sum\n--- data ---\nls: /srv/data: No such file or directory\n/srv:\ntotal 16\ndrwxr-xr-x  2 root root 4096 May 11  2011 .\ndrwxr-xr-x 25 root root 4096 Oct  3 00:19 ..\n"
+    },
+    {
+      "command_id": "cmd-96bff86748b844d5",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:40:12.288696+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 240,
+      "command": "set -eu\ninstall -d -m 0750 /srv/data\ninstall -d -m 0700 /srv/snapshots/data/.manifests\ncat > /usr/local/sbin/data-snapshot <<'ANTRIEB_SNAPSHOT_EOF'\n#!/bin/sh\nset -eu\nDATA=/srv/data\nROOT=/srv/snapshots/data\nusage() {\n    echo \"usage: $0 create|restore|list [snapshot-name]\" >&2\n    exit 2\n}\n[ $# -ge 1 ] || usage\naction=$1\ncase \"$action\" in\ncreate|restore)\n    [ $# -eq 2 ] || usage\n    name=$2\n    case \"$name\" in\n        ''|*[!A-Za-z0-9._-]*) echo \"invalid snapshot name\" >&2; exit 2 ;;\n    esac\n    ;;\nlist)\n    [ $# -eq 1 ] || usage\n    ;;\n*) usage ;;\nesac\nmkdir -p \"$ROOT/.manifests\"\ncase \"$action\" in\ncreate)\n    [ -d \"$DATA\" ] || { echo \"$DATA does not exist\" >&2; exit 1; }\n    dest=\"$ROOT/$name\"\n    [ ! -e \"$dest\" ] || { echo \"snapshot already exists: $name\" >&2; exit 1; }\n    tmp=\"$ROOT/.tmp-$name-$$\"\n    trap 'rm -rf \"$tmp\"' 0 1 2 15\n    mkdir \"$tmp\"\n    /usr/bin/rsync -a --delete \"$DATA/\" \"$tmp/\"\n    mv \"$tmp\" \"$dest\"\n    trap - 0 1 2 15\n    (cd \"$dest\" && find . -type f -print | LC_ALL=C sort | while IFS= read f; do /usr/bin/sha256sum \"$f\"; done) > \"$ROOT/.manifests/$name.sha256\"\n    echo \"created $name\"\n    ;;\nrestore)\n    src=\"$ROOT/$name\"\n    [ -d \"$src\" ] || { echo \"snapshot not found: $name\" >&2; exit 1; }\n    mkdir -p \"$DATA\"\n    /usr/bin/rsync -a --delete \"$src/\" \"$DATA/\"\n    pending=$(/usr/bin/rsync -ani --delete \"$src/\" \"$DATA/\")\n    [ -z \"$pending\" ] || { echo \"$pending\" >&2; exit 1; }\n    echo \"restored $name\"\n    ;;\nlist)\n    find \"$ROOT\" -mindepth 1 -maxdepth 1 -type d ! -name '.manifests' ! -name '.tmp-*' -printf '%f\\n' | LC_ALL=C sort\n    ;;\nesac\nANTRIEB_SNAPSHOT_EOF\nchmod 0750 /usr/local/sbin/data-snapshot\ncat > /srv/data/records.txt <<'ANTRIEB_DATA_EOF'\naccount=alpha balance=125\naccount=beta balance=340\nANTRIEB_DATA_EOF\ncat > /srv/data/settings.conf <<'ANTRIEB_SETTINGS_EOF'\nformat_version=1\nwrite_mode=durable\nANTRIEB_SETTINGS_EOF\nchmod 0640 /srv/data/records.txt /srv/data/settings.conf\nprintf '%s\\n' '--- installed snapshot utility ---'\nls -ld /srv/data /srv/snapshots /srv/snapshots/data /srv/snapshots/data/.manifests\nls -l /usr/local/sbin/data-snapshot /srv/data\n/usr/local/sbin/data-snapshot list",
+      "stderr": "install: cannot create directory `/srv/data': Permission denied\n"
+    },
+    {
+      "command_id": "cmd-ac6fda9893704c45",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:40:15.074861+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 195,
+      "command": "id\ncommand -v sudo || true\nsudo -n true 2>&1; printf 'sudo_rc=%s\\n' \"$?\"",
+      "stdout": "uid=500(antrieb) gid=500(antrieb) groups=500(antrieb) context=user_u:system_r:unconfined_t\n/usr/bin/sudo\nsudo_rc=0\n"
+    },
+    {
+      "command_id": "cmd-91f32a551500469b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:40:28.607025+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 237,
+      "command": "set -eu\nsudo install -d -m 0750 /srv/data\nsudo install -d -m 0700 /srv/snapshots/data/.manifests\nsudo tee /usr/local/sbin/data-snapshot >/dev/null <<'ANTRIEB_SNAPSHOT_EOF'\n#!/bin/sh\nset -eu\nDATA=/srv/data\nROOT=/srv/snapshots/data\nusage() {\n    echo \"usage: $0 create|restore|list [snapshot-name]\" >&2\n    exit 2\n}\n[ $# -ge 1 ] || usage\naction=$1\ncase \"$action\" in\ncreate|restore)\n    [ $# -eq 2 ] || usage\n    name=$2\n    case \"$name\" in\n        ''|*[!A-Za-z0-9._-]*) echo \"invalid snapshot name\" >&2; exit 2 ;;\n    esac\n    ;;\nlist)\n    [ $# -eq 1 ] || usage\n    ;;\n*) usage ;;\nesac\nmkdir -p \"$ROOT/.manifests\"\ncase \"$action\" in\ncreate)\n    [ -d \"$DATA\" ] || { echo \"$DATA does not exist\" >&2; exit 1; }\n    dest=\"$ROOT/$name\"\n    [ ! -e \"$dest\" ] || { echo \"snapshot already exists: $name\" >&2; exit 1; }\n    tmp=\"$ROOT/.tmp-$name-$$\"\n    trap 'rm -rf \"$tmp\"' 0 1 2 15\n    mkdir \"$tmp\"\n    /usr/bin/rsync -a --delete \"$DATA/\" \"$tmp/\"\n    mv \"$tmp\" \"$dest\"\n    trap - 0 1 2 15\n    (cd \"$dest\" && find . -type f -print | LC_ALL=C sort | while IFS= read f; do /usr/bin/sha256sum \"$f\"; done) > \"$ROOT/.manifests/$name.sha256\"\n    echo \"created $name\"\n    ;;\nrestore)\n    src=\"$ROOT/$name\"\n    [ -d \"$src\" ] || { echo \"snapshot not found: $name\" >&2; exit 1; }\n    mkdir -p \"$DATA\"\n    /usr/bin/rsync -a --delete \"$src/\" \"$DATA/\"\n    pending=$(/usr/bin/rsync -ani --delete \"$src/\" \"$DATA/\")\n    [ -z \"$pending\" ] || { echo \"$pending\" >&2; exit 1; }\n    echo \"restored $name\"\n    ;;\nlist)\n    find \"$ROOT\" -mindepth 1 -maxdepth 1 -type d ! -name '.manifests' ! -name '.tmp-*' -printf '%f\\n' | LC_ALL=C sort\n    ;;\nesac\nANTRIEB_SNAPSHOT_EOF\nsudo chmod 0750 /usr/local/sbin/data-snapshot\nsudo tee /srv/data/records.txt >/dev/null <<'ANTRIEB_DATA_EOF'\naccount=alpha balance=125\naccount=beta balance=340\nANTRIEB_DATA_EOF\nsudo tee /srv/data/settings.conf >/dev/null <<'ANTRIEB_SETTINGS_EOF'\nformat_version=1\nwrite_mode=durable\nANTRIEB_SETTINGS_EOF\nsudo chmod 0640 /srv/data/records.txt /srv/data/settings.conf\nprintf '%s\\n' '--- installed snapshot utility ---'\nsudo ls -ld /srv/data /srv/snapshots /srv/snapshots/data /srv/snapshots/data/.manifests\nsudo ls -l /usr/local/sbin/data-snapshot /srv/data\nsudo /usr/local/sbin/data-snapshot list",
+      "stdout": "--- installed snapshot utility ---\ndrwxr-x--- 2 root root 4096 Oct  3 00:40 /srv/data\ndrwx------ 3 root root 4096 Oct  3 00:40 /srv/snapshots\ndrwx------ 3 root root 4096 Oct  3 00:40 /srv/snapshots/data\ndrwx------ 2 root root 4096 Oct  3 00:40 /srv/snapshots/data/.manifests\n-rwxr-x--- 1 root root 1443 Oct  3 00:40 /usr/local/sbin/data-snapshot\n\n/srv/data:\ntotal 16\n-rw-r----- 1 root root 51 Oct  3 00:40 records.txt\n-rw-r----- 1 root root 36 Oct  3 00:40 settings.conf\n"
+    },
+    {
+      "command_id": "cmd-24ef37d0f40a4ac1",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:40:35.040855+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 332,
+      "command": "set -eu\nsudo /usr/local/sbin/data-snapshot create pre-change-20261003\nprintf '%s\\n' '--- snapshot inventory ---'\nsudo /usr/local/sbin/data-snapshot list\nprintf '%s\\n' '--- live data ---'\nsudo find /srv/data -maxdepth 1 -type f -printf '%f %m %u:%g %s bytes\\n' | LC_ALL=C sort\nsudo sh -c 'cd /srv/data && sha256sum *'\nprintf '%s\\n' '--- captured snapshot ---'\nsudo find /srv/snapshots/data/pre-change-20261003 -maxdepth 1 -type f -printf '%f %m %u:%g %s bytes\\n' | LC_ALL=C sort\nsudo cat /srv/snapshots/data/.manifests/pre-change-20261003.sha256\nprintf '%s\\n' '--- live-vs-snapshot delta (must be empty) ---'\nsudo /usr/bin/rsync -ani --delete /srv/snapshots/data/pre-change-20261003/ /srv/data/",
+      "stdout": "created pre-change-20261003\n--- snapshot inventory ---\npre-change-20261003\n--- live data ---\nrecords.txt 640 root:root 51 bytes\nsettings.conf 640 root:root 36 bytes\n4ceaaf6e6eea8caf75498ab2d9ff7886a2e915c696490b0d2d8c8fa8a01e8371  records.txt\nd94ec72ef50498c1d25f8539dc051d543998559c10ee9fb31823da2cb6172b3d  settings.conf\n--- captured snapshot ---\nrecords.txt 640 root:root 51 bytes\nsettings.conf 640 root:root 36 bytes\n4ceaaf6e6eea8caf75498ab2d9ff7886a2e915c696490b0d2d8c8fa8a01e8371  ./records.txt\nd94ec72ef50498c1d25f8539dc051d543998559c10ee9fb31823da2cb6172b3d  ./settings.conf\n--- live-vs-snapshot delta (must be empty) ---\n"
+    },
+    {
+      "command_id": "cmd-021c4312dda24d66",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:40:40.972406+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 268,
+      "command": "set -eu\nsudo tee /srv/data/records.txt >/dev/null <<'ANTRIEB_CHANGED_EOF'\naccount=alpha balance=999\naccount=gamma balance=777\nANTRIEB_CHANGED_EOF\nsudo rm -f /srv/data/settings.conf\nsudo tee /srv/data/unwanted.tmp >/dev/null <<'ANTRIEB_EXTRA_EOF'\ntransient data that must disappear\nANTRIEB_EXTRA_EOF\nsudo chmod 0600 /srv/data/records.txt /srv/data/unwanted.tmp\nprintf '%s\\n' '--- deliberately modified live data ---'\nsudo find /srv/data -maxdepth 1 -type f -printf '%f %m %u:%g %s bytes\\n' | LC_ALL=C sort\nsudo sh -c 'cd /srv/data && sha256sum *'\nprintf '%s\\n' '--- delta from earlier snapshot (must be non-empty) ---'\nsudo /usr/bin/rsync -ani --delete /srv/snapshots/data/pre-change-20261003/ /srv/data/",
+      "stdout": "--- deliberately modified live data ---\nrecords.txt 600 root:root 52 bytes\nunwanted.tmp 600 root:root 35 bytes\nd51c3cef1b9bd8ab9b7e4c52a95ea1dadfad94a2956d10a90bc6e3e892c282ef  records.txt\n0cac021f43b8812666521adce97a06ac729faa2ce3378a598d8583a7dafaca78  unwanted.tmp\n--- delta from earlier snapshot (must be non-empty) ---\n.d..t...... ./\n*deleting   unwanted.tmp\n>f.stp..... records.txt\n>f+++++++++ settings.conf\n"
+    },
+    {
+      "command_id": "cmd-9c2215e5a37241c8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:40:46.664270+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 358,
+      "command": "set -eu\nsudo /usr/local/sbin/data-snapshot restore pre-change-20261003\nprintf '%s\\n' '--- restored live data ---'\nsudo find /srv/data -maxdepth 1 -type f -printf '%f %m %u:%g %s bytes\\n' | LC_ALL=C sort\nsudo sh -c 'cd /srv/data && sha256sum *'\nprintf '%s\\n' '--- restored file contents ---'\nsudo sed -n '1,20p' /srv/data/records.txt /srv/data/settings.conf\nprintf '%s\\n' '--- live-vs-snapshot delta (must be empty) ---'\ntest -z \"$(sudo /usr/bin/rsync -ani --delete /srv/snapshots/data/pre-change-20261003/ /srv/data/)\"\nprintf '%s\\n' 'EXACT_RESTORE=PASS'\nprintf '%s\\n' '--- retained platform ---'\ncat /etc/redhat-release\nuname -r",
+      "stdout": "restored pre-change-20261003\n--- restored live data ---\nrecords.txt 640 root:root 51 bytes\nsettings.conf 640 root:root 36 bytes\n4ceaaf6e6eea8caf75498ab2d9ff7886a2e915c696490b0d2d8c8fa8a01e8371  records.txt\nd94ec72ef50498c1d25f8539dc051d543998559c10ee9fb31823da2cb6172b3d  settings.conf\n--- restored file contents ---\naccount=alpha balance=125\naccount=beta balance=340\nformat_version=1\nwrite_mode=durable\n--- live-vs-snapshot delta (must be empty) ---\nEXACT_RESTORE=PASS\n--- retained platform ---\nCentOS release 5.11 (Final)\n2.6.18-398.el5\n"
+    },
+    {
+      "command_id": "cmd-8e73b751e0de4678",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:40:57.583787+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 233,
+      "command": "set -eu\nprintf '%s' 'BOOT_ID_BEFORE='\ncat /proc/sys/kernel/random/boot_id\nprintf '%s\\n' '--- required node access service ---'\nsudo /sbin/service sshd status\nprintf '%s\\n' '--- snapshot mechanism and inventory ---'\ntest -x /usr/local/sbin/data-snapshot\nsudo /usr/local/sbin/data-snapshot list\nprintf '%s\\n' '--- live data hashes ---'\nsudo sh -c 'cd /srv/data && sha256sum *'\nprintf '%s\\n' '--- snapshot manifest ---'\nsudo cat /srv/snapshots/data/.manifests/pre-change-20261003.sha256\nprintf '%s\\n' '--- exact pre-restart match ---'\ntest -z \"$(sudo /usr/bin/rsync -ani --delete /srv/snapshots/data/pre-change-20261003/ /srv/data/)\"\nprintf '%s\\n' 'PRE_RESTART_HEALTH=PASS'\nprintf '%s\\n' '--- root filesystem ---'\nmount | grep '^/dev/.* on / ' ",
+      "stdout": "BOOT_ID_BEFORE=5f58ac8e-9bcd-4197-8000-000000000000\n--- required node access service ---\nopenssh-daemon (pid  2127) is running...\n--- snapshot mechanism and inventory ---\n"
+    },
+    {
+      "command_id": "cmd-38f264cb2c884455",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:41:02.737916+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 194,
+      "command": "sudo /usr/local/sbin/data-snapshot list; rc=$?; printf 'list_rc=%s\\n' \"$rc\"\nsudo find /srv/snapshots/data -mindepth 1 -maxdepth 2 -printf '%y %p\\n'; printf 'find_rc=%s\\n' \"$?\"\nsudo sed -n '1,220p' /usr/local/sbin/data-snapshot",
+      "stdout": "pre-change-20261003\nlist_rc=0\nd /srv/snapshots/data/pre-change-20261003\nf /srv/snapshots/data/pre-change-20261003/settings.conf\nf /srv/snapshots/data/pre-change-20261003/records.txt\nd /srv/snapshots/data/.manifests\nf /srv/snapshots/data/.manifests/pre-change-20261003.sha256\nfind_rc=0\n#!/bin/sh\nset -eu\nDATA=/srv/data\nROOT=/srv/snapshots/data\nusage() {\n    echo \"usage: $0 create|restore|list [snapshot-name]\" >&2\n    exit 2\n}\n[ $# -ge 1 ] || usage\naction=$1\ncase \"$action\" in\ncreate|restore)\n    [ $# -eq 2 ] || usage\n    name=$2\n    case \"$name\" in\n        ''|*[!A-Za-z0-9._-]*) echo \"invalid snapshot name\" >&2; exit 2 ;;\n    esac\n    ;;\nlist)\n    [ $# -eq 1 ] || usage\n    ;;\n*) usage ;;\nesac\nmkdir -p \"$ROOT/.manifests\"\ncase \"$action\" in\ncreate)\n    [ -d \"$DATA\" ] || { echo \"$DATA does not exist\" >&2; exit 1; }\n    dest=\"$ROOT/$name\"\n    [ ! -e \"$dest\" ] || { echo \"snapshot already exists: $name\" >&2; exit 1; }\n    tmp=\"$ROOT/.tmp-$name-$$\"\n    trap 'rm -rf \"$tmp\"' 0 1 2 15\n    mkdir \"$tmp\"\n    /usr/bin/rsync -a --delete \"$DATA/\" \"$tmp/\"\n    mv \"$tmp\" \"$dest\"\n    trap - 0 1 2 15\n    (cd \"$dest\" && find . -type f -print | LC_ALL=C sort | while IFS= read f; do /usr/bin/sha256sum \"$f\"; done) > \"$ROOT/.manifests/$name.sha256\"\n    echo \"created $name\"\n    ;;\nrestore)\n    src=\"$ROOT/$name\"\n    [ -d \"$src\" ] || { echo \"snapshot not found: $name\" >&2; exit 1; }\n    mkdir -p \"$DATA\"\n    /usr/bin/rsync -a --delete \"$src/\" \"$DATA/\"\n    pending=$(/usr/bin/rsync -ani --delete \"$src/\" \"$DATA/\")\n    [ -z \"$pending\" ] || { echo \"$pending\" >&2; exit 1; }\n    echo \"restored $name\"\n    ;;\nlist)\n    find \"$ROOT\" -mindepth 1 -maxdepth 1 -type d ! -name '.manifests' ! -name '.tmp-*' -printf '%f\\n' | LC_ALL=C sort\n    ;;\nesac\n"
+    },
+    {
+      "command_id": "cmd-e49f5911e1f44580",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:41:08.137814+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 260,
+      "command": "set -eu\nprintf '%s' 'BOOT_ID_BEFORE='\ncat /proc/sys/kernel/random/boot_id\nprintf '%s\\n' '--- required node access service ---'\nsudo /sbin/service sshd status\nprintf '%s\\n' '--- snapshot mechanism and inventory ---'\nsudo test -x /usr/local/sbin/data-snapshot\nsudo /usr/local/sbin/data-snapshot list\nprintf '%s\\n' '--- live data hashes ---'\nsudo sh -c 'cd /srv/data && sha256sum *'\nprintf '%s\\n' '--- snapshot manifest ---'\nsudo cat /srv/snapshots/data/.manifests/pre-change-20261003.sha256\nprintf '%s\\n' '--- exact pre-restart match ---'\ntest -z \"$(sudo /usr/bin/rsync -ani --delete /srv/snapshots/data/pre-change-20261003/ /srv/data/)\"\nprintf '%s\\n' 'PRE_RESTART_HEALTH=PASS'\nprintf '%s\\n' '--- root filesystem ---'\nmount | grep '^/dev/.* on / ' ",
+      "stdout": "BOOT_ID_BEFORE=5f58ac8e-9bcd-4197-8000-000000000000\n--- required node access service ---\nopenssh-daemon (pid  2127) is running...\n--- snapshot mechanism and inventory ---\npre-change-20261003\n--- live data hashes ---\n4ceaaf6e6eea8caf75498ab2d9ff7886a2e915c696490b0d2d8c8fa8a01e8371  records.txt\nd94ec72ef50498c1d25f8539dc051d543998559c10ee9fb31823da2cb6172b3d  settings.conf\n--- snapshot manifest ---\n4ceaaf6e6eea8caf75498ab2d9ff7886a2e915c696490b0d2d8c8fa8a01e8371  ./records.txt\nd94ec72ef50498c1d25f8539dc051d543998559c10ee9fb31823da2cb6172b3d  ./settings.conf\n--- exact pre-restart match ---\nPRE_RESTART_HEALTH=PASS\n--- root filesystem ---\n/dev/vda2 on / type ext3 (rw)\n"
+    },
+    {
+      "command_id": "cmd-e6d0b32d92b1450f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:41:13.516589+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 257,
+      "command": "set -eu\nbefore=$(cat /proc/sys/kernel/random/boot_id)\nsudo /bin/sh -c 'nohup /bin/sh -c \"sleep 3; /sbin/shutdown -r now\" >/tmp/benchmark-reboot.log 2>&1 &'\nprintf 'RESTART_ACK node=%s boot_id_before=%s mechanism=/sbin/shutdown\\n' \"$NODE_NAME\" \"$before\"",
+      "stdout": "RESTART_ACK node=node1 boot_id_before=5f58ac8e-9bcd-4197-8000-000000000000 mechanism=/sbin/shutdown\n"
+    },
+    {
+      "command_id": "cmd-8e50afd2323543cd",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:41:16.096438+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 194,
+      "command": "printf 'POLL node=%s boot_id=' \"$NODE_NAME\"; cat /proc/sys/kernel/random/boot_id; uptime",
+      "stdout": "POLL node=node1 boot_id=5f58ac8e-9bcd-4197-8000-000000000000\n 00:41:16 up 22 min,  0 users,  load average: 0.00, 0.00, 0.00\n"
+    },
+    {
+      "command_id": "cmd-8b9b475e4bf14760",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:41:18.503531+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 72,
+      "command": "sleep 5\nprintf 'POLL node=%s boot_id=' \"$NODE_NAME\"; cat /proc/sys/kernel/random/boot_id; uptime",
+      "stderr": "ssh: connect to host 10.100.28.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-53c12899227f4aff",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:41:20.729381+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 63,
+      "command": "printf 'POLL node=%s boot_id=' \"$NODE_NAME\"; cat /proc/sys/kernel/random/boot_id; uptime",
+      "stderr": "ssh: connect to host 10.100.28.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-65ebe2e099b54427",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:41:25.522818+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 86,
+      "command": "printf 'POLL node=%s boot_id=' \"$NODE_NAME\"; cat /proc/sys/kernel/random/boot_id; uptime",
+      "stderr": "ssh: connect to host 10.100.28.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-27d635a5c84d4cea",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:41:38.706686+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 101,
+      "command": "printf 'POLL node=%s boot_id=' \"$NODE_NAME\"; cat /proc/sys/kernel/random/boot_id; uptime",
+      "stderr": "ssh: connect to host 10.100.28.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-f68b51f1082e47a0",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:42:01.052874+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5107,
+      "command": "printf 'POLL node=%s boot_id=' \"$NODE_NAME\"; cat /proc/sys/kernel/random/boot_id; uptime",
+      "stderr": "ssh: connect to host 10.100.28.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-f88d92d6e7334b1c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:42:27.071097+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 3166,
+      "command": "printf 'POLL node=%s boot_id=' \"$NODE_NAME\"; cat /proc/sys/kernel/random/boot_id; uptime",
+      "stderr": "ssh: connect to host 10.100.28.10 port 22: No route to host\r\n"
+    },
+    {
+      "command_id": "cmd-1e2a5d96c15a4c4f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:42:49.445098+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 223,
+      "command": "printf 'POLL node=%s boot_id=' \"$NODE_NAME\"; cat /proc/sys/kernel/random/boot_id; uptime",
+      "stdout": "POLL node=node1 boot_id=1934039b-1ffc-4263-8000-000000000000\n 00:42:49 up 0 min,  0 users,  load average: 0.12, 0.03, 0.01\n"
+    },
+    {
+      "command_id": "cmd-7a86c7075fbe45a2",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-03T04:42:56.358034+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 294,
+      "command": "set -eu\nbefore='5f58ac8e-9bcd-4197-8000-000000000000'\nafter=$(cat /proc/sys/kernel/random/boot_id)\nprintf 'BOOT_ID_BEFORE=%s\\nBOOT_ID_AFTER=%s\\n' \"$before\" \"$after\"\n[ \"$after\" != \"$before\" ]\nprintf '%s\\n' 'BOOT_ID_CHANGED=PASS'\nprintf '%s\\n' '--- required node access service recovered ---'\nsudo /sbin/service sshd status\nprintf '%s\\n' '--- snapshot mechanism and inventory recovered ---'\nsudo test -x /usr/local/sbin/data-snapshot\nsudo /usr/local/sbin/data-snapshot list\nprintf '%s\\n' '--- persisted live data hashes ---'\nsudo sh -c 'cd /srv/data && sha256sum *'\nprintf '%s\\n' '--- persisted snapshot manifest ---'\nsudo cat /srv/snapshots/data/.manifests/pre-change-20261003.sha256\nprintf '%s\\n' '--- exact post-restart match ---'\ntest -z \"$(sudo /usr/bin/rsync -ani --delete /srv/snapshots/data/pre-change-20261003/ /srv/data/)\"\nprintf '%s\\n' 'POST_RESTART_RECOVERY=PASS'\nprintf '%s\\n' '--- retained platform and filesystem ---'\ncat /etc/redhat-release\nuname -r\nmount | grep '^/dev/.* on / ' ",
+      "stdout": "BOOT_ID_BEFORE=5f58ac8e-9bcd-4197-8000-000000000000\nBOOT_ID_AFTER=1934039b-1ffc-4263-8000-000000000000\nBOOT_ID_CHANGED=PASS\n--- required node access service recovered ---\nopenssh-daemon (pid  2106) is running...\n--- snapshot mechanism and inventory recovered ---\npre-change-20261003\n--- persisted live data hashes ---\n4ceaaf6e6eea8caf75498ab2d9ff7886a2e915c696490b0d2d8c8fa8a01e8371  records.txt\nd94ec72ef50498c1d25f8539dc051d543998559c10ee9fb31823da2cb6172b3d  settings.conf\n--- persisted snapshot manifest ---\n4ceaaf6e6eea8caf75498ab2d9ff7886a2e915c696490b0d2d8c8fa8a01e8371  ./records.txt\nd94ec72ef50498c1d25f8539dc051d543998559c10ee9fb31823da2cb6172b3d  ./settings.conf\n--- exact post-restart match ---\nPOST_RESTART_RECOVERY=PASS\n--- retained platform and filesystem ---\nCentOS release 5.11 (Final)\n2.6.18-398.el5\n/dev/vda2 on / type ext3 (rw)\n"
+    }
+  ]
+}

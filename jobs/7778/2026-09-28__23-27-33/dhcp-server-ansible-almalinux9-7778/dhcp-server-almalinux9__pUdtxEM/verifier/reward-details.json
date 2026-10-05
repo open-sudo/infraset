@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Configure node1 as a DHCP server for the private network shared with node2/node3, implemented via Ansible",
+      "status": "satisfied",
+      "summary": "An Ansible playbook run from node4 (control node) applied the eth1 static address (10.50.50.1/24) and Kea-backed DHCP shared-network 'LAN' (10.50.50.0/24, range 100-200, default-router 10.50.50.1) to node1 via a bash/vbash task invoked by Ansible, with changed:true on first apply and a subsequent assert confirming 'dhcp-server' and '10.50.50.0/24' present in /config/config.boot. isc-kea-dhcp4-server was observed active and listening on 10.50.50.1:67 in the after-executor snapshot.",
+      "evidence_ids": [
+        "cmd-1dd10ebdb9a5432d",
+        "cmd-d44625f6a37e443d",
+        "cmd-4fc11823b09d496e",
+        "cmd-be1f5541fcde441e",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Configure node2 and node3 to obtain their private-network address from node1 via DHCP rather than static assignment, implemented via Ansible",
+      "status": "satisfied",
+      "summary": "The same Ansible playbook run set community.general.nmcli ipv4.method4=auto (removing static assignment) on the eth1 connection for node2 and node3; both nodes leased addresses from node1 (node2=10.50.50.101, node3=10.50.50.100) with ipv4.method reported as 'auto' and default routes via 10.50.50.1 confirmed directly on each node.",
+      "evidence_ids": [
+        "cmd-1dd10ebdb9a5432d",
+        "cmd-a4f96c2fbbf14c8a",
+        "cmd-d640c79ff859407d"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "DHCP service functions end-to-end (not merely configured)",
+      "status": "satisfied",
+      "summary": "node1's Kea lease file shows real, matching leases for node2 and node3 by MAC/hostname; node2 and node3 independently show DHCP-sourced addresses, correct subnet mask, and default route learned via DHCP (proto dhcp) rather than static configuration.",
+      "evidence_ids": [
+        "cmd-f7d805d979a841ca",
+        "cmd-a4f96c2fbbf14c8a",
+        "cmd-d640c79ff859407d"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Solution implemented and re-runnable via Ansible, idempotently",
+      "status": "satisfied",
+      "summary": "Two separate full playbook re-runs (one immediately after initial success, one after the full 4-node restart cycle) show all tasks reporting 'ok' with zero changes across node1/node2/node3, confirming idempotency of both the VyOS DHCP-server task and the nmcli client tasks.",
+      "evidence_ids": [
+        "cmd-54a1420a83f9427d",
+        "cmd-21dcec4c1c56436c"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract were satisfied: node1 was configured via an Ansible playbook (using a VyOS shell/vbash config-apply task after the vyos.vyos_config module proved incompatible with the platform's non-root config session) as a Kea DHCP server for the 10.50.50.0/24 private network, and node2/node3 were switched from static to DHCP-sourced eth1 addressing via the community.general.nmcli module \u2014 confirmed end-to-end by real leases, correct routes, and two independent idempotent re-runs (including one after a full mandatory node-restart cycle). The mandatory provider-wide restart-evidence protocol was executed on all four nodes with clear pre-restart boot identity/health, restart acknowledgement, changed post-restart boot identity, and recovered service/data state (DHCP server persisted across node1's reboot; leases re-acquired on node2/node3; Ansible project and connectivity intact on node4), cross-checked against the fixed after-prepare/after-executor lifecycle snapshots. A self-inflicted SSH-key regression on node1 after its reboot (caused by an earlier ad-hoc, non-config-path key insertion) was discovered and properly fixed via VyOS's config system, after which the playbook ran cleanly end-to-end again.",
+  "limitations": [
+    "The DHCP-server configuration on node1 was applied through an ansible.builtin.shell task driving the native vbash configuration session (with idempotency enforced via changed_when/failed_when logic) rather than the vyos.vyos_config Ansible module, because that module failed with a generic 'Set failed' error under the non-root vyos SSH session on this VyOS build; this is a reasonable implementation choice given the platform constraint but is a less idiomatic use of the vyos.vyos collection.",
+    "A root-account SSH key was added to node1 early in the session (cmd-bbaec220ae214473) but never used in the final solution, and remains as unreviewed residual access; its presence and risk were not further assessed.",
+    "The lifecycle 'after_prepare' snapshot is an alias of 'before_prepare' (prepare was disabled for this task), so preparer-vs-executor separation relies entirely on the before/after-executor comparison, which was available and consistent."
+  ],
+  "command_stats": {
+    "total": 129,
+    "successful": 105,
+    "failed": 23,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most state-changing executor commands map directly to a legitimate purpose (establishing SSH trust, applying the DHCP config, cleaning up an earlier incomplete DHCP commit, verifying and restarting nodes). Two items lower the score: (1) cmd-bbaec220ae214473 added the cluster SSH public key to /root/.ssh/authorized_keys on node1 (VyOS), but the final working solution authenticates as the 'vyos' user via a config-persisted key instead \u2014 the root-account key was never used afterward and was left in place as unused, unreviewed standing SSH access on a network appliance (a retained, low-risk but unnecessary mutation). (2) cmd-acbde83131a144a6 added an ad-hoc entry to /home/vyos/.ssh/authorized_keys outside VyOS's config system as a troubleshooting workaround; this entry was later wiped by VyOS's config-driven login regeneration on node1's mandatory reboot, causing a real (if self-inflicted and self-corrected) SSH-access regression that required a second fix (cmd-33bdfffed87345ba) through the proper 'set system login user vyos authentication public-keys' path. Several harmless scratch artifacts (/tmp/t1.yml, /tmp/vyos_cfg.sh, /tmp/dhcpdump.log on node1/node4) were left behind from diagnostic experimentation but pose negligible risk and were not part of managed configuration. No failed or conflicting services, no package-manager damage, and no broadened exposure was observed in the final after-executor snapshot beyond the intended kea-dhcp4 listener on the private network.",
+    "evidence_ids": [
+      "cmd-bbaec220ae214473",
+      "cmd-acbde83131a144a6",
+      "cmd-33bdfffed87345ba",
+      "cmd-8032b2c22d7a478b",
+      "cmd-f6d98f85bace4030",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

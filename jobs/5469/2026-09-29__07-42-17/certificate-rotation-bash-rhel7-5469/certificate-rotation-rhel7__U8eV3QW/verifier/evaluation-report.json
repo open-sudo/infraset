@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on port 8443 with a valid certificate on node1",
+      "status": "satisfied",
+      "summary": "nginx installed and configured with a TLS vhost on 8443 using a locally-issued cert; `nginx -t` passed, curl to https://$NODE_IP:8443/ returned HTTP 200, and the after-executor listening-sockets snapshot independently confirms nginx bound to 8443 (and 80).",
+      "evidence_ids": [
+        "cmd-2d659bf4ccbd4104",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "auto-renewal",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A systemd oneshot service + hourly timer (OnBootSec=5min, OnUnitActiveSec=1h, Persistent=true) was installed and enabled, using openssl x509 -checkend with a 30-day renewal window. list-timers shows it scheduled to fire. The renewal logic itself was exercised through the real systemd unit (systemctl start nginx-cert-renew.service with FORCE_RENEW=1) and successfully produced a new certificate and reload, demonstrating the mechanism functions end-to-end. The only gap is that an unattended, expiry-triggered (non-forced) firing of the timer was not observed, which is expected given the ~90-day cert lifetime and 30-day window cannot be waited out in-session.",
+      "evidence_ids": [
+        "cmd-2d659bf4ccbd4104",
+        "cmd-b30a2e704338408a",
+        "cmd-42237c87a5d54cd8"
+      ]
+    },
+    {
+      "id": "zero-downtime-pickup",
+      "requirement": "Service picks up each new certificate while continuing to answer requests",
+      "status": "satisfied",
+      "summary": "A 200-request curl loop against the HTTPS endpoint ran concurrently with a forced renewal via the real renewal service; the on-disk/live cert serial changed (F23AD5E04EE9F852\u2192F23AD5E04EE9F853, confirmed via openssl s_client handshake), nginx stayed active throughout, and all 200 loop requests returned HTTP 200 with zero failures.",
+      "evidence_ids": [
+        "cmd-bb82d44ff3424ffd",
+        "cmd-42237c87a5d54cd8",
+        "cmd-f3aa5d13a49541e2",
+        "cmd-b30a2e704338408a"
+      ]
+    },
+    {
+      "id": "node1-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1 (pre-restart baseline, restart ack, changed boot identity, recovered state)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 95e2f83d..., nginx/timer active, HTTPS 200, cert serial. Reboot was scheduled via systemd-run and the acknowledgement returned before disconnection; connection then dropped/refused, consistent with a genuine reboot. Post-restart boot_id (a3e79168...) differs from baseline and matches the independently captured after_executor boot-identity snapshot; uptime showed 0 minutes. Post-restart checks confirm nginx active+enabled, timer active+enabled and rescheduled, the same cert persisted on disk, HTTPS 200, and the live TLS handshake serial matching the persisted cert.",
+      "evidence_ids": [
+        "cmd-3e5ce0d7069749b9",
+        "cmd-5b2433d6ae324a42",
+        "cmd-0bb3f503d2364bf2",
+        "cmd-c41e67bcbfab45c5",
+        "cmd-7333cdbc93d246f9",
+        "cmd-f7af3da2951e40a5",
+        "cmd-e60b785a8ba741ad",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are directly satisfied: HTTPS is served on 8443 with a valid, working certificate; automatic renewal is installed and enabled via a systemd timer whose underlying renewal mechanism was proven to work end-to-end (forced invocation through the real service produced a new cert and reload); and nginx demonstrably kept answering requests with zero failures across 200 requests while the certificate was rotated live. The mandatory single-node restart protocol for node1 is also fully evidenced: pre-restart baseline, an acknowledged reboot, a changed boot identity cross-checked against the fixed lifecycle snapshots, and full post-restart recovery of nginx, the renewal timer, and the persisted certificate/HTTPS endpoint.",
+  "limitations": [
+    "The automatic timer's unattended, expiry-triggered firing was never directly observed (only a forced/manual invocation of the same underlying service was captured); this is a practical limitation given the certificate's ~90-day lifetime rather than evidence of a broken mechanism.",
+    "Package-health (rpm database consistency) checks were unavailable (timed out) both before and after, so package-manager state integrity cannot be independently confirmed beyond the absence of failed systemd units.",
+    "Minor /tmp residue (curl-loop.log/.pid) from the load-test loop was left in place; low-risk but not cleaned up.",
+    "Operational hygiene cited unknown evidence IDs: cmd-c72ce37f4457c436c"
+  ],
+  "command_stats": {
+    "total": 31,
+    "successful": 21,
+    "failed": 9,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most state-changing commands were legitimate troubleshooting needed to work around a RHEL7 environment lacking nginx in base repos (stale /var/run/yum.pid lock removal, EPEL repo bootstrap/baseurl fix, policycoreutils-python install for SELinux port labeling) and were each followed by a working outcome, not abandoned. No failed services or damaged package state were left behind (after_executor failed-services list is empty, package-health check was unavailable both before and after so cannot independently confirm rpm db health). The only residue is /tmp/curl-loop.log and /tmp/curl-loop.pid created by the load-test loop (cmd-bb82d44ff3424ffd) and not deleted after the loop was stopped (cmd-f3aa5d13a49541e2); this is a bounded, low-risk, non-security-relevant leftover rather than broad or destructive residue.",
+    "evidence_ids": [
+      "cmd-227929c7c2774458",
+      "cmd-1e23464c4f3e4450",
+      "cmd-bb82d44ff3424ffd",
+      "cmd-f3aa5d13a49541e2",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

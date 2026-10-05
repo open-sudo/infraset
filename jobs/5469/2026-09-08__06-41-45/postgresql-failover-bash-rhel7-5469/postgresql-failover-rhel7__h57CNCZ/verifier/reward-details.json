@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-initial-replication",
+      "requirement": "Streaming replication established across node1/node2/node3 with node1 as writable primary and node2/node3 as standbys",
+      "status": "satisfied",
+      "summary": "PostgreSQL 15 installed on all three nodes; node2 and node3 were basebackup'd from node1 with pg_basebackup -R and confirmed as standbys via pg_is_in_recovery()=t with identical ledger data. pg_stat_replication on node1 showed both node2 and node3 streaming, later reconfigured to quorum-synchronous (sync_state=quorum) via synchronous_standby_names='ANY 1 (node2, node3)'.",
+      "evidence_ids": [
+        "cmd-370a8721343c45cd",
+        "cmd-746a03cd0dfb406a",
+        "cmd-dc9982b098fc4879",
+        "cmd-137b1e69408b441e",
+        "cmd-063b0df9ba134c9a",
+        "cmd-3ea86f1dccb4445e",
+        "cmd-2efda8d95e5442fc",
+        "cmd-297e9fb0f58d481c",
+        "cmd-23b2057608f24090",
+        "cmd-0d7f14e872cf4eb2"
+      ]
+    },
+    {
+      "id": "req-2-failover-no-loss",
+      "requirement": "When the primary is lost, a standby takes over as the writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "A marker row was inserted and confirmed replicated to both standbys (matching LSNs) immediately before node1 was stopped. node2 was promoted via pg_ctl promote, pg_is_in_recovery() flipped to false, and all pre-failover rows including the marker were confirmed present with zero loss; a subsequent write to node2 succeeded, proving writability.",
+      "evidence_ids": [
+        "cmd-65a695b2b18e492d",
+        "cmd-9caf659e579b457c",
+        "cmd-9211392204bd4fee",
+        "cmd-631f1f0b7edf4a4e"
+      ]
+    },
+    {
+      "id": "req-3-other-standby-follows",
+      "requirement": "The remaining standby (node3) continues following whichever node is now primary",
+      "status": "satisfied",
+      "summary": "node3's primary_conninfo was repointed to node2; PostgreSQL logs show an automatic timeline switch to timeline 2 and resumed streaming, and pg_stat_replication on node2 confirmed node3 streaming in quorum sync.",
+      "evidence_ids": [
+        "cmd-5231fbc118c048e0",
+        "cmd-f9d2ec5a814e4fb0",
+        "cmd-3e15afa2e2f34bee"
+      ]
+    },
+    {
+      "id": "req-4-recovered-primary-rejoins",
+      "requirement": "The recovered former primary (node1) comes back as a standby of the current primary",
+      "status": "satisfied",
+      "summary": "node1 was rebuilt from node2 via pg_basebackup -R, started with pg_is_in_recovery()=t, confirmed streaming/quorum in node2's pg_stat_replication, and all historical ledger rows were present on node1.",
+      "evidence_ids": [
+        "cmd-701b81a807864d0c",
+        "cmd-c2d995562d6f4385",
+        "cmd-67a0e287a60842d7",
+        "cmd-96200e770d1b4ef1"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are directly and coherently evidenced: node1/node2/node3 streaming replication was established with quorum-synchronous commit, node1's simulated loss was followed by a zero-data-loss promotion of node2 (verified via a pre-failover marker row and matching LSNs), node3 correctly followed the new primary via an automatic timeline switch, and node1 was rebuilt and rejoined as a standby of node2. The independent provider-wide node-restart evidence protocol was also executed on all three nodes with matching pre/post boot identities cross-checked against the fixed global lifecycle snapshots (node1: 745be096\u2192cd050683, node2: 151c4aa9\u219274e4c271, node3: e9250ad1\u21925a2c71ec), reboot acknowledgements returning before disconnect, and full replication/data/quorum recovery confirmed after each reboot, including a final end-to-end write verified on all three nodes. Along the way the executor encountered and self-corrected two operational missteps (a brief plaintext credential exposure, and a synchronous-commit misconfiguration that caused hung backends/timeouts) plus a missed systemd-enable step on two standbys during the restart sequence, all resolved without lasting negative effect on final functionality.",
+  "limitations": [
+    "The final after_executor package-health check was unavailable (TimeoutError) on all three nodes, so RPM/package consistency cannot be independently confirmed beyond the successful install/verify commands in the timeline.",
+    "The replication password was briefly visible in plaintext in one command's stdout (cmd-9ac7d3e37d514e0a); this is a real, if bounded and self-remediated, credential-hygiene lapse that lowers confidence in secret-handling discipline slightly.",
+    "Setting synchronous_standby_names before any standby was attached caused multiple 125-second command timeouts and stuck postgres backends that required manual killing; this reflects an ordering mistake during setup, fully corrected but adding noise to the evidence trail.",
+    "postgresql-15 was not enabled for boot on node2/node3 initially and had to be fixed reactively during the restart protocol, indicating the initial systemd configuration was incomplete until caught by the restart verification."
+  ],
+  "command_stats": {
+    "total": 137,
+    "successful": 115,
+    "failed": 17,
+    "indeterminate": 5,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "Overall hygiene is reasonable but shows several self-inflicted issues that required corrective work. (1) The replication password appeared in plaintext in a command's stdout at cmd-9ac7d3e37d514e0a ('sudo cat .../.repl_pw_tmp'); the executor recognized this and rotated the credential multiple times afterward (cmd-6820b52bf0924f05, cmd-444c7e10e16c4206, cmd-293f5fc268c449a1) using scp transfer instead of re-printing it \u2014 a bounded, self-corrected exposure rather than a persisted one. (2) Setting synchronous_standby_names on node1 before any standby had joined caused CREATE ROLE statements to hang waiting on synchronous commit, producing five ~125s proxy-timeout failures (cmd-fa53580c76494ef8, cmd-2acbd3ffb9584fe6, cmd-4648b4a6f34746a1, cmd-08b127567388461d, cmd-72f44fec244d403d) and several stuck postgres backend processes that had to be manually killed (cmd-17c9154e32e046ef) after temporarily clearing synchronous_standby_names (cmd-2e240f7833874ee1) and restoring it later (cmd-23b2057608f24090). This was a bounded, fully-reverted troubleshooting detour with no lasting residue. (3) postgresql-15 was found disabled for boot on node2 and node3 partway through the restart protocol and had to be enabled reactively/proactively (cmd-1bd7a585ab1f48a0, cmd-610e0e3f18be4ec5) \u2014 a corrective fix rather than an unnecessary mutation, but it reflects an initial gap in the deployment (systemctl enable --now was used for node1 at cmd-ba1d833cc9c542cf but plain 'start' without enable was used for node2/node3 at cmd-f1319ca734ad4f45/cmd-f69189464306417e). (4) Minor residue: /tmp/pg_install.log, /tmp/pg_install2.log, and /tmp/reboot.log remain on all three nodes in the after_executor snapshot \u2014 low-severity leftover artifacts that were not cleaned up.",
+    "evidence_ids": [
+      "cmd-9ac7d3e37d514e0a",
+      "cmd-2e240f7833874ee1",
+      "cmd-17c9154e32e046ef",
+      "cmd-fa53580c76494ef8",
+      "cmd-1bd7a585ab1f48a0",
+      "cmd-610e0e3f18be4ec5",
+      "cmd-f1319ca734ad4f45",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

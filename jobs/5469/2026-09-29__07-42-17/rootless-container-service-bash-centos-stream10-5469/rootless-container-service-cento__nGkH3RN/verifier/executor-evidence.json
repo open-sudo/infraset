@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 11,
+    "successful": 9,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Containerized web app running on port 8080 as unprivileged appsvc user",
+      "command_ids": [
+        "cmd-082ec6ff8c6f49a0"
+      ],
+      "summary": "webapp.service active running podman container as appsvc (uid 1000), listening on 8080, curl HTTP_STATUS:200"
+    },
+    {
+      "requirement": "Service starts at boot while appsvc has no active login session (via linger)",
+      "command_ids": [
+        "cmd-082ec6ff8c6f49a0",
+        "cmd-e55f9e5990174335"
+      ],
+      "summary": "loginctl show-user appsvc shows Linger=yes; webapp.service enabled; loginctl session for appsvc is class=manager (linger-spawned), not an interactive tty/pts login session"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline for node1",
+      "command_ids": [
+        "cmd-e55f9e5990174335"
+      ],
+      "summary": "Captured boot_id 06339ff3-9f53-4e1d-9bf4-1210144ee001; webapp.service active+enabled; HTTP_STATUS:200"
+    },
+    {
+      "requirement": "Single-node restart acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-25af71eac79747aa"
+      ],
+      "summary": "systemd-run scheduled a 1s-delayed 'systemctl reboot'; command returned immediately with timer/service creation confirmation"
+    },
+    {
+      "requirement": "Proof of changed boot identity after restart",
+      "command_ids": [
+        "cmd-3904124f84d74939",
+        "cmd-f4efe1a852f243cd",
+        "cmd-85f008615ba5410a"
+      ],
+      "summary": "Node became unreachable (timeout/reset) during reboot, then reconnected with boot_id 997baa55-803c-45ae-b451-6e85f985af4f, differing from the pre-restart 06339ff3-... boot_id"
+    },
+    {
+      "requirement": "Post-restart recovery of required service, data, and no-login-session condition",
+      "command_ids": [
+        "cmd-c5c004cf0c4045f9"
+      ],
+      "summary": "After reboot, webapp.service auto-started (enabled, active since 08:15:55), only a linger 'manager' session exists for appsvc (no tty/pts), port 8080 listening, curl returns HTTP_STATUS:200 on both loopback and $NODE_IP"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-602d209b6b4f4cb0",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:14:28.179277+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 179,
+      "command": "set -Eeuo pipefail\necho \"== os ==\"; cat /etc/os-release\necho \"== podman ==\"; command -v podman && podman --version || echo \"no podman\"\necho \"== docker ==\"; command -v docker || echo \"no docker\"\necho \"== appsvc ==\"; id appsvc 2>&1 || echo \"no appsvc user\"\necho \"== loginctl linger dir ==\"; ls /var/lib/systemd/linger 2>&1 || true\necho \"== subuid/subgid ==\"; grep appsvc /etc/subuid /etc/subgid 2>&1 || true\n",
+      "stdout": "== os ==\nNAME=\"CentOS Stream\"\nVERSION=\"10 (Coughlan)\"\nRELEASE_TYPE=stable\nID=\"centos\"\nID_LIKE=\"rhel fedora\"\nVERSION_ID=\"10\"\nPLATFORM_ID=\"platform:el10\"\nPRETTY_NAME=\"CentOS Stream 10 (Coughlan)\"\nANSI_COLOR=\"0;31\"\nLOGO=\"fedora-logo-icon\"\nCPE_NAME=\"cpe:/o:centos:centos:10\"\nHOME_URL=\"https://centos.org/\"\nVENDOR_NAME=\"CentOS\"\nVENDOR_URL=\"https://centos.org/\"\nBUG_REPORT_URL=\"https://issues.redhat.com/\"\nREDHAT_SUPPORT_PRODUCT=\"Red Hat Enterprise Linux 10\"\nREDHAT_SUPPORT_PRODUCT_VERSION=\"CentOS Stream\"\n== podman ==\nno podman\n== docker ==\nno docker\n== appsvc ==\nid: \u2018appsvc\u2019: no such user\nno appsvc user\n== loginctl linger dir ==\n== subuid/subgid =="
+    },
+    {
+      "command_id": "cmd-ea0ab94bdc5d47c0",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:11.319879+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 31862,
+      "command": "set -Eeuo pipefail\n\necho \"STEP: install podman\"\nsudo -n dnf install -y podman >/tmp/dnf-install.log 2>&1 || (tail -50 /tmp/dnf-install.log; exit 1)\npodman --version\n\necho \"STEP: create appsvc user\"\nsudo -n useradd -m -s /bin/bash appsvc\nid appsvc\n\necho \"STEP: enable subuid/subgid (usually auto via useradd, verify)\"\ngrep appsvc /etc/subuid /etc/subgid\n\necho \"STEP: enable lingering for appsvc (allows user services without active login session)\"\nsudo -n loginctl enable-linger appsvc\nloginctl show-user appsvc -p Linger\n\necho \"STEP: prepare systemd user dir for appsvc\"\nsudo -n mkdir -p /home/appsvc/.config/systemd/user\nsudo -n chown -R appsvc:appsvc /home/appsvc/.config\n\necho \"STEP: write rootless podman quadlet-free systemd user unit for web container on 8080\"\nsudo -n tee /home/appsvc/.config/systemd/user/webapp.service > /dev/null <<'UNIT'\n[Unit]\nDescription=Rootless web app container\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStartPre=-/usr/bin/podman rm -f webapp\nExecStart=/usr/bin/podman run --rm --name webapp -p 8080:80 docker.io/library/httpd:alpine\nExecStop=/usr/bin/podman stop -t 10 webapp\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\nUNIT\nsudo -n chown appsvc:appsvc /home/appsvc/.config/systemd/user/webapp.service\n\necho \"STEP: enable systemd linger runtime dir and start service as appsvc via its own user bus\"\nsudo -n machinectl shell appsvc@ /bin/bash -c '\nset -Eeuo pipefail\nexport XDG_RUNTIME_DIR=/run/user/$(id -u)\nsystemctl --user daemon-reload\nsystemctl --user enable --now webapp.service\nsleep 3\nsystemctl --user status webapp.service --no-pager || true\n' 2>&1 || true\n\necho \"STEP: verify via loginctl / systemctl (should work without active login)\"\nsleep 5\nsudo -n -u appsvc XDG_RUNTIME_DIR=/run/user/$(id -u appsvc) systemctl --user status webapp.service --no-pager || true\n\necho \"STEP: check no login session for appsvc\"\nloginctl list-sessions | grep appsvc || echo \"no active session for appsvc (expected)\"\n\necho \"STEP: verify port 8080 listening\"\nss -tlnp | grep 8080 || true\n\necho \"STEP: curl the service\"\ncurl -sS -o /dev/null -w \"HTTP_STATUS:%{http_code}\\n\" http://127.0.0.1:8080/ || true\n",
+      "stdout": "STEP: install podman\npodman version 6.1.0\nSTEP: create appsvc user\nuid=1000(appsvc) gid=1000(appsvc) groups=1000(appsvc)\nSTEP: enable subuid/subgid (usually auto via useradd, verify)\n/etc/subuid:appsvc:524288:65536\n/etc/subgid:appsvc:524288:65536\nSTEP: enable lingering for appsvc (allows user services without active login session)\nLinger=yes\nSTEP: prepare systemd user dir for appsvc\nSTEP: write rootless podman quadlet-free systemd user unit for web container on 8080\nSTEP: enable systemd linger runtime dir and start service as appsvc via its own user bus\nsudo: machinectl: command not found\nSTEP: verify via loginctl / systemctl (should work without active login)\n\u25cb webapp.service - Rootless web app container\n     Loaded: loaded (/home/appsvc/.config/systemd/user/webapp.service; disabled; preset: disabled)\n     Active: inactive (dead)\nSTEP: check no login session for appsvc\n      3 1000 appsvc -    5413   manager       -   no   -\nSTEP: verify port 8080 listening\nSTEP: curl the service\ncurl: (7) Failed to connect to 127.0.0.1 port 8080 after 0 ms: Could not connect to server\nHTTP_STATUS:000"
+    },
+    {
+      "command_id": "cmd-082ec6ff8c6f49a0",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:29.076246+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 8549,
+      "command": "set -Eeuo pipefail\necho \"STEP: confirm user manager running due to linger\"\nsudo -n systemctl status user@1000.service --no-pager | head -20\n\necho \"STEP: enable+start webapp via appsvc's own user bus (no machinectl, no login session)\"\nsudo -n -u appsvc XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user daemon-reload\nsudo -n -u appsvc XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user enable --now webapp.service\n\necho \"STEP: wait for container pull+start\"\nsleep 8\nsudo -n -u appsvc XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user status webapp.service --no-pager || true\n\necho \"STEP: confirm no active login session for appsvc\"\nloginctl list-sessions --no-legend\nloginctl show-session 3 -p Remote -p Type -p Class 2>&1 || true\n\necho \"STEP: verify port and http\"\nss -tlnp | grep 8080 || echo \"port not listening yet\"\ncurl -sS -o /dev/null -w \"HTTP_STATUS:%{http_code}\\n\" http://127.0.0.1:8080/ || true\n",
+      "stdout": "STEP: confirm user manager running due to linger\n\u25cf user@1000.service - User Manager for UID 1000\n     Loaded: loaded (/usr/lib/systemd/system/user@.service; static)\n    Drop-In: /usr/lib/systemd/system/user@.service.d\n             \u2514\u250010-login-barrier.conf\n     Active: active (running) since Tue 2026-09-29 08:15:06 EDT; 14s ago\n Invocation: e7f9ac9e4f2648748af9ca9f0273a570\n       Docs: man:user@.service(5)\n   Main PID: 5413 (systemd)\n     Status: \"Ready.\"\n      Tasks: 2\n     Memory: 4.9M (peak: 11.2M)\n        CPU: 59ms\n     CGroup: /user.slice/user-1000.slice/user@1000.service\n             \u2514\u2500init.scope\n               \u251c\u25005413 /usr/lib/systemd/systemd --user\n               \u2514\u25005419 \"(sd-pam)\"\n\nSep 29 08:15:06 node1 systemd[5413]: Reached target timers.target - Timers.\nSep 29 08:15:06 node1 systemd[5413]: Starting dbus.socket - D-Bus User Message Bus Socket...\nSep 29 08:15:06 node1 systemd[5413]: Starting systemd-tmpfiles-setup.service - Create User Files and Directories...\nSTEP: enable+start webapp via appsvc's own user bus (no machinectl, no login session)\nCreated symlink '/home/appsvc/.config/systemd/user/default.target.wants/webapp.service' \u2192 '/home/appsvc/.config/systemd/user/webapp.service'.\nSTEP: wait for container pull+start\n\u25cf webapp.service - Rootless web app container\n     Loaded: loaded (/home/appsvc/.config/systemd/user/webapp.service; enabled; preset: disabled)\n     Active: active (running) since Tue 2026-09-29 08:15:20 EDT; 8s ago\n Invocation: 248160cdaed542c1a89a99ee0e1ceade\n    Process: 5533 ExecStartPre=/usr/bin/podman rm -f webapp (code=exited, status=0/SUCCESS)\n   Main PID: 5563 (podman)\n      Tasks: 13 (limit: 9416)\n     Memory: 153.7M (peak: 172.6M)\n        CPU: 1.055s\n     CGroup: /user.slice/user-1000.slice/user@1000.service/app.slice/webapp.service\n             \u251c\u25005563 /usr/bin/podman run --rm --name webapp -p 8080:80 docker.io/library/httpd:alpine\n             \u251c\u25005704 /usr/bin/pasta --config-net -t 8080-8080:80-80 --dns-forward 169.254.1.1 -u none -T none -U none --no-map-gw --quiet --map-guest-add\n...[TRUNCATED 570 CHARACTERS]...\np --exit-dir /run/user/1000/libpod/tmp/exits --persist-dir /run/user/1000/libpod/tmp/persist/1119a992e0fd27a153351701af8cc77b976b8b0f928e157e91ec2f15c9fc9728 --full-attach -s -l journald --log-level warning --syslog --runtime-arg --log-format=json --runtime-arg --log --runtime-arg=/run/user/1000/containers/overlay-containers/1119a992e0fd27a153351701af8cc77b976b8b0f928e157e91ec2f15c9fc9728/userdata/oci-log --conmon-pidfile /run/user/1000/containers/overlay-containers/1119a992e0fd27a153351701af8cc77b976b8b0f928e157e91ec2f15c9fc9728/userdata/conmon.pid --exit-command /usr/bin/podman --exit-command-arg --root --exit-command-arg /home/appsvc/.local/share/containers/storage --exit-command-arg --runroot --exit-command-arg /run/user/1000/containers --exit-command-arg --log-level --exit-command-arg warning --exit-command-arg --cgroup-manager --exit-command-arg systemd --exit-command-arg --tmpdir --exit-command-arg /run/user/1000/libpod/tmp --exit-command-arg --network-config-dir --exit-command-arg \"\" --exit-command-arg --volumepath --exit-command-arg /home/appsvc/.local/share/containers/storage/volumes --exit-command-arg --transient-store=false --exit-command-arg --hooks-dir --exit-command-arg /usr/share/containers/oci/hooks.d --exit-command-arg --runtime --exit-command-arg crun --exit-command-arg --storage-driver --exit-command-arg overlay --exit-command-arg --storage-opt --exit-command-arg overlay.mountopt=nodev --exit-command-arg --events-backend --exit-command-arg file --exit-command-arg container --exit-command-arg cleanup --exit-command-arg --stopped-only --exit-command-arg --rm --exit-command-arg 1119a992e0fd27a153351701af8cc77b976b8b0f928e157e91ec2f15c9fc9728\nSTEP: confirm no active login session for appsvc\n  3 1000 appsvc - 5413 manager       - no -\n  4    0 root   - 5487 manager-early - no -\nc15 1000 appsvc - 5802 background    - no -\nRemote=no\nType=unspecified\nClass=manager\nSTEP: verify port and http\nLISTEN 0      128                *:8080            *:*    users:((\"pasta.avx2\",pid=5704,fd=153))\nHTTP_STATUS:200"
+    },
+    {
+      "command_id": "cmd-e55f9e5990174335",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:35.727739+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 176,
+      "command": "set -Eeuo pipefail\necho \"STEP: capture pre-restart boot identity\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\necho \"STEP: capture healthy baseline evidence\"\nsystemctl is-active user@1000.service\nsudo -n -u appsvc XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user is-active webapp.service\nsudo -n -u appsvc XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user is-enabled webapp.service\ncurl -sS -o /dev/null -w \"HTTP_STATUS:%{http_code}\\n\" http://127.0.0.1:8080/\nloginctl show-user appsvc -p Linger\n",
+      "stdout": "STEP: capture pre-restart boot identity\n06339ff3-9f53-4e1d-9bf4-1210144ee001\n2026-09-29 08:14:10\nSTEP: capture healthy baseline evidence\nactive\nactive\nenabled\nHTTP_STATUS:200\nLinger=yes"
+    },
+    {
+      "command_id": "cmd-25af71eac79747aa",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:39.250861+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 197,
+      "command": "set -Eeuo pipefail\necho \"STEP: schedule reboot so ack returns before disconnect\"\nsudo -n systemd-run --on-active=1 --unit=[REDACTED] /usr/bin/systemctl reboot\necho \"reboot scheduled\"\n",
+      "stdout": "STEP: schedule reboot so ack returns before disconnect\nRunning timer as unit: [REDACTED].timer\nWill run service as unit: [REDACTED].service\nreboot scheduled"
+    },
+    {
+      "command_id": "cmd-6e3af614888647bd",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:42.207856+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 75,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stdout": "06339ff3-9f53-4e1d-9bf4-1210144ee001\n2026-09-29 08:14:10"
+    },
+    {
+      "command_id": "cmd-d54daee581444c12",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:44.194463+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 71,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stdout": "06339ff3-9f53-4e1d-9bf4-1210144ee001\n2026-09-29 08:14:10"
+    },
+    {
+      "command_id": "cmd-3904124f84d74939",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:49.176309+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2095,
+      "command": "sleep 5; cat /proc/sys/kernel/random/boot_id; uptime -s 2>&1 || true",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-f4efe1a852f243cd",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:53.216282+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 1297,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-85f008615ba5410a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:55.435807+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 72,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stdout": "997baa55-803c-45ae-b451-6e85f985af4f\n2026-09-29 08:15:50"
+    },
+    {
+      "command_id": "cmd-c5c004cf0c4045f9",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:16:04.550360+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 223,
+      "command": "set -Eeuo pipefail\necho \"STEP: wait for user manager + service to settle after boot\"\nfor i in $(seq 1 15); do\n  if sudo -n -u appsvc XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user is-active webapp.service 2>/dev/null | grep -q active; then\n    echo \"webapp active after ${i}s-ish poll\"\n    break\n  fi\n  sleep 2\ndone\n\necho \"STEP: linger flag\"\nloginctl show-user appsvc -p Linger\n\necho \"STEP: confirm no active login session (tty/pts) for appsvc\"\nloginctl list-sessions --no-legend\n\necho \"STEP: user manager status\"\nsystemctl is-active user@1000.service\n\necho \"STEP: webapp service status\"\nsudo -n -u appsvc XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user status webapp.service --no-pager\nsudo -n -u appsvc XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user is-enabled webapp.service\n\necho \"STEP: port + http check\"\nss -tlnp | grep 8080 || echo \"not listening\"\ncurl -sS -o /dev/null -w \"HTTP_STATUS:%{http_code}\\n\" http://127.0.0.1:8080/\ncurl -sS -o /dev/null -w \"HTTP_STATUS_via_NODE_IP:%{http_code}\\n\" http://\"$NODE_IP\":8080/\n",
+      "stdout": "STEP: wait for user manager + service to settle after boot\nwebapp active after 1s-ish poll\nSTEP: linger flag\nLinger=yes\nSTEP: confirm no active login session (tty/pts) for appsvc\n1 1000 appsvc - 946 manager - no -\nSTEP: user manager status\nactive\nSTEP: webapp service status\n\u25cf webapp.service - Rootless web app container\n     Loaded: loaded (/home/appsvc/.config/systemd/user/webapp.service; enabled; preset: disabled)\n     Active: active (running) since Tue 2026-09-29 08:15:55 EDT; 9s ago\n Invocation: bb7d68a635c947daafb2807149f5e488\n    Process: 972 ExecStartPre=/usr/bin/podman rm -f webapp (code=exited, status=0/SUCCESS)\n   Main PID: 1212 (podman)\n      Tasks: 12 (limit: 9416)\n     Memory: 92.3M (peak: 93.3M)\n        CPU: 199ms\n     CGroup: /user.slice/user-1000.slice/user@1000.service/app.slice/webapp.service\n             \u251c\u25001212 /usr/bin/podman run --rm --name webapp -p 8080:80 docker.io/library/httpd:alpine\n             \u251c\u25001423 /usr/bin/pasta --config-net -t 8080-8080:80-80 --dns-forward 169.254.1.1 -u none -T none -U none --no-map-gw --quiet --map-guest-addr 169.254.1.2 --netns /run/user/1000/netns/netns-55d751c8-2367-0409-dfa5-2c88631bc0df\n             \u2514\u25001461 /usr/bin/conmon --api-version 1 -c 7cbc0c26c6958412504ffbc4475dce6d16b07ea0dff7bc82acd829b3f943c7eb -u 7cbc0c26c6958412504ffbc4475dce6d16b07ea0dff7bc82acd829b3f943c7eb -r /usr/bin/crun -b /home/appsvc/.local/share/containers/storage/overlay-containers/7cbc0c26c6958412504ffbc4475dce6d16b07ea0dff7bc82acd829b3f943c7eb/userdata -p /run/user/1000/containers/overlay-containers/7cbc0c26c6958412504ffbc4475dce6d16b07ea0dff7bc82acd829b3f943c7eb/userdata/pidfile -n webapp --exit-dir /run/user/1000/libpod/tmp/exits --persist-dir /run/user/1000/libpod/tmp/persist/7cbc0c26c6958412504ffbc4475dce6d16b07ea0dff7bc82acd829b3f943c7eb --full-attach -s -l journald --log-level warning --syslog --runtime-arg --log-format=json --runtime-arg --log --runtime-arg=/run/user/1000/containers/overlay-containers/7cbc0c26c6958412504ffbc4475dce6d16b07ea0dff7bc82acd829b3f943c7eb/userdata/oci-log --conmon-pidfile /run/user/1000/containers/overlay-containers/7cbc0c26c6958412504ffbc4475dce6d16b07ea0dff7bc82acd829b3f943c7eb/userdata/conmon.pid --exit-command /usr/bin/podman --exit-command-arg --root --exit-command-arg /home/appsvc/.local/share/containers/storage --exit-command-arg --runroot --exit-command-arg /run/user/1000/containers --exit-command-arg --log-level --exit-command-arg warning --exit-command-arg --cgroup-manager --exit-command-arg systemd --exit-command-arg --tmpdir --exit-command-arg /run/user/1000/libpod/tmp --exit-command-arg --network-config-dir --exit-command-arg \"\" --exit-command-arg --volumepath --exit-command-arg /home/appsvc/.local/share/containers/storage/volumes --exit-command-arg --transient-store=false --exit-command-arg --hooks-dir --exit-command-arg /usr/share/containers/oci/hooks.d --exit-command-arg --runtime --exit-command-arg crun --exit-command-arg --storage-driver --exit-command-arg overlay --exit-command-arg --storage-opt --exit-command-arg overlay.mountopt=nodev --exit-command-arg --events-backend --exit-command-arg file --exit-command-arg container --exit-command-arg cleanup --exit-command-arg --stopped-only --exit-command-arg --rm --exit-command-arg 7cbc0c26c6958412504ffbc4475dce6d16b07ea0dff7bc82acd829b3f943c7eb\nenabled\nSTEP: port + http check\nLISTEN 0      128                *:8080            *:*    users:((\"pasta.avx2\",pid=1423,fd=153))\nHTTP_STATUS:200\nHTTP_STATUS_via_NODE_IP:200"
+    }
+  ]
+}

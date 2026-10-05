@@ -1,0 +1,121 @@
+{
+  "status": "completed",
+  "summary": "Built a 3-node MariaDB Galera cluster (node1, node2, node3) from scratch on CentOS Stream 10, populated it with application data (appdb.orders), then added node4 as a fourth member which received all existing data via SST (mariabackup) and now accepts writes that replicate to the other three members. Completed the mandatory node-restart evidence protocol on all four nodes sequentially, preserving quorum throughout, with each node proven to have restarted (changed boot_id) and recovered full cluster membership, service health, and data integrity afterward.",
+  "actions_performed": [
+    "Installed mariadb-server, mariadb-backup, galera, and mariadb-server-galera (for galera_new_cluster) on node1-node4",
+    "Populated /etc/hosts from CLUSTER_HOSTS, opened firewalld ports 3306/4567/4568/4444, and set SELinux boolean mysql_connect_any on all four nodes",
+    "Generated an SST auth password on node1 with openssl and distributed it to node2-4 over inter-node SSH (cluster keypair) rather than embedding literals in commands",
+    "Wrote /etc/my.cnf.d/galera.cnf on node1-node3 with wsrep_cluster_address=gcomm://node1,node2,node3 and bootstrapped the cluster via galera_new_cluster on node1",
+    "Diagnosed and fixed an SST failure caused by an SELinux connectto denial on mariadb-backup's own mysqld_t socket by building and installing a minimal custom policy module (galera_sst.pp) via checkmodule/semodule_package/semodule on all four nodes",
+    "Started mariadb on node2 and node3, confirming they joined via SST/IST to reach wsrep_cluster_size=3, status Primary, Synced",
+    "Created appdb.orders table with seed rows on node1, created appuser with a node-generated random password, verified full replication and multi-writer inserts from node2 and node3",
+    "Updated wsrep_cluster_address on node1-3 to include node4 and wrote node4's own galera.cnf, then started mariadb on node4 which joined via SST to reach wsrep_cluster_size=4 carrying all existing data",
+    "Verified node4 accepts writes that replicate to node1, node2, and node3",
+    "Ran the mandatory restart protocol: captured boot_id + cluster health baseline on all four nodes, then restarted node1, node2, node3, and node4 one at a time (native reboot, backgrounded so ack returned before disconnect), polled each until reachable again, confirmed changed boot_id, and verified each node returned to wsrep_cluster_size=4, status Primary, Synced, with row_count intact before moving to the next node",
+    "Performed a final post-restart cross-node write from node4 and confirmed it replicated to node1"
+  ],
+  "evidence": [
+    {
+      "requirement": "3-node Galera cluster established on node1-3 with application data",
+      "command_ids": [
+        "cmd-7748885ad67241fb",
+        "cmd-69e9b6fd85e44e1e",
+        "cmd-d8149ba11a0d42d4",
+        "cmd-7852e5d0400442e4",
+        "cmd-9035131c879a47a4"
+      ],
+      "summary": "Shows no pre-existing cluster, then successful bootstrap on node1 (cluster_size=1, Primary, ready), growing to cluster_size=3/Primary/Synced after node2 and node3 joined, with appdb.orders seeded on node1"
+    },
+    {
+      "requirement": "3-node cluster accepts writes from any member (multi-writer)",
+      "command_ids": [
+        "cmd-ab001c36ece340f8",
+        "cmd-49e4dee1f91e4a1d",
+        "cmd-3c15493590984b2b",
+        "cmd-efa819d128b34895",
+        "cmd-17df32d890f9442a"
+      ],
+      "summary": "node2 and node3 already show replicated seed data; inserts issued from node2 (widget-D) and node3 (widget-E) both appear in node1's SELECT, proving multi-writer replication"
+    },
+    {
+      "requirement": "node4 added as fourth member carrying existing data",
+      "command_ids": [
+        "cmd-146b5e7d1cf34bbe",
+        "cmd-cd256865da6941ce",
+        "cmd-3ee12dfd414c4970",
+        "cmd-f4554939bcd442e5",
+        "cmd-0a14bd5b3df543ac"
+      ],
+      "summary": "gcomm address updated on node1-3, node4 configured and started; node4 reaches wsrep_cluster_size=4/Primary/Synced and its SELECT shows all 5 pre-existing rows transferred via SST; node1 confirms cluster_size=4 with node4's address in wsrep_incoming_addresses"
+    },
+    {
+      "requirement": "node4 accepts writes like other members and they replicate cluster-wide",
+      "command_ids": [
+        "cmd-55b310a9dfde48d1",
+        "cmd-0fa783c0e9394b31",
+        "cmd-40a5794d6921419e",
+        "cmd-a909fb88efb6431a"
+      ],
+      "summary": "widget-F inserted on node4 appears in SELECT results on node1, node2, and node3"
+    },
+    {
+      "requirement": "SELinux SST blocker root-caused and fixed with minimal reversible policy (supporting evidence for how the 3- and 4-node joins succeeded)",
+      "command_ids": [
+        "cmd-2c58e8daddd54d93",
+        "cmd-32fb8a11a48a47df",
+        "cmd-6d4350411dd14303",
+        "cmd-dc9c3252abeb4e2d",
+        "cmd-fd1a99248411492a",
+        "cmd-da1557902f6541b9"
+      ],
+      "summary": "mariabackup.backup.log showed a socket permission-denied error traced to an AVC connectto denial on mysqld_t; a custom semodule (galera_sst) was compiled and installed on all four nodes, after which SST succeeded"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered cluster/data",
+      "command_ids": [
+        "cmd-db73e5d80cd24eae",
+        "cmd-34450841f5d04922",
+        "cmd-b55f2e6d69424590",
+        "cmd-2330637ba6ae4754",
+        "cmd-0d2e579018a04a10",
+        "cmd-402ea1a451d84827"
+      ],
+      "summary": "Baseline boot_id 0581c914.../cluster_size=4/Synced/row_count=6; reboot ack returned; node unreachable confirming disruption; new boot_id 086ca6eb... proves restart; post-restart cluster_size=4/Primary/Synced and row_count=6 confirm recovery"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered cluster/data",
+      "command_ids": [
+        "cmd-c4f4cfe34480493a",
+        "cmd-958a9686fd16494f",
+        "cmd-9fe3339a3e3c45c6",
+        "cmd-607b91f47f7b4183",
+        "cmd-5952c1c4810c4271"
+      ],
+      "summary": "Baseline boot_id be303eb3...; reboot ack returned; node unreachable; new boot_id 7b8b474e... proves restart; post-restart cluster_size=4/Primary/Synced and row_count=6 confirm recovery"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered cluster/data",
+      "command_ids": [
+        "cmd-a5a6926427184376",
+        "cmd-84fc4f8ededf459b",
+        "cmd-4fb8cc1a227148b9",
+        "cmd-213467639f7443c9",
+        "cmd-1dc64c0a70914332"
+      ],
+      "summary": "Baseline boot_id 96974ac3...; reboot ack returned; node unreachable; new boot_id 6c93e8ff... proves restart; post-restart cluster_size=4/Primary/Synced and row_count=6 confirm recovery"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered cluster/data",
+      "command_ids": [
+        "cmd-249b8494783f497d",
+        "cmd-5ba8ce69a2164aee",
+        "cmd-60c7e0c6cde04df0",
+        "cmd-9db371d2fbfa4e5f",
+        "cmd-71e6825ed1124da6",
+        "cmd-0be796cc3bfa451e",
+        "cmd-8a9b9e2f5a984609"
+      ],
+      "summary": "Baseline boot_id 5e93a57c...; reboot ack returned; node unreachable; new boot_id 7543a60c... proves restart; post-restart cluster_size=4/Primary/Synced and row_count=6 confirm recovery; final cross-node write from node4 replicated to node1, proving the fully-restarted cluster remains a working multi-writer system"
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Serve a package repository from local storage on node1",
+      "status": "satisfied",
+      "summary": "createrepo_c was installed, tree-1.8.0-10.el9.x86_64.rpm was downloaded into /srv/localrepo, createrepo_c generated repodata there, and a systemd unit (localrepo-http.service) served that directory via python3 http.server on port 8080. HTTP 200 was confirmed against the repodata both immediately after setup and again after the node restart, and the after_executor lifecycle snapshot independently shows a listening socket on 0.0.0.0:8080 owned by python3.",
+      "evidence_ids": [
+        "cmd-22ec58eb41394b89",
+        "cmd-385410694ce247f1",
+        "cmd-724c9be4170648b9",
+        "cmd-d8a0681ad4f24499",
+        "cmd-56d7393e2a85451d",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Usual remote repositories are unreachable during the install",
+      "status": "satisfied",
+      "summary": "firewalld direct REJECT rules on outbound tcp/443 (ipv4+ipv6) were added, and a subsequent curl to cdn.redhat.com showed 'Connection refused', directly demonstrating the remote RHEL/subscription-manager CDN was unreachable at the time of the install.",
+      "evidence_ids": [
+        "cmd-253d527e09ad4ab7",
+        "cmd-c926a4bdb5494f19"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Install a package from the local repository while remote repos are unreachable",
+      "status": "satisfied",
+      "summary": "With the remote repos disabled and the 443 REJECT rule still active, dnf --enablerepo=localrepo -y install tree succeeded, with the transaction output showing Repository=localrepo. Post-install, rpm -q tree and tree --version confirmed a working binary, and rpm -qi shows genuine Red Hat build metadata, consistent with the package originating from the officially downloaded RPM rather than a fabricated artifact.",
+      "evidence_ids": [
+        "cmd-0026730b9c434d44",
+        "cmd-9de2647cb05e4764"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Restore normal remote connectivity after the demonstration (implied cleanup, not to leave the node in a broken network state)",
+      "status": "satisfied",
+      "summary": "The firewalld direct REJECT rules were removed; get-all-rules showed them cleared. A follow-up curl to cdn.redhat.com returned HTTP 403 (reachable but auth-denied, as expected for an unregistered/unentitled path) rather than a connection failure, confirming outbound 443 connectivity was restored. This was independently reconfirmed post-restart, where firewall direct rules were empty.",
+      "evidence_ids": [
+        "cmd-37ec17be3a264459",
+        "cmd-3e50120d58ca4392",
+        "cmd-56d7393e2a85451d"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Provider-wide node-restart evidence protocol on node1 (independent of the public task contract)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 6aa805ba..., uptime, service/repo/package health. systemctl reboot was issued (backgrounded so the ack returned before disconnect); subsequent polls showed connection timeouts/resets during the reboot window, then a new boot_id (b803b58b...) and reset uptime, matching the fixed global before_prepare/after_executor boot-identity observations exactly. Post-restart checks confirmed localrepo-http.service active+enabled, repo HTTP 200, tree still installed and functional, repo file persisted, dnf sees localrepo, and firewall direct rules empty \u2014 a full pre/disruption/post recovery transition was directly observed.",
+      "evidence_ids": [
+        "cmd-0a74d5cd968d45da",
+        "cmd-299b706ac8874569",
+        "cmd-3211d6302ce64410",
+        "cmd-092d57fc07d14310",
+        "cmd-02acd990030443f2",
+        "cmd-8723bc4003f74746",
+        "cmd-ecc90131ece448f9",
+        "cmd-56d7393e2a85451d",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor fully satisfied the task contract: it built and served a local RPM repository from /srv/localrepo via a persistent systemd-managed HTTP server on node1, demonstrably blocked outbound access to the remote RHEL CDN, installed the tree package exclusively from the local repo while remote repos were unreachable, and restored normal connectivity afterward. The independent node-restart evidence protocol was also fully and coherently demonstrated, with boot-identity change corroborated by the fixed lifecycle snapshots. No unnecessary or unreverted mutations were found.",
+  "limitations": [
+    "The 'remote connectivity restored' check relied on an HTTP 403 response (auth-denied) rather than a full successful registered-repo sync, which is an acceptable but indirect proxy for 'reachable' given the node's unregistered/unentitled subscription state.",
+    "Executor command statistics list 7 failed commands out of 27, but none of the failures shown in the timeline reflect a failure of a task-relevant action (the timeouts/reset during the reboot window were expected disconnects, and the rc 60 curl was a TLS-verification artifact); full detail on all 7 failed commands was not present in the provided timeline excerpt."
+  ],
+  "command_stats": {
+    "total": 27,
+    "successful": 20,
+    "failed": 7,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 1.0,
+    "summary": "All state-changing commands map clearly to task purposes: discovery (read-only), installing createrepo_c and downloading the RPM (prerequisite), generating repodata and standing up the systemd HTTP server plus repo file (the deliverable itself, intentionally persistent), adding and later removing the firewalld direct REJECT rules to simulate/lift unreachable remote repos (bounded, fully reverted and confirmed empty both immediately and post-restart), installing tree from the local repo (the task's core action), and the mandatory restart with bounded pre/post evidence collection. No unnecessary or unreverted mutations, no failed/conflicting services, and no weakened security posture were found; the only anomalous command exit (cmd-37ec17be3a264459 returning rc 60) was a curl SSL-verification quirk on the verification step, not a failed firewall-rule removal, and was immediately reconfirmed with a corrected curl in the next command.",
+    "evidence_ids": [
+      "cmd-253d527e09ad4ab7",
+      "cmd-37ec17be3a264459",
+      "cmd-3e50120d58ca4392",
+      "cmd-56d7393e2a85451d",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

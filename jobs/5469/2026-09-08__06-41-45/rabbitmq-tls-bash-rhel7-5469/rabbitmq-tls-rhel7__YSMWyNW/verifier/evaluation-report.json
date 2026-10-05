@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Run a RabbitMQ cluster across node1, node2, and node3",
+      "status": "satisfied",
+      "summary": "rabbitmqctl cluster_status on node1 shows all three nodes as both disk nodes and running nodes, no alarms, no partitions, matching RabbitMQ 3.10.0 versions on each \u2014 confirmed both at initial startup and again after all three restarts.",
+      "evidence_ids": [
+        "cmd-e1fda456b1674d89",
+        "cmd-450c7db6e7964eb6",
+        "cmd-216b9855d2e9421e"
+      ]
+    },
+    {
+      "id": "amqp-tls-own-ca",
+      "requirement": "Serve AMQP over TLS using a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A self-signed CA and per-node server certs (with node-name/IP SANs) were generated locally with openssl; rabbitmq.conf sets listeners.tcp=none and listeners.ssl.default=5671 pointing at that CA/cert/key. openssl s_client with a CA-issued client cert completed the handshake and exchanged a genuine AMQP Connection.Start frame on all three nodes.",
+      "evidence_ids": [
+        "cmd-bf2870f6f1b94ebf",
+        "cmd-e64b168a8105431a",
+        "cmd-cce9840be8b84241",
+        "cmd-f0a27cfc214f4e1e",
+        "cmd-f7796ce855e04936",
+        "cmd-7ceda99fff164f42"
+      ]
+    },
+    {
+      "id": "client-cert-enforcement",
+      "requirement": "Accept only client connections presenting a certificate issued by the cluster's own CA",
+      "status": "satisfied",
+      "summary": "ssl_options.verify=verify_peer and fail_if_no_peer_cert=true are set. Direct tests show: no client cert -> 'Fatal - Handshake Failure / no_client_certificate_provided'; a cert signed by an independently generated, untrusted CA -> 'Fatal - Unknown CA'; a CA-issued cert -> successful handshake and AMQP frame exchange. Behavior was reproduced on node2 and node3 as well.",
+      "evidence_ids": [
+        "cmd-80643fbae0c14cee",
+        "cmd-dd888f8aa5454a79",
+        "cmd-eca9b611c40046b6",
+        "cmd-c26c388a2c12411b",
+        "cmd-0cb47bc05ae84ef9"
+      ]
+    },
+    {
+      "id": "mgmt-internal-only",
+      "requirement": "Keep the management interface reachable only from within the cluster",
+      "status": "satisfied",
+      "summary": "management.tcp.ip is bound to each node's private cluster IP (not 0.0.0.0/[::]), confirmed via ss. firewalld rich rules on all three nodes restrict TCP/15672 (plus 4369/25672) to source 10.100.143.0/24 only, with the zone's default policy rejecting other traffic, confirmed via firewall-cmd --list-all and iptables -S.",
+      "evidence_ids": [
+        "cmd-6ae5d2ad0b1b474a",
+        "cmd-526cb0d6bdc0431f",
+        "cmd-987c5b62c01d4baa"
+      ]
+    },
+    {
+      "id": "functional-messaging",
+      "requirement": "Cluster functions as a usable message broker under the above TLS/mTLS constraints",
+      "status": "satisfied",
+      "summary": "A queue was declared, published to, consumed from, and deleted via the management HTTP API while the AMQP listener enforced mTLS, and rabbit_amqqueue:list() confirmed zero residual queues afterward.",
+      "evidence_ids": [
+        "cmd-88952711d536423c",
+        "cmd-3ae74c6df0134c7e",
+        "cmd-88603b289c684a9e"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a working 3-node RabbitMQ 3.10.0 cluster on RHEL 7.9 serving AMQP over TLS on 5671 using a purpose-built CA, with verified mutual-TLS enforcement (rejecting missing or wrongly-signed client certificates and accepting CA-issued ones) and a management interface bound to private IPs and firewall-restricted to the cluster subnet. Functional messaging was demonstrated end-to-end under these constraints, and all four core task requirements are satisfied with direct, first-hand evidence (TLS handshakes, log lines, firewall rule dumps, cluster_status output). The mandatory node-restart evidence protocol was also executed cleanly on all three nodes with matching pre/post boot-ID transitions cross-verified against the fixed lifecycle snapshots, and full service/cluster/TLS/firewall recovery was directly observed after each reboot. The main blemish is hygiene: the CA private key and a shared client private key were left in /tmp with world-readable permissions on the managed nodes and never cleaned up, which is a real (if locally-scoped) weakening of the security model the task specifically asked for.",
+  "limitations": [
+    "Package installation and GPG-key downloads used curl -k / sslverify=0 due to an expired system CA bundle on the images; this affects only the software supply chain for installing RabbitMQ/Erlang, not the cluster's own TLS/mTLS configuration, but is a workaround worth noting.",
+    "No test was captured showing whether the AMQP TLS port is reachable from outside the cluster subnet (only the management port's external unreachability was verified at the firewall level); per the task text this may be intentional (AMQP clients are not required to be subnet-restricted), so this is a scope observation rather than a gap against the stated requirements.",
+    "CA and client private key material was left behind on managed nodes with world-readable permissions and was not part of the captured executor cleanup, which is a genuine unresolved security residue rather than a test artifact."
+  ],
+  "command_stats": {
+    "total": 144,
+    "successful": 112,
+    "failed": 31,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.45,
+    "summary": "Most executor mutations were purposeful and either retained appropriately (RabbitMQ/Erlang install, TLS config, firewall rules, cluster cookie) or fully reverted (bench_user account created for functional testing was deleted in cmd-d0abaf872dd349c7; the test queue amqps-test was deleted and confirmed empty via rabbit_amqqueue:list() in cmd-88603b289c684a9e). However, sensitive private key material was left behind with overly permissive file modes and never cleaned up: the CA's own private key (/tmp/ca/private/ca_key.pem, generated in cmd-bf2870f6f1b94ebf) was created with mode 644 (world-readable) and remains in /tmp on node1 per the after_executor temporary-files snapshot (global:after_executor:node1:temporary-files) \u2014 since this key can mint additional CA-trusted certificates, its unrestricted local readability undermines the mTLS trust boundary the task asked for. Similarly, the shared client private key (/tmp/client_key.pem, distributed via cmd-72d2a1bf6af84e20) is left in /tmp on node1, node2, and node3 (global:after_executor:node2:temporary-files, global:after_executor:node3:temporary-files) rather than being removed or locked down after use. A second CA/client cert pair generated purely to test rejection of untrusted certs (cmd-dd888f8aa5454a79) also remains in /tmp on node1 (other_ca_cert.pem, other_ca_key.pem, other_client_cert.pem, other_client_key.pem) \u2014 lower-risk since it was never trusted by the cluster, but still unremoved troubleshooting/test residue. These were bounded, low-risk mutations in that they didn't break any service, but they were never reverted and represent avoidable, unaddressed sensitive-material exposure.",
+    "evidence_ids": [
+      "cmd-bf2870f6f1b94ebf",
+      "cmd-72d2a1bf6af84e20",
+      "cmd-dd888f8aa5454a79",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 permits (accepts) and logs the node3->node4 TCP/23 traffic",
+      "status": "satisfied",
+      "summary": "A VyOS forward-filter rule (rule 10) was committed with action accept, log enabled, protocol tcp, source 10.100.84.12/32, destination 10.100.84.13/32, destination port 23. The compiled nft ruleset shows the rule with the log prefix '[ipv4-FWD-filter-10-A]', and after a live connection attempt the packet counter incremented and a matching kernel log line (accept, SRC=10.100.84.12 DST=10.100.84.13 DPT=23) was captured, directly demonstrating permit+log behavior.",
+      "evidence_ids": [
+        "cmd-edd75ea0f70d45bb",
+        "cmd-7a99f905b7b54c13",
+        "cmd-261ec18b651847a7",
+        "cmd-ed76752502424a18"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node2 refuses (blocks/rejects) and logs the same traffic",
+      "status": "satisfied",
+      "summary": "An OPNsense filter rule (type reject, quick, log enabled) matching tcp/23 from 10.100.84.12 to 10.100.84.13 was added to config.xml (with a backup made first) and reloaded via configctl. pfctl -s rules confirms the compiled rule 'block return ... log quick ... from 10.100.84.12 to 10.100.84.13 port = telnet', and pflog captured a matching block entry for the live attempt.",
+      "evidence_ids": [
+        "cmd-fa7acabb56454afe",
+        "cmd-559d6beb28bf45dc",
+        "cmd-8480577c319c4123",
+        "cmd-c9627b6c92a941a6"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "A single attempt from node3 produces a correlated log-entry pair from which the stopping point is evident",
+      "status": "satisfied",
+      "summary": "One TCP connect attempt from node3 to node4:23 (which returned Connection refused) produced a node1 kernel log entry (accept, ID=10887, SPT=39468, DPT=23) and a node2 pflog block entry with the identical IP ID, source port, and destination port, directly showing the same packet was permitted at node1 and stopped at node2.",
+      "evidence_ids": [
+        "cmd-5a791caec8ff45b4",
+        "cmd-ed76752502424a18",
+        "cmd-c9627b6c92a941a6"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all four managed nodes (pre-restart identity/health, restart acknowledgement, changed post-restart identity, recovered state)",
+      "status": "satisfied",
+      "summary": "All four nodes show a captured pre-restart boot identity, a backgrounded reboot command, a distinct post-restart boot identity, and recovery evidence: node1's accept+log firewall rule persisted with reset counters, node2's reject+log pf rule persisted, node3's forced static route persisted, and node4's boot identity changed. A second end-to-end connection attempt after all four reboots reproduced the identical correlated accept/block log pair (matching ID 53104/SPT 58322/DPT 23), directly confirming full behavioral recovery post-restart.",
+      "evidence_ids": [
+        "cmd-c7f39580e2454504",
+        "cmd-8d8243a79534487b",
+        "cmd-f82e866a8b694d88",
+        "cmd-9d48e82981584d5b",
+        "cmd-06d448a5b9bb4e7f",
+        "cmd-f9afe2df695d4bc7",
+        "cmd-6433c6ac63d6436e",
+        "cmd-82e068b5f18846b1",
+        "cmd-fa5695f2ce0d4a9e",
+        "cmd-6c0c4277e0c54cfb",
+        "cmd-7f17a3daa4c647f7",
+        "cmd-2cc4c555e6884723",
+        "cmd-b852de42dfb44097",
+        "cmd-00d1b98395714989",
+        "cmd-1508ecfd156243ef",
+        "cmd-6e33d597cd3348cc",
+        "cmd-a5fb0f4dc9f7499e",
+        "cmd-b01239ac3b5043b4"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task were directly satisfied with strong evidence: node1 permits and logs the specified TCP/23 traffic, node2 refuses and logs the same traffic, and a single connection attempt from node3 produced a correlated log pair (matching IP ID, source port, destination port) on node1 (accept) and node2 (block) that makes the stopping point evident purely from the records. The executor also completed the mandatory node-restart protocol on all four nodes with clear pre/post boot-identity changes and a second end-to-end verification after all reboots reproducing the identical correlated behavior, directly demonstrating recovery. The routing workaround (a static route forcing node3->node4 traffic via node1) was a reasonable adaptation to the platform's observed flat /24 network layout, which otherwise would not have routed traffic through node1 first as described in the task.",
+  "limitations": [
+    "The declared network topology (separate mgmt/transit/lan-a/lan-b segments) did not match observed reality (all nodes share one flat 10.100.84.0/24 network); the executor's static-route workaround is a reasonable substitute but is a deviation from the intended segmented design and could not be independently verified against the original network intent.",
+    "A new 'NetworkManager-wait-online.service' failure appeared on node3 and node4 after the mandated reboots; it is very likely an artifact of the reboot/virtualization environment rather than an executor error, but this could not be conclusively distinguished from the captured evidence alone.",
+    "Node4's role as a passive destination was not independently exercised as a service (no telnet listener was found on node4), so recovery evidence for node4 is limited to boot-identity change rather than a service-level check; this does not affect the material outcome since traffic is expected to be blocked before reaching node4."
+  ],
+  "command_stats": {
+    "total": 51,
+    "successful": 40,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Mutations were generally bounded and tied to the material outcome. On node1, an initial configure attempt (cmd-1325d1f1a31b4b01) failed on invalid VyOS syntax ('log enable') and was never committed within that session, so no persistent state resulted; it was immediately corrected (cmd-edd75ea0f70d45bb) with the valid syntax and committed. A follow-up discovery command (cmd-55f8371456b0467a) probing valid 'log' syntax also failed harmlessly with no commit. On node2, the OPNsense config.xml was edited directly via a Python script that first created a .bak backup (cmd-fa7acabb56454afe) before adding the reject rule \u2014 a reasonable, reversible approach. On node3, a persistent NetworkManager static route was added (cmd-e01487bfb0e54943) to force node3->node4 traffic through node1 first; this was a necessary prerequisite given the observed flat /24 network (rather than the segmented topology implied by the environment spec), and is directly tied to satisfying the material requirement that traffic cross node1 then node2. No unnecessary, unreverted, destructive, or security-weakening mutations were observed. One residual concern: after the mandated reboots, node3 and node4 both show a newly-failed 'NetworkManager-wait-online.service' in the after-executor snapshot that was not present before-prepare; this appears to be an artifact of the reboot process itself rather than an executor misconfiguration, but it is unaddressed residue worth noting.",
+    "evidence_ids": [
+      "cmd-1325d1f1a31b4b01",
+      "cmd-edd75ea0f70d45bb",
+      "cmd-55f8371456b0467a",
+      "cmd-fa7acabb56454afe",
+      "cmd-e01487bfb0e54943",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node4:failed-services",
+      "global:before_prepare:node3:failed-services",
+      "global:before_prepare:node4:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

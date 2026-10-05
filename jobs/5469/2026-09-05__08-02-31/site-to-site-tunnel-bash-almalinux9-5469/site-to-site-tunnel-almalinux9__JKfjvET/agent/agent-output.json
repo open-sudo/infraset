@@ -1,0 +1,110 @@
+{
+  "status": "completed",
+  "summary": "Built a WireGuard site-to-site tunnel between node1 and node2 over their shared transit network (10.200.0.0/30 on eth1), routing node3's private lan-a (192.168.10.0/24) and node4's private lan-b (192.168.20.0/24) across it. node3 and node4 now reach each other by private address, and packet captures confirm cross-site traffic is opaque encrypted WireGuard UDP on the transit link while the same traffic is plaintext ICMP on the private LAN legs. All four nodes were then restarted one at a time (leaves first, then routers) per the mandatory restart protocol, and connectivity/tunnel state was confirmed to persist and auto-recover after each restart.",
+  "actions_performed": [
+    "Surveyed topology on all 4 nodes; found node1/node2 (OpenWrt) each have 2 unconfigured interfaces (eth1, eth2) and node3/node4 (AlmaLinux) each have 1 (eth1), plus a shared management/exec network on eth0/br-lan (10.100.2.0/24) that was left untouched",
+    "Used temporary test IPs plus arping (L2, bypasses OpenWrt's default firewall REJECT on unclassified interfaces) to identify physical adjacency: node1-eth1<->node2-eth1 (transit), node1-eth2<->node3-eth1 (lan-a), node2-eth2<->node4-eth1 (lan-b)",
+    "Configured static addressing via UCI on node1 (transit 10.200.0.1/30, landa 192.168.10.1/24) and node2 (transit 10.200.0.2/30, landb 192.168.20.1/24)",
+    "Installed wireguard-tools/kmod-wireguard via apk on node1 and node2 (apk update first, per OpenWrt 24.10+ package contract), generated WireGuard keypairs on each node locally",
+    "Configured UCI wireguard interface 'vpn' (10.99.99.1/30 and 10.99.99.2/30) with peer sections using route_allowed_ips so each router auto-routes the opposite private subnet through the tunnel",
+    "Configured OpenWrt firewall (fw4/nftables) zones/rules: extended lan zone to include landa/landb, added a transit zone allowing inbound UDP/51820 for the WireGuard handshake, added a vpn zone with bidirectional lan<->vpn forwarding",
+    "Applied config via full 'network restart' (a 'reload' left the wireguard proto in state none/NO_DEVICE) and 'firewall restart' on both routers; confirmed WireGuard handshake established and 10.99.99.1<->10.99.99.2 tunnel IPs pingable",
+    "Configured node3 and node4 via nmcli with static private IPs (192.168.10.10/24, 192.168.20.10/24) and persistent static routes to the opposite private subnet via their local router, with ipv4.never-default to avoid overriding the mgmt default route",
+    "Verified node3<->node4 reachability by private address in both directions",
+    "Captured traffic simultaneously on node1's transit interface (eth1) and lan-a interface (eth2) during a live ping: eth2 showed plaintext ICMP echo request/reply, eth1 showed only opaque WireGuard UDP/51820 datagrams, proving encryption in transit",
+    "Captured pre-restart baseline (boot_id, wg show, ifstatus, addresses/routes, live ping) on all 4 nodes",
+    "Restarted node3, then node4, then node1, then node2 one at a time via native 'reboot', polling each until exec access returned, verifying boot_id changed and uptime reset to 0, then confirming service/data recovery (interface addresses, static routes, WireGuard handshake/tunnel interface, and live cross-site ping) before moving to the next node"
+  ],
+  "evidence": [
+    {
+      "requirement": "Tunnel identification: physically map transit/lan-a/lan-b links",
+      "command_ids": [
+        "cmd-a34f6b183ffb4d39",
+        "cmd-8cc74b041e564468",
+        "cmd-ea8c70fa5ee94954",
+        "cmd-5c3f3ec7c6814b26",
+        "cmd-f26bc0f19a324328",
+        "cmd-2e18acedbe3143a7",
+        "cmd-5f34edc9eaf24f22",
+        "cmd-5b7b8b1574424492",
+        "cmd-46bc0a1172174794"
+      ],
+      "summary": "ip addr/link surveys plus arping tests establish node1-eth1<->node2-eth1 (transit), node1-eth2<->node3-eth1 (lan-a), node2-eth2<->node4-eth1 (lan-b)"
+    },
+    {
+      "requirement": "Encrypted tunnel established between node1 and node2 over transit network",
+      "command_ids": [
+        "cmd-e5bfa4135e8345bb",
+        "cmd-a2ec9801f5044544",
+        "cmd-5e3020822bd44f9c",
+        "cmd-a830b740dc274182",
+        "cmd-44d0b7a5d4e54fce",
+        "cmd-41a235d0ba224549",
+        "cmd-1bedabf0299d4e3e",
+        "cmd-c98c4b7929c54bb1",
+        "cmd-af522b4e7a3943e1"
+      ],
+      "summary": "wireguard-tools installed, UCI wireguard interfaces configured with keys/peers, network restarted, wg show confirms successful handshake and tunnel-IP ping on both node1 and node2"
+    },
+    {
+      "requirement": "Private networks routed across the tunnel; node3 and node4 reach each other by private address",
+      "command_ids": [
+        "cmd-e87ed30284724203",
+        "cmd-b4071eee26dc4e0e",
+        "cmd-82c11e16726d49ab",
+        "cmd-aaafa5773b8542f0"
+      ],
+      "summary": "node3 (192.168.10.10) and node4 (192.168.20.10) configured with static addresses and routes via their local router; bidirectional ping succeeds by private address"
+    },
+    {
+      "requirement": "Traffic is encrypted in transit across the transit network",
+      "command_ids": [
+        "cmd-e518d9dddb1d42f7"
+      ],
+      "summary": "Simultaneous tcpdump capture on node1's transit interface (eth1) shows only opaque WireGuard UDP/51820 packets, while the lan-a interface (eth2) shows the same ICMP echo request/reply in plaintext, proving the cross-site ICMP traffic is encrypted on the transit link"
+    },
+    {
+      "requirement": "node3 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-b8380482f4bf4981",
+        "cmd-6f51ae445dc34f14",
+        "cmd-182c76c815264c1c",
+        "cmd-3d98df2ea6ca4503"
+      ],
+      "summary": "Baseline boot_id 717db5a2...; reboot acknowledged then connection dropped; post-restart boot_id 41b538fb... with uptime 0; eth1 address/route and cross-site ping to node4 confirmed recovered"
+    },
+    {
+      "requirement": "node4 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-60b475f15f7a47c4",
+        "cmd-03f6927385fc4a31",
+        "cmd-bc20d8bc77f94908",
+        "cmd-f9cace628aa74506"
+      ],
+      "summary": "Baseline boot_id 84419b90...; reboot acknowledged then connection dropped; post-restart boot_id 2e9b82cd... with uptime 0; eth1 address/route and cross-site ping to node3 confirmed recovered"
+    },
+    {
+      "requirement": "node1 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-f2e793aa78ce4d7f",
+        "cmd-ca1401e8204f4710",
+        "cmd-600df6bb735a429b",
+        "cmd-926d774933014c62",
+        "cmd-c7cccffa5b5f4249"
+      ],
+      "summary": "Baseline boot_id f353578c...; reboot ack returned via closed connection; post-restart boot_id 7f7fbce5... with uptime 0; wg show shows fresh handshake 7s after restart and vpn interface up; node3->node4 ping still succeeds"
+    },
+    {
+      "requirement": "node2 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-2c0d6614a7be4343",
+        "cmd-2d22eee2ece84588",
+        "cmd-363d3d69c9694747",
+        "cmd-3052ff7e5db24e57",
+        "cmd-4e8e621515474790",
+        "cmd-265c1732478e4aba"
+      ],
+      "summary": "Baseline boot_id 02232101...; reboot ack returned via closed connection; post-restart boot_id 80808687... with uptime 0; wg show shows fresh handshake 8s after restart and vpn interface up; both node3->node4 and node4->node3 pings succeed confirming full cluster recovery"
+    }
+  ]
+}

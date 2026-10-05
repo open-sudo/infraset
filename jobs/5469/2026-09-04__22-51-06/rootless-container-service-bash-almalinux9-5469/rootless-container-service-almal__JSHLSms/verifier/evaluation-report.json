@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Run a containerized web application on node1 as the unprivileged appsvc account",
+      "status": "satisfied",
+      "summary": "appsvc created as a locked/nologin system user (uid 995) via useradd -r -m -s /sbin/nologin (cmd-1c28142215164271). All podman/systemctl operations were executed as appsvc via sudo -u appsvc with its own XDG_RUNTIME_DIR/DBUS session, and the running webapp.service's cgroup path (user-995.slice/user@995.service/app.slice/webapp.service) confirms the nginx container process tree runs entirely under appsvc's user slice, not root (cmd-884048192ded4c6c).",
+      "evidence_ids": [
+        "cmd-1c28142215164271",
+        "cmd-be0c8f6cfc3d405c",
+        "cmd-884048192ded4c6c"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Web application serves on port 8080",
+      "status": "satisfied",
+      "summary": "curl to $NODE_IP:8080 returned HTTP 200 both via the manual smoke-test container and after starting the Quadlet-generated webapp.service (cmd-87d19c739778472a, cmd-884048192ded4c6c). podman ps confirms 0.0.0.0:8080->80/tcp port mapping, and the post-executor lifecycle snapshot independently shows a new listening socket on *:8080 owned by pasta (rootless podman's port forwarder) that did not exist in the before-prepare snapshot.",
+      "evidence_ids": [
+        "cmd-87d19c739778472a",
+        "cmd-884048192ded4c6c"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Application starts at boot while appsvc has no active login session",
+      "status": "satisfied",
+      "summary": "loginctl enable-linger appsvc set Linger=yes (cmd-0ce2d76d4b5441c7); user@995.service is active with 'No sessions' confirming the user manager runs without a login session (cmd-06e3d8c616764eba); webapp.service is installed as a Quadlet unit with WantedBy=default.target and confirmed listed under appsvc's default.target dependencies with is-enabled=generated (cmd-83b0761683224938). Critically, this was verified across an actual reboot: post-restart the system shows a fresh uptime, appsvc still has zero login sessions (State=lingering), and a newly-started container instance (7s old) is running with webapp.service active and HTTP 200 on 8080 (cmd-706b4cf814864fc3), directly demonstrating boot-time start without a login session rather than relying on configuration alone.",
+      "evidence_ids": [
+        "cmd-0ce2d76d4b5441c7",
+        "cmd-06e3d8c616764eba",
+        "cmd-83b0761683224938",
+        "cmd-706b4cf814864fc3"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart baseline, restart, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id c2ffc729... with webapp.service active and HTTP 200 (cmd-be4fe7faab114bb4, cmd-83b0761683224938, cmd-884048192ded4c6c). A backgrounded 'shutdown -r now' returned its ack (pid 11609) before the connection dropped (cmd-3da2ebcd93ed487a). A subsequent exec timed out (node unreachable, cmd-f47c2f12692544f5) followed by a successful poll returning a different boot_id 04202496... (cmd-e7300bbc18a14235), directly proving a real reboot occurred. Post-restart recovery was directly observed: fresh uptime, zero login sessions with linger still active, webapp.service active, a freshly started container, and HTTP 200 (cmd-706b4cf814864fc3). This is independently corroborated by the fixed before-prepare/after-executor boot-identity snapshots, which show the same boot_id transition (c2ffc729... to 04202496...) and the new *:8080 listening socket.",
+      "evidence_ids": [
+        "cmd-be4fe7faab114bb4",
+        "cmd-3da2ebcd93ed487a",
+        "cmd-f47c2f12692544f5",
+        "cmd-e7300bbc18a14235",
+        "cmd-706b4cf814864fc3"
+      ]
+    }
+  ],
+  "overall_summary": "The executor deployed nginx as a rootless Podman Quadlet unit (webapp.service) running entirely under the unprivileged appsvc account, publishing port 8080, and enabled loginctl linger so the unit starts at boot without any login session. All three material task outcomes are satisfied with direct, first-party evidence, and this was validated not just via configuration but via a live end-to-end reboot: pre-restart baseline, a bounded disruption (shutdown -r now with immediate ack), a directly observed changed boot identity, and full post-restart recovery of the service, container, and zero-session condition, corroborated by the fixed lifecycle boot-identity and listening-socket snapshots. Hygiene is very good with only trivial log-file residue in /tmp.",
+  "limitations": [
+    "The after_prepare snapshot is an alias of before_prepare (prepare stage disabled), so preparer-vs-executor state separation relies entirely on the executor_comparison diff, which is consistent with the executor's own timeline.",
+    "No independent verification was possible of the container's HTTP content beyond status code 200 (default nginx page), though this exceeds what the task instruction required."
+  ],
+  "command_stats": {
+    "total": 20,
+    "successful": 18,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Executor actions were tightly scoped to the task: install podman, create appsvc with subuid/subgid ranges, enable linger, do a bounded manual smoke-test container (cmd-be0c8f6cfc3d405c) which was cleanly removed before installing the permanent Quadlet unit (cmd-c8de17447a5a4df5 ran 'podman rm -f webapp' as cleanup), then author and start the Quadlet service, and finally perform the single sanctioned node restart. No unnecessary or unexplained mutations were found; every state-changing command maps to a material requirement or a necessary prerequisite (package install, user/subuid provisioning, linger, unit authoring, restart verification). Minor residue: /tmp/podman_install.log and /tmp/reboot.log were left behind after the run (visible in the after-executor temporary-files snapshot) \u2014 low-risk, non-sensitive installer/reboot logs, not cleaned up, but bounded and not a security or functional concern.",
+    "evidence_ids": [
+      "cmd-216b7d17d4e24cb7",
+      "cmd-be0c8f6cfc3d405c",
+      "cmd-c8de17447a5a4df5",
+      "cmd-3da2ebcd93ed487a",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

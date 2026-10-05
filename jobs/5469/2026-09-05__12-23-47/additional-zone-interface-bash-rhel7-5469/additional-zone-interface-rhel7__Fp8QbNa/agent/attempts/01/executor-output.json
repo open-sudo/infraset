@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "Brought node1's lan-b-facing interface (vtnet2, MAC-matched to node3's eth1 via live traffic capture) into service as a new OPNsense zone \"optb\" at 10.60.1.1/24, with a matching default-allow firewall rule. Gave node3's eth1 a persistent static IP (10.60.1.12/24) and a persistent host route so node3 reaches node2 on the existing lan (lan-a, 10.100.203.0/24) routed through node1 \u2014 proven via TTL decrement and simultaneous tcpdump on both of node1's interfaces showing the packet enter on lan-b and exit NAT'd toward node2 on lan. All three nodes were then restarted one at a time per the mandatory protocol: node1's FreeBSD reboot succeeded on the first try (kern.boottime changed); node2/node3's first reboot attempts silently failed (nohup lost PATH to `shutdown`), corrected to `sudo /sbin/shutdown -r now`, after which both genuinely rebooted (new `last reboot`/`who -r` entries superseding the original Aug-26 boot). All zone config, NAT, firewall rules, static IP, and the persistent route survived every restart, and end-to-end connectivity (node3\u2192node1 lan-b, node3\u2192node2 via node1) was reverified healthy after the final restart.",
+  "actions_performed": [
+    "Correlated node1's unconfigured NICs (vtnet1, vtnet2) to node2/node3's eth1 via live tcpdump + broadcast ping, confirming vtnet2<->node3 eth1 is the lan-b link (vtnet1<->node2 eth1 is a separate, task-irrelevant link since node2 is already reachable on the pre-existing lan/lan-a zone)",
+    "Edited /conf/config.xml on node1 (backed up first) via a Python ElementTree script to add a new interface 'optb' on vtnet2 with static IP 10.60.1.1/24, plus a default-allow filter rule scoped to that zone",
+    "Applied the new interface via OPNsense's PHP config pipeline (interfaces_configure, system_routing_configure, filter_configure) since no configctl one-liner covers registering a brand-new interface assignment",
+    "Verified automatic outbound NAT and the pf pass rule were generated for optb/vtnet2, and confirmed the pre-existing lan (SSH/exec) pass rule and connectivity were undisturbed",
+    "Configured node3's eth1 persistently (ifcfg-eth1: 10.60.1.12/24) and added a persistent host route (route-eth1: 10.100.203.11 via 10.60.1.1 dev eth1) so node3 reaches node2 through node1",
+    "Proved the routed/NAT path with simultaneous tcpdump on node1's vtnet2 (lan-b) and vtnet0 (lan) during a ping from node3 to node2, showing ingress on lan-b and NAT'd egress on lan; confirmed via ICMP TTL=63 (one router hop)",
+    "Captured pre-restart healthy baselines on all three nodes (FreeBSD kern.boottime; RHEL7 boot_id/last reboot/who -r; interface states)",
+    "Restarted node1 via native FreeBSD 'shutdown -r now'; polled until exec returned; verified kern.boottime changed and all lan-b config/NAT/rules/connectivity fully recovered",
+    "Attempted node2 and node3 restarts via 'nohup shutdown -r now &' which silently failed (PATH lacked /sbin under nohup); detected via /tmp/reboot.log showing 'shutdown: No such file or directory' and unchanged 'last reboot' timestamps",
+    "Re-ran node2 and node3 restarts correctly via 'nohup sudo /sbin/shutdown -r now &' (each dropped the exec connection immediately, confirming a genuine reboot trigger); polled until exec returned on each",
+    "Verified genuine reboots via new 'last reboot'/'who -r' entries (Sep 5 13:15:xx superseding the original Aug 26 10:3x boot) on both node2 and node3",
+    "Verified node3's persistent eth1 static IP and host route survived its restart, then re-ran end-to-end pings (node3->node1 lan-b at 10.60.1.1, and node3->node2 at 10.100.203.11 with TTL=63) confirming full recovery"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1's lan-b interface identified and brought up as its own zone with an address",
+      "command_ids": [
+        "cmd-a2eeddfeffe949b4",
+        "cmd-c91e88bcc9fc4fc5",
+        "cmd-c70e879ec5e042f5",
+        "cmd-f8994e64c72e40a2",
+        "cmd-3c09d7de134c49b5",
+        "cmd-f177ac42cc7d482f",
+        "cmd-9eb7b1eaf2b0496d",
+        "cmd-c1f50df3dd694b8a",
+        "cmd-028651f3238745ba",
+        "cmd-b1fffc60b0de472d"
+      ],
+      "summary": "MAC-correlated vtnet2 to node3's eth1 via tcpdump, then added and applied the new 'optb' interface (10.60.1.1/24) with a matching firewall pass rule; pfctl output confirms the rule and auto-NAT are live."
+    },
+    {
+      "requirement": "node3 reaches node1 on the new lan-b zone",
+      "command_ids": [
+        "cmd-befaa0a5344b4b6b",
+        "cmd-a24c6583d554467d"
+      ],
+      "summary": "node3's eth1 configured persistently at 10.60.1.12/24; ping to node1's lan-b address 10.60.1.1 succeeds (0% loss)."
+    },
+    {
+      "requirement": "node3 reaches node2 on lan-a routed through node1",
+      "command_ids": [
+        "cmd-b575671450834531",
+        "cmd-befaa0a5344b4b6b",
+        "cmd-d28d672cb5254a0d"
+      ],
+      "summary": "Persistent host route added on node3 (10.100.203.11 via 10.60.1.1 dev eth1); ping succeeds with TTL=63 (one hop through node1); simultaneous tcpdump on node1's vtnet2 and vtnet0 shows the packet arriving on lan-b and leaving NAT'd toward node2 on lan."
+    },
+    {
+      "requirement": "node1 restart: baseline, acknowledgement, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-a524962ccb984b2d",
+        "cmd-cc880e15eab34197",
+        "cmd-9ddc874c97454188",
+        "cmd-587a3adeb0854755",
+        "cmd-a07e4d95f1b94514",
+        "cmd-c578ced768b74243"
+      ],
+      "summary": "Baseline kern.boottime captured; reboot acknowledged (command returned before disconnect); post-reboot kern.boottime changed (1788627957 -> 1788628366); lan-b zone, firewall rules, NAT, and node3 connectivity all reverified healthy."
+    },
+    {
+      "requirement": "node2 restart: baseline, acknowledgement, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-e8be2dd039614b88",
+        "cmd-1570fc788ef8416f",
+        "cmd-9e0688ef679d44a8",
+        "cmd-53e1ac7a6fb94932",
+        "cmd-13ef29170c1a448e",
+        "cmd-165e7414723443e4"
+      ],
+      "summary": "Baseline boot_id/uptime captured; first reboot attempt silently failed (PATH), detected and corrected to 'sudo /sbin/shutdown -r now' which dropped the connection (acknowledged); post-reboot 'last reboot'/'who -r' show a new Sep 5 13:15:30 boot superseding Aug 26; eth0 and node3->node2 connectivity confirmed recovered."
+    },
+    {
+      "requirement": "node3 restart: baseline, acknowledgement, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-3843dd726fbe469a",
+        "cmd-5196d052638240ec",
+        "cmd-77d6627458304333",
+        "cmd-2596c201e73549ad",
+        "cmd-90b7f3f658484ca0",
+        "cmd-612c1479d8434d52"
+      ],
+      "summary": "Baseline boot_id/uptime captured; first reboot attempt silently failed (PATH, confirmed via /tmp/reboot.log 'shutdown: No such file or directory' and unchanged last-reboot record), corrected to 'sudo /sbin/shutdown -r now' which dropped the connection (acknowledged); post-reboot 'last reboot'/'who -r' show new Sep 5 13:15:48 boot superseding Aug 26; eth1 static IP and persistent route survived; final pings confirm node3 reaches both node1 (lan-b) and node2 (via node1, TTL=63)."
+    }
+  ]
+}

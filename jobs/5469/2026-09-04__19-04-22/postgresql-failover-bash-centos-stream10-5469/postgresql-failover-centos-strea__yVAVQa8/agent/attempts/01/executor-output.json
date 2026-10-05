@@ -1,0 +1,109 @@
+{
+  "status": "completed",
+  "summary": "Deployed PostgreSQL 16 streaming replication across node1 (primary), node2 and node3 (standbys) on CentOS Stream 10, exercised a full failover (node1 lost -> node2 promoted -> node3 repointed -> node1 rejoined as standby of node2) with zero data loss, and completed the mandatory one-node-at-a-time restart protocol on all three nodes with proof of changed boot identity and full post-restart recovery.",
+  "actions_performed": [
+    "Installed postgresql-server/contrib 16.14 on node1, node2, node3 via dnf",
+    "Initialized DB on node1; configured wal_level=replica, max_wal_senders, hot_standby, and pg_hba.conf for replication and client access",
+    "Generated the replicator role's password on node1 with openssl and passed it to other nodes only via secret_env, never in literal command text",
+    "Opened firewalld postgresql service on all three nodes",
+    "Built node2 and node3 as standbys via pg_basebackup -R from node1; verified standby.signal/primary_conninfo and confirmed streaming state with ~0 replication lag",
+    "Created a test table and inserted baseline rows; confirmed replication to both standbys",
+    "Simulated primary loss: confirmed node2 fully caught up to node1's WAL LSN, then stopped postgresql on node1",
+    "Promoted node2 to writable primary via pg_ctl promote; verified zero data loss (all pre-failover rows present) and that new writes succeed on node2",
+    "Repointed node3's primary_conninfo to node2 and restarted it as a standby of the new primary; verified streaming and full data consistency",
+    "Rebuilt node1 via pg_basebackup -R from node2 and started it as a standby of node2; verified recovery mode and intact data",
+    "Captured boot_id and health baseline on all three nodes",
+    "Rebooted node1, then node3, then node2 (the primary) one at a time via systemctl reboot, polling each node until exec access returned",
+    "Proved each restart via changed /proc/sys/kernel/random/boot_id (not just elapsed time or service state)",
+    "Verified post-restart recovery for each node: node1 and node3 resumed streaming as standbys with full data; node2 resumed as writable primary, accepted a new write, and both standbys replicated it"
+  ],
+  "evidence": [
+    {
+      "requirement": "Primary/standby streaming replication configured node1->node2/node3",
+      "command_ids": [
+        "cmd-2a60f35fbaa14ed1",
+        "cmd-1e2e88ea47f640d3",
+        "cmd-4b22733dac644af4",
+        "cmd-533a378acba54ca0",
+        "cmd-6915c653dee14bac",
+        "cmd-9c02a2231e284985",
+        "cmd-1fa2429557ec49dc",
+        "cmd-eb2845971c7f4fcf"
+      ],
+      "summary": "postgresql installed and initialized on node1; replication settings and replicator role created; node2/node3 built via pg_basebackup -R with standby.signal and primary_conninfo pointing at node1; pg_stat_replication on node1 shows both standbys streaming"
+    },
+    {
+      "requirement": "Replicated data verified consistent before disruption",
+      "command_ids": [
+        "cmd-06ab1365076547bb",
+        "cmd-4bc7750b9f984464",
+        "cmd-b6e0fe2289e14eff"
+      ],
+      "summary": "Rows inserted on node1 primary appear identically on node2 and node3 standbys"
+    },
+    {
+      "requirement": "Primary loss simulated and standby promoted without data loss",
+      "command_ids": [
+        "cmd-a1add77623d6451c",
+        "cmd-8869a82d6b794a4d",
+        "cmd-3d2f5e87467b4bba",
+        "cmd-82a59774613b4322",
+        "cmd-b1bad789c8254e89"
+      ],
+      "summary": "node2 confirmed at matching WAL LSN before node1 was stopped; node2 promoted to primary (pg_is_in_recovery=f) and accepted a new write while retaining all prior rows including the last one written on node1 pre-failover"
+    },
+    {
+      "requirement": "Remaining standby (node3) repointed to new primary",
+      "command_ids": [
+        "cmd-796fbd1ed6234131",
+        "cmd-082804476bd04315",
+        "cmd-c364a508c33b40f3"
+      ],
+      "summary": "node3 primary_conninfo updated to node2, restarted, confirmed streaming from node2 in pg_stat_replication and holding the post-failover row"
+    },
+    {
+      "requirement": "Recovered former primary (node1) rejoins as standby of current primary (node2)",
+      "command_ids": [
+        "cmd-070c650445e843ff",
+        "cmd-254a3259c2ff42ec",
+        "cmd-14a490843ec6409d",
+        "cmd-eafe822fa01a479d"
+      ],
+      "summary": "node1 rebuilt via pg_basebackup -R from node2, started as standby (pg_is_in_recovery=t) with full data, and node2's pg_stat_replication shows both node1 and node3 streaming"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-3819516629aa431c",
+        "cmd-0353bb34eaaa4d07",
+        "cmd-16b554886f7f4380",
+        "cmd-d6d8cf175a694ba7",
+        "cmd-8dd1450f91654130"
+      ],
+      "summary": "Baseline boot_id 4d340bf4...; systemctl reboot acknowledged; post-reboot boot_id 9c54dcf4... (changed); postgresql active, standby recovery mode confirmed, all rows present, node2 shows node1 streaming again"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-8fd7a9c7b3934ed5",
+        "cmd-58c311fab14a433e",
+        "cmd-b113a37dc82f4233",
+        "cmd-88f75b7dce1c4e7d",
+        "cmd-8148d71c0e484fba"
+      ],
+      "summary": "Baseline boot_id 4d842549...; reboot acknowledged; post-reboot boot_id 26c0dbdc... (changed); postgresql active, standby recovery mode confirmed, all rows present, node2 shows node3 streaming again"
+    },
+    {
+      "requirement": "node2 (primary) restart: healthy baseline, restart ack, changed boot identity, recovered state as primary",
+      "command_ids": [
+        "cmd-6eae4d49d19d4586",
+        "cmd-4ff5db7464674024",
+        "cmd-5e86233cedb84425",
+        "cmd-eb78169cfb694bfd",
+        "cmd-f34a20749a784646",
+        "cmd-a103fffe443c47ef"
+      ],
+      "summary": "Baseline boot_id cce73776...; reboot acknowledged; post-reboot boot_id abf60f22... (changed); postgresql resumed active as writable primary (pg_is_in_recovery=f), accepted a new write, and both node1 and node3 replicated the new row, proving full cluster recovery"
+    }
+  ]
+}

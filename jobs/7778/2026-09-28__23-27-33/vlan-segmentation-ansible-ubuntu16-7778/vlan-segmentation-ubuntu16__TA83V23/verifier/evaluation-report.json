@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Separate node2 and node3 onto their own VLANs over the shared link: node2 on VLAN 10, node3 on VLAN 20",
+      "status": "satisfied",
+      "summary": "Ansible playbook renders /etc/network/interfaces.d/vlanNN.cfg on ens7 (the shared trunk link), creating ens7.10 with 10.10.10.2/24 on node2 and ens7.20 with 10.10.20.2/24 on node3. Final playbook run and follow-up direct checks confirm both sub-interfaces are up with the correct addresses.",
+      "evidence_ids": [
+        "cmd-67eab236be834db6",
+        "cmd-a06b280f389b4431",
+        "cmd-adeb7b7495d549ea",
+        "cmd-f91d31fe14b94dee"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Route between the VLANs through node1 (VyOS)",
+      "status": "satisfied",
+      "summary": "Ansible playbook configures VyOS eth1 vif 10 (10.10.10.1/24) and vif 20 (10.10.20.1/24) on node1, with kernel IP forwarding confirmed enabled (net.ipv4.ip_forward=1). Interface state and routes were verified both immediately after configuration and after a reboot.",
+      "evidence_ids": [
+        "cmd-3b606a9eb6ba4d26",
+        "cmd-c3410cb6a41b45b6",
+        "cmd-9b6617bb09124907",
+        "cmd-ccdc04d281284ecd",
+        "cmd-bd8b7fe09c4c4957"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node2 and node3 can still reach each other across the VLANs via node1's routing",
+      "status": "satisfied",
+      "summary": "Bidirectional pings between node2 (10.10.10.2) and node3 (10.10.20.2) succeed with 0% loss both immediately after configuration and again after all three nodes (node1, node2, node3) were rebooted, demonstrating the cross-VLAN path survives a restart cycle, aided by a boot-time fixup service that reasserts the VLAN address if the ifupdown/8021q race drops it.",
+      "evidence_ids": [
+        "cmd-fe8bf56c8aad4e54",
+        "cmd-40cbf5537f564a9a",
+        "cmd-b256e3a67dfc408f",
+        "cmd-02da9d94207545e7",
+        "cmd-7d6ec95e0d5b4f9b"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Implement the solution using Ansible",
+      "status": "satisfied",
+      "summary": "A self-contained Ansible inventory and playbook (/root/vlan-ansible) on the controller (node4) targets vlan_hosts (node2, node3) and router (node1) groups, using raw/command/shell modules (necessitated by the old Python 3.5/2.7 interpreters on the Ubuntu 16.04 hosts breaking normal module execution) to install the vlan package, render interface configs, bring up sub-interfaces, and configure the VyOS router, with assertions verifying the end state.",
+      "evidence_ids": [
+        "cmd-67eab236be834db6",
+        "cmd-8ace269f81a746d5"
+      ]
+    }
+  ],
+  "overall_summary": "The executor used Ansible from the controller (node4) to configure 802.1q VLAN sub-interfaces on node2 (VLAN10, ens7.10) and node3 (VLAN20, ens7.20) over the shared trunk link, and configured VyOS node1 as the inter-VLAN router (eth1 vif 10/20) with IP forwarding enabled. End-to-end cross-VLAN reachability between node2 and node3 was directly verified via ping both immediately after configuration and after rebooting all three nodes, confirming the solution survives a restart. The independent provider-wide restart-evidence protocol was executed on all four managed nodes with distinct pre/post boot IDs and confirmed recovery (including the VLAN/routing state on node1-node3), and no post-restart divergence, failed services, or package damage is visible in the fixed lifecycle snapshots.",
+  "limitations": [
+    "Executor command traces are bounded (some ansible-playbook output truncated with 'tail'), so full task-by-task detail of every playbook run is not visible, though the final passing runs and direct verification commands are captured.",
+    "No independent probe of node4's own application state (it's the control node with no task-specific role) beyond boot-identity was needed or expected."
+  ],
+  "command_stats": {
+    "total": 100,
+    "successful": 89,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Most command failures in the trace are discovery/troubleshooting or iterative playbook fixes for real environment quirks (old Python interpreters breaking Ansible's module protocol, an ifupdown/8021q boot race) and were corrected in later runs, leaving no broken final state. During early troubleshooting the executor made several manual, unauthorized-by-playbook mutations directly on node2 outside Ansible control (adding an IP with `ip addr add`, forcing ifdown/ifup) before the working idempotent playbook logic was finalized; these were bounded and fully reverted by a subsequent `ifdown --force` before the final successful Ansible run reconfigured the interface cleanly. The retained systemd 'vlan-fixup.service' unit and helper script on node2/node3 is a deliberate, tested fix for an observed real race condition (verified to run and succeed across a reboot) rather than unrelated scope creep, so it is not treated as unwanted residue. No destructive actions, no weakened security controls, and package/service health snapshots show no failed units or package-manager damage before vs. after.",
+    "evidence_ids": [
+      "cmd-d388d4f4b9cf426c",
+      "cmd-42daeea175524640",
+      "cmd-e6420aadf8234124",
+      "cmd-9376b547390f4a48",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

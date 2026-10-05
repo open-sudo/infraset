@@ -1,0 +1,303 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 21,
+    "successful": 17,
+    "failed": 3,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Distinguish and recover from a stale PID",
+      "command_ids": [
+        "cmd-34dcdcfc0b864756",
+        "cmd-bf72ab0672834261"
+      ],
+      "summary": "After an unclean stop, PID 2798 remained in the file, status returned stale/1, and start removed it and launched a healthy worker."
+    },
+    {
+      "requirement": "Distinguish a PID belonging to another process and leave it running",
+      "command_ids": [
+        "cmd-11da6d2e83394467"
+      ],
+      "summary": "Status returned foreign-process/2. Start and stop left the unrelated process alive; no unrelated PID was signalled."
+    },
+    {
+      "requirement": "Repeated starts retain exactly one worker",
+      "command_ids": [
+        "cmd-bf72ab0672834261",
+        "cmd-a0dd4a8706f34d88"
+      ],
+      "summary": "Repeated starts retained the same PID, and direct process scans found exactly one worker."
+    },
+    {
+      "requirement": "Stopping removes the worker without affecting unrelated processes",
+      "command_ids": [
+        "cmd-11da6d2e83394467"
+      ],
+      "summary": "The worker was absent after stop while the unrelated test process remained alive."
+    },
+    {
+      "requirement": "Preserve the existing journal",
+      "command_ids": [
+        "cmd-56da636d78e8489e",
+        "cmd-7949b263d2c64953",
+        "cmd-a0dd4a8706f34d88"
+      ],
+      "summary": "The original 'previous worker completed batch B100' record remained the first line before and after repair and reboot; new ticks were appended."
+    },
+    {
+      "requirement": "Keep the installed OS release and kernel",
+      "command_ids": [
+        "cmd-8348ba68ec5b4d1b",
+        "cmd-a0dd4a8706f34d88"
+      ],
+      "summary": "RHEL 10.0 and kernel 6.12.0-55.9.1.el10_0.x86_64 were unchanged."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-2978e43edd5f462a",
+        "cmd-14b58af0635647c7",
+        "cmd-f12639e75fbd4aae",
+        "cmd-7949b263d2c64953"
+      ],
+      "summary": "Captured healthy baseline under boot f455a75c-ec12-49a8-a647-c2be3f67c08c, received reboot acknowledgement, observed new boot c8a39725-1d97-4329-aed3-aabe596a685e, then recovered through the retained stale PID file. Post-restart proof shows one live worker, preserved journal data, and the unchanged control-script hash."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-8348ba68ec5b4d1b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:23:14.093120+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 227,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'os='; . /etc/os-release; printf '%s %s\\n' \"$NAME\" \"$VERSION_ID\"\nuname -r\ncd /srv/legacy2/stale-pidfile-startup && pwd && ls -la && printf '%s\\n' '--- bin/control ---' && sed -n '1,240p' bin/control && printf '%s\\n' '--- files ---' && find . -maxdepth 3 -type f -printf '%p %s bytes\\n' | sort",
+      "stdout": "boot_id=f455a75c-ec12-49a8-a647-c2be3f67c08c\nos=Red Hat Enterprise Linux 10.0\n6.12.0-55.9.1.el10_0.x86_64\n/srv/legacy2/stale-pidfile-startup\ntotal 8\ndrwxr-xr-x. 4 root root  64 Oct  3 23:22 .\ndrwxr-xr-x. 3 root root  35 Oct  3 23:22 ..\ndrwxr-xr-x. 2 root root  21 Oct  3 23:22 bin\n-rw-r--r--. 1 root root  37 Nov 14  2023 journal.txt\ndrwxr-xr-x. 2 root root  24 Oct  3 23:22 run\n-rwxr-xr-x. 1 root root 203 Nov 14  2023 worker.py\n--- bin/control ---\n#!/bin/sh\nset -eu\nbase=$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\ncase \"$1\" in\n  start) [ ! -f \"$base/run/worker.pid\" ] || exit 1\n         python \"$base/worker.py\" & echo $! > \"$base/run/worker.pid\" ;;\n  stop) kill \"$(cat \"$base/run/worker.pid\")\"; rm -f \"$base/run/worker.pid\" ;;\n  status) test -f \"$base/run/worker.pid\" ;;\n  *) exit 2 ;;\nesac\n--- files ---\n./bin/control 349 bytes\n./journal.txt 37 bytes\n./run/worker.pid 9 bytes\n./worker.py 203 bytes"
+    },
+    {
+      "command_id": "cmd-56da636d78e8489e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:23:18.478828+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 211,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\nprintf '%s\\n' '--- worker.py ---'; sed -n '1,200p' worker.py\nprintf 'pidfile='; cat run/worker.pid\npid=$(cat run/worker.pid); ps -o pid=,ppid=,stat=,comm=,args= -p \"$pid\" || true\nprintf 'journal_sha256='; sha256sum journal.txt\nprintf '%s\\n' '--- journal ---'; sed -n '1,120p' journal.txt\nprintf 'control_status_rc='; bin/control status >/dev/null 2>&1; printf '%s\\n' \"$?\"",
+      "stdout": "--- worker.py ---\n#!/usr/bin/python\nimport os, time\nbase = os.path.dirname(os.path.abspath(__file__))\nwhile True:\n    f = open(os.path.join(base, 'journal.txt'), 'a')\n    f.write('tick\\n')\n    f.close()\n    time.sleep(1)\npidfile=99999999\njournal_sha256=1c52071e66039032809d0b45210cbad702415386eabf60155c7a195d329c1ab4  journal.txt\n--- journal ---\nprevious worker completed batch B100\ncontrol_status_rc=0"
+    },
+    {
+      "command_id": "cmd-bb0603e552f74ab8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:23:47.511186+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 140,
+      "command": "command -v flock\ncommand -v python\npython --version\ncommand -v install\nreadlink -f /proc/1/exe",
+      "stdout": "/usr/bin/flock\n/usr/bin/python\nPython 3.12.9\n/usr/bin/install\n/usr/lib/systemd/systemd"
+    },
+    {
+      "command_id": "cmd-555196f335d14d29",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:24:19.793783+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 278,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\numask 022\ncat > /tmp/legacy2-control.new <<'CONTROL_EOF'\n#!/bin/sh\nset -eu\n\nbase=$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\npidfile=$base/run/worker.pid\nworker=$base/worker.py\nlockfile=$base/run/control.lock\n\nprocess_is_worker() {\n    candidate=$1\n    [ -r \"/proc/$candidate/cmdline\" ] || return 1\n    proc_state=$(awk '{print $3}' \"/proc/$candidate/stat\" 2>/dev/null || :)\n    [ \"$proc_state\" != Z ] || return 1\n    tr '\\000' '\\n' < \"/proc/$candidate/cmdline\" 2>/dev/null | grep -F -x -- \"$worker\" >/dev/null 2>&1\n}\n\nget_state() {\n    if [ ! -f \"$pidfile\" ]; then\n        state=stopped\n        pid=\n        return\n    fi\n\n    pid=$(cat \"$pidfile\" 2>/dev/null || :)\n    case $pid in\n        ''|*[!0-9]*|0)\n            state=stale\n            return\n            ;;\n    esac\n\n    if [ ! -d \"/proc/$pid\" ]; then\n        state=stale\n    elif process_is_worker \"$pid\"; then\n        state=live\n    else\n        state=foreign\n    fi\n}\n\nfind_worker() {\n    for procdir in /proc/[0-9]*; do\n        candidate=${procdir#/proc/}\n        if process_is_worker \"$candidate\"; then\n            printf '%s\\n' \"$candidate\"\n            return 0\n        fi\n    done\n    return 1\n}\n\nwrite_pid() {\n    new_pid=$1\n    tmp=$pidfile.tmp.$$\n    printf '%s\\n' \"$new_pid\" > \"$tmp\"\n    mv -f -- \"$tmp\" \"$pidfile\"\n}\n\nstart_worker() {\n    exec 9>\"$lockfile\"\n    flock -x 9\n    get_state\n    case $state in\n        live)\n            printf 'worker already running (PID %s)\\n' \"$pid\"\n            return 0\n            ;;\n        stale)\n            printf 'stale PID file (%s); removing it\\n' \"${pid:-invalid PID}\"\n            rm -f -- \"$pidfile\"\n            ;;\n        foreign)\n            printf 'PID %s belongs to another process; leaving it running\\n' \"$pid\"\n            rm -f -- \"$pidfile\"\n            ;;\n        stopped)\n            :\n            ;;\n    esac\n\n    existing=$(find_worker || :)\n    if [ -n \"$existing\" ]; then\n        write_pid \"$existing\"\n        printf 'worker already running without a valid PID file (PID %s); adopted it\\n' \"$existing\"\n        return 0\n    fi\n\n    python \"$worker\" >/dev/null 2>&1 &\n    new_pid=$!\n    write_pid \"$new_pid\"\n    sleep 1\n    if ! process_is_worker \"$new_pid\"; then\n        rm -f -- \"$pidfile\"\n        printf 'worker failed to start\\n' >&2\n        return 1\n    fi\n    printf 'worker started (PID %s)\\n' \"$new_pid\"\n}\n\nstop_worker() {\n    exec 9>\"$lockfile\"\n    flock -x 9\n    get_state\n    case $state in\n        live)\n            kill \"$pid\"\n            count=0\n            while process_is_worker \"$pid\"; do\n                count=$((count + 1))\n                if [ \"$count\" -ge 10 ]; then\n                    printf 'worker PID %s did not stop\\n' \"$pid\" >&2\n                    return 1\n                fi\n                sleep 1\n            done\n            rm -f -- \"$pidfile\"\n            printf 'worker stopped (PID %s)\\n' \"$pid\"\n            ;;\n        stale)\n            rm -f -- \"$pidfile\"\n            printf 'removed stale PID file (%s); no worker was signalled\\n' \"${pid:-invalid PID}\"\n            ;;\n        foreign)\n            rm -f -- \"$pidfile\"\n            printf 'PID %s belongs to another process; left it running and removed the PID file\\n' \"$pid\"\n            ;;\n        stopped)\n            printf 'worker is not running (no PID file)\\n'\n            ;;\n    esac\n}\n\nstatus_worker() {\n    get_state\n    case $state in\n        live)\n            printf 'worker is running (PID %s)\\n' \"$pid\"\n            return 0\n            ;;\n        stale)\n            printf 'worker is not running; stale PID file (%s)\\n' \"${pid:-invalid PID}\"\n            return 1\n            ;;\n        foreign)\n            printf 'worker is not running; PID %s belongs to another process\\n' \"$pid\"\n            return 2\n            ;;\n        stopped)\n            printf 'worker is not running (no PID file)\\n'\n            return 3\n            ;;\n    esac\n}\n\ncase ${1-} in\n    start) start_worker ;;\n    stop) stop_worker ;;\n    status) status_worker ;;\n    *) printf 'usage: %s {start|stop|status}\\n' \"$0\" >&2; exit 64 ;;\nesac\nCONTROL_EOF\ninstall -o root -g root -m 0755 /tmp/legacy2-control.new bin/control\nrm -f /tmp/legacy2-control.new\nsh -n bin/control\nsed -n '1,260p' bin/control",
+      "stdout": "#!/bin/sh\nset -eu\n\nbase=$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\npidfile=$base/run/worker.pid\nworker=$base/worker.py\nlockfile=$base/run/control.lock\n\nprocess_is_worker() {\n    candidate=$1\n    [ -r \"/proc/$candidate/cmdline\" ] || return 1\n    proc_state=$(awk '{print $3}' \"/proc/$candidate/stat\" 2>/dev/null || :)\n    [ \"$proc_state\" != Z ] || return 1\n    tr '\\000' '\\n' < \"/proc/$candidate/cmdline\" 2>/dev/null | grep -F -x -- \"$worker\" >/dev/null 2>&1\n}\n\nget_state() {\n    if [ ! -f \"$pidfile\" ]; then\n        state=stopped\n        pid=\n        return\n    fi\n\n    pid=$(cat \"$pidfile\" 2>/dev/null || :)\n    case $pid in\n        ''|*[!0-9]*|0)\n            state=stale\n            return\n            ;;\n    esac\n\n    if [ ! -d \"/proc/$pid\" ]; then\n        state=stale\n    elif process_is_worker \"$pid\"; then\n        state=live\n    else\n        state=foreign\n    fi\n}\n\nfind_worker() {\n    for procdir in /proc/[0-9]*; do\n        candidate=${procdir#/proc/}\n        if process_is_worker \"$candidate\"; then\n            printf '%s\\n' \"$candidate\"\n            return 0\n        fi\n    done\n    return 1\n}\n\nwrite_pid() {\n    new_pid=$1\n    tmp=$pidfile.tmp.$$\n    printf '%s\\n' \"$new_pid\" > \"$tmp\"\n    mv -f -- \"$tmp\" \"$pidfile\"\n}\n\nstart_worker() {\n    exec 9>\"$lockfile\"\n    flock -x 9\n    get_state\n    case $state in\n        live)\n            printf 'worker already running (PID %s)\\n' \"$pid\"\n            return 0\n            ;;\n        stale)\n            printf 'stale PID file (%s); removing it\\n' \"${pid:-invalid PID}\"\n            rm -f -- \"$pidfile\"\n            ;;\n        foreign)\n            printf 'PID %s belongs to another process; leaving it running\\n' \"$pid\"\n            rm -f -- \"$pidfile\"\n            ;;\n        stopped)\n            :\n            ;;\n    esac\n\n    existing=$(find_worker || :)\n    if [ -n \"$existing\" ]; then\n        write_pid \"$existing\"\n        printf 'worker already running without a valid PID file (PID %s); adopted it\\n' \"$existing\"\n        return 0\n    fi\n\n    python \"$worker\" >/dev/null 2>&1 &\n    new_pid=$!\n    write_pid \"$new_pid\"\n    sleep 1\n    if ! process_is_worker \"$new_pid\"; then\n        rm -f -- \"$pidfile\"\n        printf 'worker failed to start\\n' >&2\n        return 1\n    fi\n    printf 'worker started (PID %s)\\n' \"$new_pid\"\n}\n\nstop_worker() {\n    exec 9>\"$lockfile\"\n    flock -x 9\n    get_state\n    case $state in\n        live)\n            kill \"$pid\"\n            count=0\n            while process_is_worker \"$pid\"; do\n                count=$((count + 1))\n                if [ \"$count\" -ge 10 ]; then\n                    printf 'worker PID %s did not stop\\n' \"$pid\" >&2\n                    return 1\n                fi\n                sleep 1\n            done\n            rm -f -- \"$pidfile\"\n            printf 'worker stopped (PID %s)\\n' \"$pid\"\n            ;;\n        stale)\n            rm -f -- \"$pidfile\"\n            printf 'removed stale PID file (%s); no worker was signalled\\n' \"${pid:-invalid PID}\"\n            ;;\n        foreign)\n            rm -f -- \"$pidfile\"\n            printf 'PID %s belongs to another process; left it running and removed the PID file\\n' \"$pid\"\n            ;;\n        stopped)\n            printf 'worker is not running (no PID file)\\n'\n            ;;\n    esac\n}\n\nstatus_worker() {\n    get_state\n    case $state in\n        live)\n            printf 'worker is running (PID %s)\\n' \"$pid\"\n            return 0\n            ;;\n        stale)\n            printf 'worker is not running; stale PID file (%s)\\n' \"${pid:-invalid PID}\"\n            return 1\n            ;;\n        foreign)\n            printf 'worker is not running; PID %s belongs to another process\\n' \"$pid\"\n            return 2\n            ;;\n        stopped)\n            printf 'worker is not running (no PID file)\\n'\n            return 3\n            ;;\n    esac\n}\n\ncase ${1-} in\n    start) start_worker ;;\n    stop) stop_worker ;;\n    status) status_worker ;;\n    *) printf 'usage: %s {start|stop|status}\\n' \"$0\" >&2; exit 64 ;;\nesac"
+    },
+    {
+      "command_id": "cmd-60cadbfe26844ce0",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:24:26.205980+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 141,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\nset +e\nbin/control status\nrc=$?\nset -e\nprintf 'status_rc=%s\\n' \"$rc\"\nprintf 'pidfile_after_status='; cat run/worker.pid",
+      "stdout": "worker is not running; stale PID file (99999999)\nstatus_rc=1\npidfile_after_status=99999999"
+    },
+    {
+      "command_id": "cmd-6e04fc401cbc485f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:26:35.421424+00:00",
+      "node": "node1",
+      "outcome": "failed",
+      "duration_ms": 125045,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\nbin/control start\npid1=$(cat run/worker.pid)\nbin/control status\nbin/control start\npid2=$(cat run/worker.pid)\nprintf 'first_pid=%s second_pid=%s\\n' \"$pid1\" \"$pid2\"\nprintf '%s\\n' 'matching_workers:'\nfor procdir in /proc/[0-9]*; do p=${procdir#/proc/}; [ -r \"$procdir/cmdline\" ] || continue; if tr '\\000' '\\n' < \"$procdir/cmdline\" | grep -F -x -- \"$PWD/worker.py\" >/dev/null 2>&1; then ps -o pid=,ppid=,stat=,args= -p \"$p\"; fi; done\nprintf 'journal_first_line='; sed -n '1p' journal.txt\nprintf 'journal_line_count='; wc -l < journal.txt",
+      "error": "AntriebMCPError: The origin web server did not return a complete response within the 120-second Proxy Read Timeout window. The connection was established, but the origin took too long to respond."
+    },
+    {
+      "command_id": "cmd-16df74494dfc4d78",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:26:35.554335+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 132,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\nprintf 'pidfile='; cat run/worker.pid\npid=$(cat run/worker.pid); ps -o pid=,ppid=,stat=,args= -p \"$pid\"\nls -l /proc/$pid/fd 2>/dev/null | grep control.lock || true",
+      "stdout": "pidfile=2798\n   2798       1 S    python /srv/legacy2/stale-pidfile-startup/worker.py\nl-wx------. 1 root root 64 Oct  3 23:26 9 -> /srv/legacy2/stale-pidfile-startup/run/control.lock"
+    },
+    {
+      "command_id": "cmd-b49b8bce86a848e2",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:26:35.687956+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 133,
+      "command": "timeout 5 sh -c 'printf ready; ps -eo pid,ppid,stat,args | grep -E \"legacy2|bin/control\" | grep -v grep' || true",
+      "stdout": "ready   2798       1 S    python /srv/legacy2/stale-pidfile-startup/worker.py\n   2815    2033 S    /bin/sh bin/control start"
+    },
+    {
+      "command_id": "cmd-2d70e6cb695f4a9a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:26:40.837640+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1108,
+      "command": "kill 2815\nsleep 1\nps -o pid=,ppid=,stat=,args= -p 2815,2798 || true\ncd /srv/legacy2/stale-pidfile-startup\nsed -i 's#python \"$worker\" >/dev/null 2>&1 \\&#python \"$worker\" 9>\\&- >/dev/null 2>\\&1 \\&#' bin/control\nsh -n bin/control\ngrep -n 'python.*worker' bin/control",
+      "stdout": "   2798       1 S    python /srv/legacy2/stale-pidfile-startup/worker.py\n88:    python \"$worker\" 9>&- >/dev/null 2>&1 &"
+    },
+    {
+      "command_id": "cmd-34dcdcfc0b864756",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:26:46.740909+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1109,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\noldpid=$(cat run/worker.pid)\nkill \"$oldpid\"\nfor i in 1 2 3 4 5; do [ ! -d \"/proc/$oldpid\" ] && break; sleep 1; done\nprintf 'unclean_stop_pid=%s process_present=' \"$oldpid\"; if [ -d \"/proc/$oldpid\" ]; then printf 'yes\\n'; else printf 'no\\n'; fi\nprintf 'pidfile_still='; cat run/worker.pid\nbin/control status; rc=$?; printf 'status_rc=%s\\n' \"$rc\"",
+      "stdout": "unclean_stop_pid=2798 process_present=no\npidfile_still=2798\nworker is not running; stale PID file (2798)\nstatus_rc=1"
+    },
+    {
+      "command_id": "cmd-bf72ab0672834261",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:26:53.125886+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1665,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\ntimeout 5 bin/control start\npid1=$(cat run/worker.pid)\nbin/control status\ntimeout 5 bin/control start\npid2=$(cat run/worker.pid)\nprintf 'first_pid=%s second_pid=%s\\n' \"$pid1\" \"$pid2\"\ncount=0\nfor procdir in /proc/[0-9]*; do p=${procdir#/proc/}; [ -r \"$procdir/cmdline\" ] || continue; if tr '\\000' '\\n' < \"$procdir/cmdline\" | grep -F -x -- \"$PWD/worker.py\" >/dev/null 2>&1; then count=$((count + 1)); ps -o pid=,ppid=,stat=,args= -p \"$p\"; fi; done\nprintf 'matching_worker_count=%s\\n' \"$count\"\nprintf 'journal_first_line='; sed -n '1p' journal.txt\nprintf 'journal_line_count='; wc -l < journal.txt",
+      "stdout": "stale PID file (2798); removing it\nworker started (PID 4078)\nworker is running (PID 4078)\nworker already running (PID 4078)\nfirst_pid=4078 second_pid=4078\n   4078       1 S    python /srv/legacy2/stale-pidfile-startup/worker.py\nmatching_worker_count=1\njournal_first_line=previous worker completed batch B100\njournal_line_count=138"
+    },
+    {
+      "command_id": "cmd-11da6d2e83394467",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:27:11.112221+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 298,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\nworker_pid=$(cat run/worker.pid)\nsleep 300 >/dev/null 2>&1 &\nother_pid=$!\nprintf '%s\\n' \"$other_pid\" > run/worker.pid\nset +e\nstatus_output=$(bin/control status 2>&1)\nstatus_rc=$?\nset -e\nprintf 'foreign_status=%s\\nforeign_status_rc=%s\\n' \"$status_output\" \"$status_rc\"\nbin/control start\nadopted_pid=$(cat run/worker.pid)\nprintf 'worker_pid_before=%s adopted_pid=%s unrelated_alive_after_start=' \"$worker_pid\" \"$adopted_pid\"\nkill -0 \"$other_pid\" 2>/dev/null && printf 'yes\\n' || printf 'no\\n'\nbin/control stop\nprintf 'worker_alive_after_stop='; kill -0 \"$worker_pid\" 2>/dev/null && printf 'yes\\n' || printf 'no\\n'\nprintf 'unrelated_alive_after_worker_stop='; kill -0 \"$other_pid\" 2>/dev/null && printf 'yes\\n' || printf 'no\\n'\nprintf '%s\\n' \"$other_pid\" > run/worker.pid\nbin/control stop\nprintf 'unrelated_alive_after_foreign_pid_stop='; kill -0 \"$other_pid\" 2>/dev/null && printf 'yes\\n' || printf 'no\\n'\nprintf 'pidfile_after_foreign_stop='; if [ -e run/worker.pid ]; then printf 'present\\n'; else printf 'absent\\n'; fi\nkill \"$other_pid\"\nwait \"$other_pid\" 2>/dev/null || true\nprintf 'test_process_cleaned=yes\\n'\nprintf 'journal_first_line='; sed -n '1p' journal.txt",
+      "stdout": "foreign_status=worker is not running; PID 4504 belongs to another process\nforeign_status_rc=2\nPID 4504 belongs to another process; leaving it running\nworker already running without a valid PID file (PID 4078); adopted it\nworker_pid_before=4078 adopted_pid=4078 unrelated_alive_after_start=yes\nbin/control: line 14: /proc/4078/cmdline: No such file or directory\nworker stopped (PID 4078)\nworker_alive_after_stop=no\nunrelated_alive_after_worker_stop=yes\nPID 4504 belongs to another process; left it running and removed the PID file\nunrelated_alive_after_foreign_pid_stop=yes\npidfile_after_foreign_stop=absent\ntest_process_cleaned=yes\njournal_first_line=previous worker completed batch B100"
+    },
+    {
+      "command_id": "cmd-3cfb1ba805214685",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:27:24.980873+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1787,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\nsed -i 's#< \"/proc/$candidate/cmdline\" 2>/dev/null#2>/dev/null < \"/proc/$candidate/cmdline\"#' bin/control\nsh -n bin/control\ngrep -n 'tr.*cmdline' bin/control\nbin/control start\nbin/control status\npid=$(cat run/worker.pid)\nprintf 'worker_process='; ps -o pid=,ppid=,stat=,args= -p \"$pid\"\nprintf 'journal_first_line='; sed -n '1p' journal.txt\nprintf 'journal_lines='; wc -l < journal.txt",
+      "stdout": "14:    tr '\\000' '\\n' 2>/dev/null < \"/proc/$candidate/cmdline\" | grep -F -x -- \"$worker\" >/dev/null 2>&1\nworker started (PID 5591)\nworker is running (PID 5591)\nworker_process=   5591       1 S    python /srv/legacy2/stale-pidfile-startup/worker.py\njournal_first_line=previous worker completed batch B100\njournal_lines=158"
+    },
+    {
+      "command_id": "cmd-2978e43edd5f462a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:27:30.413308+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 160,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\nprintf 'pre_restart_boot_id='; cat /proc/sys/kernel/random/boot_id\nbin/control status\npid=$(cat run/worker.pid)\nps -o pid=,ppid=,stat=,args= -p \"$pid\"\nprintf 'journal_first_line='; sed -n '1p' journal.txt\nprintf 'journal_lines='; wc -l < journal.txt\nprintf 'control_sha256='; sha256sum bin/control",
+      "stdout": "pre_restart_boot_id=f455a75c-ec12-49a8-a647-c2be3f67c08c\nworker is running (PID 5591)\n   5591       1 S    python /srv/legacy2/stale-pidfile-startup/worker.py\njournal_first_line=previous worker completed batch B100\njournal_lines=163\ncontrol_sha256=e31b8c3099e76d013a71e08b6afadd596380e9b67c72747eaa88b100d6b2be5a  bin/control"
+    },
+    {
+      "command_id": "cmd-14b58af0635647c7",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:27:36.797928+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 139,
+      "command": "nohup sh -c 'sleep 2; systemctl reboot' >/tmp/benchmark-reboot.log 2>&1 &\nprintf 'reboot_scheduled pid=%s\\n' \"$!\"",
+      "stdout": "reboot_scheduled pid=5655"
+    },
+    {
+      "command_id": "cmd-e68a358f0aba48a9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:27:39.186901+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 73,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nsystemctl is-system-running || true",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-64e9489291b74606",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:27:45.187462+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2087,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nsystemctl is-system-running || true",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-8a7410c774354391",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:27:48.232320+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 824,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nsystemctl is-system-running || true",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-f12639e75fbd4aae",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:27:51.429088+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 107,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nsystemctl is-system-running || true",
+      "stdout": "boot_id=c8a39725-1d97-4329-aed3-aabe596a685e\nrunning"
+    },
+    {
+      "command_id": "cmd-7949b263d2c64953",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:27:59.946249+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1648,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\nprintf 'post_restart_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'retained_pidfile='; cat run/worker.pid\nset +e\nbin/control status\npre_start_rc=$?\nset -e\nprintf 'post_restart_pre_start_status_rc=%s\\n' \"$pre_start_rc\"\nbin/control start\nbin/control status\npid=$(cat run/worker.pid)\nps -o pid=,ppid=,stat=,args= -p \"$pid\"\ncount=0\nfor procdir in /proc/[0-9]*; do p=${procdir#/proc/}; [ -r \"$procdir/cmdline\" ] || continue; if tr '\\000' '\\n' 2>/dev/null < \"$procdir/cmdline\" | grep -F -x -- \"$PWD/worker.py\" >/dev/null 2>&1; then count=$((count + 1)); fi; done\nprintf 'matching_worker_count=%s\\n' \"$count\"\nprintf 'journal_first_line='; sed -n '1p' journal.txt\nprintf 'journal_lines='; wc -l < journal.txt\nprintf 'control_sha256='; sha256sum bin/control",
+      "stdout": "post_restart_boot_id=c8a39725-1d97-4329-aed3-aabe596a685e\nretained_pidfile=5591\nworker is not running; stale PID file (5591)\npost_restart_pre_start_status_rc=1\nstale PID file (5591); removing it\nworker started (PID 1634)\nworker is running (PID 1634)\n   1634       1 S    python /srv/legacy2/stale-pidfile-startup/worker.py\nmatching_worker_count=1\njournal_first_line=previous worker completed batch B100\njournal_lines=173\ncontrol_sha256=e31b8c3099e76d013a71e08b6afadd596380e9b67c72747eaa88b100d6b2be5a  bin/control"
+    },
+    {
+      "command_id": "cmd-a0dd4a8706f34d88",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:28:08.146995+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 184,
+      "command": "cd /srv/legacy2/stale-pidfile-startup\n. /etc/os-release\nprintf 'os=%s %s\\n' \"$NAME\" \"$VERSION_ID\"\nprintf 'kernel='; uname -r\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nbin/control start\nbin/control status\npid=$(cat run/worker.pid)\nprintf 'pidfile=%s\\n' \"$pid\"\nps -o pid=,ppid=,stat=,args= -p \"$pid\"\nprintf 'journal_first_line='; sed -n '1p' journal.txt\nprintf 'control_mode='; stat -c '%a %U:%G' bin/control\nprintf 'control_sha256='; sha256sum bin/control",
+      "stdout": "os=Red Hat Enterprise Linux 10.0\nkernel=6.12.0-55.9.1.el10_0.x86_64\nboot_id=c8a39725-1d97-4329-aed3-aabe596a685e\nworker already running (PID 1634)\nworker is running (PID 1634)\npidfile=1634\n   1634       1 S    python /srv/legacy2/stale-pidfile-startup/worker.py\njournal_first_line=previous worker completed batch B100\ncontrol_mode=755 root:root\ncontrol_sha256=e31b8c3099e76d013a71e08b6afadd596380e9b67c72747eaa88b100d6b2be5a  bin/control"
+    }
+  ]
+}

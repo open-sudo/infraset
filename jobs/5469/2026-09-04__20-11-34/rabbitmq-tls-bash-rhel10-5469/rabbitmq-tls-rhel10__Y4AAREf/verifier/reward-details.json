@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Run a RabbitMQ cluster across node1, node2, and node3",
+      "status": "satisfied",
+      "summary": "rabbitmqctl cluster_status confirms all three nodes as Disk Nodes and Running Nodes with no network partitions, both immediately after join_cluster and again after all three restart cycles.",
+      "evidence_ids": [
+        "cmd-f6ca53abac0f4f56",
+        "cmd-b0a7e0b6b42a4fdf",
+        "cmd-2b9490a107b24dd1",
+        "cmd-66dae9501184445b",
+        "cmd-e71fd4e4094146e5"
+      ]
+    },
+    {
+      "id": "amqp-tls-own-ca",
+      "requirement": "Serve AMQP over TLS using a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A self-signed CA (CN=RabbitMQ Cluster CA) was generated on node1, per-node server certs were issued and signed by it (openssl verify OK), rabbitmq.conf sets listeners.tcp=none with listeners.ssl.default=5671 using those certs, and rabbitmq-diagnostics listeners shows only amqp/ssl on 5671 (no plaintext 5672) on all nodes before and after restarts.",
+      "evidence_ids": [
+        "cmd-b01be0ebb3a8494f",
+        "cmd-9ed16b4428cf4168",
+        "cmd-f9a3514e0ab146d4",
+        "cmd-30c775a3220a4f45",
+        "cmd-2b9490a107b24dd1",
+        "cmd-e71fd4e4094146e5"
+      ]
+    },
+    {
+      "id": "client-mtls-enforced",
+      "requirement": "Accept only client connections presenting a certificate issued by that authority",
+      "status": "satisfied",
+      "summary": "ssl_options.verify=verify_peer and fail_if_no_peer_cert=true are set; a pika/openssl client presenting the CA-issued client cert connects and publishes/consumes successfully, while a client without a cert is rejected with a TLS 'certificate_required' fatal alert both at the openssl s_client/broker-log level and at the application (pika) level.",
+      "evidence_ids": [
+        "cmd-a76133863a894234",
+        "cmd-bcb3ad37b5aa492e",
+        "cmd-80af106944794d06",
+        "cmd-286f4b5ead2e4422",
+        "cmd-e91b22c9ec234e7d"
+      ]
+    },
+    {
+      "id": "mgmt-cluster-only",
+      "requirement": "Keep the management interface reachable only from within the cluster",
+      "status": "partially_satisfied",
+      "summary": "Port 15672 (plus 4369/25672) is restricted via firewalld rich rules to source 10.100.219.0/24, and intra-cluster curl calls return 200. However, the rule permits any host on the /24 subnet, not just node1/node2/node3 specifically, so the restriction is broader than 'only from within the cluster' if other hosts exist on that subnet; no evidence was captured of a same-subnet non-cluster host being blocked.",
+      "evidence_ids": [
+        "cmd-12f12d37b87b43e9",
+        "cmd-28ce89c9cfed433a",
+        "cmd-a502531cfc4d4662",
+        "cmd-e5153b0dc87b4e32",
+        "cmd-e71fd4e4094146e5"
+      ]
+    },
+    {
+      "id": "node1-restart-recovery",
+      "requirement": "Provider-wide restart evidence protocol for node1 (baseline, restart, recovery)",
+      "status": "satisfied",
+      "summary": "Boot_id captured before (6ab6a71b...) and after (92695d6f...) systemctl reboot, confirming an actual reboot; cluster_status, TLS-only listener, and a live mTLS AMQP publish/consume were re-verified post-restart. Cross-checked against global lifecycle boot-identity snapshots.",
+      "evidence_ids": [
+        "cmd-6198209e521b40ae",
+        "cmd-3ce4c65c1f7d43c8",
+        "cmd-bea6bfc8a3be4910",
+        "cmd-6922c09380f44d13",
+        "cmd-5c83081d49ee4409",
+        "cmd-e6af7611ea5a4152"
+      ]
+    },
+    {
+      "id": "node2-restart-recovery",
+      "requirement": "Provider-wide restart evidence protocol for node2 (baseline, restart, recovery)",
+      "status": "satisfied",
+      "summary": "Boot_id captured before (03408ac4...) and after (b14c5aa3...) systemctl reboot; cluster_status and a live mTLS AMQP publish/consume were re-verified post-restart.",
+      "evidence_ids": [
+        "cmd-59a3849a6d8d4680",
+        "cmd-dd763b609a1b4e01",
+        "cmd-a4751f57b900435a",
+        "cmd-ae3f09c812f04da7",
+        "cmd-969f9d315dac4875",
+        "cmd-18ca81f87b9945cb"
+      ]
+    },
+    {
+      "id": "node3-restart-recovery",
+      "requirement": "Provider-wide restart evidence protocol for node3 (baseline, restart, recovery)",
+      "status": "satisfied",
+      "summary": "Boot_id captured before (19062a82...) and after (8ced0ed1...) systemctl reboot; rabbitmq-server transiently showed 'activating' immediately post-boot then became active, cluster_status and a live mTLS AMQP publish/consume were re-verified post-restart.",
+      "evidence_ids": [
+        "cmd-a2f619759496429e",
+        "cmd-b59162e228c54ca5",
+        "cmd-e197a6280e484b31",
+        "cmd-865abcc44e9b4d10",
+        "cmd-5658de5402144445",
+        "cmd-c90b7af7840f422e",
+        "cmd-f201062d93b04f41"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a genuine 3-node RabbitMQ cluster with AMQP restricted to TLS 5671 using a cluster-created CA, and directly demonstrated mutual-TLS enforcement (accepted with CA-issued client cert, rejected with a TLS certificate_required alert without one). The management port is firewalled to the cluster's /24 subnet from all three nodes and shown reachable intra-cluster, but this is scoped to the whole subnet rather than strictly to the three cluster peers, so that requirement is only partially demonstrated as written. The mandatory restart protocol was executed thoroughly for all three nodes with pre/post boot_id proof and post-restart functional re-verification (cluster health, TLS listener, live mTLS publish/consume). Minor housekeeping residue (two test scripts and a reboot log) was left in /tmp but poses no functional or security risk.",
+  "limitations": [
+    "No negative test was captured showing a non-cluster host on the same /24 subnet being blocked from the management port, so the 'only from within the cluster' scope could not be independently confirmed beyond firewall rule inspection and intra-cluster positive tests.",
+    "Command cmd-2e391166b51c4d08 timed out (AntriebMCPError) during a cluster_status/list_unresponsive_queues check; this was a read-only diagnostic and does not indicate a state-changing failure, but leaves a brief gap in the observed timeline before recovery was reconfirmed."
+  ],
+  "command_stats": {
+    "total": 100,
+    "successful": 84,
+    "failed": 15,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.9286,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Most state changes (package installs, CA/cert generation, rabbitmq.conf writes, firewalld rich rules, cluster joins, restarts) are directly tied to the task or the restart protocol and were competently scoped. A transient /test vhost (cmd-2eed825d64774f2c) was created then deleted (cmd-db5ca85c116d48aa) purely to check vhost commands worked \u2014 an unnecessary experiment, but fully reverted with no residue. A test queue tls-test-q was created for mTLS verification and cleaned up (cmd-f422418b2d9a4509, cmd-e71fd4e4094146e5). Two test scripts (/tmp/pika_test.py, /tmp/pika_test_nocert.py) and /tmp/reboot.log were left behind on the managed nodes after the run, per the after-executor temporary-files snapshot \u2014 low-risk residue, not cleaned up. No failed/conflicting services, no damaged package state, and no security controls were weakened (firewall additions were restrictive, not permissive beyond the stated design).",
+    "evidence_ids": [
+      "cmd-2eed825d64774f2c",
+      "cmd-db5ca85c116d48aa",
+      "cmd-f422418b2d9a4509",
+      "cmd-e71fd4e4094146e5",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 0.9286,
+  "provisional_reward": 0.9286
+}

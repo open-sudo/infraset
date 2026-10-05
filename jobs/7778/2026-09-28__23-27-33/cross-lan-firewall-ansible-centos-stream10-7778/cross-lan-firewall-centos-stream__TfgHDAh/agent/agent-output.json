@@ -1,0 +1,98 @@
+{
+  "status": "completed",
+  "summary": "Implemented cross-LAN firewall via Ansible: node2 (lan-a, 10.50.10.0/24) can reach node3 (lan-b, 10.50.20.0/24) only on TCP/5432 (PostgreSQL), with all other traffic between the LANs rejected by node1's VyOS forward filter. Control node4 runs the playbook (site.yml/inventory.ini/ansible.cfg under /root/cross-lan-firewall) against node1 (VyOS, via sudo-elevated vbash CLI raw commands since this image's operator account needs sudo to commit config), node2 and node3 (NetworkManager static addressing/routes, PostgreSQL install+config, firewalld port). Verified functionally (TCP 5432 allowed, TCP 22 and ICMP rejected in both directions, management network/egress unaffected) and confirmed all state and firewall behavior survive a full one-at-a-time restart of all 4 managed nodes with changed boot IDs.",
+  "actions_performed": [
+    "Surveyed topology: node1 (VyOS 2026.04 rolling) has eth1\u2194lan-a(node2), eth2\u2194lan-b(node3), eth0 on management network; node4 is the pre-provisioned Ansible control node (ansible-core 2.20.5)",
+    "Assigned static IPs 10.50.10.0/24 (node1 eth1/node2 enp8s0) and 10.50.20.0/24 (node1 eth2/node3 enp8s0) and verified pairing via targeted ping tests",
+    "Installed and configured PostgreSQL 16 on node3, listening on all interfaces, pg_hba allowing lan-a, opened firewalld port 5432/tcp",
+    "Wired passwordless SSH from node4 to node1 (vyos user), node2, node3 using the cluster keypair",
+    "Installed vyos.vyos / community.general / ansible.posix / ansible.utils collections on node4",
+    "Diagnosed and worked around several VyOS-specific issues: newer VyOS firewall syntax (global-options state-policy instead of per-rule state; default-action only supports accept/drop so used explicit reject rules), leaked/stale config sessions from earlier debugging, the operator account needing sudo to actually commit config (native vyos_config/network_cli failed with generic 'Set failed'), and a misconfigured inventory (ansible_connection=ansible.netcommon.network_cli caused ansible.builtin.raw to silently run locally instead of over SSH)",
+    "Wrote final site.yml with 3 plays: LAN addressing/routing on node2+node3, PostgreSQL setup on node3, and VyOS firewall (interface addressing + forward-filter allow-5432/reject-rest) applied via `ansible.builtin.raw` + `sudo /usr/bin/vbash`",
+    "Ran the playbook end-to-end successfully and confirmed idempotency on rerun",
+    "Functionally verified: node2->node3 TCP 5432 open, TCP 22 and ICMP rejected both directions, management network and internet egress unaffected",
+    "Captured baseline boot_id/health for all 4 nodes, then restarted node1, node2, node3, node4 one at a time via systemctl reboot, polling until exec recovered and confirming changed boot_id plus recovered interfaces/firewall/postgresql/ansible files each time",
+    "Reran the Ansible playbook after all restarts to confirm continued idempotent success and re-verified TCP 5432 allow / TCP 22 & ICMP reject behavior"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 (lan-a) can reach node3 (lan-b) on TCP/5432",
+      "command_ids": [
+        "cmd-4abbfc5f5b864d35",
+        "cmd-71b87d794caa4330",
+        "cmd-42d2ee8c84814af3",
+        "cmd-51842d2c38e7400d",
+        "cmd-97ab8e1cd0d14490"
+      ],
+      "summary": "Repeated TCP connect tests to 10.50.20.12:5432 from node2 succeed (including a real psql auth prompt proving protocol-level reachability), both before and after the full node restart cycle"
+    },
+    {
+      "requirement": "All other traffic between lan-a and lan-b is rejected",
+      "command_ids": [
+        "cmd-71b87d794caa4330",
+        "cmd-e21c888e97994ee1",
+        "cmd-2c25f77b3c1e4cd5",
+        "cmd-97ab8e1cd0d14490"
+      ],
+      "summary": "TCP/22 and ICMP are rejected in both directions (node2->node3 and node3->node2) via node1's forward-filter default-action drop plus explicit reject rules; confirmed pre- and post-restart"
+    },
+    {
+      "requirement": "Implemented using Ansible",
+      "command_ids": [
+        "cmd-7c4680c94c724387",
+        "cmd-31f56fae84034a40",
+        "cmd-8b223c179bfc4a8e"
+      ],
+      "summary": "site.yml executed via ansible-playbook from control node4 against node1/node2/node3 completes with ok/changed and no failures, and reruns idempotently including after the restart cycle"
+    },
+    {
+      "requirement": "Management network and internet egress unaffected by the LAN firewall",
+      "command_ids": [
+        "cmd-cec65a5b16404f0c",
+        "cmd-2b5d4bc5048546eb"
+      ],
+      "summary": "node2 still reaches node1's management IP and the internet (HTTPS 301), and node4 still reaches node2 on the management network, confirming the firewall only scopes the inter-LAN forward path"
+    },
+    {
+      "requirement": "node1 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-e711c01f81bf4ed2",
+        "cmd-eae34a59a385401e",
+        "cmd-67bd53bf8f4f41ff",
+        "cmd-45a55c1911e94115",
+        "cmd-811295d1b86e4a0f"
+      ],
+      "summary": "Baseline boot_id 7668189d captured; systemctl reboot issued; new boot_id a540009c confirmed with uptime 0; eth1/eth2 addressing and full firewall ruleset (state-policy, rule 10/900/910, default-action drop) verified intact; TCP5432-allow/TCP22-reject behavior reconfirmed"
+    },
+    {
+      "requirement": "node2 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-01d20144bff04fd4",
+        "cmd-aa4c32c9ebbb4e5b",
+        "cmd-1df41e39a3a5499c",
+        "cmd-2c25f77b3c1e4cd5"
+      ],
+      "summary": "Baseline boot_id d052eb57 captured; systemctl reboot issued; new boot_id c8e8c23d confirmed with uptime 0; enp8s0 static IP and peer route persisted (NetworkManager), firewall behavior reconfirmed"
+    },
+    {
+      "requirement": "node3 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-f3ef4c6a202c4da9",
+        "cmd-5a91a46dd01e4718",
+        "cmd-cdf9d7458e9348ab",
+        "cmd-105bd41e56864e0f"
+      ],
+      "summary": "Baseline boot_id 06339ff3 captured; systemctl reboot issued; new boot_id 2979e723 confirmed with uptime 0; enp8s0 static IP, postgresql.service active with 5432 listening, and firewalld port 5432/tcp all recovered automatically"
+    },
+    {
+      "requirement": "node4 (control node) restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-748f6c27e9ac4970",
+        "cmd-62f309a9460543a7",
+        "cmd-320c7315f8da431e",
+        "cmd-31f56fae84034a40"
+      ],
+      "summary": "Baseline boot_id c030bd0d captured; systemctl reboot issued; new boot_id ad770d48 confirmed with uptime 0; /root/cross-lan-firewall playbook files intact and ansible-playbook run succeeds post-restart"
+    }
+  ]
+}

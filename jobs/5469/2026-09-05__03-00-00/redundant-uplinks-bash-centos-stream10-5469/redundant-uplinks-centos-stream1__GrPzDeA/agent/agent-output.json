@@ -1,0 +1,103 @@
+{
+  "status": "completed",
+  "summary": "Configured redundant L3 connectivity between node1's private network (node3) and node2's private network (node4) carried over both independent node1-node2 links, with automatic failover and full node-restart persistence verified on all four nodes.\n\nTopology discovery: node1 eth1/eth2 and node2 eth1/eth2 are the two independent uplinks between node1-node2; node1 eth3 connects to node3's enp8s0, node2 eth3 connects to node4's enp8s0 (confirmed via targeted ping tests, since interfaces carried no IPs initially).\n\nImplementation:\n- node1: bond0 (Linux bonding, mode balance-rr, miimon 100) over eth1+eth2, IP 172.20.0.1/30 to node2; eth3 = 192.168.1.1/24 (node3's subnet). IP forwarding enabled globally and per-interface. Static route to 192.168.2.0/24 via bond0.\n- node2: mirrored \u2014 bond0 172.20.0.2/30, eth3 = 192.168.2.1/24 (node4's subnet), route to 192.168.1.0/24 via bond0.\n- node3/node4: enp8s0 statically addressed (192.168.1.2/24, 192.168.2.2/24) via existing NetworkManager profiles with a static route to the other private subnet via its local node1/node2 gateway \u2014 persists natively through NetworkManager.\n- Persistence on node1/node2: a systemd oneshot unit (antrieb-links.service, enabled, WantedBy=multi-user.target) reapplies the bonding/IP/forwarding/route configuration at boot, since SONiC's interfaces-config.service only manages eth0/lo and does not touch eth1-3.\n- Discovered and worked around a virtio/bonding limitation: 802.3ad (LACP) mode failed because virtio-net can't report link speed/duplex (dmesg: \"failed to get link speed/duplex\"), so switched to balance-rr, which works cleanly and actively load-balances across both links (confirmed via matched tx_packet counters growing symmetrically on eth1/eth2 for a test ping burst).\n- Also discovered that the platform's virtual point-to-point links do not propagate one-sided admin-down to the peer's carrier state (verified: bringing node1's eth1 down did not clear LOWER_UP on node2's eth1), so failover was correctly demonstrated as a full link outage (both endpoints down), which is the realistic failure model \u2014 0% packet loss for node3\u2194node4 traffic in that state, and clean automatic recovery once both ends were restored.\n- Ran the mandatory node-restart protocol on all four nodes sequentially (one at a time, quorum/service preserved): captured pre-restart boot_id, restarted via `reboot`/`systemctl reboot`, polled until exec was available again, confirmed a new boot_id, and verified bonding/routes/forwarding/NetworkManager config and node3\u2194node4 connectivity recovered on each.",
+  "actions_performed": [
+    "Mapped node1/node2/node3/node4 interface topology via targeted temporary-IP ping tests since interfaces carried no addresses",
+    "Diagnosed and resolved a virtio-net + LACP (802.3ad) incompatibility, switching to balance-rr bonding",
+    "Configured bond0 (balance-rr, miimon 100) on node1 and node2 spanning both independent uplinks",
+    "Configured node1 eth3 (192.168.1.1/24) and node2 eth3 (192.168.2.1/24) as private-network gateways for node3/node4",
+    "Enabled global and per-interface IPv4 forwarding on node1 and node2",
+    "Added static routes on node1, node2, node3, node4 to reach the opposite private subnet",
+    "Persisted node3/node4 static addressing and routes via existing NetworkManager 'Wired connection 2' profiles",
+    "Created and enabled a systemd oneshot unit (antrieb-links.service) on node1 and node2 to reapply bonding/IP/forwarding/route config at boot",
+    "Verified active-active use of both links via symmetric tx_packet counters on eth1/eth2 during a ping burst",
+    "Disrupted link A (eth1) at both node1 and node2 to simulate a full link outage, confirmed 0% packet loss for node3<->node4 traffic, then restored and confirmed recovery and renewed dual-link usage",
+    "Executed the mandatory node-restart evidence protocol on node1, node2, node3, and node4 sequentially: captured baseline boot_id, restarted, polled until reachable, confirmed changed boot_id, and verified recovered bonding/network/connectivity state"
+  ],
+  "evidence": [
+    {
+      "requirement": "Traffic between node3 and node4 private networks carried over both node1-node2 links (active-active)",
+      "command_ids": [
+        "cmd-0f843b275ff9425e",
+        "cmd-1252471645d7456b",
+        "cmd-c76cc7515bdd4590",
+        "cmd-610925e0415c4841",
+        "cmd-abd4b358ffe34674",
+        "cmd-f731b1ef61dd4c3c"
+      ],
+      "summary": "bond0 (balance-rr) established on node1/node2 over eth1+eth2; node3->node4 ping succeeds; tx_packets on eth1 and eth2 both incremented by 23 during a 40-packet burst, proving both links carry traffic"
+    },
+    {
+      "requirement": "node3/node4 keep reaching each other when either link is taken out of service",
+      "command_ids": [
+        "cmd-e4a7ab7dcedf406c",
+        "cmd-909eb0d3d5754798",
+        "cmd-c6a273fd271e4464",
+        "cmd-3e184f6642cd406f",
+        "cmd-aca6c570f9b849c8",
+        "cmd-5eb47c2c6e6b4c7a",
+        "cmd-c08de683c1294324",
+        "cmd-124486a0a16c4d4e",
+        "cmd-6ba16d7d0ffe445b",
+        "cmd-cae1127468c241b9",
+        "cmd-732ea34c97a245f5"
+      ],
+      "summary": "Baseline 0% loss; link A (eth1) disabled at both endpoints (realistic full-link-outage model, since platform links don't propagate one-sided down); node3->node4 ping showed 0% loss over remaining link B; link A restored, bond returned to MII up on both slaves, and both links resumed carrying traffic evenly"
+    },
+    {
+      "requirement": "node1 restart persistence and recovery",
+      "command_ids": [
+        "cmd-1fe7c86cc22a44f7",
+        "cmd-c116ca98add84f07",
+        "cmd-6a02d7168c6a48d9",
+        "cmd-d86b112ab0734c15",
+        "cmd-9d790d98a75e4e89",
+        "cmd-dcc9f9dfac9d458c"
+      ],
+      "summary": "Baseline boot_id 34192023...; reboot acknowledged and connection reset observed; post-restart boot_id 2b968bb7... (changed); antrieb-links.service active, bonding/routes/forwarding restored, node3->node4 ping 0% loss"
+    },
+    {
+      "requirement": "node2 restart persistence and recovery",
+      "command_ids": [
+        "cmd-5321cf3f28e04275",
+        "cmd-c84e8e547a6d4f32",
+        "cmd-a845d678442b41c1",
+        "cmd-edefd7b799444835",
+        "cmd-9102d6cf93334923",
+        "cmd-2ec95846afa34ee0"
+      ],
+      "summary": "Baseline boot_id 8e8823ec...; reboot acknowledged, connection reset/timeout observed during restart; post-restart boot_id 0caec094... (changed); bonding/routes/forwarding restored, node4->node3 ping 0% loss (after transient neighbor-cache loss settled)"
+    },
+    {
+      "requirement": "node3 restart persistence and recovery",
+      "command_ids": [
+        "cmd-5aa9009c030e4c5d",
+        "cmd-ab424fa1e3334dab",
+        "cmd-2a3c0819f06d480e",
+        "cmd-47089dac300840f4",
+        "cmd-e98fe19e63fb401b"
+      ],
+      "summary": "Baseline boot_id 83a0a80f...; systemctl reboot acknowledged, connection timeout/reset observed; post-restart boot_id a6e47589... (changed); NetworkManager-managed enp8s0 static IP/route intact, ping to node4 0% loss"
+    },
+    {
+      "requirement": "node4 restart persistence and recovery",
+      "command_ids": [
+        "cmd-b1d9ef69ac23401e",
+        "cmd-05324f61a5de4f47",
+        "cmd-f4644d0fe1be4137",
+        "cmd-dbbec60e09514a34",
+        "cmd-046fd152f3724493",
+        "cmd-1273dbc8ccd94c39"
+      ],
+      "summary": "Baseline boot_id 0581c914...; systemctl reboot acknowledged, connection timeout/reset observed; post-restart boot_id 547e58a1... (changed); enp8s0 static IP/route intact, ping to node3 0% loss"
+    },
+    {
+      "requirement": "Final cross-cluster health confirmation after all restarts",
+      "command_ids": [
+        "cmd-127d821edbcb4f76",
+        "cmd-2e5328911ebb4cf6"
+      ],
+      "summary": "Post-restart-cycle check on node1 and node2 shows both bond0 slaves MII up and all required routes present on both nodes"
+    }
+  ]
+}

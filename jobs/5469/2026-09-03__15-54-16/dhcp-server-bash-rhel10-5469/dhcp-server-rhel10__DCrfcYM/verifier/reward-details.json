@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 (VyOS) runs a DHCP server on the private network shared with node2 and node3",
+      "status": "satisfied",
+      "summary": "node1's eth1 was assigned 10.50.50.254/24 and a Kea DHCPv4 shared-network 'LAN' (subnet 10.50.50.0/24, range .100-.200, subnet-id 1, authoritative) was configured, committed, and saved. `listen-interface eth1` scopes the server so it only binds 10.50.50.254:67, not the egress NIC. Post-config `ss -ulnp` confirms kea-dhcp4 listening only on 10.50.50.254:67, and systemctl shows isc-kea-dhcp4-server active.",
+      "evidence_ids": [
+        "cmd-180c75437d5d41f3",
+        "cmd-6b332ae00f4f429f",
+        "cmd-7329076db68c41bb",
+        "cmd-6de4e452e10549f3",
+        "cmd-90a884bd177b4fca"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node2 and node3 obtain their address on the private network from node1 via DHCP rather than static assignment",
+      "status": "satisfied",
+      "summary": "Both node2 and node3's enp8s0 NM profiles have ipv4.method=auto (dynamic). After bringing the connections up, node2 leased 10.50.50.100 and node3 leased 10.50.50.101, both with 'dynamic' flag shown in `ip addr`. node1's Kea lease CSV independently records both leases keyed to node2/node3 hostnames, corroborating node1 as the DHCP source.",
+      "evidence_ids": [
+        "cmd-990549125e4d4dc1",
+        "cmd-93a252315b7c4f35",
+        "cmd-e1e3d3c9dbb54f05",
+        "cmd-74c7d52224ee405b",
+        "cmd-1784c3a40c4a4148"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Connectivity is functional on the DHCP-served private network",
+      "status": "satisfied",
+      "summary": "node2 successfully pinged node1 (10.50.50.254) and node3 (10.50.50.101) over enp8s0 both before and after the restart cycle, with 0% packet loss in both runs.",
+      "evidence_ids": [
+        "cmd-ecc252576be346b1",
+        "cmd-458136a07c6543c2"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all three managed nodes with pre-restart baseline, restart acknowledgement, changed boot identity, and recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "For each node: a pre-restart boot_id and health check was captured, a reboot was issued and acknowledged, the node was unreachable during the transition, a new boot_id was observed confirming the restart, and recovered state was verified (node1: kea service active, eth1 address intact, lease CSV persisted with both prior leases; node2/node3: DHCP re-acquired same leased addresses via ipv4.method=auto). The fixed after-executor snapshot boot identities (05537890.../84ce8bed.../c548c1e3...) match the executor's own final observations, cross-confirming the transitions were real.",
+      "evidence_ids": [
+        "cmd-5fc3a457b1a74eb3",
+        "cmd-cb2bec10391c4926",
+        "cmd-5dc182c17a7143d3",
+        "cmd-0a1722608e5d4819",
+        "cmd-2eaa18eeda9d487d",
+        "cmd-e5c000dfb90f4e32",
+        "cmd-acf5a3cd233740b7",
+        "cmd-cbcc24280cd4406e",
+        "cmd-97d81f6870e94420",
+        "cmd-666c3a89f5c3444e",
+        "cmd-fea1abb7e4c74d4a",
+        "cmd-7739b2bf47fe4a90",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "node1 was configured as an authoritative Kea DHCP server scoped to the private eth1 network (10.50.50.0/24, pool .100-.200), and node2/node3 were confirmed to already use dynamic (ipv4.method=auto) addressing on their matching enp8s0 NICs; both leased addresses from node1 as shown in node1's lease table and via successful bidirectional pings. The mandatory node-restart evidence protocol was executed and directly observed for all three nodes, with distinct pre/post boot identities, a bounded unreachable window during each reboot, and recovered DHCP service/lease/connectivity state afterward, corroborated by the fixed after-executor snapshot boot identities.",
+  "limitations": [
+    "Lease persistence evidence for node1 across its own reboot relies on the same /config/dhcp/dhcp4-leases.csv file rather than a fresh client-initiated DHCPDISCOVER/OFFER exchange post-reboot, so it demonstrates data persistence but not a live re-lease event on node1 itself.",
+    "The cluster only has three nodes and no explicit 'cluster state' concept beyond the three managed nodes, so cluster-state recovery is inferred from per-node service and connectivity checks rather than a dedicated cluster-level health check."
+  ],
+  "command_stats": {
+    "total": 62,
+    "successful": 48,
+    "failed": 14,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All state-changing commands trace to a clear purpose: interface addressing and Kea DHCP configuration on node1 (necessary for the task), bringing up the enp8s0 connections on node2/node3 (necessary prerequisite since they were down at start), and the mandated one-at-a-time reboot protocol on all three nodes (independent requirement, executed safely and sequentially). Several early attempts to configure DHCP on node1 failed at commit time (e.g. cmd-3996da2eecd04bb5 with invalid subnet-parameters/default-router paths, cmd-593491dc18144016 with an invalid '?' path) \u2014 these are read/probe-oriented syntax discovery attempts inside a VyOS configure session that failed before commit, so no persisted state was mutated; they represent normal iterative discovery of the correct Kea CLI syntax rather than unnecessary or residue-producing mutations. No abandoned files, conflicting/failed services, unsafe exposure, or damaged package state are visible in the after-executor snapshot versus after-prepare (failed-services empty on all nodes both before and after; package-health managers unchanged). Reboot-induced /tmp systemd-private directories are expected reboot artifacts, not executor residue.",
+    "evidence_ids": [
+      "cmd-3996da2eecd04bb5",
+      "cmd-593491dc18144016",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

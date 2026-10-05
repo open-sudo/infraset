@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "cluster-formed",
+      "requirement": "Build a three-member etcd cluster across node1, node2, and node3",
+      "status": "satisfied",
+      "summary": "etcd v3.5.17 installed and configured as systemd services on all three nodes with a static 3-member --initial-cluster config; member list command shows all three members (node1, node2, node3) in 'started' state with correct peer/client addresses.",
+      "evidence_ids": [
+        "cmd-4897df6b21d14833"
+      ]
+    },
+    {
+      "id": "cross-member-consistency",
+      "requirement": "A key written through any member must be readable from the others",
+      "status": "satisfied",
+      "summary": "Key 'foo' was written via node1's endpoint and successfully read back via node2's and node3's endpoints, returning the same value, directly demonstrating cross-member read/write consistency.",
+      "evidence_ids": [
+        "cmd-50bc0e66b1984208",
+        "cmd-e90547d85a7a466b",
+        "cmd-43093cc485e94c8c"
+      ]
+    },
+    {
+      "id": "availability-during-outage",
+      "requirement": "Cluster keeps serving reads and writes while one member is unavailable",
+      "status": "satisfied",
+      "summary": "node3's etcd was stopped (simulated outage); a write ('during-outage') was then successfully committed via node2 and read back via node1, and an endpoint health check directly showed node1 and node2 healthy while node3 was unhealthy/unreachable \u2014 a bounded, directly observed disruption with continued read/write service on the remaining quorum.",
+      "evidence_ids": [
+        "cmd-fa3c80e542224070",
+        "cmd-8bd5ad9f22e74cfb",
+        "cmd-7ec6baae35c24cbd"
+      ]
+    },
+    {
+      "id": "recovery-catchup",
+      "requirement": "Bring the unavailable member back up to date when it returns",
+      "status": "satisfied",
+      "summary": "node3's etcd was restarted; it then served the 'during-outage' key that was written while it was down, and a cluster-wide endpoint health check showed all three members healthy again, directly showing recovery and data catch-up.",
+      "evidence_ids": [
+        "cmd-2b88dc26dc4340b4",
+        "cmd-3eecc8ff589b4112"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are satisfied with direct, observed evidence: a working 3-member etcd cluster was formed, cross-member read/write consistency was demonstrated, the cluster continued serving reads/writes with node3 offline (backed by an explicit endpoint-health check showing the down member as unhealthy while the other two stayed healthy), and node3 caught up on the missed write and rejoined a fully healthy cluster after restart. Independently of the task contract, the executor also ran the provider-wide node-restart evidence protocol on all three nodes: each shows a pre-restart boot-id/health baseline, a reboot acknowledgement, a distinct post-restart boot-id (consistent with the fixed after-prepare/after-executor snapshots), and recovered etcd service, data (foo and during-outage keys), and cluster health. This restart evidence is coherent and directly observed, not merely configuration. The only hygiene concern is unreverted install-artifact residue (tarball, extracted directory, reboot log) left in /tmp on all three nodes, a bounded and low-risk but retained mutation.",
+  "limitations": [
+    "The command timeline is the only source for outage/restart sequencing; no independent timestamps beyond the reported executor timestamps were available to corroborate ordering.",
+    "Endpoint health/get commands were run from the executor's shell against etcd's client endpoints; no external client outside the managed nodes was used to validate reachability, though this is consistent with how the task and topology were structured.",
+    "Package-health check output was a single 'manager=dnf' line with no explicit pass/fail detail, so package consistency after installing third-party etcd binaries outside dnf could not be more deeply verified beyond the absence of failed services."
+  ],
+  "command_stats": {
+    "total": 54,
+    "successful": 39,
+    "failed": 15,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.78,
+    "summary": "Reviewing the chronological executor command trace, nearly all state-changing actions map directly to a task purpose: binary installation, etcd user/data-dir creation, systemd unit authoring, firewalld port opening (2379/2380, matching etcd's actual traffic \u2014 not overly broad), and the service start/stop/restart cycles used for the outage test and the independent restart-evidence protocol. cmd-d708aa14533e44d5 (node1's first `systemctl start etcd` attempt) failed with a timeout because node2/node3 were not yet started to form quorum; this is expected discovery during a sequential rollout, not a harmful mutation, and was correctly followed by a successful restart (cmd-b8e098bdbb4244e9) once peers were up. The one unnecessary-mutation-adjacent item is that the downloaded etcd release artifacts (/tmp/etcd.tar.gz, /tmp/etcd-v3.5.17-linux-amd64/) and /tmp/reboot.log were left behind on all three nodes rather than cleaned up after installation, as shown in the after-executor temporary-files diff. This is low-risk, bounded residue (build/download leftovers in /tmp, not credentials or broad system changes) but was retained rather than reverted, so it is not fully clean. No failed services, no damaged package state, and no unsafe/broad exposure were observed in the after-executor snapshot.",
+    "evidence_ids": [
+      "cmd-d708aa14533e44d5",
+      "cmd-b8e098bdbb4244e9",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

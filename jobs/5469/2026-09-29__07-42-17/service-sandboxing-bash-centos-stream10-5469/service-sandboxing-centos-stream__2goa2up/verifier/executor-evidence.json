@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 9,
+    "successful": 7,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Service inventory-worker created, managed (systemd), long-running background worker",
+      "command_ids": [
+        "cmd-06f43657285f41e3"
+      ],
+      "summary": "systemctl enable --now succeeds; is-enabled=enabled, is-active=active; worker producing tick=1 log entry and last-heartbeat file immediately after start"
+    },
+    {
+      "requirement": "Confined to write only inside /var/lib/inventory, no new privileges",
+      "command_ids": [
+        "cmd-06f43657285f41e3",
+        "cmd-ef21f41d43b24a04"
+      ],
+      "summary": "systemctl show reports NoNewPrivileges=yes, ProtectSystem=strict, ReadWritePaths=/var/lib/inventory, User=inventory-worker; empirical write attempt to /var/lib/test-escape.txt as the service user fails with Permission denied and file is never created, proving the sandbox is enforced not just configured"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline (boot identity + service/data health) on node1",
+      "command_ids": [
+        "cmd-ef21f41d43b24a04",
+        "cmd-764386d11239482c"
+      ],
+      "summary": "Captured boot_id=83a0a80f-773c-4f3e-9137-1e7aa887b07a, service active/enabled, last-heartbeat and 1-line log present before reboot"
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnect; single node only",
+      "command_ids": [
+        "cmd-2378c0ffdd1d4df1"
+      ],
+      "summary": "Backgrounded `systemctl reboot` via sudo returned 'reboot command issued' with exit_code 0 before the node dropped off"
+    },
+    {
+      "requirement": "Node actually restarted (changed boot identity, not just elapsed time)",
+      "command_ids": [
+        "cmd-8fb8e1ef31564a2f",
+        "cmd-27019203a6b040a3",
+        "cmd-ea16670773b048be"
+      ],
+      "summary": "Connection timed out / reset while node was rebooting, then exec succeeded again with boot_id=d8a63ff9-a79a-44d3-af90-4a309cef60f3, differing from the pre-restart boot_id, proving a real reboot occurred"
+    },
+    {
+      "requirement": "Post-restart recovery of service, sandboxing, and data continuity",
+      "command_ids": [
+        "cmd-3fa6002b2c784c36"
+      ],
+      "summary": "After reboot: service is enabled/active with ActiveEnterTimestamp near boot time; sandbox properties (NoNewPrivileges, ProtectSystem=strict, ReadWritePaths, User) unchanged; inventory.log shows pre-restart ticks 1-2 preserved plus new post-restart ticks 1-2 appended, and last-heartbeat timestamp advances during the wait, confirming the worker resumed writing to its confined directory after restart"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-95a75a866730432d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:14:45.922643+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 171,
+      "command": "set -Eeuo pipefail\necho \"== baseline ==\"\ncat /etc/os-release | head -3\nuptime -s || true\nsystemctl --version | head -1\n",
+      "stdout": "== baseline ==\nNAME=\"CentOS Stream\"\nVERSION=\"10 (Coughlan)\"\nRELEASE_TYPE=stable\n2026-09-29 08:14:30\nsystemd 257 (257-21.el10-ge74d732)"
+    },
+    {
+      "command_id": "cmd-06f43657285f41e3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:14:59.504910+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3683,
+      "command": "set -Eeuo pipefail\n\necho \"== create system user ==\"\nsudo -n useradd --system --no-create-home --shell /usr/sbin/nologin inventory-worker 2>/dev/null || echo \"user already exists\"\n\necho \"== create data dir ==\"\nsudo -n mkdir -p /var/lib/inventory\nsudo -n chown inventory-worker:inventory-worker /var/lib/inventory\nsudo -n chmod 750 /var/lib/inventory\n\necho \"== install worker script ==\"\nsudo -n install -d -m 755 /usr/local/bin\nsudo -n tee /usr/local/bin/inventory-worker.sh >/dev/null <<'EOF'\n#!/bin/sh\nset -eu\nSTATE_DIR=/var/lib/inventory\ni=0\nwhile :; do\n  i=$((i+1))\n  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)\n  printf '%s tick=%s\\n' \"$ts\" \"$i\" >> \"$STATE_DIR/inventory.log\"\n  echo \"$ts\" > \"$STATE_DIR/last-heartbeat\"\n  sleep 10\ndone\nEOF\nsudo -n chmod 755 /usr/local/bin/inventory-worker.sh\n\necho \"== install systemd unit ==\"\nsudo -n tee /etc/systemd/system/inventory-worker.service >/dev/null <<'EOF'\n[Unit]\nDescription=Inventory background worker (sandboxed)\nAfter=network.target\n\n[Service]\nType=simple\nUser=inventory-worker\nGroup=inventory-worker\nExecStart=/usr/local/bin/inventory-worker.sh\nRestart=on-failure\nRestartSec=2\n\n# Sandboxing\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nPrivateTmp=true\nReadWritePaths=/var/lib/inventory\nReadOnlyPaths=/usr/local/bin/inventory-worker.sh\nStateDirectory=inventory\nStateDirectoryMode=0750\nPrivateDevices=true\nProtectKernelTunables=true\nProtectKernelModules=true\nProtectControlGroups=true\nRestrictSUIDSGID=true\nRestrictRealtime=true\nLockPersonality=true\nMemoryDenyWriteExecute=true\nProtectClock=true\nProtectHostname=true\nCapabilityBoundingSet=\nAmbientCapabilities=\nUMask=0027\n\n[Install]\nWantedBy=multi-user.target\nEOF\n\necho \"== enable + start ==\"\nsudo -n systemctl daemon-reload\nsudo -n systemctl enable --now inventory-worker.service\n\nsleep 3\necho \"== status ==\"\nsudo -n systemctl is-enabled inventory-worker.service\nsudo -n systemctl is-active inventory-worker.service\nsudo -n systemctl show inventory-worker.service -p NoNewPrivileges -p ProtectSystem -p ReadWritePaths -p User\n\necho \"== data verification ==\"\nls -la /var/lib/inventory\ncat /var/lib/inventory/last-heartbeat\ntail -5 /var/lib/inventory/inventory.log\n",
+      "stdout": "== create system user ==\n== create data dir ==\n== install worker script ==\n== install systemd unit ==\n== enable + start ==\nCreated symlink '/etc/systemd/system/multi-user.target.wants/inventory-worker.service' \u2192 '/etc/systemd/system/inventory-worker.service'.\n== status ==\nenabled\nactive\nUser=inventory-worker\nReadWritePaths=/var/lib/inventory\nProtectSystem=strict\nNoNewPrivileges=yes\n== data verification ==\ntotal 12\ndrwxr-x---.  2 inventory-worker inventory-worker   49 Sep 29 08:14 .\ndrwxr-xr-x. 27 root             root             4096 Sep 29 08:14 ..\n-rw-r-----.  1 inventory-worker inventory-worker   28 Sep 29 08:14 inventory.log\n-rw-r-----.  1 inventory-worker inventory-worker   21 Sep 29 08:14 last-heartbeat\n2026-09-29T12:14:56Z\n2026-09-29T12:14:56Z tick=1"
+    },
+    {
+      "command_id": "cmd-ef21f41d43b24a04",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:03.110148+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 185,
+      "command": "set -Eeuo pipefail\necho \"== attempt write outside allowed path as service user ==\"\nsudo -n -u inventory-worker sh -c 'echo test > /var/lib/test-escape.txt' 2>&1 && echo \"UNEXPECTED_SUCCESS\" || echo \"write outside /var/lib/inventory blocked (expected, ProtectSystem=strict)\"\nls /var/lib/test-escape.txt 2>&1 || echo \"confirmed: file not created\"\n\necho \"== boot identity baseline ==\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\n",
+      "stdout": "== attempt write outside allowed path as service user ==\nsh: line 1: /var/lib/test-escape.txt: Permission denied\nwrite outside /var/lib/inventory blocked (expected, ProtectSystem=strict)\nls: cannot access '/var/lib/test-escape.txt': No such file or directory\nconfirmed: file not created\n== boot identity baseline ==\n83a0a80f-773c-4f3e-9137-1e7aa887b07a\n2026-09-29 08:14:30"
+    },
+    {
+      "command_id": "cmd-764386d11239482c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:05.269678+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 106,
+      "command": "set -Eeuo pipefail\necho \"== pre-restart baseline ==\"\ncat /proc/sys/kernel/random/boot_id\nsudo -n systemctl is-active inventory-worker.service\nsudo -n systemctl is-enabled inventory-worker.service\ncat /var/lib/inventory/last-heartbeat\nwc -l < /var/lib/inventory/inventory.log\n",
+      "stdout": "== pre-restart baseline ==\n83a0a80f-773c-4f3e-9137-1e7aa887b07a\nactive\nenabled\n2026-09-29T12:14:56Z\n1"
+    },
+    {
+      "command_id": "cmd-2378c0ffdd1d4df1",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:07.094118+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 88,
+      "command": "set -Eeuo pipefail\nsudo -n sh -c 'nohup systemctl reboot >/tmp/reboot.log 2>&1 & disown' \necho \"reboot command issued\"\n",
+      "stdout": "reboot command issued"
+    },
+    {
+      "command_id": "cmd-8fb8e1ef31564a2f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:10.717614+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2116,
+      "command": "echo alive; cat /proc/sys/kernel/random/boot_id 2>/dev/null || true",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-27019203a6b040a3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:14.500512+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 636,
+      "command": "echo alive; cat /proc/sys/kernel/random/boot_id 2>/dev/null || true",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-ea16670773b048be",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:15.797845+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 69,
+      "command": "echo alive; cat /proc/sys/kernel/random/boot_id 2>/dev/null || true",
+      "stdout": "alive\nd8a63ff9-a79a-44d3-af90-4a309cef60f3"
+    },
+    {
+      "command_id": "cmd-3fa6002b2c784c36",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:15:31.072563+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 11672,
+      "command": "set -Eeuo pipefail\necho \"== post-restart boot identity ==\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\n\necho \"== service state ==\"\nsudo -n systemctl is-enabled inventory-worker.service\nsudo -n systemctl is-active inventory-worker.service\nsudo -n systemctl show inventory-worker.service -p NoNewPrivileges -p ProtectSystem -p ReadWritePaths -p User -p ActiveEnterTimestamp\n\necho \"== data recovered / worker producing new output ==\"\ncat /var/lib/inventory/last-heartbeat\nsleep 12\necho \"-- after wait --\"\ncat /var/lib/inventory/last-heartbeat\ntail -5 /var/lib/inventory/inventory.log\nwc -l < /var/lib/inventory/inventory.log\n",
+      "stdout": "== post-restart boot identity ==\nd8a63ff9-a79a-44d3-af90-4a309cef60f3\n2026-09-29 08:15:10\n== service state ==\nenabled\nactive\nUser=inventory-worker\nReadWritePaths=/var/lib/inventory\nProtectSystem=strict\nNoNewPrivileges=yes\nActiveEnterTimestamp=Tue 2026-09-29 08:15:15 EDT\n== data recovered / worker producing new output ==\n2026-09-29T12:15:15Z\n-- after wait --\n2026-09-29T12:15:25Z\n2026-09-29T12:14:56Z tick=1\n2026-09-29T12:15:06Z tick=2\n2026-09-29T12:15:15Z tick=1\n2026-09-29T12:15:25Z tick=2\n4"
+    }
+  ]
+}

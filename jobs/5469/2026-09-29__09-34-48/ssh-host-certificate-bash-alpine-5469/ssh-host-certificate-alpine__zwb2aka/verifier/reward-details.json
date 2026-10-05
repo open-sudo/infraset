@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-created",
+      "requirement": "Create an SSH certificate authority on node1",
+      "status": "satisfied",
+      "summary": "An ed25519 CA keypair was generated at /etc/ssh/ca/ssh_ca with a directory permission of 700, directly observed via ssh-keygen output and directory listing.",
+      "evidence_ids": [
+        "cmd-99bb780812304a4c"
+      ]
+    },
+    {
+      "id": "host-cert-signed-presented",
+      "requirement": "Host presents a certificate signed by the CA",
+      "status": "satisfied",
+      "summary": "The node1 ed25519 host key was signed by the CA (ssh-keygen -s) producing ssh_host_ed25519_key-cert.pub with correct CA fingerprint and principals; sshd_config was updated with a HostCertificate directive, validated with sshd -t, and sshd was restarted successfully.",
+      "evidence_ids": [
+        "cmd-9774ee0623354d04",
+        "cmd-9ca4109497674518",
+        "cmd-8387c01f04d6420c"
+      ]
+    },
+    {
+      "id": "client-trust-no-pinning",
+      "requirement": "A client that trusts the CA (without pinning the host key) connects without a host-key mismatch/prompt",
+      "status": "satisfied",
+      "summary": "A known_hosts file containing only an '@cert-authority * <CA pubkey>' line (no pinned host key) was used with StrictHostKeyChecking=yes; ssh debug output shows the server presenting the ED25519-CERT certificate and the client logging 'Host is known and matches the ED25519-CERT host certificate,' proceeding past host verification to authentication (the subsequent Permission denied is unrelated publickey/password auth failure, not a host-verification failure). This was demonstrated both immediately after configuration and again after a reboot.",
+      "evidence_ids": [
+        "cmd-360a00b9de8c4f1c",
+        "cmd-8c49a07656074540"
+      ]
+    },
+    {
+      "id": "restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1: pre-restart healthy baseline, restart acknowledgement, changed boot identity, recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (555f40d8...) and sshd 'started'/enabled state were captured; a backgrounded reboot returned its ack before disconnect; repeated reconnect attempts show expected connection resets/timeouts during the reboot window; a new boot_id (651f5bb3...) with low uptime (15.88s) was observed post-reboot, cross-checked against the fixed after_executor boot-identity snapshot which shows the same new boot_id. Post-reboot, sshd is confirmed started, the CA/cert files are intact, and the CA-trust-only SSH connection test again succeeds, demonstrating recovered service and configuration state on the single managed node.",
+      "evidence_ids": [
+        "cmd-49ea43b06a354cd2",
+        "cmd-00f7e18c08be4180",
+        "cmd-f648b97775454a32",
+        "cmd-83492d50544947b7",
+        "cmd-07a85b5f65be4106",
+        "cmd-8c49a07656074540",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor created an SSH CA on node1, signed the ed25519 host key into a certificate, configured and validated sshd to present it, and directly demonstrated that a client trusting only the CA (with no pinned host key) connects without a host-key mismatch, both before and after a reboot. The mandated node-restart evidence protocol was also executed cleanly for the single managed node, with a clear pre-restart baseline, acknowledgement, changed boot identity (corroborated by the fixed lifecycle snapshots), and recovered sshd/certificate state. Minor unremoved temp files (/tmp/test_known_hosts, /tmp/reboot.log) are the only notable hygiene issue.",
+  "limitations": [
+    "Cluster/data-state recovery is not applicable beyond sshd since this task and topology involve a single non-clustered node; only service-level (sshd) and configuration-level (CA/cert files) recovery could be observed.",
+    "The 'Permission denied (publickey,password,keyboard-interactive)' seen in both connection tests is expected given BatchMode/no valid client key, and evidence relies on interpreting the preceding debug lines correctly to confirm host verification succeeded independent of that failure."
+  ],
+  "command_stats": {
+    "total": 28,
+    "successful": 13,
+    "failed": 15,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Executor actions were tightly scoped to the task: CA generation, host-key signing, sshd_config edit plus validation before restart, and a bounded reboot for the mandated restart-evidence protocol. Two temporary artifacts were left behind and not cleaned up: /tmp/test_known_hosts (created in cmd-360a00b9de8c4f1c for the trust-only connection test, reused in cmd-8c49a07656074540) and /tmp/reboot.log (created by the backgrounded reboot command in cmd-f648b97775454a32), both visible as additions in the after_executor temporary-files snapshot versus baseline. These are small, non-sensitive, low-risk residue rather than broad or destructive mutations, and do not affect sshd or the CA configuration. A backup copy of the original host public key (ssh_host_ed25519_key.pub.orig) was also left in /etc/ssh as a benign safety copy. No failed services, no weakened security controls, and no unrelated or destructive mutations were observed in the timeline.",
+    "evidence_ids": [
+      "cmd-360a00b9de8c4f1c",
+      "cmd-f648b97775454a32",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

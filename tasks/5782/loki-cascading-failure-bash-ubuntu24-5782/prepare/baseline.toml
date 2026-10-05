@@ -1,0 +1,141 @@
+timeout_sec = 240
+
+[[observations]]
+id = "prepared-incident-timeline"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+curl -fsSG http://127.0.0.1:3100/loki/api/v1/query_range \
+  --data-urlencode 'query={job="infraset-cascade",incident="INC-042"}' \
+  --data-urlencode 'since=1h' \
+  --data-urlencode 'direction=forward' \
+  --data-urlencode 'limit=20' |
+jq -er '[.data.result[] as $stream | $stream.values[] |
+  {timestamp: .[0], host: $stream.stream.host, service: $stream.stream.service,
+   event: $stream.stream.event, line: .[1]}] |
+  sort_by(.timestamp)[] | [.timestamp,.host,.service,.event,.line] | @tsv'
+'''
+required = true
+
+[[observations]]
+id = "prepared-observability-state"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+systemctl is-active loki.service
+systemctl is-enabled loki.service
+systemctl is-active grafana-server.service
+systemctl is-enabled grafana-server.service
+curl -fsS http://127.0.0.1:3100/ready
+curl -fsS http://127.0.0.1:3000/api/health | jq -c .
+sha256sum /etc/grafana/infraset-admin.env
+'''
+required = true
+
+[[observations]]
+id = "prepared-origin-state"
+stage = 10
+node = "node2"
+command = '''
+set -eu
+if nginx -t >/tmp/infraset-baseline-nginx-test 2>&1; then
+  rm -f /tmp/infraset-baseline-nginx-test
+  exit 1
+fi
+grep -F 'upstream_timeoutx' /etc/nginx/sites-available/infraset-cascade.conf
+! systemctl is-active --quiet nginx.service
+rm -f /tmp/infraset-baseline-nginx-test
+sha256sum /etc/nginx/sites-available/infraset-cascade.conf
+'''
+required = true
+
+[[observations]]
+id = "prepared-chain-outage"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+status="$(curl -sS -o /dev/null -w '%{http_code}' http://node4:18083/health || true)"
+test "$status" != 200
+printf 'node4_status=%s\n' "$status"
+'''
+required = true
+
+[[observations]]
+id = "node3-proxy-config"
+stage = 10
+node = "node3"
+command = "sha256sum /etc/nginx/sites-available/infraset-cascade.conf"
+required = true
+
+[[observations]]
+id = "node4-proxy-config"
+stage = 10
+node = "node4"
+command = "sha256sum /etc/nginx/sites-available/infraset-cascade.conf"
+required = true
+
+[[observations]]
+id = "catalog-data"
+stage = 10
+node = "node2"
+command = "sha256sum /srv/infraset-cascade/catalog/health.json /srv/infraset-cascade/catalog/records.json"
+required = true
+
+[[observations]]
+id = "node1-system-state"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+{ dpkg-query -W -f='${Package}=${Version}\n' | sort; getent passwd; getent group; } | sha256sum
+printf 'apparmor=%s\n' "$(cat /sys/module/apparmor/parameters/enabled)"
+systemctl is-active ufw.service
+systemctl is-enabled ufw.service
+ufw status verbose
+'''
+required = true
+
+[[observations]]
+id = "node2-system-state"
+stage = 20
+node = "node2"
+command = '''
+set -eu
+{ dpkg-query -W -f='${Package}=${Version}\n' | sort; getent passwd; getent group; } | sha256sum
+printf 'apparmor=%s\n' "$(cat /sys/module/apparmor/parameters/enabled)"
+systemctl is-active ufw.service
+systemctl is-enabled ufw.service
+ufw status verbose
+'''
+required = true
+
+[[observations]]
+id = "node3-system-state"
+stage = 20
+node = "node3"
+command = '''
+set -eu
+{ dpkg-query -W -f='${Package}=${Version}\n' | sort; getent passwd; getent group; } | sha256sum
+printf 'apparmor=%s\n' "$(cat /sys/module/apparmor/parameters/enabled)"
+systemctl is-active ufw.service
+systemctl is-enabled ufw.service
+ufw status verbose
+'''
+required = true
+
+[[observations]]
+id = "node4-system-state"
+stage = 20
+node = "node4"
+command = '''
+set -eu
+{ dpkg-query -W -f='${Package}=${Version}\n' | sort; getent passwd; getent group; } | sha256sum
+printf 'apparmor=%s\n' "$(cat /sys/module/apparmor/parameters/enabled)"
+systemctl is-active ufw.service
+systemctl is-enabled ufw.service
+ufw status verbose
+'''
+required = true

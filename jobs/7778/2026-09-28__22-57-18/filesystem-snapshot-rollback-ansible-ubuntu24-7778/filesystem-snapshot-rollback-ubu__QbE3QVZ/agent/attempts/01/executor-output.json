@@ -1,0 +1,91 @@
+{
+  "status": "completed",
+  "summary": "Implemented Ansible-managed, LVM-snapshot-backed recoverability for /srv/data on node1, orchestrated from node2 (the ansible-equipped control node). setup.yml provisions a loop-device-backed LVM volume group/logical volume mounted at /srv/data with boot-persistent systemd units; snapshot.yml takes an LVM snapshot; restore.yml unmounts, merges the snapshot back into the origin, and remounts, restoring exact prior content. Demonstrated end-to-end: seeded data, snapshotted, modified (deleted/corrupted/added files), restored, and verified checksums matched the pre-modification baseline exactly. During the mandatory reboot validation I found and fixed two real bugs in the boot-persistence systemd units (an ordering cycle, and a race causing the loop device to latch read-only before root remounted rw). Both node1 and node2 were then successfully restarted one at a time, each with proven boot-id changes and full unattended recovery of the data volume and Ansible control path.",
+  "actions_performed": [
+    "Enabled SSH (generated host keys, fixed RuntimeDirectory) on node1 so node2 could reach it via Ansible",
+    "Wired passwordless SSH from node2 to node1 using CLUSTER_SSH_PRIVKEY/PUBKEY; set up Ansible inventory/config on node2",
+    "Wrote and ran setup.yml: creates a loop-device-backed LVM VG/LV, formats ext4, mounts at /srv/data, installs boot-persistent systemd units (srv-data-loop.service, srv-data.mount)",
+    "Verified setup.yml is idempotent (second run: 0 changed)",
+    "Seeded application data; wrote snapshot.yml (lvcreate --snapshot) and restore.yml (unmount, lvconvert --merge, remount)",
+    "Demonstrated full cycle: baseline checksums -> snapshot -> modify (delete/corrupt/add files) -> restore -> verified checksums matched baseline exactly -> took a fresh snapshot to keep recoverability continuous",
+    "Captured pre-restart boot_id/health baseline on node1, restarted node1 via systemctl reboot, polled until reachable, confirmed boot_id changed",
+    "First reboot revealed srv-data-loop.service never ran (systemd ordering cycle from conflicting Before/After on local-fs-pre.target); fixed unit to Before=local-fs.target and re-applied via setup.yml",
+    "Second reboot revealed a race: loop device attached before root filesystem finished ro->rw remount, causing it to latch read-only and abort the ext4 mount; fixed by adding After=systemd-remount-fs.service and re-applied via setup.yml",
+    "Third reboot of node1 confirmed both systemd units activate automatically, /srv/data mounts read-write, and file checksums match baseline with zero manual intervention",
+    "Captured pre-restart boot_id/health baseline on node2 (the control node), restarted it, confirmed boot_id changed, and verified its Ansible control path to node1 and node1's data health both recovered"
+  ],
+  "evidence": [
+    {
+      "requirement": "LVM-snapshot-backed recoverability of /srv/data implemented via Ansible",
+      "command_ids": [
+        "cmd-1f6034c9c8d44be7",
+        "cmd-7e84767bfdc440fe",
+        "cmd-3464e9c7040840ff"
+      ],
+      "summary": "setup.yml ran successfully creating VG/LV mounted at /srv/data, and rerun showed 0 changes (idempotent); df/mount/lvs confirm the volume is live"
+    },
+    {
+      "requirement": "After modification, restore exact content captured by an earlier snapshot",
+      "command_ids": [
+        "cmd-6dec5f26382a4495",
+        "cmd-c3e865d14558437c",
+        "cmd-8c0bc2b869fa404a",
+        "cmd-02635d772b8e4157",
+        "cmd-73a85b8e9d2f4bf5"
+      ],
+      "summary": "Captured baseline checksums, took snapshot, modified /srv/data (deleted/corrupted/added files), ran restore.yml (lvconvert --merge), and post-restore checksums for app.conf/notes.txt/records/r1.txt exactly matched the pre-modification baseline, with junk files gone"
+    },
+    {
+      "requirement": "Continuous recoverability maintained after the demonstrated restore",
+      "command_ids": [
+        "cmd-ca7f9e31088342b7"
+      ],
+      "summary": "Took a fresh LVM snapshot after the restore cycle so /srv/data remains recoverable going forward"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline captured before restart",
+      "command_ids": [
+        "cmd-faca6bcb010a4592"
+      ],
+      "summary": "Captured node1 boot_id (cf34dc87...), uptime, active mount, LVM state, and file checksums prior to restart"
+    },
+    {
+      "requirement": "node1 restart: acknowledgement returned before disconnect, boot identity changed",
+      "command_ids": [
+        "cmd-af16618f04b149d9",
+        "cmd-64a05e34855045f2",
+        "cmd-bc622e90307e4b00"
+      ],
+      "summary": "Reboot scheduled via backgrounded systemctl reboot (ack returned immediately), node became unreachable, then boot_id changed to 7c9b2fdf... with uptime 5.67s"
+    },
+    {
+      "requirement": "node1 restart: post-restart recovery verified (first attempt found real bugs, subsequently fixed and reverified)",
+      "command_ids": [
+        "cmd-123d751e23ee47e4",
+        "cmd-8fcd51944f014a36",
+        "cmd-44d03f59b8834ef1",
+        "cmd-7fa8fcdc720b4cdb",
+        "cmd-ceee71281cd6411b",
+        "cmd-f26693a88982446a",
+        "cmd-4b48106ed7f54867",
+        "cmd-b0c0c2da241a4739",
+        "cmd-1b15b519241f47a4",
+        "cmd-b998a9444f0c499f",
+        "cmd-2ead913af5b14cb3",
+        "cmd-5a0872e401e14a88",
+        "cmd-edd6833f23fc403b"
+      ],
+      "summary": "First reboot: VG/mount inactive due to a systemd ordering cycle (diagnosed via journalctl), fixed and reapplied via setup.yml, manually verified recovery. Second reboot (boot_id 1cd48f1b...): units ran but mount failed due to a read-only loop device race (diagnosed via dmesg), fixed unit ordering (After=systemd-remount-fs.service) and reapplied. Third reboot (boot_id 455fd13b...) confirmed both units activate automatically, filesystem mounts rw, and checksums for app.conf/notes.txt/records/r1.txt match baseline with zero manual steps"
+    },
+    {
+      "requirement": "node2 (control node) restart: healthy baseline captured, restarted, boot identity changed, recovery verified",
+      "command_ids": [
+        "cmd-d9972f4a3b52457a",
+        "cmd-e421acf06c7544c2",
+        "cmd-889172a715b443bb",
+        "cmd-e57fff22daee4e0e"
+      ],
+      "summary": "Captured node2 boot_id (e796da36...) and confirmed Ansible control path healthy before restart; after reboot boot_id changed to 6d1c41ec... with uptime 5.16s; post-restart Ansible ping to node1 succeeded and node1's /srv/data checksums/mount were confirmed unchanged and healthy"
+    }
+  ]
+}

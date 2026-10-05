@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Serve an application from node2 on TCP port 8080",
+      "status": "satisfied",
+      "summary": "A systemd-managed Python http.server (app8080.service) was created on node2, enabled, and confirmed listening on 0.0.0.0:8080. The listening socket and successful HTTP GET (200 OK) were directly observed, including after node2's reboot.",
+      "evidence_ids": [
+        "cmd-6e7d6f33f2864550",
+        "cmd-faf6b491b53c4f52",
+        "cmd-8a77b1e4851b4468",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "WireGuard tunnel from node3 terminated on node1",
+      "status": "satisfied",
+      "summary": "wg0 was configured on node1 (address 10.200.0.1/24, port 51820, peer node3 with allowed-ips 10.200.0.2/32) and committed/saved; node3 was configured as a wg-quick client pointed at node1's WAN IP. `wg show` on both sides confirms interface state and a successful handshake, both initially and after each node's reboot.",
+      "evidence_ids": [
+        "cmd-ca68a8582e7243f7",
+        "cmd-49a756db0c2344a4",
+        "cmd-988fcd32c51746c1",
+        "cmd-ff972212ece0411d",
+        "cmd-c4884377997144d9"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node3 can reach node2:8080 only through the tunnel terminated on node1, not directly",
+      "status": "satisfied",
+      "summary": "Before the tunnel was configured, curl from node3 to node2:8080 failed ('No route to host') because node2's firewalld zone 'node1only' restricts TCP/8080 to source 10.100.47.10/32 (node1's LAN IP) only. Once the tunnel was up, curl succeeded, node2's access log showed the source as node1's IP (proxied via NAT), and node1's conntrack table showed the translation from node3's tunnel IP to node1's LAN IP toward node2 \u2014 directly demonstrating the enforced path. Note: the executor achieved this via a firewalld host-based access restriction on the shared provisioned /24 (all three nodes were actually provisioned on one flat 10.100.47.0/24 'mgmt' network, with the topology's separate 'lan' network apparently unused) rather than genuine L2/L3 network segmentation, so 'outside the private network' is enforced logically rather than physically. This is a reasonable and clearly effective substitute given the provisioned topology, but is a deviation worth flagging.",
+      "evidence_ids": [
+        "cmd-478c9782857d48a3",
+        "cmd-4f45959107fa4e5d",
+        "cmd-faf6b491b53c4f52",
+        "cmd-7bdc343c55284f64",
+        "cmd-5d7b384fe47640f1"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Provider-wide node-restart evidence protocol on all three managed nodes (pre-restart baseline, acknowledgement, changed boot identity, recovered service/tunnel/data/cluster state)",
+      "status": "satisfied",
+      "summary": "All three nodes show a full cycle: pre-reboot boot_id and health baseline, an issued reboot acknowledged, a distinct post-reboot boot_id (cross-checked against the fixed after_executor snapshot for all three nodes), and a working recovered state \u2014 node1's wg0/NAT/firewall config intact plus a forced fresh handshake and successful end-to-end curl from node3; node2's app8080.service and firewalld zone active plus a successful end-to-end curl; node3's wg-quick@wg0 active, fresh handshake via ping, and a successful end-to-end curl. A transient post-reboot curl timeout on node1 (cmd-3b6b1ecad9e4452f) is a normal bounded disruption during handshake re-establishment, resolved moments later.",
+      "evidence_ids": [
+        "cmd-cf98caf40e2d4044",
+        "cmd-46abe761a9af4857",
+        "cmd-6484d4fe5ca74cac",
+        "cmd-6df0259cdae94b4b",
+        "cmd-ff972212ece0411d",
+        "cmd-0d6153ffc4a046f4",
+        "cmd-3d867baaed0a4ab6",
+        "cmd-b5b70d7d29134257",
+        "cmd-0a687087ea584498",
+        "cmd-8a77b1e4851b4468",
+        "cmd-395453415b904ffe",
+        "cmd-2ddb204ec4b64190",
+        "cmd-166bce171ff84b50",
+        "cmd-6f6e6883d9bf4328",
+        "cmd-c4884377997144d9",
+        "cmd-29c7cc852f104fc7",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied: node2 serves an application on TCP 8080, a WireGuard tunnel is terminated on node1 with node3 as the sole peer, and node3 can reach node2:8080 only via that tunnel (verified directly via a blocked-then-successful curl, access logs, and conntrack NAT translation on node1). The isolation is enforced via a firewalld host-based restriction on a shared flat provisioned network rather than genuine physical/L2 network segmentation (the topology's separate 'lan' network appears unused), which is a reasonable substitute but a deviation from a strictly literal reading of 'outside the private network.' The mandatory node-restart evidence protocol was completed and well-documented for all three nodes, each showing a clean baseline, acknowledged restart, changed boot identity (cross-checked against fixed lifecycle snapshots), and full functional recovery. Operational hygiene is good: two small uncommitted/failed configuration attempts on node1 left no residue, and a newly-failed NetworkManager unit on node2 post-reboot is a minor, likely environment-driven anomaly rather than an executor-caused mutation.",
+  "limitations": [
+    "The claimed network topology ('node3 outside the private network shared by node1 and node2') does not match the observed provisioned addressing \u2014 all three nodes were assigned IPs on the same flat 10.100.47.0/24 network, and the topology's distinct 'lan' network (intended for node1/node2 only) does not appear to have been used, so isolation relies entirely on firewalld/VyOS filtering rather than physical separation.",
+    "One evidence item in the executor's report cited an unresolvable command ID (cmd-e31962a9-baseline-note) for the node2 restart baseline; the actual baseline is available under cmd-3d867baaed0a4ab6, which was used instead.",
+    "Whether the post-reboot 'NetworkManager-wait-online.service' failed state on node2 is executor-caused or an environment/reboot artifact could not be conclusively determined from the available evidence.",
+    "Executor evidence item 7 referenced unknown command IDs: cmd-e31962a9-baseline-note"
+  ],
+  "command_stats": {
+    "total": 49,
+    "successful": 42,
+    "failed": 7,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Two bounded, uncommitted troubleshooting attempts on node1 left no residue: (1) cmd-8bb993b8d40540a9 generated and pending-installed a PKI-based WireGuard key-pair for wg0, which was abandoned in favor of a manually generated key used in the successful commit (cmd-ca68a8582e7243f7) \u2014 since it was never committed it left no persisted state; (2) cmd-897ac10316084287 was a failed `commit` attempt (invalid firewall state syntax, missing private-key) that made no lasting change, confirmed by the subsequent successful commit. Package installation on node3 (cmd-b56b1c970c08434d, dnf install wireguard-tools) pulled in routine dependency upgrades (openssl, systemd) as a normal side effect, not a deliberate unnecessary mutation. The after_executor lifecycle snapshot shows a newly-failed 'NetworkManager-wait-online.service' unit on node2 that was not present at baseline; this appears to be a reboot-related environment artifact rather than something directly caused by an executor configuration mutation, but it is a residual anomaly worth noting. No unnecessary, broad, destructive, or security-weakening mutations were retained.",
+    "evidence_ids": [
+      "cmd-8bb993b8d40540a9",
+      "cmd-897ac10316084287",
+      "cmd-ca68a8582e7243f7",
+      "cmd-b56b1c970c08434d",
+      "global:after_executor:node2:failed-services",
+      "global:before_prepare:node2:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

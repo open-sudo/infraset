@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-created",
+      "requirement": "Create a local certificate authority named 'OS Comparison Root CA' on node1",
+      "status": "satisfied",
+      "summary": "cmd-91824a13e54a4b1d generated a 4096-bit RSA key and a self-signed X.509 certificate under /etc/pki/CA/OSComparisonRootCA, and `openssl x509 -noout -subject -issuer` shows subject=issuer=/CN=OS Comparison Root CA/O=OS Comparison Root CA, confirming a correctly named, self-signed root CA. The command's return_code=1 stemmed from a later diagnostic sub-step (unrelated fingerprint/PEM parsing error) after the CA creation and installation steps had already succeeded, so it does not undermine this outcome.",
+      "evidence_ids": [
+        "cmd-91824a13e54a4b1d"
+      ]
+    },
+    {
+      "id": "ca-installed-trusted",
+      "requirement": "Install the CA certificate as a trusted system certificate authority",
+      "status": "satisfied",
+      "summary": "The certificate was copied to /etc/pki/ca-trust/source/anchors/os-comparison-root-ca.crt and `update-ca-trust extract` was run (cmd-91824a13e54a4b1d). cmd-54dcd99c82d5410c confirms the anchor file is present and the bundle /etc/pki/tls/certs/ca-bundle.crt contains a single '# OS Comparison Root CA' entry. Most decisively, cmd-3023ad4fc57a4424 shows a freshly signed leaf certificate validating via `openssl verify` against the system default trust store with no explicit -CAfile, and again explicitly against ca-bundle.crt \u2014 direct proof of functional system-wide trust, not just file presence.",
+      "evidence_ids": [
+        "cmd-54dcd99c82d5410c",
+        "cmd-3023ad4fc57a4424"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on node1 (independent of the public task contract)",
+      "status": "satisfied",
+      "summary": "Pre-restart healthy baseline captured (cmd-0e06c429d40545d5, boot_id=151c4aa9...). Restart acknowledgement observed via `shutdown -r now` triggered in background with connection drop (cmd-a78774911fd94b62), consistent with the fixed global:before_prepare boot-identity snapshot. Post-restart the node became reachable again with a different boot_id (bb0617bc..., cmd-4162a63c1ec141b0), matching the fixed global:after_executor boot-identity snapshot. Recovered state was directly verified: anchor file still present, CA still counted once in ca-bundle.crt, and a freshly signed leaf certificate again validated against the system trust store (cmd-0d7e6df8b3334069). This is a complete, coherent restart evidence chain.",
+      "evidence_ids": [
+        "cmd-0e06c429d40545d5",
+        "cmd-a78774911fd94b62",
+        "cmd-4162a63c1ec141b0",
+        "cmd-0d7e6df8b3334069",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "Both material task outcomes \u2014 creating a self-signed root CA named 'OS Comparison Root CA' on node1 and installing it as a trusted system CA \u2014 are satisfied with direct evidence, including a functional trust test (leaf certificate validation against the default system trust store) both before and after a full node restart that itself is well-evidenced (pre-restart baseline, acknowledgement, changed boot_id, and recovered state). The main deduction is operational hygiene: two verification sub-steps failed partway through their scripts (return_code=1) before reaching their own cleanup commands, leaving over 270 temporary bundle/split PEM files and several log files in /tmp that were never removed.",
+  "limitations": [
+    "The exact cause of the return_code=1 on cmd-91824a13e54a4b1d and cmd-54dcd99c82d5410c (a 'no start line ... Expecting: TRUSTED CERTIFICATE' openssl error) is not fully explained in the captured stderr, though it appears to be an unrelated trailing diagnostic step rather than a failure of the core CA creation/installation.",
+    "Package-health checks were unavailable (timeout) in both before-prepare and after-executor snapshots, so native package-manager consistency around ca-certificates cannot be independently confirmed beyond the rpm -q output captured in command evidence."
+  ],
+  "command_stats": {
+    "total": 10,
+    "successful": 5,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.5,
+    "summary": "The core task actions (CA key/cert generation, anchor installation, leaf-cert issuance/cleanup in cmd-3023ad4fc57a4424 and cmd-0d7e6df8b3334069) were bounded and appropriately cleaned up. However, two diagnostic sub-steps left significant unremoved residue: cmd-91824a13e54a4b1d created ~138 /tmp/bundle_*.pem files via an awk bundle-split for verification purposes but exited (return_code=1, likely due to `set -e` on a later failing sub-command) before its intended cleanup could run; cmd-54dcd99c82d5410c similarly created ~138 /tmp/split_*.pem files plus /tmp/extracted.pem via csplit for the same diagnostic purpose and also exited at return_code=1 before its own `rm -f` cleanup executed. The after-executor temporary-files snapshot confirms all of these (over 270 files) plus /tmp/genrsa.log, /tmp/sign.log, /tmp/post-sign.log, and /tmp/reboot.log remained on the node at task completion. This residue is non-destructive, does not weaken security controls, and did not affect the CA/trust outcome, but represents clutter from troubleshooting/verification commands that was never restored, which should be counted as unnecessary mutation residue.",
+    "evidence_ids": [
+      "cmd-91824a13e54a4b1d",
+      "cmd-54dcd99c82d5410c",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

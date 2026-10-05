@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "unprivileged-account",
+      "requirement": "Web application runs as unprivileged account appsvc",
+      "status": "satisfied",
+      "summary": "appsvc did not exist before (cmd-77bf70f5cb0147ef), was created as a standard non-privileged UID 1000 user (cmd-4ef7e32bd2ae4f54), and the container was run rootlessly via `sudo -u appsvc podman run` (cmd-6784cc965ce6490f) and later as a systemd --user Quadlet unit owned by appsvc (cmd-3a481e6d3d3d474b, cmd-968072091ca543b7). Post-reboot verification confirms the container and its processes run under appsvc's user slice (cmd-313ab56c9f75421e).",
+      "evidence_ids": [
+        "cmd-77bf70f5cb0147ef",
+        "cmd-4ef7e32bd2ae4f54",
+        "cmd-6784cc965ce6490f",
+        "cmd-3a481e6d3d3d474b",
+        "cmd-968072091ca543b7",
+        "cmd-313ab56c9f75421e"
+      ]
+    },
+    {
+      "id": "port-8080",
+      "requirement": "Application serves on port 8080",
+      "status": "satisfied",
+      "summary": "HTTP 200 was observed on port 8080 both via NODE_IP and localhost immediately after the ad-hoc container run (cmd-6784cc965ce6490f), after conversion to the Quadlet-managed systemd service (cmd-968072091ca543b7), and after a full node reboot (cmd-313ab56c9f75421e). The after-executor lifecycle snapshot also independently shows a new listening socket on *:8080 owned by the pasta rootless-network process, matching the appsvc container.",
+      "evidence_ids": [
+        "cmd-6784cc965ce6490f",
+        "cmd-968072091ca543b7",
+        "cmd-313ab56c9f75421e",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "boot-start-no-session",
+      "requirement": "Service starts at boot while appsvc has no active login session",
+      "status": "satisfied",
+      "summary": "loginctl linger was enabled for appsvc (cmd-4ef7e32bd2ae4f54) and a Quadlet unit with WantedBy=default.target was installed in appsvc's user systemd config (cmd-3a481e6d3d3d474b), started and verified active (cmd-968072091ca543b7). After a full `systemctl reboot` (cmd-be4d5e47827848ed) with observed connection loss confirming the reboot occurred (cmd-f09a200886de46db, cmd-b8c3c784791540eb) and a changed boot_id proving a genuine restart (cmd-ad8a1e56b12d4ac7), the post-reboot check shows `who` with zero interactive login sessions (only the linger-spawned manager pseudo-session) while webapp.service is active since shortly after boot and serving HTTP 200 (cmd-313ab56c9f75421e). This directly demonstrates the boot-time autostart requirement with no active login session, going beyond configuration inspection alone.",
+      "evidence_ids": [
+        "cmd-4ef7e32bd2ae4f54",
+        "cmd-3a481e6d3d3d474b",
+        "cmd-968072091ca543b7",
+        "cmd-be4d5e47827848ed",
+        "cmd-f09a200886de46db",
+        "cmd-ad8a1e56b12d4ac7",
+        "cmd-313ab56c9f75421e"
+      ]
+    },
+    {
+      "id": "restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol for node1: pre-restart healthy baseline, restart acknowledgement, changed boot identity, recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id f455a75c-... with webapp container healthy and port-mapped (cmd-a12dcf0a4c3e4554), matching the fixed before-prepare boot-identity snapshot. A deferred `systemctl reboot` returned an acknowledgement before disconnection (cmd-be4d5e47827848ed), disconnection was observed (cmd-f09a200886de46db, cmd-b8c3c784791540eb), and the node was polled back to reachability with a new boot_id d2493eaa-... (cmd-ad8a1e56b12d4ac7), matching the fixed after-executor boot-identity snapshot. Recovered state (webapp.service active, container running, HTTP 200, no login session) was directly confirmed post-restart (cmd-313ab56c9f75421e). Single-node topology means no broader cluster-state recovery beyond the one service was applicable.",
+      "evidence_ids": [
+        "cmd-a12dcf0a4c3e4554",
+        "cmd-be4d5e47827848ed",
+        "cmd-f09a200886de46db",
+        "cmd-b8c3c784791540eb",
+        "cmd-ad8a1e56b12d4ac7",
+        "cmd-313ab56c9f75421e",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct evidence: appsvc was created as an unprivileged account and runs the containerized web app rootlessly via a systemd --user Quadlet unit, the app serves HTTP 200 on port 8080 both before and after a full node reboot, and the post-reboot state directly shows the service active and serving traffic while `who` reports no active login session for appsvc (only the linger-enabled manager pseudo-session). The independent node-restart evidence protocol is also fully satisfied: a healthy pre-restart baseline, a reboot acknowledgement, observed disconnection, a changed boot_id, and confirmed recovery are all present in the trace and corroborated by the fixed lifecycle boot-identity snapshots. One minor, fully-reverted troubleshooting mutation (an abandoned `podman generate systemd` unit) slightly lowers the hygiene score, but it left no residue and did not affect the final outcome.",
+  "limitations": [
+    "The task instruction does not specify a container image; the executor's choice of httpd:alpine is a reasonable, non-prescribed implementation choice and was not scored against.",
+    "The deferred reboot relied on the executor's own scripted sleep-then-reboot approach rather than a supervisor-issued restart signal; this is an equivalent competent implementation of the restart protocol and not penalized.",
+    "Single-node topology limits 'cluster state' recovery verification to the one service/container; no broader cluster health check was applicable or expected."
+  ],
+  "command_stats": {
+    "total": 18,
+    "successful": 14,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Most state-changing commands map directly to the task: installing podman/deps (cmd-e210eff037ad414f), creating appsvc and enabling linger (cmd-4ef7e32bd2ae4f54), starting the user manager session as a prerequisite (cmd-235c7cc3e12344ee), pulling and running the container to validate it (cmd-7fa5e8b6c79c4347, cmd-6784cc965ce6490f), converting to a Quadlet unit (cmd-3a481e6d3d3d474b), starting/validating the service (cmd-968072091ca543b7), and the bounded reboot for evidence collection (cmd-be4d5e47827848ed). One unnecessary mutation occurred: cmd-7ee098a013834223 stopped the ad-hoc container and generated a deprecated `podman generate systemd` unit file (container-webapp.service) as an exploratory alternative to Quadlets; this was not the final solution and was fully reverted in the next command (cmd-3a481e6d3d3d474b removed the generated file with `rm -f` and removed the ad-hoc container before creating the Quadlet unit), leaving no residue. This was a bounded, low-risk, fully-restored troubleshooting step rather than a retained or destructive one. The after-executor lifecycle diff shows only expected residue: /tmp/podman_install.log and /tmp/reboot.log (small, attributable, non-sensitive artifacts of legitimate install/reboot steps), no failed services, and no unexpected listening sockets beyond the intended 8080 port.",
+    "evidence_ids": [
+      "cmd-7ee098a013834223",
+      "cmd-3a481e6d3d3d474b",
+      "cmd-e210eff037ad414f",
+      "cmd-be4d5e47827848ed",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

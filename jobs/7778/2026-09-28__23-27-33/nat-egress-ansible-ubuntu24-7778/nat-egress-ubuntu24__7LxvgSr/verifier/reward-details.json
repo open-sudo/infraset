@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Configure node1 (VyOS) to provide NAT for the private network shared with node2/node3",
+      "status": "satisfied",
+      "summary": "Ansible playbook (executed via ansible-playbook from node4) set node1's eth1 to 10.10.20.1/24 and added a VyOS NAT source rule (rule 100, outbound-interface eth0, source 10.10.20.0/24, translation masquerade). Confirmed in config.boot, and nftables ruleset shows the masquerade rule active with nonzero packet/byte counters, plus conntrack entries showing translated flows from 10.10.20.2/.3 through node1.",
+      "evidence_ids": [
+        "cmd-54fce04990c14a37",
+        "cmd-a39bef23d8474c1e",
+        "cmd-2288067f73d743be",
+        "cmd-b1ae23b670154408"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "node2 and node3 processes can reach the internet through node1's NAT (no internet access of their own)",
+      "status": "satisfied",
+      "summary": "Baseline showed node2/node3 routing to the internet directly via the mgmt network, bypassing node1 (cmd-df95e04146d94e74). After the playbook applied static private addressing (10.10.20.2/3) and a preferred default route via 10.10.20.1, `ip route get 1.1.1.1` on both nodes resolved via node1's private IP over enp8s0, and curl to 1.1.1.1 returned HTTP 301, with node1-side nftables/conntrack confirming the traffic was actually NATed through node1 rather than merely routed.",
+      "evidence_ids": [
+        "cmd-df95e04146d94e74",
+        "cmd-54fce04990c14a37",
+        "cmd-b1ae23b670154408"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Implementation performed using Ansible",
+      "status": "satisfied",
+      "summary": "A real Ansible project (inventory.ini, playbook.yml) was authored on the control node (node4) and the final, successful configuration and verification of NAT/routing was performed via `ansible-playbook` runs (cmd-79c889a0dc3c4f1f syntax check, cmd-54fce04990c14a37 successful apply). Considerable manual SSH/VyOS troubleshooting preceded this (to work around an SSH/cli-shell-api bootstrap issue), but the actual NAT and client configuration that satisfies the contract was applied and re-verified through the playbook, including a later idempotent re-run.",
+      "evidence_ids": [
+        "cmd-beebde94a0db45d1",
+        "cmd-f246e36a822e4b79",
+        "cmd-79c889a0dc3c4f1f",
+        "cmd-54fce04990c14a37",
+        "cmd-d42385daff4e4860"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "(Independent protocol) Provider-wide node-restart evidence: pre-restart baseline, restart acknowledgement, changed boot identity, and recovered NAT/routing/service state on every managed node",
+      "status": "satisfied",
+      "summary": "All four nodes show a complete bounded restart cycle: pre-restart boot_id + healthy baseline, a reboot acknowledgement, a differing post-restart boot_id, and recovered functional state \u2014 node1's eth1 IP/NAT nft rule/ip_forward (cmd-7635f85a46114f99/f3590cf654fd46fb/9c184fa84436418f/f60f2e6d6d2344ef), node2 and node3's private IP/route/internet reachability (cmd-2582317ef62a42f2/10ca333f5de24db6/2c27873edfdd4640/4ad2f97d24a94741 and cmd-a64b5109231242ad/9b82be894f7243bd/bd9a9d7389464fa9/b4bf6c6b44f541f1), and node4's control-node functionality plus a full idempotent playbook re-run confirming continued reachability (cmd-20f59d6721094e37/1b10233b59a94bbe/9b7820c3b1e84976/d42385daff4e4860). The fixed after-executor boot-identity snapshots corroborate the same boot_id values reported inline, cross-validating the transitions.",
+      "evidence_ids": [
+        "cmd-7635f85a46114f99",
+        "cmd-f3590cf654fd46fb",
+        "cmd-9c184fa84436418f",
+        "cmd-f60f2e6d6d2344ef",
+        "cmd-2582317ef62a42f2",
+        "cmd-10ca333f5de24db6",
+        "cmd-2c27873edfdd4640",
+        "cmd-4ad2f97d24a94741",
+        "cmd-a64b5109231242ad",
+        "cmd-9b82be894f7243bd",
+        "cmd-bd9a9d7389464fa9",
+        "cmd-b4bf6c6b44f541f1",
+        "cmd-20f59d6721094e37",
+        "cmd-1b10233b59a94bbe",
+        "cmd-9b7820c3b1e84976",
+        "cmd-d42385daff4e4860",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor used Ansible from the control node to configure node1 (VyOS) as a NAT gateway for a new private network (10.10.20.0/24) and to address node2/node3 on that network with a preferred default route via node1. Direct evidence (nftables counters, conntrack, ip route get, curl HTTP 301) confirms node2 and node3 reach the internet exclusively through node1's NAT. All four nodes were subsequently taken through a full, evidenced restart cycle (pre-restart baseline, reboot, changed boot_id, recovered state), cross-checked against the fixed lifecycle snapshots, with a final idempotent playbook re-run confirming continued functionality. Hygiene is reduced by an unreverted root password change on node1 and minor uncleaned troubleshooting residue, none of which affected the final outcome.",
+  "limitations": [
+    "Heavy manual (non-Ansible) troubleshooting was required to bootstrap SSH/VyOS access before the playbook could run successfully; while the final NAT configuration and verification were performed via ansible-playbook, a purist reading of 'implement using Ansible' might expect fewer raw ssh/bash workarounds.",
+    "The root password change on node1 was not reverted and its lingering effect (a set root password on a device whose SSH root login remains disabled) was not further assessed.",
+    "Some VyOS config-session temp directories from earlier failed attempts could not be removed by the executor ('Device or resource busy') and their end-state is not confirmed cleaned in later evidence."
+  ],
+  "command_stats": {
+    "total": 109,
+    "successful": 91,
+    "failed": 18,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Extensive read-only diagnostics and legitimate prerequisite mutations (enabling ssh.service and generating host keys on node2/node3, creating/authorizing the 'ansible' VyOS user with sudo, applying NAT/interface config, netplan files) were clearly tied to the task. However, several unnecessary or unreverted mutations occurred during troubleshooting: (1) the executor changed the node1 (VyOS) root password twice (cmd-b36034225ac24e5d, cmd-9cf1fdf28d7843ae) while trying to enable root SSH login, then abandoned that approach in favor of the pubkey-based 'ansible' user \u2014 this credential change was never reverted and has no role in the final solution; (2) a helper script /tmp/vyos_nat.sh was copied to node1 via scp (cmd-0e82f36635ec4952) and left behind rather than cleaned up; (3) an attempted cleanup of stale VyOS config-session temp directories (cmd-2288067f73d743be) only partially succeeded, leaving some /opt/vyatta/config/tmp/* directories from earlier failed configure attempts. All of these are bounded, low-risk, and do not weaken security controls in a way that affects the deliverable, but they are residue/unnecessary changes that should have been avoided or cleaned up.",
+    "evidence_ids": [
+      "cmd-b36034225ac24e5d",
+      "cmd-9cf1fdf28d7843ae",
+      "cmd-0e82f36635ec4952",
+      "cmd-2288067f73d743be"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

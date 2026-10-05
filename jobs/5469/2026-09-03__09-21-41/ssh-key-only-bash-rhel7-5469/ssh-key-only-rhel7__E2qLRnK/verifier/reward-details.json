@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "opsadmin-key-setup",
+      "requirement": "Configure opsadmin on node1 for SSH access with the specified ed25519 public key",
+      "status": "satisfied",
+      "summary": "opsadmin user was created (cmd-291ae2f548064274). The exact specified public key was written to /home/opsadmin/.ssh/authorized_keys with correct ownership (opsadmin:opsadmin) and permissions (700 dir / 600 file) (cmd-eea3488357354c24), and readability/ownership was independently re-verified (cmd-81ad9ab763ec4db0). Post-restart, the same authorized_keys content and ownership were confirmed intact (cmd-e0d3fe40d7e94b69).",
+      "evidence_ids": [
+        "cmd-291ae2f548064274",
+        "cmd-eea3488357354c24",
+        "cmd-81ad9ab763ec4db0",
+        "cmd-e0d3fe40d7e94b69"
+      ]
+    },
+    {
+      "id": "key-based-ssh-required",
+      "requirement": "Require key-based SSH authentication (disable password fallback)",
+      "status": "satisfied",
+      "summary": "Discovery found sshd_config had a later 'PasswordAuthentication yes' (line 65) shadowing an existing 'no' (line 141) due to OpenSSH first-match-wins semantics (cmd-2297bdaa9c044f8c, cmd-cf2c9a5552fd4cb3, cmd-b238397ea3e34d61 showed passwordauthentication effectively 'yes' via sshd -T despite the file's tail saying 'no'). Executor backed up the file and fixed line 65 to 'no' (cmd-3ee337cd6f0d4ca1), validated with sshd -t/-T showing passwordauthentication no / pubkeyauthentication yes (cmd-1f80f4f3fc2849d7), and reloaded sshd (cmd-31d0aa4353ba4568). opsadmin's password was also locked (cmd-0e222bf00ac14803), removing any password fallback specifically for that account. A live SSH attempt to opsadmin before and after the restart was rejected with only publickey/gssapi offered and no password prompt (cmd-fc24e71bb80b4993, cmd-60e8a6994fd64dbc), directly demonstrating the enforced behavior.",
+      "evidence_ids": [
+        "cmd-2297bdaa9c044f8c",
+        "cmd-cf2c9a5552fd4cb3",
+        "cmd-b238397ea3e34d61",
+        "cmd-3ee337cd6f0d4ca1",
+        "cmd-1f80f4f3fc2849d7",
+        "cmd-31d0aa4353ba4568",
+        "cmd-0e222bf00ac14803",
+        "cmd-fc24e71bb80b4993",
+        "cmd-60e8a6994fd64dbc"
+      ]
+    },
+    {
+      "id": "node-restart-evidence-protocol",
+      "requirement": "Independent provider-wide node-restart evidence protocol on node1 (pre-restart baseline, restart acknowledgement, changed boot identity, recovered service/data/cluster state)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 1a816f1f-858b-4487-af28-54070d4ce684 plus healthy sshd/authorized_keys/password-lock state (cmd-9bf02fb2edfb492a), consistent with the fixed global:before_prepare:node1:boot-identity snapshot. A backgrounded 'shutdown -r now' returned an immediate acknowledgement before disconnect (cmd-56e78de086874d68). The node was unreachable during the reboot window (cmd-a7c72e05499f4d32, cmd-34af1f53d95e481c) and then came back with a new boot_id 3042699a-60d0-471d-8f42-79823d8d528d (cmd-2ff91fd69ff74c70), matching the fixed global:after_executor:node1:boot-identity snapshot. Post-restart recovery of sshd (active), authorized_keys (intact), password lock, and sshd -T key-only settings was verified (cmd-e0d3fe40d7e94b69), and the live SSH publickey-only behavior was re-confirmed (cmd-60e8a6994fd64dbc).",
+      "evidence_ids": [
+        "cmd-9bf02fb2edfb492a",
+        "cmd-56e78de086874d68",
+        "cmd-a7c72e05499f4d32",
+        "cmd-34af1f53d95e481c",
+        "cmd-2ff91fd69ff74c70",
+        "cmd-e0d3fe40d7e94b69",
+        "cmd-60e8a6994fd64dbc"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task were satisfied: opsadmin was created with exactly the specified public key installed under correct ownership/permissions, and key-based SSH authentication was enforced after the executor discovered and fixed a first-match sshd_config conflict that had been silently permitting password auth \u2014 confirmed both by sshd -T and a live SSH attempt showing publickey-only offers, both before and after a full restart cycle. The independently-required node-restart evidence protocol was also completed with a coherent pre-restart baseline, acknowledged reboot, changed boot identity (cross-checked against the fixed lifecycle snapshots), and verified post-restart recovery of all relevant state. Hygiene is high; a stray sshd_config backup file is the only minor residue.",
+  "limitations": [
+    "Package-health checks were unavailable (timed out) in both before/after lifecycle snapshots, so native package-manager consistency could not be cross-checked, though this is unrelated to the task's material outcomes.",
+    "SSH verification for opsadmin relied on batch-mode key attempts without the actual private key present in the trace, so success of key-based login itself (versus rejection of password auth) was not directly demonstrated by a successful authenticated session \u2014 though rejection of password fallback with publickey-only offering is sufficient to confirm the enforcement requirement."
+  ],
+  "command_stats": {
+    "total": 24,
+    "successful": 17,
+    "failed": 7,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Executor commands were tightly scoped to the task. An early attempt to drop a config into /etc/ssh/sshd_config.d/99-opsadmin-keyonly.conf failed outright (directory did not exist) and made no state change (cmd-d2ec69261d6f45e0); the executor correctly pivoted to editing the main sshd_config file directly. Before editing, it created a timestamped backup /etc/ssh/sshd_config.bak.<ts> (cmd-3ee337cd6f0d4ca1) as a safety precaution; this backup file was not removed and remains as minor, low-risk residue, but it is a standard defensive practice directly tied to the risky edit it protected and poses no functional or security impact. Password-locking opsadmin (cmd-0e222bf00ac14803) is a reasonable, narrowly-scoped mutation that directly reinforces the key-only requirement for that account. No other unnecessary, broad, or destructive mutations were found; the lifecycle diff shows only the expected boot-id change and process PID churn from the restart, with no abandoned files, failed services, or new listening sockets.",
+    "evidence_ids": [
+      "cmd-d2ec69261d6f45e0",
+      "cmd-3ee337cd6f0d4ca1",
+      "cmd-0e222bf00ac14803",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 19,
+    "successful": 3,
+    "failed": 16,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "inventory-api deployed as a managed (systemd) service",
+      "command_ids": [
+        "cmd-90d10fd71688430d",
+        "cmd-829bb2e9d48644b6"
+      ],
+      "summary": "systemd unit created/enabled/started; systemctl is-active reports 'active'"
+    },
+    {
+      "requirement": "inventory-api configured with OOM protection so kernel prefers to kill other processes first",
+      "command_ids": [
+        "cmd-829bb2e9d48644b6"
+      ],
+      "summary": "OOMScoreAdjust=-1000 set in unit file and confirmed live via /proc/<PID>/oom_score_adj == -1000"
+    },
+    {
+      "requirement": "service verified healthy/serving before disruption (baseline)",
+      "command_ids": [
+        "cmd-829bb2e9d48644b6",
+        "cmd-42d806b883034dcb"
+      ],
+      "summary": "curl http://$NODE_IP:8080/health returned {\"status\": \"ok\", ...} both right after service start and again right before launching the memory hog; free -h showed 670M free, 0 swap"
+    },
+    {
+      "requirement": "memory-hog process launched as the intended OOM-killer target (unprotected, default score)",
+      "command_ids": [
+        "cmd-42d806b883034dcb"
+      ],
+      "summary": "/opt/memory-hog.py started in background; PID's oom_score_adj confirmed as 0 (unprotected) versus inventory-api's -1000"
+    },
+    {
+      "requirement": "demonstrate kernel OOM-killer targets the hog while inventory-api keeps serving",
+      "command_ids": [
+        "cmd-7645fcf06bba41d2",
+        "cmd-999ecc0d776e4d2d",
+        "cmd-e8c81327f4804a9c"
+      ],
+      "summary": "NOT achieved: every exec attempt after launching the hog failed at the SSH channel level (fork failure), so no dmesg/oom evidence, no post-event /health check, and no confirmation that inventory-api survived could be captured; node1 remained unresponsive to exec for over 35 minutes"
+    },
+    {
+      "requirement": "mandatory per-node restart/recovery evidence protocol",
+      "command_ids": [
+        "cmd-e8c81327f4804a9c"
+      ],
+      "summary": "Not performed \u2014 node1 has been unreachable via the only permitted tool (exec) since the hog was launched, so a boot-identity baseline, restart acknowledgement, changed boot identity, and post-restart health/quorum proof could not be captured for node1"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-203cb556caa3488a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:13.970134+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 361,
+      "command": "set -Eeuo pipefail\necho \"== os ==\"; cat /etc/os-release\necho \"== mem ==\"; free -h\necho \"== swap ==\"; swapon --show || true\necho \"== systemd ==\"; systemctl --version | head -1\necho \"== python ==\"; command -v python3 && python3 --version\necho \"== existing service? ==\"; systemctl list-units --all | grep -i inventory || echo none\n",
+      "stdout": "== os ==\nNAME=\"Ubuntu\"\nVERSION=\"16.04.7 LTS (Xenial Xerus)\"\nID=ubuntu\nID_LIKE=debian\nPRETTY_NAME=\"Ubuntu 16.04.7 LTS\"\nVERSION_ID=\"16.04\"\nHOME_URL=\"http://www.ubuntu.com/\"\nSUPPORT_URL=\"http://help.ubuntu.com/\"\nBUG_REPORT_URL=\"http://bugs.launchpad.net/ubuntu/\"\nVERSION_CODENAME=xenial\nUBUNTU_CODENAME=xenial\n== mem ==\n              total        used        free      shared  buff/cache   available\nMem:           999M         35M        833M        4.3M        129M        816M\nSwap:            0B          0B          0B\n== swap ==\n== systemd ==\nsystemd 229\n== python ==\n/usr/bin/python3\nPython 3.5.2\n== existing service? ==\nnone\n"
+    },
+    {
+      "command_id": "cmd-90d10fd71688430d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:25.980512+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 1444,
+      "command": "set -Eeuo pipefail\necho \"STEP: write inventory-api app\"\nsudo -n mkdir -p /opt/inventory-api\nsudo -n tee /opt/inventory-api/app.py > /dev/null <<'PYEOF'\n#!/usr/bin/env python3\nimport json\nimport time\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\n\nINVENTORY = {\"widgets\": 42, \"gadgets\": 17}\n\nclass Handler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        if self.path == \"/health\":\n            body = json.dumps({\"status\": \"ok\", \"ts\": time.time()}).encode()\n        else:\n            body = json.dumps(INVENTORY).encode()\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"application/json\")\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\n\n    def log_message(self, fmt, *args):\n        pass\n\nif __name__ == \"__main__\":\n    server = HTTPServer((\"0.0.0.0\", 8080), Handler)\n    server.serve_forever()\nPYEOF\nsudo -n chmod +x /opt/inventory-api/app.py\n\necho \"STEP: write systemd unit with strong OOM protection\"\nsudo -n tee /etc/systemd/system/inventory-api.service > /dev/null <<'UNITEOF'\n[Unit]\nDescription=Inventory API\nAfter=network.target\n\n[Service]\nExecStart=/usr/bin/python3 /opt/inventory-api/app.py\nRestart=always\nRestartSec=1\nOOMScoreAdjust=-1000\nMemoryDenyWriteExecute=false\nUser=root\n\n[Install]\nWantedBy=multi-user.target\nUNITEOF\n\necho \"STEP: enable and start service\"\nsudo -n systemctl daemon-reload\nsudo -n systemctl enable inventory-api.service\nsudo -n systemctl restart inventory-api.service\nsleep 1\nsudo -n systemctl is-active inventory-api.service\necho \"STEP: verify oom_score_adj applied\"\nPID=$(systemctl show -p MainPID --value inventory-api.service)\necho \"PID=$PID\"\ncat /proc/$PID/oom_score_adj\necho \"STEP: curl health check\"\ncurl -sf \"http://$NODE_IP:8080/health\"\necho\necho \"STEP: write memory-hog script (unmanaged, default oom_score_adj=0)\"\nsudo -n tee /opt/memory-hog.py > /dev/null <<'HOGEOF'\n#!/usr/bin/env python3\nimport time\nchunks = []\ntry:\n    while True:\n        chunks.append(bytearray(10 * 1024 * 1024))\n        time.sleep(0.05)\nexcept MemoryError:\n    while True:\n        time.sleep(1)\nHOGEOF\nsudo -n chmod +x /opt/memory-hog.py\necho \"DONE setup\"\n",
+      "stdout": "STEP: write inventory-api app\nSTEP: write systemd unit with strong OOM protection\nSTEP: enable and start service\nactive\nSTEP: verify oom_score_adj applied\n",
+      "stderr": "Created symlink from /etc/systemd/system/multi-user.target.wants/inventory-api.service to /etc/systemd/system/inventory-api.service.\nsystemctl: unrecognized option '--value'\n"
+    },
+    {
+      "command_id": "cmd-829bb2e9d48644b6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:29.491700+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 265,
+      "command": "set -Eeuo pipefail\necho \"STEP: verify oom_score_adj applied\"\nPID=$(systemctl show -p MainPID inventory-api.service | cut -d= -f2)\necho \"PID=$PID\"\ncat /proc/$PID/oom_score_adj\necho \"STEP: curl health check\"\ncurl -sf \"http://$NODE_IP:8080/health\"\necho\necho \"STEP: write memory-hog script (unmanaged, default oom_score_adj=0)\"\nsudo -n tee /opt/memory-hog.py > /dev/null <<'HOGEOF'\n#!/usr/bin/env python3\nimport time\nchunks = []\ntry:\n    while True:\n        chunks.append(bytearray(10 * 1024 * 1024))\n        time.sleep(0.05)\nexcept MemoryError:\n    while True:\n        time.sleep(1)\nHOGEOF\nsudo -n chmod +x /opt/memory-hog.py\necho \"DONE setup\"\n",
+      "stdout": "STEP: verify oom_score_adj applied\nPID=2147\n-1000\nSTEP: curl health check\n{\"status\": \"ok\", \"ts\": 1790687489.448793}\nSTEP: write memory-hog script (unmanaged, default oom_score_adj=0)\nDONE setup\n"
+    },
+    {
+      "command_id": "cmd-42d806b883034dcb",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:34.064781+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1308,
+      "command": "set -Eeuo pipefail\necho \"STEP: baseline before OOM\"\nfree -h\nsudo -n dmesg -c > /dev/null 2>&1 || true\ncurl -sf \"http://$NODE_IP:8080/health\"\necho\necho \"STEP: launch memory hog in background\"\nsudo -n sh -c 'nohup python3 /opt/memory-hog.py > /tmp/hog.log 2>&1 & echo $! > /tmp/hog.pid'\nsleep 1\nHOGPID=$(cat /tmp/hog.pid)\necho \"HOGPID=$HOGPID\"\ncat /proc/$HOGPID/oom_score_adj || true\necho \"DONE launch\"\n",
+      "stdout": "STEP: baseline before OOM\n              total        used        free      shared  buff/cache   available\nMem:           999M         35M        670M        4.4M        293M        812M\nSwap:            0B          0B          0B\n{\"status\": \"ok\", \"ts\": 1790687493.0137331}\nSTEP: launch memory hog in background\nHOGPID=2291\n0\nDONE launch\n"
+    },
+    {
+      "command_id": "cmd-7645fcf06bba41d2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:38.207160+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 399,
+      "command": "set -Eeuo pipefail\nHOGPID=$(cat /tmp/hog.pid)\nfor i in $(seq 1 30); do\n  if ! kill -0 \"$HOGPID\" 2>/dev/null; then\n    echo \"HOG_GONE after ${i}s\"\n    break\n  fi\n  sleep 1\ndone\necho \"STEP: post-event memory\"\nfree -h\necho \"STEP: dmesg oom lines\"\nsudo -n dmesg | grep -iE \"out of memory|oom|killed process\" || echo \"no oom lines yet\"\necho \"STEP: hog pid status\"\nkill -0 \"$HOGPID\" 2>/dev/null && echo \"HOG STILL RUNNING\" || echo \"HOG NOT RUNNING\"\necho \"STEP: inventory-api status\"\nsudo -n systemctl is-active inventory-api.service\ncurl -sf \"http://$NODE_IP:8080/health\"\necho\n",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-f57cc64b3ab14945",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:40.134016+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 347,
+      "command": "free -h; echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-0454f05de7f243b3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:42.070863+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 321,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-d3d6e0994d1b4868",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:45.170135+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 343,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-2ba678e6b8214adf",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:49.633826+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 637,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-66c8c92444944b44",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:56.113861+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 714,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-128fb590d7574078",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:12:13.232846+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 693,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-43a06044309f4f55",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:12:24.235719+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 631,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-999ecc0d776e4d2d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:12:49.345922+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 682,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-27e9c8d94adb4084",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:13:08.590168+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 651,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-5d23831cf0d2403d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:13:11.217798+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 615,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-cb71bd374f184bab",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:13:12.746110+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 573,
+      "command": "true",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-1d93e4750f714b8a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:13:31.396059+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 634,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-c2a9993c2040417b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:13:33.546343+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 578,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    },
+    {
+      "command_id": "cmd-e8c81327f4804a9c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:13:41.393881+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 810,
+      "command": "echo ok",
+      "stderr": "exec request failed on channel 0\r\n"
+    }
+  ]
+}

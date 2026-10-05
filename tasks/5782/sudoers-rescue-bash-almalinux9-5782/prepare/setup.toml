@@ -1,0 +1,70 @@
+timeout_sec = 600
+
+[[steps]]
+id = "establish-brownfield-state"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+command -v visudo >/dev/null
+command -v socat >/dev/null
+getenforce | grep -qx Enforcing
+systemctl enable --now firewalld.service >/dev/null
+if ! id opsadmin >/dev/null 2>&1; then
+  useradd --create-home --shell /bin/bash opsadmin
+fi
+usermod -aG wheel opsadmin
+install -d -o root -g root -m 0750 /srv/operations
+printf '%s\n' 'existing operations record: preserve through recovery' > /srv/operations/keep.txt
+chown opsadmin:opsadmin /srv/operations/keep.txt
+chmod 0640 /srv/operations/keep.txt
+install -o root -g root -m 0440 /dev/null /etc/sudoers.d/90-opsadmin
+printf '%s\n' 'opsadmin ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/90-opsadmin
+chown root:root /etc/sudoers.d/90-opsadmin
+chmod 0440 /etc/sudoers.d/90-opsadmin
+visudo -cf /etc/sudoers >/dev/null
+su -s /bin/sh - opsadmin -c 'sudo -n /usr/bin/id -u' | grep -qx 0
+test -f /etc/systemd/system/vsock-agent.service
+install -d -o root -g root -m 0755 /etc/systemd/system/rescue.target.wants
+ln -sfn /etc/systemd/system/vsock-agent.service /etc/systemd/system/rescue.target.wants/vsock-agent.service
+systemctl daemon-reload
+'''
+
+[[steps]]
+id = "corrupt-sudoers"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+printf '\n%s\n' 'BROKEN SUDOERS ENTRY' >> /etc/sudoers
+if visudo -cf /etc/sudoers >/dev/null 2>&1; then
+  exit 1
+fi
+systemctl set-default rescue.target >/dev/null
+test "$(systemctl get-default)" = rescue.target
+'''
+
+[[steps]]
+id = "enter-single-user-recovery"
+stage = 30
+node = "node1"
+command = '''
+set -eu
+systemd-run --unit=infraset-enter-rescue --on-active=2s /usr/bin/systemctl reboot >/dev/null
+'''
+
+[[steps]]
+id = "confirm-single-user-recovery"
+stage = 40
+node = "node1"
+retries = 60
+retry_delay_sec = 3
+command = '''
+set -eu
+test "$(systemctl get-default)" = rescue.target
+systemctl is-active --quiet rescue.target
+systemctl is-active --quiet vsock-agent.service
+if visudo -cf /etc/sudoers >/dev/null 2>&1; then
+  exit 1
+fi
+'''

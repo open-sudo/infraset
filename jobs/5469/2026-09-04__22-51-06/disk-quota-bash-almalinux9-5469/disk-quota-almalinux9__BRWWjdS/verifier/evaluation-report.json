@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "XFS user-quota accounting enabled on the filesystem hosting /srv/data",
+      "status": "satisfied",
+      "summary": "Root filesystem (/dev/vda4, xfs) initially mounted 'noquota' with no quota/usrquota anywhere (cmd-a223a8e80f814c10, cmd-2ed00886e79741af). Executor added rootflags=uquota via grubby and usrquota to /etc/fstab (cmd-94695daad9d34ca6, cmd-6bc70670fbde45d0), then rebooted; post-reboot mount output confirms '/dev/vda4 on / type xfs (...,usrquota)' (cmd-98872d51b3c14087).",
+      "evidence_ids": [
+        "cmd-a223a8e80f814c10",
+        "cmd-2ed00886e79741af",
+        "cmd-94695daad9d34ca6",
+        "cmd-6bc70670fbde45d0",
+        "cmd-98872d51b3c14087"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "datauser account exists with /srv/data as its designated storage location",
+      "status": "satisfied",
+      "summary": "useradd created datauser (nologin shell, home=/srv/data); /srv/data created and chowned to datauser:datauser mode 700, verified by ls -ld output (cmd-57b5dfe5922849ba).",
+      "evidence_ids": [
+        "cmd-57b5dfe5922849ba"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "100 MB storage limit configured for datauser, enforced by the filesystem",
+      "status": "satisfied",
+      "summary": "xfs_quota limit bsoft=100m bhard=100m applied for datauser on the root filesystem; xfs_quota report confirms 100M/100M soft and hard limits for datauser (cmd-31f09639f01c4d01).",
+      "evidence_ids": [
+        "cmd-31f09639f01c4d01"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Quota enforcement demonstrated: writes into /srv/data beyond 100MB are rejected by the kernel/filesystem",
+      "status": "satisfied",
+      "summary": "A 90MB write by datauser succeeded and quota report showed 90.0M used (cmd-42e4e5122d594fe0). A subsequent write attempt failed mid-stream with 'dd: error writing: Disk quota exceeded' once usage reached 99.0M, directly demonstrating kernel-level XFS enforcement, not merely configuration (cmd-145f5fb0734d49f9).",
+      "evidence_ids": [
+        "cmd-42e4e5122d594fe0",
+        "cmd-145f5fb0734d49f9"
+      ]
+    },
+    {
+      "id": "R5",
+      "requirement": "Quota enforcement and data persist correctly across a filesystem/host restart",
+      "status": "satisfied",
+      "summary": "Pre-restart: boot_id 368441cc captured along with a marker.txt (sha256 0822dc01...) written to /srv/data as a data-health baseline (cmd-230f0d101c30488c). Restart was acknowledged and connectivity loss was observed (cmd-55de4c8dec1a4ecd, cmd-49ea35eb8d0e47a1, cmd-789dfec229404c87). Post-restart boot_id (4b91a1cc, cmd-e71d7a1036734666) differs from pre-restart, confirming an actual reboot. After restart, / remained mounted usrquota, quota report still showed the 100M limit, marker.txt content/hash were unchanged, and a fresh 100+MB write again failed with 'Disk quota exceeded' at 99.0M used, proving enforcement and data survived the restart (cmd-0b2d86588abc43cb, cmd-990deccb353d4d30). This sequence is corroborated by the fixed global boot-identity snapshots (before_prepare d546da19... vs after_executor 4b91a1cc...).",
+      "evidence_ids": [
+        "cmd-230f0d101c30488c",
+        "cmd-55de4c8dec1a4ecd",
+        "cmd-49ea35eb8d0e47a1",
+        "cmd-789dfec229404c87",
+        "cmd-e71d7a1036734666",
+        "cmd-0b2d86588abc43cb",
+        "cmd-990deccb353d4d30",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct, coherent evidence: XFS user-quota accounting was enabled on the root filesystem hosting /srv/data, datauser was created with /srv/data as its storage location, a 100MB (soft=hard) quota was applied, and enforcement was directly demonstrated by a rejected over-limit write both before and after a full node restart (with matching pre/post boot-identity changes cross-checked against the fixed global lifecycle snapshots). Operational hygiene is good but not perfect: one ineffective remount troubleshooting command and two leftover reboot log files in /tmp were not cleaned up, though neither caused functional harm.",
+  "limitations": [
+    "Hygiene assessment relies on stdout of a remount command (cmd-1d7783bcf503429a) to infer it had no effect; no independent post-command mount check was captured before the grubby change to fully confirm this.",
+    "The after_prepare snapshot is an alias of before_prepare since prepare was disabled, so no separate preparer-vs-executor baseline distinction was possible beyond the before_prepare/after_executor comparison already used."
+  ],
+  "command_stats": {
+    "total": 24,
+    "successful": 20,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Two minor issues found among otherwise well-scoped, purposeful mutations. (1) cmd-1d7783bcf503429a attempted 'mount -o remount,uquota /' before the grubby/fstab change; the command exited 0 but the mount output it printed still showed 'noquota', meaning it had no real effect on filesystem state \u2014 a bounded, ineffective troubleshooting attempt superseded by the correct grubby+reboot approach. (2) /tmp/reboot1.log and /tmp/reboot2.log (created by the two 'nohup sh -c reboot' commands, cmd-db15de7c556b44bd and cmd-55de4c8dec1a4ecd) were never cleaned up and are visible as residue in the after_executor temporary-files snapshot. All other state-changing actions (grubby, fstab edit, useradd/mkdir/chown, xfs_quota limit, dd test writes) were necessary and their temporary test artifacts (fill1, fill2, postreboot_fill) were properly removed (cmd-c193272855cd4b84, cmd-abe025a81f7646dd), leaving only the intentional marker.txt file as disclosed residue for verification purposes. No services were broken, no security controls were weakened, and package/service health remained clean in both snapshots.",
+    "evidence_ids": [
+      "cmd-1d7783bcf503429a",
+      "cmd-db15de7c556b44bd",
+      "cmd-55de4c8dec1a4ecd",
+      "cmd-c193272855cd4b84",
+      "cmd-abe025a81f7646dd",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

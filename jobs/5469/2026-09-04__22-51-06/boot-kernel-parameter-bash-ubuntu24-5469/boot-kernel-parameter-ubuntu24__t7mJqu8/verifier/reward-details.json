@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "boot-audit1",
+      "requirement": "Kernel boots with audit=1 on node1",
+      "status": "satisfied",
+      "summary": "Pre-change /proc/cmdline (cmd-52cd2293a4ae474b) shows no audit=1. After editing /etc/default/grub and running update-grub, grub.cfg linux entries were confirmed to contain audit=1 (cmd-586b32cccf834b36). A real reboot was performed (boot_id changed from f9bf293d... to 4d3dcf68..., cmd-aa2b477d1152436e / cmd-afc9ad2dfe8d445e), and post-reboot /proc/cmdline directly shows audit=1 with dmesg confirming 'audit: enabled (after initialization)' and audit_enabled=1 (cmd-7a81f5ea17d04cc6). This is a direct, observed bounded before/reboot/after transition.",
+      "evidence_ids": [
+        "cmd-52cd2293a4ae474b",
+        "cmd-586b32cccf834b36",
+        "cmd-aa2b477d1152436e",
+        "cmd-5044d779ccd74c6d",
+        "cmd-afc9ad2dfe8d445e",
+        "cmd-7a81f5ea17d04cc6"
+      ]
+    },
+    {
+      "id": "persist-reboot",
+      "requirement": "Setting is kept persistently across reboots (not just a one-time kernel command line change)",
+      "status": "satisfied",
+      "summary": "The executor correctly identified that the cloud-image grub.d override (50-cloudimg-settings.cfg, cmd-a842b4e146294893) only sets GRUB_CMDLINE_LINUX_DEFAULT, so it placed audit=1 in GRUB_CMDLINE_LINUX in /etc/default/grub, which is not overridden. update-grub regenerated grub.cfg with audit=1 baked into both linux boot entries (cmd-5d932137ea484ef0, cmd-586b32cccf834b36), and this was validated by an actual reboot showing the setting took effect from the regenerated bootloader config rather than a runtime-only change.",
+      "evidence_ids": [
+        "cmd-a842b4e146294893",
+        "cmd-388a7cb1c38f45b8",
+        "cmd-5d932137ea484ef0",
+        "cmd-586b32cccf834b36",
+        "cmd-afc9ad2dfe8d445e",
+        "cmd-7a81f5ea17d04cc6"
+      ]
+    },
+    {
+      "id": "restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1 (pre-restart baseline, restart acknowledgement, changed boot identity, recovered state)",
+      "status": "satisfied",
+      "summary": "Pre-reboot baseline captured boot_id f9bf293d... and systemctl is-system-running=running (cmd-aa2b477d1152436e). Reboot was acknowledged (cmd-5044d779ccd74c6d), node briefly unreachable (cmd-0b2b437eb1e747ce), then returned with a new boot_id 4d3dcf68... (cmd-afc9ad2dfe8d445e), and post-reboot systemctl is-system-running=running confirms recovered service state (cmd-7a81f5ea17d04cc6). This matches the fixed global boot-identity observations (before_prepare vs after_executor), which independently confirm the same boot_id transition.",
+      "evidence_ids": [
+        "cmd-aa2b477d1152436e",
+        "cmd-5044d779ccd74c6d",
+        "cmd-0b2b437eb1e747ce",
+        "cmd-afc9ad2dfe8d445e",
+        "cmd-7a81f5ea17d04cc6",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly diagnosed the cloud-image grub.d override and placed audit=1 in GRUB_CMDLINE_LINUX (not the overridden GRUB_CMDLINE_LINUX_DEFAULT), regenerated grub.cfg, and then performed a real reboot that directly demonstrates the required outcome: a changed boot_id, post-reboot /proc/cmdline containing audit=1, and dmesg/audit_enabled confirming the kernel audit subsystem is active, with the node returning to a healthy systemctl is-system-running=running state. This is a complete, directly observed before/during/after transition satisfying both the persistence requirement and the mandated restart-evidence protocol, with no hygiene concerns.",
+  "limitations": [
+    "The final diagnostic command (cmd-7a81f5ea17d04cc6) returned exit code 1, likely because /proc/sys/kernel/audit does not exist as a file on this kernel; this does not affect the /proc/cmdline and dmesg evidence which are unambiguous.",
+    "Cluster/data-state recovery checks are not applicable beyond systemd health since this is a single-node task with no clustered service under test."
+  ],
+  "command_stats": {
+    "total": 11,
+    "successful": 9,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 1.0,
+    "summary": "All executor commands are either read-only discovery/verification, a single targeted sed edit to /etc/default/grub (necessary and scoped), an update-grub regeneration (necessary), or the mandated single reboot used both to satisfy the 'across reboots' requirement and the restart-evidence protocol. No unnecessary, unrelated, or unreverted mutations were found. The two non-zero return codes (a connection-reset during reboot, and a chained diagnostic command whose final sub-command against a nonexistent /proc/sys/kernel/audit path failed) are expected artifacts of the reboot and read-only diagnostics, not state-changing failures. Lifecycle diffs (temp files, listening sockets) are simply artifacts of the reboot itself (new boot_id-named systemd-private dirs, sockets rebinding), not executor-created residue.",
+    "evidence_ids": [
+      "cmd-388a7cb1c38f45b8",
+      "cmd-5d932137ea484ef0",
+      "cmd-5044d779ccd74c6d",
+      "cmd-0b2b437eb1e747ce",
+      "cmd-7a81f5ea17d04cc6",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

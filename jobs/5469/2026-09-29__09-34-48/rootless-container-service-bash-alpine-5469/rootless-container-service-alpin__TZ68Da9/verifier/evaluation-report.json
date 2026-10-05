@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "unprivileged-user",
+      "requirement": "Containerized web app runs as the unprivileged account appsvc on node1",
+      "status": "satisfied",
+      "summary": "appsvc (uid 1001, no shell login mechanism used) was created, subuid/subgid configured, and the nginx container was launched via 'su appsvc' with rootless podman. Post-run process listing shows nginx master process owned by appsvc and workers under the mapped uid 100100, and podman ps confirms the container is owned by the appsvc rootless namespace.",
+      "evidence_ids": [
+        "cmd-fc044c4eb70e4650",
+        "cmd-f3063e5a090442e6",
+        "cmd-dedd137e16894ab5",
+        "cmd-616e75a723154c4b"
+      ]
+    },
+    {
+      "id": "port-8080",
+      "requirement": "Web application serves on port 8080",
+      "status": "satisfied",
+      "summary": "Container published as -p 8080:80; curl to $NODE_IP:8080 and 127.0.0.1:8080 returned HTTP 200 with real HTML content both immediately after launch and after the verified boot cycle. The after-executor global listening-sockets snapshot independently confirms 0.0.0.0:8080 LISTEN owned by the rootless pasta network helper.",
+      "evidence_ids": [
+        "cmd-dd9f6ab6c2fa4a77",
+        "cmd-09691214fa914c75",
+        "cmd-616e75a723154c4b",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "starts-at-boot",
+      "requirement": "Service starts automatically at boot",
+      "status": "satisfied",
+      "summary": "A healthy pre-restart baseline was captured (boot_id e561ef47, container Up, HTTP 200). A first real reboot was performed (boot_id changed to 947efb1d) and directly showed boot-time start failing because /run/user/1001 was not created on this init system, with podman stopped and curl returning http:000 \u2014 a genuine, evidence-supported failure discovery. The executor fixed this with a custom appsvc-runtimedir OpenRC unit ordered before podman, then performed a second real reboot (boot_id changed again to 935e96cf). Post-second-reboot evidence shows both services 'started' in rc-status, the same container automatically Up 7s with no manual intervention, and curl returning 200 \u2014 directly demonstrating the healthy-baseline to disruption to fix to restored-boot-behavior transition required for this class of claim.",
+      "evidence_ids": [
+        "cmd-0c8d192d93c34700",
+        "cmd-c9bc1ae2c8a241d3",
+        "cmd-6d6664c61b1a4b70",
+        "cmd-eb7b48622beb430b",
+        "cmd-cb6213fc5e244c53",
+        "cmd-c19dbb60ff824491",
+        "cmd-07ffd6819dbc4475",
+        "cmd-e70eebc705034c8f",
+        "cmd-09691214fa914c75",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "no-login-session",
+      "requirement": "No active login session for appsvc while the service runs",
+      "status": "satisfied",
+      "summary": "who/last/loginctl checks show no TTY or login entries for appsvc both right after manual launch and after the boot-verified restart, while nginx and podman processes run under appsvc's uid. The process tree shows the podman service is launched by root's supervise-daemon invoking podman directly (not by a login shell or su -l), consistent with no session being created.",
+      "evidence_ids": [
+        "cmd-ebe2433305b6482e",
+        "cmd-09691214fa914c75",
+        "cmd-616e75a723154c4b"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the task are satisfied with direct evidence: nginx runs under the unprivileged appsvc rootless podman account, is reachable on port 8080, was proven to auto-start at boot through a genuine reboot-discover-fix-reboot-verify cycle, and shows no active login session for appsvc throughout. The executor's node-restart evidence protocol for node1 is well-formed (pre-restart boot identity/health, restart acknowledgement via connection loss, changed boot identity, and recovered service/app state), matching the independent before-prepare/after-executor boot-identity cross-check. Hygiene is good overall with only minor uncleaned temp-file residue.",
+  "limitations": [
+    "The origin of /tmp/storage-run-1001/{containers,libpod} in the after-executor snapshot is not explained by any single executor command, so it cannot be definitively attributed to a specific action, only inferred as a byproduct of the /run/user/1001 troubleshooting.",
+    "No systemd/journal-based service-failure inspection was available (systemctl unsupported on this Alpine/OpenRC image), so failed-service state relies on rc-status output rather than a systemd failed-units enumeration.",
+    "Data persistence beyond the container's default image content was not part of this task's contract, so no volume/data-durability check across reboot was necessary or performed."
+  ],
+  "command_stats": {
+    "total": 59,
+    "successful": 33,
+    "failed": 26,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands map clearly to the task: package installs, user/subuid setup, cgroups enablement, container run/rm iterations, the podman-openrc boot configuration, and the appsvc-runtimedir fix were all directly used to satisfy or verify a material outcome, or were corrective troubleshooting after the first reboot revealed a real boot-start bug (cmd-ade979d4047c44f4, cmd-49dda62eda064460, cmd-bdcb61db5b3c401b, cmd-3301a109782d4206, cmd-2badd10657954ecd, cmd-be1724e8804b476d, cmd-7faf2423fc1e428c \u2014 all corrective steps toward the working appsvc-runtimedir/podman boot fix, not unrelated experiments). Two minor items were left as residue and not cleaned up: /tmp/reboot.log and /tmp/reboot2.log (harmless artifacts of the backgrounded reboot commands used for restart verification), and an unexplained /tmp/storage-run-1001/{containers,libpod} directory tree that appears in the after-executor temp-files snapshot but has no corresponding executor command explaining its creation or removal \u2014 likely a rootless-podman fallback storage path created during one of the failed /run/user/1001 attempts. None of this weakens security controls or leaves conflicting/failed services (final rc-status shows both services cleanly 'started'), so the impact is low, but the unexplained storage-run-1001 leftover is a genuine minor hygiene gap.",
+    "evidence_ids": [
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:temporary-files",
+      "cmd-c9bc1ae2c8a241d3",
+      "cmd-07ffd6819dbc4475",
+      "cmd-3301a109782d4206"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

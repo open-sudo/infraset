@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-ansible-deployment",
+      "requirement": "Implement the log rotation policy using Ansible, deployed from a control node to node1",
+      "status": "satisfied",
+      "summary": "An Ansible playbook was authored on node2 (control node) and run against node1 via ansible-playbook, producing ok=4/changed=1 and deploying /etc/logrotate.d/inventory-app. A later idempotent re-run after restart showed changed=0, confirming the config is Ansible-managed and stable.",
+      "evidence_ids": [
+        "cmd-e7079185ef394dbd",
+        "cmd-8097704bd9a64130",
+        "cmd-d7be9ff7c6aa42eb"
+      ]
+    },
+    {
+      "id": "req-2-daily-rotation-policy",
+      "requirement": "Rotate /var/log/inventory/app.log on a daily cadence",
+      "status": "satisfied",
+      "summary": "Deployed logrotate config specifies 'daily' and validation via logrotate -d confirms the pattern is being read as 'rotating pattern: /var/log/inventory/app.log after 1 days'.",
+      "evidence_ids": [
+        "cmd-6b77254544164ac7"
+      ]
+    },
+    {
+      "id": "req-3-seven-compressed-rotations",
+      "requirement": "Keep seven compressed rotations",
+      "status": "satisfied",
+      "summary": "Config specifies rotate 7 and compress. Functional test forced 9 sequential rotations and directly observed exactly app.log.1.gz through app.log.7.gz retained (older ones pruned), demonstrating both the compression and the 7-rotation retention bound in practice, not just configuration.",
+      "evidence_ids": [
+        "cmd-6b77254544164ac7",
+        "cmd-83d91edabf9e4220"
+      ]
+    },
+    {
+      "id": "req-4-continued-writing",
+      "requirement": "Allow the application to continue writing to app.log after rotation (no restart/reopen required)",
+      "status": "satisfied",
+      "summary": "copytruncate is used in the policy. Direct evidence shows writes to app.log succeeding immediately after forced rotations, both during initial testing and again after a full node reboot.",
+      "evidence_ids": [
+        "cmd-05c0aa72434c4041",
+        "cmd-83d91edabf9e4220",
+        "cmd-7c5ce5ec237e4b03"
+      ]
+    },
+    {
+      "id": "req-5-node1-scope",
+      "requirement": "Change applies specifically to node1 (not node2 or other nodes)",
+      "status": "satisfied",
+      "summary": "The Ansible inventory targets only node1 ([app] group with a single host), and all logrotate config/file evidence is captured on node1.",
+      "evidence_ids": [
+        "cmd-b2702093f4e746d2",
+        "cmd-6b77254544164ac7"
+      ]
+    }
+  ],
+  "overall_summary": "All material task outcomes are directly and functionally verified: an Ansible playbook run from node2 against node1 deployed a logrotate policy (daily, rotate 7, compress, copytruncate) at /etc/logrotate.d/inventory-app, and forced rotation testing empirically confirmed exactly 7 retained compressed rotations with pruning of older ones and uninterrupted application writes after each rotation. This behavior was also shown to survive a full reboot of node1, with the config, all 7 .gz files, and write capability intact afterward, and the playbook re-run showed idempotent changed=0. The independent provider-wide restart-evidence protocol was executed on both managed nodes with clear pre-restart baselines, distinct post-restart boot identities matching the fixed after-executor snapshot, and recovered state, consistent with the fixed lifecycle observations.",
+  "limitations": [
+    "The 7 rotated files observed are a product of executor-forced test rotations (logrotate -f) rather than natural daily cron/timer-driven rotation over real elapsed days, so long-run scheduling behavior via logrotate.timer was not observed across actual day boundaries, though the timer was confirmed active both pre- and post-restart.",
+    "SSH connectivity setup (host key regeneration, authorized_keys addition) was required because the node1 image had no pre-existing SSH host keys; this is inferred to be a pre-existing image condition based on the 'no hostkeys available' error rather than directly confirmed via a before-prepare failed-services observation naming sshd specifically."
+  ],
+  "command_stats": {
+    "total": 34,
+    "successful": 25,
+    "failed": 9,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.8,
+    "summary": "Reviewing the chronological command trace: most state-changing actions were necessary prerequisites or bounded evidence collection. The executor discovered node1's sshd was in a pre-existing crash loop due to missing host keys (confirmed by 'sshd -t' showing 'no hostkeys available'), which is a pre-existing condition rather than executor-caused damage, and fixed it with ssh-keygen -A + systemctl restart ssh (cmd-bab688971c1e4f58) - a necessary, low-risk, justified prerequisite for Ansible connectivity. Adding node2's pubkey to node1's root authorized_keys (cmd-0b7faaf8f8774540) was a necessary prerequisite for SSH-based Ansible access; not reverted, but low-risk and expected for the control-node architecture used. Appending CLUSTER_HOSTS to /etc/hosts on node2 (cmd-a74eb457ce9f4e29) duplicated already-present entries - a minor, low-risk, unnecessary mutation that was not reverted but has negligible impact. The functional test rotations (cmd-05c0aa72434c4041, cmd-83d91edabf9e4220) mutated app.log and created 7 .gz files as residue on node1; this is reasonable bounded evidence collection directly proving the required rotation/retention/write-continuity behavior, not unrelated residue. A temporary logrotate test-state file (/tmp/logrotate-test.state) was explicitly cleaned up (cmd-16a49705300044cb). No failed services, broken packages, or unsafely weakened security controls were left behind (after_executor failed-services and package-health snapshots are clean on both nodes). The reboot of both nodes followed the fixed provider-wide restart-evidence protocol with clear pre/post boot-identity and recovery checks.",
+    "evidence_ids": [
+      "cmd-bab688971c1e4f58",
+      "cmd-0b7faaf8f8774540",
+      "cmd-a74eb457ce9f4e29",
+      "cmd-16a49705300044cb",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

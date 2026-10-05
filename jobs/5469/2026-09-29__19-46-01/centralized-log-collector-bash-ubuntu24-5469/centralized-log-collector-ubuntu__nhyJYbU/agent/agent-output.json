@@ -1,0 +1,75 @@
+{
+  "status": "completed",
+  "summary": "Set up centralized log forwarding from node2's inventory application to node1, with logs persisted under /var/log/inventory/node2.log, surviving restarts of either node. No pre-existing \"inventory\" application was found on node2, so a minimal systemd-managed inventory service (/usr/local/bin/inventory-app.sh, enabled unit inventory.service) was created that emits realistic stock-check log lines via `logger -t inventory -p local0.info`. rsyslog on node2 forwards all local0.* messages via TCP (omfwd, disk-assisted queue with saveOnShutdown for resilience) to node1:10514. rsyslog on node1 loads imtcp on port 10514 and writes matching messages to a per-hostname file (/var/log/inventory/node2.log) using a dynaFile template. Both rsyslog and inventory.service are systemd-enabled for boot persistence. End-to-end flow was verified before and after independently restarting node1 then node2 (one at a time), confirming boot-id changes and automatic recovery of the pipeline with no manual restart needed.",
+  "actions_performed": [
+    "Surveyed node1/node2 OS, rsyslog availability, and confirmed no pre-existing inventory application",
+    "Created /usr/local/bin/inventory-app.sh (POSIX sh) generating periodic inventory log lines via logger tagged 'inventory' on local0 facility",
+    "Created and enabled systemd unit inventory.service on node2 (Restart=always, WantedBy=multi-user.target)",
+    "Created /var/log/inventory directory on node1 with syslog:adm ownership",
+    "Configured /etc/rsyslog.d/10-inventory-collector.conf on node1: imtcp module on port 10514, dynaFile template writing to /var/log/inventory/%HOSTNAME%.log",
+    "Configured /etc/rsyslog.d/10-inventory-forward.conf on node2: omfwd TCP forward of local0.* to node1:10514 with disk-assisted queue (LinkedList, saveOnShutdown=on, infinite resume retry)",
+    "Restarted rsyslog on both nodes and validated config with rsyslogd -N1",
+    "Verified end-to-end delivery with manual marker messages before any restart",
+    "Captured healthy baseline (boot_id, service states, log content) on both nodes",
+    "Restarted node1 via native reboot, polled until reachable, confirmed changed boot_id, verified rsyslog auto-started, listener re-bound, prior log file intact, and new messages (including a post-restart marker) continued arriving",
+    "Restarted node2 via native reboot, polled until reachable, confirmed changed boot_id, verified inventory.service and rsyslog auto-started/enabled, and a post-restart marker message was forwarded and persisted on node1"
+  ],
+  "evidence": [
+    {
+      "requirement": "Inventory application exists and produces log messages on node2",
+      "command_ids": [
+        "cmd-6d0d72ff200342e5",
+        "cmd-14d3476927984c55",
+        "cmd-8b76297ba0d74f94",
+        "cmd-4194749f4e8e4a42",
+        "cmd-18f0a2b61c8b45ff"
+      ],
+      "summary": "Confirmed no pre-existing inventory app, then created and started inventory.service producing tagged local0 log lines visible in /var/log/syslog"
+    },
+    {
+      "requirement": "Logs forwarded from node2 to a centralized collector on node1",
+      "command_ids": [
+        "cmd-9402e322e68f402f",
+        "cmd-c7b721d12e7a4d96",
+        "cmd-83695a517aa7440a",
+        "cmd-ec96e75152354a06"
+      ],
+      "summary": "rsyslog on node1 configured with imtcp:10514 and dynaFile template; node2 configured with omfwd forwarding local0.*; manual marker message sent on node2 appeared in node1's collector file"
+    },
+    {
+      "requirement": "Received messages persisted under /var/log/inventory/node2.log",
+      "command_ids": [
+        "cmd-2e4167229c2a4f52",
+        "cmd-ec96e75152354a06"
+      ],
+      "summary": "Directory created on node1; file /var/log/inventory/node2.log created via dynaFile template and contains forwarded inventory log lines"
+    },
+    {
+      "requirement": "Log flow keeps working after node1 restarts",
+      "command_ids": [
+        "cmd-5a2c12488bd14a86",
+        "cmd-b108f5594c3a424b",
+        "cmd-68da7f497e104173",
+        "cmd-de61f4468da248dd",
+        "cmd-7bb7196155ae442a",
+        "cmd-80a3cd56cbf84be3",
+        "cmd-56606e74136d4769",
+        "cmd-f2a9be46f9e24c84"
+      ],
+      "summary": "Captured baseline boot_id (bdd5de93...) and log state; rebooted node1 natively; connection timed out during reboot confirming disruption; polled until reachable with changed boot_id (02df6e21...); verified rsyslog auto-active/enabled, listener rebound, prior log intact, buffered messages delivered, and a fresh post-restart marker sent from node2 arrived in node2.log"
+    },
+    {
+      "requirement": "Log flow keeps working after node2 restarts",
+      "command_ids": [
+        "cmd-0d5cc1c4bbbf4011",
+        "cmd-fa79f9868db64e21",
+        "cmd-05af8e5774724245",
+        "cmd-280565b664ed43f6",
+        "cmd-f4d0fd6dcebb4113",
+        "cmd-98b32802e72942a6",
+        "cmd-5fc01cc6419d41e2"
+      ],
+      "summary": "Captured baseline boot_id (dfeb3b70...) and service state; rebooted node2 natively; connection timed out confirming disruption; polled until reachable with changed boot_id (4ba54a48...); verified inventory.service and rsyslog auto-active/enabled; new marker message logged on node2 and confirmed delivered and persisted in /var/log/inventory/node2.log on node1"
+    }
+  ]
+}

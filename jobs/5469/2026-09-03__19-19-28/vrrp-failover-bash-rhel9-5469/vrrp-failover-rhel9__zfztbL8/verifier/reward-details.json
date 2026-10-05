@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "single-gateway",
+      "requirement": "node3 has a single, stable gateway address for reaching node4 (not needing to know which router is active)",
+      "status": "satisfied",
+      "summary": "VRRP group NET-A (vrid 13) provides a shared virtual IP 10.50.13.1 on node1/node2's eth1, and node3's static route to node4's subnet (10.50.14.0/24) is configured via that single VIP (cmd-1e14839662a04eae). This address does not change across router failover, satisfying the 'single gateway address' requirement. Baseline connectivity confirmed (cmd-05939b689b8b4832).",
+      "evidence_ids": [
+        "cmd-f627c77d3bd749d2",
+        "cmd-1e14839662a04eae",
+        "cmd-05939b689b8b4832"
+      ]
+    },
+    {
+      "id": "availability-during-router-outage",
+      "requirement": "The gateway stays available when either router (node1 or node2) is down",
+      "status": "satisfied",
+      "summary": "node1's private interfaces were disabled (cmd-ffd3880194974032); node2 auto-promoted to VRRP MASTER within ~3s (cmd-fd27b82f1c3049b5), and a continuous ping from node3 to node4 over the same VIP showed only a brief (~4s, icmp_seq 17->25) transition gap before resuming (cmd-843c121389ef4c9a) \u2014 a direct, bounded disruption-and-recovery observation. The reverse case (node2 down while node1 remains master) is also directly observed during the node2 restart step, where node1 continued serving as MASTER throughout (cmd-7a11b6d2c526489e).",
+      "evidence_ids": [
+        "cmd-ffd3880194974032",
+        "cmd-fd27b82f1c3049b5",
+        "cmd-843c121389ef4c9a",
+        "cmd-7a11b6d2c526489e"
+      ]
+    },
+    {
+      "id": "node1-preferred",
+      "requirement": "node1 is preferred as gateway while healthy, and reclaims the role automatically once restored",
+      "status": "satisfied",
+      "summary": "node1 configured with VRRP priority 200 vs node2's 100 (cmd-e1fb5c7785f5485d, cmd-fa40e29d2c394bf0), confirmed MASTER at baseline (cmd-f627c77d3bd749d2). After node1's interfaces were restored following the outage, node1 preempted node2 and reclaimed MASTER (cmd-51545c34901a4573), node2 reverted to BACKUP (cmd-9240410e7428474b), and node3->node4 connectivity was confirmed healthy post-recovery (cmd-2d5e5ede2cf3425d).",
+      "evidence_ids": [
+        "cmd-51545c34901a4573",
+        "cmd-9240410e7428474b",
+        "cmd-2d5e5ede2cf3425d"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all four managed nodes with pre/post boot identity, restart acknowledgement, and recovered state",
+      "status": "satisfied",
+      "summary": "All four nodes show a captured pre-restart boot_id, a reboot command, a changed post-restart boot_id, and recovered functional state (VRRP roles/config for node1/node2; static IP, routes, and ping for node3/node4). Boot-id transitions match exactly against the fixed after-prepare/after-executor lifecycle snapshots for all four nodes (e.g. node1 50503c5d->30c03019, node2 7668189d->1c999964, node3 377b5195->16ea1851, node4 c2f29441->8b83f5ae), providing an independent cross-check.",
+      "evidence_ids": [
+        "cmd-7a69f055d1bb42e9",
+        "cmd-9861ba6b01764493",
+        "cmd-ff370eb6ef8e42c1",
+        "cmd-a0e31f282ef4486f",
+        "cmd-c7800b2332e94881",
+        "cmd-477abf45d55a4d36",
+        "cmd-276b0a16a9e24e18",
+        "cmd-f25b477e12c84626",
+        "cmd-8baeada8e8b343b9",
+        "cmd-189781419dcf42e2",
+        "cmd-14f4a9ed6a3b47c1",
+        "cmd-761900cff9e149a5",
+        "cmd-4a6f2704bca7434e",
+        "cmd-3f00ee4d497d4a6d",
+        "cmd-d583629b73154bf0",
+        "cmd-8cb6d18c4eff45ed",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:after_executor:node4:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established a VRRP-based shared virtual gateway (10.50.13.1) on node1 (priority 200, preferred) and node2 (priority 100, backup), routed node3's traffic to node4 through this single VIP, and directly demonstrated the full failover lifecycle: healthy baseline with node1 as MASTER, a bounded router-down disruption with automatic node2 promotion and only brief ping loss, and restoration with node1 preempting back to MASTER \u2014 satisfying every material outcome of the task instruction. The mandatory node-restart evidence protocol was completed for all four nodes with boot-identity changes cross-verified against the fixed lifecycle snapshots, and post-restart state (VRRP roles, static routing, connectivity) was confirmed recovered in each case. Minor hygiene issues (small reverted diagnostic IP additions, leftover helper/log files in /tmp) do not affect functional correctness.",
+  "limitations": [
+    "The node2-down scenario was not tested via an explicit interface-disable+ping transition the way node1-down was; it is inferred from node1 remaining MASTER throughout node2's restart, which is somewhat less direct evidence for that specific failure direction.",
+    "Command outputs are truncated/bounded per the audit trail; some intermediate detail (e.g. full duration of ping loss during node1's own restart) is inferred from the transition-timestamp fields in 'show vrrp' output rather than a continuous ping log for that specific event."
+  ],
+  "command_stats": {
+    "total": 83,
+    "successful": 60,
+    "failed": 23,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Executor performed two bounded, low-risk troubleshooting mutations during topology discovery: temporarily assigning ad-hoc addresses (10.99.9.2/24 on node3's enp8s0, cmd-2d9cd3d52d754f87; 10.99.4.2/24 on node4's enp8s0, cmd-6c5a6279b40d4e0b) to arping/probe for the router's private-network IPs, both of which were fully reverted moments later (cmd-52b538aac3b74e6e, cmd-1875dd582b1b40ed) and left no residue. The intentional interface-disable on node1 to test failover (cmd-ffd3880194974032) was a necessary, bounded test that was cleanly restored (cmd-6e1b74da0d8b4979). Minor residue remains in /tmp on all nodes (helper scripts chk.sh/cfg.sh/up.sh/down.sh, pingtest.log, reboot.log) confirmed by the after-executor snapshot diffs \u2014 low-risk, non-security-impacting leftover files rather than damaged state. No failed services, no package-manager inconsistencies, and no unsafe exposure were introduced (before/after listening-socket diffs are only PID/ephemeral-port churn from the mandated reboots).",
+    "evidence_ids": [
+      "cmd-2d9cd3d52d754f87",
+      "cmd-52b538aac3b74e6e",
+      "cmd-6c5a6279b40d4e0b",
+      "cmd-1875dd582b1b40ed",
+      "cmd-ffd3880194974032",
+      "cmd-6e1b74da0d8b4979",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node3:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

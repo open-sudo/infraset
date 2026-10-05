@@ -1,0 +1,86 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) as the authoritative DNS resolver for node2 and node3: its Unbound DNSBL plugin now blocklists blocked.example (exact match + wildcard subdomains) returning NXDOMAIN, while all other names resolve normally. node2 and node3 were repointed from the platform gateway (10.100.42.1) to node1 (10.100.42.10) via persistent NetworkManager connection profiles. All three nodes were restarted one at a time (node2, node3, then node1 last since it is the resolver), each proven via a changed OS boot marker, with DNS behavior (normal resolution + blocked.example NXDOMAIN) verified end-to-end before and after each restart.",
+  "actions_performed": [
+    "Inspected node1 (OPNsense/FreeBSD 14.3) and found it already runs Unbound with the DNSBL plugin loaded",
+    "Edited /conf/config.xml on node1 via Python ElementTree (with .bak backup) adding a <dnsbl><blocklist> entry: blocklists=blocked.example, wildcards=blocked.example, nxdomain=1",
+    "Applied via `configctl unbound restart` and `configctl unbound dnsbl`",
+    "Verified locally on node1 with drill: example.com resolves normally; blocked.example and sub.blocked.example return NXDOMAIN",
+    "Installed bind-utils (dig) on node2/node3 for testing",
+    "Repointed node2 and node3 DNS to node1 (10.100.42.10) via nmcli, persisted in NetworkManager keyfiles (ipv4.dns, ipv4.ignore-auto-dns=yes)",
+    "Verified end-to-end from node2/node3: normal domains resolve; blocked.example/subdomains return NXDOMAIN (getent rc=2)",
+    "Captured pre-restart baselines (boot markers + healthy DNS behavior) on all three nodes",
+    "Restarted node2 via backgrounded `systemctl reboot`, polled until reachable, confirmed changed boot_id, verified resolv.conf and DNS behavior recovered",
+    "Restarted node3 the same way, confirmed changed boot_id and recovery",
+    "Restarted node1 via backgrounded `/sbin/reboot`, confirmed changed kern.boottime, verified unbound restarted with DNSBL config intact",
+    "Re-verified end-to-end DNS resolution and blocking from node2 and node3 after node1's restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 resolves normal domains for the shared network",
+      "command_ids": [
+        "cmd-4db62210d9a34827",
+        "cmd-6573d779255e4102",
+        "cmd-d2a9c65b07c249d4"
+      ],
+      "summary": "example.com resolves correctly via node1 from node1 itself, node2, and node3"
+    },
+    {
+      "requirement": "blocked.example and all subdomains resolve to nothing usable",
+      "command_ids": [
+        "cmd-4db62210d9a34827",
+        "cmd-6573d779255e4102",
+        "cmd-d2a9c65b07c249d4"
+      ],
+      "summary": "drill/dig show rcode/status NXDOMAIN for blocked.example and sub.blocked.example on node1, node2, node3; getent hosts returns rc=2 (not found)"
+    },
+    {
+      "requirement": "node2 and node3 use node1 for name resolution (config change), persisted",
+      "command_ids": [
+        "cmd-f6ab4519890e452d",
+        "cmd-7875d1c5f1b64b47",
+        "cmd-eb9ad1332deb4579",
+        "cmd-20e12cf709f6418f"
+      ],
+      "summary": "resolv.conf on node2/node3 now points to 10.100.42.10; NetworkManager keyfile shows dns=10.100.42.10 and ignore-auto-dns=true persisted"
+    },
+    {
+      "requirement": "node2 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-642377955a6d4b33",
+        "cmd-26d1371e93d841bc",
+        "cmd-803f90ae1b5c4fa9",
+        "cmd-7f2ef4b9142a4fae"
+      ],
+      "summary": "baseline boot_id 54bd1c3e..., reboot acknowledged before disconnect, new boot_id 7b89ce38... confirms restart, post-restart resolv.conf and DNS behavior (normal + NXDOMAIN) verified recovered"
+    },
+    {
+      "requirement": "node3 restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-fe2cba7a775e4310",
+        "cmd-8b5d20e8227e4f50",
+        "cmd-cfb0674534ff448f",
+        "cmd-62dc627aecd241bb"
+      ],
+      "summary": "baseline boot_id 4a743885..., reboot acknowledged, new boot_id c4ea5ab5... confirms restart, post-restart resolv.conf and DNS behavior verified recovered"
+    },
+    {
+      "requirement": "node1 restart: baseline, restart ack, changed boot identity, recovery of DNS service and blocklist config",
+      "command_ids": [
+        "cmd-edcc2f4f617645f6",
+        "cmd-883186d843374f1a",
+        "cmd-61e5d604217f4a8a",
+        "cmd-591246e0a62b4bbb"
+      ],
+      "summary": "baseline kern.boottime 16:24:15, reboot acknowledged, new kern.boottime 16:29:08 confirms restart, unbound process restarted and DNSBL block for blocked.example/sub.blocked.example still active (NXDOMAIN) alongside normal resolution"
+    },
+    {
+      "requirement": "end-to-end recovery verification from clients after node1 restart",
+      "command_ids": [
+        "cmd-4b8c844dbe934ca9",
+        "cmd-32559770f20a49c0"
+      ],
+      "summary": "node2 and node3 successfully resolve example.com and get NXDOMAIN for blocked.example/sub.blocked.example after node1's restart, confirming full cluster recovery"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) as a NAT egress gateway for node2 and node3 on the private \"lan\" network (eth1, 10.50.50.0/24), implemented entirely via Ansible run from node4 (the designated control_node). node2/node3 got static LAN IPs with a default route via node1 preferred (lower metric) over the mgmt network. node1 got a static LAN address, a masquerade NAT source rule (10.50.50.0/24 -> eth0), and a forward-filter default-accept, with ip_forward already enabled. Verified end-to-end that node2/node3 reach the internet only via node1 (disabled the NAT rule, observed loss, restored it, observed recovery). All four nodes were then restarted one at a time per the mandatory protocol; each showed a changed OS boot_id and full recovery of its role (NAT/interface state on node1, static IP/route/egress on node2 and node3, working Ansible control and a clean idempotent playbook re-run on node4), with node2/node3 internet reachability reconfirmed after all four restarts.",
+  "actions_performed": [
+    "Surveyed topology: mgmt network (eth0, dhcp+egress) shared by all 4 nodes, and a private lan network (eth1, no dhcp, no egress) shared by node1-3; node4 is the Ansible control_node with only mgmt",
+    "Established passwordless SSH from node4 to node1 (VyOS 'vyos' user via system login public-keys config), node2 and node3 (root authorized_keys)",
+    "Wrote /root/inventory.ini and /root/nat-egress.yml on node4",
+    "Playbook: community.general.nmcli static IP + preferred default route (metric 50) on node2/node3 eth1; VyOS configure/set/commit/save NAT masquerade rule + LAN interface address + forward-filter default-accept on node1",
+    "Diagnosed and fixed a VyOS shell alias-expansion bug where 'set -e' silently broke the configure/commit/exit alias chain when run non-interactively via ansible.builtin.shell",
+    "Ran the playbook via node4's run.sh entrypoint twice, confirming idempotency (second run reported no changes)",
+    "Verified egress (ping/curl from node2 and node3 to 1.1.1.1 through node1) and proved dependency on node1 by disabling then re-enabling the NAT source rule",
+    "Captured boot_id baselines on all 4 nodes, then restarted node1, node2, node3, node4 one at a time via native reboot, polling exec availability and confirming changed boot_id for each",
+    "After each restart, re-verified the node's required state: node1's NAT rule/eth1 address/ip_forward, node2/node3's static IP/route/egress ping, and node4's ability to re-run the Ansible playbook idempotently against the whole cluster",
+    "Final full-cluster ping check from node2 and node3 to 1.1.1.1 confirmed persistent NAT egress after all restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 configured as NAT gateway for node2/node3 (masquerade rule, LAN address, forwarding)",
+      "command_ids": [
+        "cmd-065ff4d210e64d9b",
+        "cmd-2bfa2e1ef73d4429",
+        "cmd-8446b2b324d546a7",
+        "cmd-e7b4c44d925943c2",
+        "cmd-c753c69b1d2e4271"
+      ],
+      "summary": "VyOS configure/commit/save applied interface eth1 10.50.50.254/24, NAT source rule 100 masquerading 10.50.50.0/24 out eth0, forward-filter default-accept; ip_forward=1 confirmed; ansible run shows the rule active and idempotent"
+    },
+    {
+      "requirement": "node2 and node3 reach the internet through node1 (implemented via Ansible)",
+      "command_ids": [
+        "cmd-9cbb68cc31524e6f",
+        "cmd-88ded07feb75437d",
+        "cmd-e7b4c44d925943c2",
+        "cmd-9444073a7d5248e4",
+        "cmd-02a9e7704b0246bc",
+        "cmd-06567b4edd174f0c",
+        "cmd-74285f56ab87487e"
+      ],
+      "summary": "Ansible ad-hoc ping confirmed inventory reachability; nat-egress.yml run from node4 set static LAN IPs and preferred routes; node2/node3 route to 1.1.1.1 goes via eth1/node1 and ping+curl succeed (ttl=56, one hop via node1)"
+    },
+    {
+      "requirement": "Dependency on node1's NAT proven (smallest safe disruption)",
+      "command_ids": [
+        "cmd-f33813c10beb495e",
+        "cmd-68970f92152f4b33",
+        "cmd-34459799b2b244d8",
+        "cmd-46a14016309043e7",
+        "cmd-eb41e670a6564fee",
+        "cmd-df1a1f2f6c9442de"
+      ],
+      "summary": "Disabling NAT source rule 100 on node1 caused immediate ping loss from node2; re-enabling and saving the rule restored connectivity for both node2 and node3"
+    },
+    {
+      "requirement": "Implementation via Ansible, idempotent",
+      "command_ids": [
+        "cmd-a967ca7f6dc04e2c",
+        "cmd-9cbb68cc31524e6f",
+        "cmd-6f8d479f484f48a8",
+        "cmd-f337ec2594d34fef",
+        "cmd-ee0aa2ae784745f2",
+        "cmd-e7b4c44d925943c2"
+      ],
+      "summary": "inventory.ini and nat-egress.yml built on node4 (control_node); run.sh execution shows all tasks 'ok' with changed=0 on the settled run, confirming idempotency"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-c893c9efc78a49d5",
+        "cmd-44ef1b4e8a2e43bd",
+        "cmd-4aa25a69cefa44ca",
+        "cmd-023198b570e04f40",
+        "cmd-91b334f7b0464c13",
+        "cmd-e3ac20028e344eab",
+        "cmd-bba566bc40724508"
+      ],
+      "summary": "Baseline boot_id 9028a473...; reboot acknowledged; node unreachable during restart; post-restart boot_id changed to 5a47750d...; NAT rule, eth1 address, ip_forward, and node2/node3 ping through node1 all recovered"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-819e723899674c21",
+        "cmd-83aa4cca74a841c5",
+        "cmd-6da2c10981c24a82",
+        "cmd-39c0228e9b7e499b",
+        "cmd-468a352becce4cd6"
+      ],
+      "summary": "Baseline boot_id 9bdcc129...; reboot acknowledged; post-restart boot_id changed to e80a61f6...; static eth1 IP, preferred default route via node1, and successful ping to 1.1.1.1 all recovered"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-8cfbbd2dce714c53",
+        "cmd-5d83af7ce763424e",
+        "cmd-ffa2c461fc2347d4",
+        "cmd-e57f9b96d4e24967",
+        "cmd-1ff850dae99e4c37"
+      ],
+      "summary": "Baseline boot_id 84419b90...; reboot acknowledged; post-restart boot_id changed to f4e1185b...; static eth1 IP, preferred default route, and ping to 1.1.1.1 all recovered"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-6988373f54ac42d8",
+        "cmd-a7c65bd7b31241e5",
+        "cmd-4f2ac9d49766459c",
+        "cmd-4212c2bb37924d52",
+        "cmd-b3a45d2a0cc5407d",
+        "cmd-bbdb40fff4ab47a3",
+        "cmd-d9df93664e064200"
+      ],
+      "summary": "Baseline boot_id a6937a34...; reboot acknowledged; post-restart boot_id changed to a4ad4787...; Ansible control files intact and nat-egress.yml re-ran idempotently against node1-3, with node2/node3 internet ping reconfirmed"
+    }
+  ]
+}

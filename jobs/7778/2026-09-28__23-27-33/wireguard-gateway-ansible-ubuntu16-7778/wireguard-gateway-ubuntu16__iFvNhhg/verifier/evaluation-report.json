@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Serve an application from node2 on TCP port 8080",
+      "status": "satisfied",
+      "summary": "Ansible role deployed a systemd unit running python3 http.server on port 8080 on node2. Verified reachable with HTTP 200 both from node1 directly and from node3 via the tunnel before node2 became unreachable.",
+      "evidence_ids": [
+        "cmd-1329e694776046ad",
+        "cmd-d237f00e9fda459d",
+        "cmd-624851b1149a41b7",
+        "cmd-54d1f9cb8fcc42e0"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "WireGuard tunnel terminated on node1 with node3 as client",
+      "status": "satisfied",
+      "summary": "node1 (VyOS) wg0 interface configured with address 10.200.0.1/24 and a live handshake to node3's peer key; node3's wg-quick@wg0 is active with a matching peer/endpoint to node1. Confirmed both before and after the restart cycle for node1 and node3.",
+      "evidence_ids": [
+        "cmd-6f5d2a26897c4d8a",
+        "cmd-3345c9998a8d4885",
+        "cmd-3c1e83d0a3d24f0d"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node3 can reach node2:8080 only through the WireGuard tunnel, not directly",
+      "status": "satisfied",
+      "summary": "curl from node3 to node2:8080 over the default (wg0) route returns HTTP 200, while the same request forced onto node3's non-tunnel interface times out, consistent with the node2 ufw rule restricting port 8080 to node1's address only.",
+      "evidence_ids": [
+        "cmd-624851b1149a41b7",
+        "cmd-54d1f9cb8fcc42e0"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Implementation performed via Ansible",
+      "status": "satisfied",
+      "summary": "A self-contained Ansible project (/root/ansible: inventory, ansible.cfg, site.yml, and wg_server/wg_client/app/app_firewall roles) was executed via ansible-playbook from control node node4, with a full run and a targeted re-run both completing without failures on reachable hosts.",
+      "evidence_ids": [
+        "cmd-29f42e8df21741a3",
+        "cmd-1329e694776046ad",
+        "cmd-44b70421bc944375"
+      ]
+    },
+    {
+      "id": "R5",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (independent of task contract)",
+      "status": "partially_satisfied",
+      "summary": "node1, node3, and node4 each show a pre-restart boot ID and healthy baseline, a restart acknowledgement, a distinct post-restart boot ID, and recovered service/tunnel/app state. node2 could not be rebooted or re-verified at all: an executor-introduced ufw misconfiguration (enabling default-deny-incoming without first allowing port 22) permanently blocked the exec tool's SSH path to node2, confirmed by repeated timeouts from node1, node3, and node4, including after the other three nodes' restarts. This is a self-inflicted lockout, not a pre-existing platform constraint, and leaves node2's restart/persistence behavior unverified.",
+      "evidence_ids": [
+        "cmd-8f7994e2c16f4767",
+        "cmd-01b93b70aeef46b5",
+        "cmd-55cfad852411492c",
+        "cmd-9e715f74d562406b",
+        "cmd-5a2f91efc7944ecc",
+        "cmd-e1c3390667ed4e49",
+        "cmd-651949330a344503",
+        "cmd-3c1e83d0a3d24f0d",
+        "cmd-0ebb70c12c93448c",
+        "cmd-e76b9e2022564d2c",
+        "cmd-598be460154040e1",
+        "cmd-87f1eeeadc8045c7",
+        "cmd-674bb3ce07f34c79",
+        "cmd-06295d5937524da7",
+        "cmd-a5f408cf92234c87",
+        "cmd-c836f8ff7a1b4462",
+        "global:after_executor:node2:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the public task contract were achieved and directly verified via Ansible: node2 serves the demo app on TCP 8080, node1 terminates a WireGuard tunnel with node3 as client, node3 can reach node2:8080 only through that tunnel (direct access times out), and the whole setup was implemented and applied with an Ansible playbook. However, while implementing the node2 firewall restriction the executor enabled ufw without first allowlisting SSH, permanently locking the exec tool out of node2 with no recovery path. This is unrelated to the task's functional requirements (which were verified before the lockout) but is a severe, unresolved operational hygiene failure, and it also prevented the independent mandatory node-restart evidence protocol from being completed for node2 (node1, node3, and node4 all completed it successfully).",
+  "limitations": [
+    "node2's post-lockout state (whether the app and firewall rules persist across a reboot) could not be observed at all because SSH access was permanently blocked; this is an executor-caused gap, not a platform limitation.",
+    "The 'direct' reachability tests from node3 relied on binding to node3's own interface (--interface ens2) rather than an independent network path, since node3 has no LAN NIC per the topology; this is an adequate but indirect way to demonstrate tunnel-only access."
+  ],
+  "command_stats": {
+    "total": 111,
+    "successful": 81,
+    "failed": 30,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.72,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.9,
+  "operational_hygiene": {
+    "score": 0.2,
+    "summary": "The app_firewall role's final task ran `ufw --force enable` on node2 without first adding a port-22 allow rule (written in cmd-780ea528e7fc4620, executed as part of the full playbook run cmd-1329e694776046ad). This activated ufw's default-deny-incoming policy and immediately and permanently severed the exec tool's SSH access to node2, a broad and destructive, unresolved mutation with no available out-of-band recovery: repeated reconnection attempts from every other node (cmd-674bb3ce07f34c79, cmd-00cbf8866dbf4795, cmd-06295d5937524da7, cmd-24572b1b3c9348f8, cmd-a5f408cf92234c87, cmd-c836f8ff7a1b4462) and the after-executor lifecycle snapshot (global:after_executor:node2:boot-identity, return_code 255) all confirm node2 remains unreachable for management purposes. This is a serious, unrepaired self-inflicted outage of a managed node's administrative access, not merely a troubleshooting side-effect. Other state-changing actions (moving node1's VyOS ssh service to port 2222, adding cluster SSH keys, generating WireGuard keys, deploying the demo-app unit, creating/deleting a small test file on node1) were bounded, necessary prerequisites or were fully reverted, and are not penalized.",
+    "evidence_ids": [
+      "cmd-780ea528e7fc4620",
+      "cmd-1329e694776046ad",
+      "cmd-674bb3ce07f34c79",
+      "cmd-06295d5937524da7",
+      "cmd-c836f8ff7a1b4462",
+      "global:after_executor:node2:boot-identity"
+    ]
+  },
+  "reward": 0.9,
+  "provisional_reward": 0.9
+}

@@ -1,0 +1,91 @@
+{
+  "status": "completed",
+  "summary": "On node1, built a 2.15 GiB LVM logical volume (vgdata/lvdata) backed by two loop-mounted files (no spare block device existed on this VM), mounted it at /srv/data, grew it online from ~1000M to ~2.15G via vgextend+lvextend+xfs_growfs while it stayed mounted with data intact, made the setup boot-persistent (systemd loop-reattach unit + fstab dependency), and verified full recovery (changed boot_id, mount, LV size, checksums) across a real reboot of node1.",
+  "actions_performed": [
+    "Inspected node1 disks/partitions and found no spare block device or LVM tooling",
+    "Installed lvm2 via dnf",
+    "Created two sparse backing files under /var/lib/lvm-backing and attached them as loop devices (loop0, loop1)",
+    "pvcreate/vgcreate vgdata on loop0; lvcreate 1000M lvdata; mkfs.xfs; mounted at /srv/data",
+    "Wrote 3 random 20MB files and a sha256 checksum manifest into /srv/data",
+    "Added loop1 as a second PV, vgextend'd vgdata, lvextend'd lvdata by +1200M, and xfs_growfs'd it online (final size <2.15G) while still mounted",
+    "Verified checksums matched post-grow",
+    "Created /usr/local/sbin/setup-lvm-loops.sh and systemd unit lvm-loop-setup.service (WantedBy=sysinit.target) to reattach loop devices and activate vgdata at boot",
+    "Added /srv/data to /etc/fstab by UUID with x-systemd.requires=lvm-loop-setup.service; confirmed generated mount unit ordering",
+    "Captured pre-reboot boot_id, LV size, and checksum baseline",
+    "Issued systemctl reboot in background so the ack returned before disconnect, polled until node1 exec was reachable again",
+    "Confirmed boot_id changed, /srv/data auto-mounted with correct size, vgdata both PVs active, and checksums still verified OK"
+  ],
+  "evidence": [
+    {
+      "requirement": "LV mounted at /srv/data (initial creation)",
+      "command_ids": [
+        "cmd-b1c7ea4c5e7e4036"
+      ],
+      "summary": "pvcreate/vgcreate/lvcreate/mkfs.xfs/mount produced /dev/mapper/vgdata-lvdata mounted at /srv/data (936M)"
+    },
+    {
+      "requirement": "Contents present before growth (baseline data)",
+      "command_ids": [
+        "cmd-6479c2ec1c964ac9"
+      ],
+      "summary": "Wrote 3x20MB files and sha256 checksum manifest to /srv/data"
+    },
+    {
+      "requirement": "Grow LV to >=2GB while mounted",
+      "command_ids": [
+        "cmd-428dab7bf4d148be",
+        "cmd-056364bed23d485c"
+      ],
+      "summary": "vgextend with second loop PV, lvextend +1200M, xfs_growfs while /srv/data remained mounted; resulting size <2.15G"
+    },
+    {
+      "requirement": "Contents intact after growth",
+      "command_ids": [
+        "cmd-08713a6fed604aaa"
+      ],
+      "summary": "sha256sum -c against pre-growth manifest reported all files OK, mount confirmed still active"
+    },
+    {
+      "requirement": "Boot persistence setup (config only, not proof of restart)",
+      "command_ids": [
+        "cmd-009be8ec555e411a",
+        "cmd-eee0c2c1fbf8418d",
+        "cmd-db3f90d3ee7d40a6",
+        "cmd-c6052c3f60734386"
+      ],
+      "summary": "Created loop-reattach script/service and fstab entry; verified systemd generated correct Requires/After ordering for srv-data.mount"
+    },
+    {
+      "requirement": "Healthy baseline before restart (node1)",
+      "command_ids": [
+        "cmd-37db93ca5ea6477b"
+      ],
+      "summary": "Captured boot_id 377b5195..., LV size <2.15g, and checksum OK immediately before reboot"
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnect (node1)",
+      "command_ids": [
+        "cmd-8acf2a4ecb694900"
+      ],
+      "summary": "systemctl reboot launched via backgrounded nohup so the exec call returned 'reboot issued' before the node dropped"
+    },
+    {
+      "requirement": "Node1 restart proof via changed boot identity",
+      "command_ids": [
+        "cmd-cc363f9d93ab4ab2",
+        "cmd-caeadfe55c004416",
+        "cmd-90eb660d609f4e5f",
+        "cmd-35cec9b5aea944c6",
+        "cmd-05cd1992357e436e"
+      ],
+      "summary": "Connection timed out/reset during reboot, then exec succeeded again; boot_id changed from 377b5195-7fea-4219-a67b-044ef3f7ab99 to 2c39078e-edbc-4287-af4c-a23f8e113c4d, proving an actual restart"
+    },
+    {
+      "requirement": "Node1 post-restart recovery of service/data/membership",
+      "command_ids": [
+        "cmd-05cd1992357e436e"
+      ],
+      "summary": "After restart, /srv/data auto-mounted via systemd dependency chain, LV size still <2.15G, both PVs active in vgdata, and sha256sum -c reported all files OK"
+    }
+  ]
+}

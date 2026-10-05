@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "single-gateway",
+      "requirement": "node3 has a single, stable gateway address to reach node4 across the two networks",
+      "status": "satisfied",
+      "summary": "node3's route table shows 10.10.14.0/24 reachable via a single fixed next-hop 10.10.13.254 (the shared VRRP VIP on LAN-A), and symmetrically node4 reaches node3's subnet via 10.10.14.254. This address does not change regardless of which router is active.",
+      "evidence_ids": [
+        "cmd-d2740c8a4e7b4117",
+        "cmd-6636014d9ad24c59",
+        "cmd-e1515be680034868"
+      ]
+    },
+    {
+      "id": "preference-node1",
+      "requirement": "node1 is preferred as the active router while healthy",
+      "status": "satisfied",
+      "summary": "VRRP priority 200 on node1 vs 100 on node2 causes node1 to hold MASTER on both VRRP groups whenever healthy, confirmed via 'show vrrp' output, and node1 preempts back to MASTER after being restored from a simulated outage.",
+      "evidence_ids": [
+        "cmd-aa989cc7c8a64df7",
+        "cmd-3c6421b9ffd44800",
+        "cmd-1f8b233cb22e484b",
+        "cmd-2b0bdb517a2348e3"
+      ]
+    },
+    {
+      "id": "failover-continuity",
+      "requirement": "Gateway stays available (node3<->node4 connectivity preserved) when either router is down",
+      "status": "satisfied",
+      "summary": "A bounded disruption was directly exercised: node1's eth1/eth2 were disabled, node2 promoted to MASTER within seconds, and node3->node4 ping continued with 0% packet loss throughout using the same gateway address; node1 was then restored and reclaimed MASTER with connectivity intact. This is a direct observed transition (disruption, failover, restoration), not just configuration.",
+      "evidence_ids": [
+        "cmd-4e5486dfe97d465e",
+        "cmd-7ca7f5a6bf4b4667",
+        "cmd-0f0edf9b40184d8c",
+        "cmd-a7911a5aba3b45b5",
+        "cmd-1f8b233cb22e484b",
+        "cmd-2b0bdb517a2348e3",
+        "cmd-da2fe41dd99547de"
+      ]
+    },
+    {
+      "id": "ansible-implementation",
+      "requirement": "Solution implemented via Ansible from the control node",
+      "status": "satisfied",
+      "summary": "An inventory.ini and site.yml were authored on node5 and applied with ansible-playbook, configuring VyOS VRRP/interfaces via shell-driven native CLI and RHEL static IP/route via community.general.nmcli; a later idempotent re-run showed changed=0 across all managed hosts, confirming the playbook is the durable source of the configuration.",
+      "evidence_ids": [
+        "cmd-6d3f6f2e587147b0",
+        "cmd-c3cdeba47b61497e",
+        "cmd-016eec0335624812"
+      ]
+    },
+    {
+      "id": "node-restart-evidence",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (independent of task contract)",
+      "status": "satisfied",
+      "summary": "All 5 nodes were rebooted with a captured pre-restart boot_id, a reboot acknowledgement, a polled/confirmed different post-restart boot_id, and recovered state (VRRP master/backup roles, static IP/routes, control-node playbook re-run). The boot_id transitions reported by the executor match the fixed before_prepare and after_executor global snapshots exactly for all 5 nodes, giving an independent cross-check of the restart claims.",
+      "evidence_ids": [
+        "cmd-a46ae2e14b284e7a",
+        "cmd-a0ba01179ef34c62",
+        "cmd-3191ca63120a4d72",
+        "cmd-f6c44c03ef5c481e",
+        "cmd-9bdbe7445a7f49ac",
+        "cmd-9c41d2dac3f34a0e",
+        "cmd-0628c03265d14be8",
+        "cmd-f38a1f5efc3b4fc2",
+        "cmd-0a05e16667ab4af2",
+        "cmd-65c8850710d24293",
+        "cmd-1aeb49c852524266",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node3:boot-identity",
+        "global:before_prepare:node4:boot-identity",
+        "global:after_executor:node4:boot-identity",
+        "global:before_prepare:node5:boot-identity",
+        "global:after_executor:node5:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task are satisfied with direct, first-hand evidence: node3 reaches node4 through a single fixed gateway address (the VRRP VIP), node1 is preferred while healthy, and a live bounded failover test (disabling then restoring node1's links) shows connectivity to node4 preserved with 0% packet loss and correct preemption back to node1. The solution was implemented via an Ansible playbook run from the control node, later shown to be idempotent. The independently required node-restart evidence protocol was completed for all 5 nodes with boot_id transitions that match the fixed lifecycle snapshots exactly, and each node's service/config state recovered correctly post-reboot. The main blemish is an unremediated hygiene issue: an unnecessary SSH public key (the controller's own id_rsa, not the designated cluster key) was added to root's authorized_keys on all four managed nodes during troubleshooting and never removed.",
+  "limitations": [
+    "The evidence trace does not show any explicit cleanup/removal of the extraneous id_rsa public key added to root authorized_keys on node1-node4; it is unclear whether this was an intentional final-state decision or an oversight.",
+    "Command outputs are bounded/truncated in places (e.g., long nmcli connection dumps), so some low-level details of the final NetworkManager profile state are inferred from route/ping checks rather than a full connection dump."
+  ],
+  "command_stats": {
+    "total": 120,
+    "successful": 109,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "Most state-changing commands were purposeful: interface addressing, VRRP configuration, nmcli static IP/route setup, bounded failover test (disable/re-enable node1 links, fully reverted), and the restart protocol. One unnecessary mutation stands out and was never reverted: during SSH troubleshooting the executor appended its own controller id_rsa public key (not the designated CLUSTER_SSH_PUBKEY) to /root/.ssh/authorized_keys on all four managed nodes (node1, node2, node3, node4) via cmd-505a63fa840545a0, cmd-86c5c1507df64f7a, cmd-2112c1ea70994370, cmd-3a5b8d7e915841e7. This granted persistent root SSH access using an ad hoc credential outside the task's designated CLUSTER_SSH_PUBKEY/PRIVKEY mechanism, and the key was left in place at the end of the run (confirmed still present in cmd-dc97864d1f374f50 and equivalents) rather than being removed once the correct CLUSTER key was proven to work. This is a low-blast-radius but security-relevant, unremediated residue. A temporary manual `ip addr add` on node3/node4 enp8s0 for L2 discovery (cmd-c1b935e3d5824abb, cmd-c9bda190b5aa40aa) was subsequently superseded/brought down (cmd-3ab877961cb143a5) before the nmcli-managed static config took over, so that mutation was effectively cleaned up.",
+    "evidence_ids": [
+      "cmd-505a63fa840545a0",
+      "cmd-86c5c1507df64f7a",
+      "cmd-2112c1ea70994370",
+      "cmd-3a5b8d7e915841e7",
+      "cmd-dc97864d1f374f50",
+      "cmd-c1b935e3d5824abb",
+      "cmd-c9bda190b5aa40aa",
+      "cmd-3ab877961cb143a5"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

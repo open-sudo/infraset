@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-created",
+      "requirement": "Create a certificate authority named 'Fleet Internal CA' on node1",
+      "status": "satisfied",
+      "summary": "openssl req -x509 generated a self-signed 4096-bit RSA CA with subject/issuer CN=Fleet Internal CA, valid 2026-2036, on node1.",
+      "evidence_ids": [
+        "cmd-3fb692ffc3084cee"
+      ]
+    },
+    {
+      "id": "cert-issued",
+      "requirement": "Issue a TLS certificate for node2 signed by the CA",
+      "status": "satisfied",
+      "summary": "CSR for CN=node2 was generated and signed by the CA; resulting cert has subject CN=node2, SAN DNS:node2/IP:10.100.36.11, issuer Fleet Internal CA, confirmed by direct cert inspection.",
+      "evidence_ids": [
+        "cmd-73b7736b31af4814",
+        "cmd-7794e4b214344fd9"
+      ]
+    },
+    {
+      "id": "node2-https-8443",
+      "requirement": "Configure node2 to serve HTTPS on port 8443 using the issued certificate",
+      "status": "satisfied",
+      "summary": "A systemd-managed Python2/ssl server using the issued cert/key was enabled and active on node2, firewalld opened 8443/tcp, and curl from node1 with --cacert against the CA completed a TLS handshake (subject CN=node2, issuer Fleet Internal CA) and received HTTP 200. The after-executor lifecycle snapshot independently confirms python2 listening on *:8443 on node2, and this persisted after the mandated reboot.",
+      "evidence_ids": [
+        "cmd-08c3514ff9bc4dc1",
+        "cmd-0312efe2b7544dd9",
+        "cmd-7087befca8574b82",
+        "global:after_executor:node2:listening-sockets",
+        "cmd-1502be1af96046cc"
+      ]
+    },
+    {
+      "id": "ca-trust-node1",
+      "requirement": "Install the CA as a trusted system CA on node1",
+      "status": "satisfied",
+      "summary": "CA cert copied to /etc/pki/ca-trust/source/anchors and update-ca-trust extract run; trust list shows Fleet Internal CA as an anchor/authority; curl to node2:8443 succeeds without --cacert override, confirming system-wide trust.",
+      "evidence_ids": [
+        "cmd-051c13f49b9040e3",
+        "cmd-eb626d8ccf2147f2"
+      ]
+    },
+    {
+      "id": "ca-trust-node2",
+      "requirement": "Install the CA as a trusted system CA on node2",
+      "status": "satisfied",
+      "summary": "CA cert installed into node2's system trust anchors and update-ca-trust extract run; trust list confirms Fleet Internal CA as anchor/authority; local curl to https://node2:8443 succeeds with default trust store, no override needed.",
+      "evidence_ids": [
+        "cmd-7f3ae46279bb4a62",
+        "cmd-4fe4f6ccce6449f8"
+      ]
+    }
+  ],
+  "overall_summary": "All five material outcomes of the task contract are satisfied with direct evidence: a 'Fleet Internal CA' root CA was created on node1, a correctly-identified TLS certificate for node2 was issued and signed by that CA, node2 serves HTTPS on port 8443 using the issued certificate (verified via TLS handshake and independently confirmed by the after-executor listening-socket snapshot), and the CA is installed as a trusted system anchor on both node1 and node2 (verified via trust list and default-trust curl checks). The independently-required node-restart evidence protocol was also executed cleanly on both nodes: pre-restart boot-id/service/trust/HTTPS baselines were captured, shutdown -r now was acknowledged, boot IDs changed on both nodes, and post-restart recovery of the CA trust anchor, fleet-https.service (active+enabled), firewall port, and HTTPS 200 response was directly observed \u2014 cross-checked against the fixed lifecycle snapshots.",
+  "limitations": [
+    "Package-health checks were unavailable (timed out) in all lifecycle snapshots on both nodes, so native package-manager consistency cannot be independently verified, though no other evidence suggests package damage.",
+    "The after_prepare snapshot is an alias of before_prepare (prepare phase was disabled for this task), so preparer-vs-executor state separation relies entirely on the before_prepare/after_executor comparison, which showed no unexpected changes beyond those directly tied to the task and restart protocol."
+  ],
+  "command_stats": {
+    "total": 35,
+    "successful": 27,
+    "failed": 7,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Reviewed the full chronological command trace. The one failed state-changing attempt (yum install httpd mod_ssl, cmd-8f4c05bdc53b48be) did not succeed (no enabled repos) and left no residue \u2014 the executor correctly pivoted to a python2-based HTTPS server given the RHEL7 environment's lack of package repos, a reasonable equivalent implementation choice, not an unnecessary mutation. Adding node2 to /etc/hosts on node1 (cmd-36299e213d324457) and installing the cluster SSH key on node2 (cmd-e562a50f6cac4c88) were necessary prerequisites for cross-node cert transfer and verification. The mandatory node-restart protocol left a small /tmp/reboot.log on each node from the shutdown command's output redirect \u2014 low-risk, expected residue directly tied to the required restart evidence collection, not an abandoned artifact. No failed services, no damaged package state, no unsafe exposure, and no broad or destructive mutations were observed in either the command trace or the after-executor lifecycle comparison (only expected new listening socket on 8443 and boot-identity/PID changes from the reboot).",
+    "evidence_ids": [
+      "cmd-8f4c05bdc53b48be",
+      "cmd-36299e213d324457",
+      "cmd-e562a50f6cac4c88",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

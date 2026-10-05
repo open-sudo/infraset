@@ -1,0 +1,81 @@
+---
+- name: Create a local CA and install it as a trusted system CA
+  hosts: localhost
+  connection: local
+  become: true
+  vars:
+    ca_name: "OS Comparison Root CA"
+    ca_dir: /etc/ssl/os-comparison-ca
+    ca_key_path: /etc/ssl/os-comparison-ca/os-comparison-root-ca.key
+    ca_cert_path: /etc/ssl/os-comparison-ca/os-comparison-root-ca.pem
+    trust_cert_path: /usr/local/share/ca-certificates/os-comparison-root-ca.crt
+
+  tasks:
+    - name: Ensure CA directory exists
+      ansible.builtin.file:
+        path: "{{ ca_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Generate CA private key
+      community.crypto.openssl_privatekey:
+        path: "{{ ca_key_path }}"
+        type: RSA
+        size: 4096
+        mode: "0600"
+
+    - name: Create CA certificate signing request
+      community.crypto.openssl_csr:
+        path: /tmp/os-comparison-root-ca.csr
+        privatekey_path: "{{ ca_key_path }}"
+        common_name: "{{ ca_name }}"
+        basic_constraints:
+          - "CA:TRUE"
+        basic_constraints_critical: true
+        key_usage:
+          - keyCertSign
+          - cRLSign
+          - digitalSignature
+        key_usage_critical: true
+
+    - name: Self-sign the CA certificate
+      community.crypto.x509_certificate:
+        path: "{{ ca_cert_path }}"
+        privatekey_path: "{{ ca_key_path }}"
+        csr_path: /tmp/os-comparison-root-ca.csr
+        provider: selfsigned
+        selfsigned_not_after: "+3650d"
+        mode: "0644"
+
+    - name: Remove temporary CSR
+      ansible.builtin.file:
+        path: /tmp/os-comparison-root-ca.csr
+        state: absent
+
+    - name: Copy CA certificate into system trust source directory
+      ansible.builtin.copy:
+        src: "{{ ca_cert_path }}"
+        dest: "{{ trust_cert_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      register: ca_trust_copy
+
+    - name: Update system CA trust store
+      ansible.builtin.command: update-ca-certificates
+      when: ca_trust_copy.changed
+
+    - name: Verify the CA certificate is present in the system trust bundle
+      ansible.builtin.command: >-
+        awk -v cmd='openssl x509 -noout -subject' '/BEGIN CERTIFICATE/{close(cmd)}{print | cmd}' /etc/ssl/certs/ca-certificates.crt
+      register: trust_bundle_subjects
+      changed_when: false
+
+    - name: Assert the CA is one of the trusted subjects
+      ansible.builtin.assert:
+        that:
+          - "'OS Comparison Root CA' in trust_bundle_subjects.stdout"
+        fail_msg: "OS Comparison Root CA was not found in the system trust bundle"

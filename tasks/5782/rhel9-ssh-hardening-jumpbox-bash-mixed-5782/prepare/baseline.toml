@@ -1,0 +1,123 @@
+timeout_sec = 180
+
+[[observations]]
+id = "target-platform-and-security"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+. /etc/os-release
+printf '%s:%s\n' "$ID" "$VERSION_ID"
+test "$ID" = rhel
+case "$VERSION_ID" in 9|9.*) ;; *) exit 1 ;; esac
+test "$(getenforce)" = Enforcing
+systemctl is-active sshd.service
+systemctl is-enabled sshd.service
+'''
+required = true
+
+[[observations]]
+id = "prepared-target-identities"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+getent passwd opsadmin | cut -d: -f1,3,4,5,6,7
+getent passwd contractor | cut -d: -f1,3,4,5,6,7
+getent group ssh-access
+id opsadmin
+id contractor
+id -nG opsadmin | tr ' ' '\n' | grep -qx ssh-access
+! id -nG contractor | tr ' ' '\n' | grep -qx ssh-access
+'''
+required = true
+
+[[observations]]
+id = "prepared-target-state"
+stage = 10
+node = "node1"
+command = '''
+set -eu
+test "$(cat /home/opsadmin/prepared-state.txt)" = 'prepared opsadmin state: preserve'
+test "$(cat /home/contractor/prepared-state.txt)" = 'prepared contractor state: preserve'
+fixture_key="$(cat /var/lib/infraset-ssh-fixture/access-key.pub)"
+for file in /root/.ssh/authorized_keys /home/opsadmin/.ssh/authorized_keys /home/contractor/.ssh/authorized_keys; do
+  grep -qxF "$fixture_key" "$file"
+  stat -c '%U:%G:%a:%n' "$file"
+done
+actual_shadow_checksum="$({
+  getent shadow opsadmin | cut -d: -f1,2
+  getent shadow contractor | cut -d: -f1,2
+} | sha256sum | cut -d' ' -f1)"
+test "$actual_shadow_checksum" = "$(cat /var/lib/infraset-ssh-fixture/shadow.sha256)"
+'''
+required = true
+
+[[observations]]
+id = "prepared-jump-box"
+stage = 20
+node = "node2"
+command = '''
+set -eu
+. /etc/os-release
+printf '%s:%s\n' "$ID" "$VERSION_ID"
+test "$ID" = almalinux
+case "$VERSION_ID" in 9|9.*) ;; *) exit 1 ;; esac
+id sshprobe
+test -s /home/sshprobe/.ssh/id_ed25519
+test -s /home/sshprobe/.ssh/known_hosts
+test -x /home/sshprobe/.ssh/askpass
+ssh-keygen -lf /home/sshprobe/.ssh/id_ed25519.pub
+'''
+required = true
+
+[[observations]]
+id = "prepared-untrusted-client"
+stage = 20
+node = "node3"
+command = '''
+set -eu
+. /etc/os-release
+printf '%s:%s\n' "$ID" "$VERSION_ID"
+test "$ID" = almalinux
+case "$VERSION_ID" in 9|9.*) ;; *) exit 1 ;; esac
+id sshprobe
+test -s /home/sshprobe/.ssh/id_ed25519
+test -s /home/sshprobe/.ssh/known_hosts
+ssh-keygen -lf /home/sshprobe/.ssh/id_ed25519.pub
+'''
+required = true
+
+[[observations]]
+id = "prepared-access-preconditions"
+stage = 30
+node = "node2"
+command = '''
+set -eu
+for user in opsadmin contractor root; do
+  runuser -u sshprobe -- ssh \
+    -o BatchMode=yes \
+    -o IdentitiesOnly=yes \
+    -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile=/home/sshprobe/.ssh/known_hosts \
+    -i /home/sshprobe/.ssh/id_ed25519 \
+    "$user@node1" 'printf "%s:%s\n" "$(id -un)" "$(hostname -s)"'
+done
+'''
+required = true
+
+[[observations]]
+id = "prepared-firewall-precondition"
+stage = 30
+node = "node3"
+command = '''
+set -eu
+runuser -u sshprobe -- ssh \
+  -o BatchMode=yes \
+  -o IdentitiesOnly=yes \
+  -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=/home/sshprobe/.ssh/known_hosts \
+  -i /home/sshprobe/.ssh/id_ed25519 \
+  opsadmin@node1 'printf "%s:%s\n" "$(id -un)" "$(hostname -s)"'
+'''
+required = true

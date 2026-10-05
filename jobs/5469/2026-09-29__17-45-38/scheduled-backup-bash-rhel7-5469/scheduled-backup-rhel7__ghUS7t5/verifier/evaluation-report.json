@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Backup pulls /srv/inventory/data from node2 to node1",
+      "status": "satisfied",
+      "summary": "backup-inventory.sh SSHes into node2 and tars /srv/inventory/data; manual run produced an archive whose extracted contents matched the source CSVs on node2, and this was re-verified after both node reboots (SSH_OK, exit=0, new dated archive created).",
+      "evidence_ids": [
+        "cmd-5e3514aa805f4683",
+        "cmd-246cbebab8c64d57",
+        "cmd-fd1049485c044a57",
+        "cmd-12ee706d46394955",
+        "cmd-5f305742415b4916"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Dated archives stored under /var/backups/inventory on node1",
+      "status": "satisfied",
+      "summary": "Directory /var/backups/inventory created and owned by antrieb on node1; script writes inventory-data-YYYY-MM-DD.tar.gz there, confirmed both before and after the reboot cycle.",
+      "evidence_ids": [
+        "cmd-ea7857d9dedf4456",
+        "cmd-5e3514aa805f4683",
+        "cmd-fd1049485c044a57"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Runs nightly (scheduled, not just manual)",
+      "status": "satisfied",
+      "summary": "/etc/cron.d/backup-inventory installed with '0 2 * * * antrieb /usr/local/bin/backup-inventory.sh'; crond confirmed active before and after both node1 restarts.",
+      "evidence_ids": [
+        "cmd-fe4264c51a3f4e88",
+        "cmd-d7b39773a1874391",
+        "cmd-fd1049485c044a57"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Retain only the last 7 days of archives, pruning older ones",
+      "status": "satisfied",
+      "summary": "Script contains a retention loop keeping the 7 most recent archives. Executor seeded 8 dated archives (2026-08-19..08-26) and re-ran the script, which pruned the oldest (08-19) and left exactly 7, logged via journalctl. Pruning of the oldest remaining archive was also observed after each subsequent run (post-reboot runs pruned 08-20 then 08-21), confirming the logic holds under repeated execution.",
+      "evidence_ids": [
+        "cmd-db671caf60ab4bc3",
+        "cmd-8c3a75c35dbf4b5f",
+        "cmd-168de53abc1e419a",
+        "cmd-fd1049485c044a57",
+        "cmd-12ee706d46394955"
+      ]
+    },
+    {
+      "id": "R5",
+      "requirement": "Provider-wide node-restart evidence protocol on every managed node (independent of task contract)",
+      "status": "satisfied",
+      "summary": "For both node1 and node2: healthy pre-restart baseline (boot_id, uptime, service/data state) was captured, shutdown -r now was acknowledged (connection dropped, then timed-out polling), a different post-restart boot_id was observed, and recovered state was verified (crond active, cron file intact, SSH connectivity restored, source data hashes unchanged, backup script runs end-to-end, retention still enforced). Boot-identity values match exactly against the fixed before_prepare and after_executor global snapshots for both nodes, cross-confirming the transition.",
+      "evidence_ids": [
+        "cmd-d7b39773a1874391",
+        "cmd-fa3ad1a497884924",
+        "cmd-56c5e67e73354e83",
+        "cmd-84eec194c5014042",
+        "cmd-63761b9abfb340c7",
+        "cmd-fd1049485c044a57",
+        "cmd-eb693651befa4f9f",
+        "cmd-cec33a9ddb7b4183",
+        "cmd-7224bad0f7524fa8",
+        "cmd-5f305742415b4916",
+        "cmd-12ee706d46394955"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the backup task (pull from node2, dated archives under /var/backups/inventory on node1, nightly cron schedule, 7-day retention/pruning) are satisfied with direct before/after evidence, including after a full reboot cycle on both nodes. The independent node-restart evidence protocol is also satisfied for both node1 and node2, with boot-identity changes cross-confirmed by the fixed lifecycle snapshots and full service/data/pipeline recovery demonstrated afterward. The main quality concerns are two moderate, non-destructive mutations used to make the task testable/verifiable (synthetic source data creation on node2, and synthetic dated-archive copies used to exercise retention) that were not cleaned up, plus a small amount of harmless /tmp residue.",
+  "limitations": [
+    "Source data at /srv/inventory/data on node2 did not pre-exist and was fabricated by the executor; the backup pipeline is only proven against synthetic sample data, not real production inventory data.",
+    "7-day retention was validated by copying/renaming the single real archive under 7 fabricated past dates rather than observing 7 genuine nightly cron runs; these synthetic archive files remain in /var/backups/inventory at the end of the run.",
+    "Because the actual 02:00 cron job was never observed firing on its own schedule (only manual sudo -u antrieb invocations), true unattended nightly execution is inferred from the installed cron file and active crond service rather than directly observed."
+  ],
+  "command_stats": {
+    "total": 34,
+    "successful": 25,
+    "failed": 9,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "Most state-changing commands were clearly tied to setting up and verifying the pipeline (SSH keypair, /etc/hosts entry needed because ssh could not resolve node2, /var/backups/inventory, script, cron file). Two mutations are more questionable. (1) cmd-b8a3412dbd4e47ef fabricated the source data (/srv/inventory/data and sample CSVs) on node2 because it did not pre-exist; this was arguably necessary to make the pipeline testable at all, but it is a mutation to a path the task assumed already had real data, and it remains in place. (2) cmd-db671caf60ab4bc3 copied the single real archive under 7 fabricated past dates to simulate 8 days of history and test pruning; these synthetic archives (renamed with touch -d) remained mixed in with the one genuine archive at the end of the run rather than being cleaned up, leaving non-authentic dated files in the production backup directory. Both were bounded, low-risk, and non-destructive, but neither was reverted. Minor low-risk residue also remains: /tmp/reboot.log on both nodes and /tmp/verify/ extraction files on node1, none of which pose security or stability concerns. No failed services, no weakened security controls, no unresolved errors in the final state.",
+    "evidence_ids": [
+      "cmd-b8a3412dbd4e47ef",
+      "cmd-db671caf60ab4bc3",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "cmd-5e3568c16a9d4919"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Enable a persistent host firewall on node1 (survives reboot, active on startup)",
+      "status": "satisfied",
+      "summary": "ufw was enabled with 'ufw --force enable' and systemctl is-active/is-enabled confirms active+enabled; after node1's reboot the same ruleset was intact (cmd-156e2566bb5043b8) confirming persistence across a real reboot cycle.",
+      "evidence_ids": [
+        "cmd-ac5c5e08c8884da4",
+        "cmd-197f70d410f64b74",
+        "cmd-340f6be9ceee4bd7",
+        "cmd-156e2566bb5043b8",
+        "cmd-e2b83c07edd94a8b"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Allow SSH from any address on node1",
+      "status": "not_satisfied",
+      "summary": "The ufw rule for 22/tcp allow-anywhere was correctly configured and functionally verified twice mid-task (cmd-fd6df5d6af0846cf, cmd-1aac7e721dff44ec, cmd-abe31b1dd9c24fdc). However the fixed after_executor lifecycle snapshot, captured at 00:17:18 (after all executor commands finished, ~36s after the last SSH check), directly shows ssh.service and ssh.socket in the FAILED state on node1 and no process listening on tcp/22 (0.0.0.0:22 and [::]:22 are present in the baseline listening-socket set but absent from after_executor). This is the most final, directly-observed state and contradicts the executor's claim of a working SSH-reachable node1; sshd being down means SSH is not actually reachable regardless of the firewall rule.",
+      "evidence_ids": [
+        "global:after_executor:node1:failed-services",
+        "global:after_executor:node1:listening-sockets",
+        "global:before_prepare:node1:listening-sockets",
+        "cmd-abe31b1dd9c24fdc"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Allow TCP port 9000 only from node2",
+      "status": "satisfied",
+      "summary": "ufw rule scopes 9000/tcp to 10.100.49.11 (node2) only; functionally verified before and after node1's reboot and again after node2's own reboot that node2 can connect to node1:9000.",
+      "evidence_ids": [
+        "cmd-ac5c5e08c8884da4",
+        "cmd-fd6df5d6af0846cf",
+        "cmd-b1ba01d261c74b11",
+        "cmd-c671e4cf07c24714"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Reject TCP port 9000 from node3 and everywhere else",
+      "status": "satisfied",
+      "summary": "ufw reject rule for 9000/tcp anywhere (catching node3 and all other sources) was configured and functionally verified with node3 receiving 'connection refused' both before node1's reboot and after node3's own reboot.",
+      "evidence_ids": [
+        "cmd-ac5c5e08c8884da4",
+        "cmd-1aac7e721dff44ec",
+        "cmd-4b25f0c0a5624af2",
+        "cmd-abe31b1dd9c24fdc"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Provider-wide node-restart evidence protocol on all managed nodes (pre/post boot identity, restart ack, recovered state)",
+      "status": "partially_satisfied",
+      "summary": "All three nodes show a clean pre-restart boot_id, a restart acknowledgement, a different post-restart boot_id, and (for the firewall/data-plane behavior) recovered functional state was re-verified via nc tests. This satisfies boot-identity transition and functional re-verification for the firewall/ports on node1, and connectivity re-checks for node2 and node3. However, the fixed after_executor snapshot shows node1's ssh.service/ssh.socket in a failed state at the very end, which is inconsistent with a fully 'recovered' node1 and was not caught or explained by the executor's own post-restart checks (which only re-tested port 9000, not SSH, immediately after node1's reboot).",
+      "evidence_ids": [
+        "cmd-197f70d410f64b74",
+        "cmd-a40a9d7c0f344d2a",
+        "cmd-50f61f41976c46e3",
+        "cmd-7e2e47a8113d4492",
+        "cmd-340f6be9ceee4bd7",
+        "cmd-156e2566bb5043b8",
+        "cmd-4c4adaa358144703",
+        "cmd-e553dd0c47904fa5",
+        "cmd-f9dc806a3cd44302",
+        "cmd-98504a1e8a744461",
+        "global:after_executor:node1:failed-services"
+      ]
+    }
+  ],
+  "overall_summary": "The firewall rules themselves (SSH allow-anywhere, 9000 scoped to node2, 9000 rejected elsewhere, persistent via ufw) were correctly configured and functionally verified across restarts of all three nodes. However, the final directly-observed system state (after_executor snapshot) shows node1's ssh.service and ssh.socket as failed with port 22 no longer listening \u2014 directly contradicting the requirement that SSH remain reachable from any address, and contradicting the executor's own claim of a fully healthy final state. This discrepancy was not caught by the executor because its last SSH check occurred ~36 seconds before the final snapshot. Port-9000 scoping and rejection behavior are solidly verified. Minor residue (uninstalled test package, leftover nc log files) also remains.",
+  "limitations": [
+    "The cause of node1's ssh.service/ssh.socket failure at the final snapshot is not established from the evidence \u2014 no executor command explicitly stopped or modified sshd, so it could be an environmental artifact of the reboot process or ufw interaction, but it cannot be ruled out as executor-caused.",
+    "No evidence captures whether ssh.service recovered after the after_executor snapshot, since that is the last observation in the record.",
+    "The executor's post-node1-reboot verification only re-tested port 9000 connectivity from node2/node3, not SSH itself, so the intermediate 'SSH reachable' claim for that specific window relies on a broader test taken later from node3 (cmd-abe31b1dd9c24fdc), not a dedicated node1-reboot SSH check."
+  ],
+  "command_stats": {
+    "total": 32,
+    "successful": 27,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.55,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.7,
+  "operational_hygiene": {
+    "score": 0.45,
+    "summary": "Executor installed netcat-openbsd on node1 (cmd-9f429afb4b2e4cab) to run test listeners; this package remains installed with no removal step, a minor unremoved mutation. Temporary nc log files (/tmp/nc9000-2.log, /tmp/nc9000-3.log) were left behind on node1 per the after_executor temp-files diff, despite the executor's summary claiming cleanup \u2014 only the running nc process/PID was killed each time (cmd-fd66c534ce7e4e56, cmd-8013653824a7413f, cmd-e2b83c07edd94a8b), not the log files. Most significantly, the fixed after_executor snapshot shows ssh.service and ssh.socket in a failed state on node1 with port 22 no longer listening \u2014 a serious, unexplained regression that appeared sometime after the executor's last successful SSH check (cmd-abe31b1dd9c24fdc) and before the final collector snapshot. No executor command explicitly targets sshd, so causation is unclear, but this is exactly the kind of final-state defect operational hygiene should surface rather than dismiss as pre-existing, since node1 was healthy (SSH listening) at before_prepare.",
+    "evidence_ids": [
+      "cmd-9f429afb4b2e4cab",
+      "cmd-fd66c534ce7e4e56",
+      "cmd-8013653824a7413f",
+      "cmd-e2b83c07edd94a8b",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 0.7,
+  "provisional_reward": 0.7
+}

@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on port 8443 on node1",
+      "status": "satisfied",
+      "summary": "nginx configured with an 8443 ssl server block; ss shows LISTEN on *:8443 and [::]:8443; curl over TLS returns HTTP 200 with a valid handshake.",
+      "evidence_ids": [
+        "cmd-1021e215ca904a81",
+        "cmd-4f793db1f0484cae"
+      ]
+    },
+    {
+      "id": "auto-renewal-before-expiry",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A systemd timer (cert-renew.timer, 20s interval) runs a checkend-based renewal script. The renewal log shows two automatic renewals during the pre-reboot window (serial 1000->1001 at 03:51:25, well before the 03:53:18 expiry) and a further automatic renewal post-reboot (1001->1002 at 03:53:44, before the 03:55:25 expiry), directly observed without manual intervention.",
+      "evidence_ids": [
+        "cmd-f3af72ed096348fd",
+        "cmd-01d415632d1e445e",
+        "cmd-c9e3c2b497f84e89",
+        "cmd-3d1a4ca247014361"
+      ]
+    },
+    {
+      "id": "hitless-cert-pickup",
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no downtime)",
+      "status": "satisfied",
+      "summary": "A continuous curl loop (53 samples, one every ~2s) captured the served certificate serial transitioning from 1000 to 1001 mid-run with HTTP 200 on every sample and zero failures; nginx error log shows a clean 'signal process started' (reload) rather than a restart coincident with the renewal.",
+      "evidence_ids": [
+        "cmd-c9e3c2b497f84e89",
+        "cmd-ca3d881dd41d45a7"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1 (pre-restart baseline, restart ack, changed boot identity, recovered state)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 2b3a8d87..., active/enabled nginx and timer, valid cert, and curl 200. Reboot was launched via a backgrounded delayed command that returned an ack before the connection dropped, confirmed by a subsequent connection-refused poll. Post-restart polling showed a new boot_id (02548236...) and uptime '0 min'. Recovery was verified: nginx and the timer active/enabled, cert files and renewal log intact, curl 200, and a further automatic renewal occurred after reboot, confirming the pipeline persists across restart. This is corroborated by the fixed lifecycle boot-identity observations (before_prepare vs after_executor), which independently show the same boot_id change.",
+      "evidence_ids": [
+        "cmd-ec2aef8f1f504edc",
+        "cmd-979f81c2c1ba4342",
+        "cmd-22e644cca8b64441",
+        "cmd-7b243e37a4d84169",
+        "cmd-753096b8a5a744c8",
+        "cmd-3d1a4ca247014361",
+        "cmd-31bb9b32960a4762"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes are directly satisfied with observed, not merely claimed, evidence: nginx serves TLS on 8443, a local-CA-backed systemd timer renews the short-lived certificate before each expiry, and a continuous curl loop demonstrates zero-downtime pickup of the new certificate via nginx reload (not restart). The independent node-restart protocol was also fully and correctly demonstrated for node1 \u2014 pre-restart baseline, prompt reboot acknowledgement, a genuinely different post-restart boot_id (cross-checked against the fixed lifecycle snapshots), and full recovery of nginx, the timer, certs, and the renewal log, plus one more automatic renewal observed after reboot. Hygiene is good; the only blemish is a leftover debug log file in /tmp, which is trivial.",
+  "limitations": [
+    "The renewal/reload evidence covers a short observation window (~4 minutes plus a brief post-reboot check) using an artificially short 240s cert lifetime and 20s timer cadence chosen to make renewal observable within task time bounds; this validates the mechanism but doesn't directly demonstrate behavior over longer production-scale certificate lifetimes.",
+    "The curl loop used a single client sampling every ~2s; sub-second request continuity during the exact reload instant was not measured, though nginx's error log confirms a graceful reload (signal process started) rather than a service restart."
+  ],
+  "command_stats": {
+    "total": 27,
+    "successful": 22,
+    "failed": 4,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Reviewing the executor timeline chronologically, all state-changing commands map clearly to task prerequisites (nginx install, local CA setup, cert-issuance/renewal scripts, 8443 vhost, systemd timer) or to the mandatory node-restart protocol (systemctl reboot) and its bounded evidence collection (background curl loop, later killed via cmd-45693f673130434d). No unnecessary or unexplained mutations, troubleshooting experiments, or unresolved failed services were found; failed-services and listening-sockets diagnostics before/after show no residue there. One minor artifact remains: /tmp/issue-cert.log (a debug log from issue-cert.sh) is present in the after-executor temporary-files snapshot and was never cleaned up, a small, low-risk, non-sensitive residue rather than a functional or security issue. The one command failure (cmd-4b1e9c09c0d84c47) was a read-only diagnostic that hit a 120s proxy timeout during a 130s sleep-and-check probe; it caused no state change and was immediately followed by a successful equivalent check (cmd-3d1a4ca247014361), so it does not indicate a real problem.",
+    "evidence_ids": [
+      "cmd-45693f673130434d",
+      "global:after_executor:node1:temporary-files",
+      "cmd-4b1e9c09c0d84c47",
+      "cmd-3d1a4ca247014361",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

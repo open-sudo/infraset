@@ -1,0 +1,312 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 25,
+    "successful": 16,
+    "failed": 9,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "inventory-worker is a managed, long-running service confined to /var/lib/inventory and unable to gain new privileges",
+      "command_ids": [
+        "cmd-cf180b43c5c94d61",
+        "cmd-522156b8321347af"
+      ],
+      "summary": "Service was active and enabled, its log advanced over time, outside-path probes were blocked, its process root matched /var/lib/inventory, NoNewPrivs was 1, and CapBnd was zero."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-522156b8321347af",
+        "cmd-adb221d78fd84d12",
+        "cmd-7d43b29a70a44510",
+        "cmd-63a8364bb2bf4b5b"
+      ],
+      "summary": "Captured healthy baseline boot ID 0571f4dd-60b7-4601-9295-e4eebe622784, acknowledged the reboot, observed new boot ID acfc29b8-9d45-40be-b34f-9bd393ac5fae, and confirmed the service, confinement, security flags, and persistent advancing data recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-20a0ef76b17e4e86",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:41:28.854337+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2068,
+      "command": "set -eu\nprintf 'os='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nprintf 'init='; ps -p 1 -o comm=\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'systemd='; systemctl --version | head -1\nprintf 'existing_unit='; systemctl status inventory-worker --no-pager 2>&1 | head -12 || true\nprintf 'paths:\\n'; ls -ld /var/lib/inventory /usr/local/libexec 2>&1 || true",
+      "stdout": "os=rhel 7.9\ninit=systemd\nboot_id=0571f4dd-60b7-4601-9295-e4eebe622784\nsystemd=systemd 219\nexisting_unit=Unit inventory-worker.service could not be found.\npaths:\nls: cannot access /var/lib/inventory: No such file or directory\ndrwxr-xr-x. 2 root root 6 Dec 14  2017 /usr/local/libexec\n"
+    },
+    {
+      "command_id": "cmd-4a05af7f02e041df",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:41:52.634184+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 127,
+      "duration_ms": 1634,
+      "command": "set -eu\nif ! getent group inventory-worker >/dev/null 2>&1; then groupadd -r inventory-worker; fi\nif ! id inventory-worker >/dev/null 2>&1; then useradd -r -g inventory-worker -d /var/lib/inventory -s /sbin/nologin inventory-worker; fi\ninstall -d -o inventory-worker -g inventory-worker -m 0750 /var/lib/inventory\ncat > /usr/local/libexec/inventory-worker <<'INVENTORY_WORKER_EOF'\n#!/bin/sh\nset -u\numask 027\nprobe() {\n    target=$1\n    label=$2\n    if (: > \"$target\") 2>/dev/null; then\n        printf 'UNEXPECTED_WRITE_ALLOWED %s\\n' \"$label\" >> /var/lib/inventory/sandbox-check.log\n        rm -f \"$target\"\n    else\n        printf 'write_blocked %s\\n' \"$label\" >> /var/lib/inventory/sandbox-check.log\n    fi\n}\n: > /var/lib/inventory/sandbox-check.log\nprobe /tmp/inventory-worker-escape tmp\nprobe /var/tmp/inventory-worker-escape var_tmp\nprobe /etc/inventory-worker-escape etc\nprintf 'write_allowed inventory_dir\\n' >> /var/lib/inventory/sandbox-check.log\nwhile :; do\n    printf '%s inventory scan complete\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" >> /var/lib/inventory/worker.log\n    sleep 5\ndone\nINVENTORY_WORKER_EOF\nchown root:root /usr/local/libexec/inventory-worker\nchmod 0755 /usr/local/libexec/inventory-worker\ncat > /etc/systemd/system/inventory-worker.service <<'INVENTORY_UNIT_EOF'\n[Unit]\nDescription=Inventory background worker\nAfter=local-fs.target\n\n[Service]\nType=simple\nUser=inventory-worker\nGroup=inventory-worker\nExecStart=/usr/local/libexec/inventory-worker\nRestart=always\nRestartSec=2s\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nReadOnlyDirectories=/\nReadWriteDirectories=/var/lib/inventory\nInaccessibleDirectories=/tmp /var/tmp /dev/shm /run /home /root\n\n[Install]\nWantedBy=multi-user.target\nINVENTORY_UNIT_EOF\nsystemctl daemon-reload\nsystemctl enable inventory-worker.service\nsystemctl start inventory-worker.service\nsystemctl is-active inventory-worker.service\nsystemctl is-enabled inventory-worker.service",
+      "stderr": "bash: line 1: groupadd: command not found\n"
+    },
+    {
+      "command_id": "cmd-9e87f08434984ba5",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:41:57.834238+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1682,
+      "command": "set -eu\nprintf 'uid='; id -u\nprintf 'path=%s\\n' \"$PATH\"\nprintf 'account_tools:\\n'; ls -l /usr/sbin/groupadd /usr/sbin/useradd /sbin/groupadd /sbin/useradd 2>&1 || true\nprintf 'alternatives:\\n'; command -v adduser || true; command -v busybox || true\nprintf 'existing_accounts:\\n'; getent passwd inventory-worker || true; getent group inventory-worker || true",
+      "stdout": "uid=1000\npath=/usr/local/bin:/usr/bin\naccount_tools:\n-rwxr-xr-x. 1 root root  87704 May  3  2019 /sbin/groupadd\n-rwxr-xr-x. 1 root root 137616 May  3  2019 /sbin/useradd\n-rwxr-xr-x. 1 root root  87704 May  3  2019 /usr/sbin/groupadd\n-rwxr-xr-x. 1 root root 137616 May  3  2019 /usr/sbin/useradd\nalternatives:\nexisting_accounts:\n"
+    },
+    {
+      "command_id": "cmd-e19bdbbd717c4296",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:42:04.104299+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1885,
+      "command": "set -eu\ncommand -v sudo\nsudo -n id\nsudo -n systemctl is-system-running 2>/dev/null || true",
+      "stdout": "/usr/bin/sudo\nuid=0(root) gid=0(root) groups=0(root) context=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023\nrunning\n"
+    },
+    {
+      "command_id": "cmd-eb19394826e14131",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:42:15.541038+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2102,
+      "command": "sudo -n /bin/sh <<'ROOT_SETUP_EOF'\nset -eu\nif ! getent group inventory-worker >/dev/null 2>&1; then /usr/sbin/groupadd -r inventory-worker; fi\nif ! id inventory-worker >/dev/null 2>&1; then /usr/sbin/useradd -r -g inventory-worker -d /var/lib/inventory -s /sbin/nologin inventory-worker; fi\ninstall -d -o inventory-worker -g inventory-worker -m 0750 /var/lib/inventory\ncat > /usr/local/libexec/inventory-worker <<'INVENTORY_WORKER_EOF'\n#!/bin/sh\nset -u\numask 027\nprobe() {\n    target=$1\n    label=$2\n    if (: > \"$target\") 2>/dev/null; then\n        printf 'UNEXPECTED_WRITE_ALLOWED %s\\n' \"$label\" >> /var/lib/inventory/sandbox-check.log\n        rm -f \"$target\"\n    else\n        printf 'write_blocked %s\\n' \"$label\" >> /var/lib/inventory/sandbox-check.log\n    fi\n}\n: > /var/lib/inventory/sandbox-check.log\nprobe /tmp/inventory-worker-escape tmp\nprobe /var/tmp/inventory-worker-escape var_tmp\nprobe /etc/inventory-worker-escape etc\nprintf 'write_allowed inventory_dir\\n' >> /var/lib/inventory/sandbox-check.log\nwhile :; do\n    printf '%s inventory scan complete\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" >> /var/lib/inventory/worker.log\n    sleep 5\ndone\nINVENTORY_WORKER_EOF\nchown root:root /usr/local/libexec/inventory-worker\nchmod 0755 /usr/local/libexec/inventory-worker\ncat > /etc/systemd/system/inventory-worker.service <<'INVENTORY_UNIT_EOF'\n[Unit]\nDescription=Inventory background worker\nAfter=local-fs.target\n\n[Service]\nType=simple\nUser=inventory-worker\nGroup=inventory-worker\nExecStart=/usr/local/libexec/inventory-worker\nRestart=always\nRestartSec=2s\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nReadOnlyDirectories=/\nReadWriteDirectories=/var/lib/inventory\nInaccessibleDirectories=/tmp /var/tmp /dev/shm /run /home /root\n\n[Install]\nWantedBy=multi-user.target\nINVENTORY_UNIT_EOF\nsystemctl daemon-reload\nsystemctl enable inventory-worker.service\nsystemctl start inventory-worker.service\nsystemctl is-active inventory-worker.service\nsystemctl is-enabled inventory-worker.service\nROOT_SETUP_EOF",
+      "stdout": "active\nenabled\n",
+      "stderr": "Created symlink from /etc/systemd/system/multi-user.target.wants/inventory-worker.service to /etc/systemd/system/inventory-worker.service.\n"
+    },
+    {
+      "command_id": "cmd-b835bd92e2fb4de9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:42:23.138644+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 770,
+      "command": "set -eu\npid=$(systemctl show -p MainPID --value inventory-worker.service)\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service='; systemctl is-active inventory-worker.service\nprintf 'enabled='; systemctl is-enabled inventory-worker.service\nprintf 'main_pid=%s\\n' \"$pid\"\nprintf 'process='; ps -o user=,group=,pid=,etime=,args= -p \"$pid\"\nprintf 'security_status:\\n'; sed -n '/^NoNewPrivs:/p;/^CapBnd:/p' \"/proc/$pid/status\"\nprintf 'unit_security_properties:\\n'; systemctl show inventory-worker.service -p User -p Group -p NoNewPrivileges -p CapabilityBoundingSet -p ReadOnlyDirectories -p ReadWriteDirectories -p InaccessibleDirectories\nprintf 'sandbox_probe:\\n'; sudo -n cat /var/lib/inventory/sandbox-check.log\nprintf 'worker_data:\\n'; sudo -n tail -3 /var/lib/inventory/worker.log\nprintf 'escape_files='; for f in /tmp/inventory-worker-escape /var/tmp/inventory-worker-escape /etc/inventory-worker-escape; do [ ! -e \"$f\" ] || printf '%s ' \"$f\"; done; printf 'none\\n'",
+      "stderr": "systemctl: unrecognized option '--value'\n"
+    },
+    {
+      "command_id": "cmd-50a85d6a05414e7e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:42:30.970737+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2062,
+      "command": "set -eu\npid=$(systemctl show -p MainPID inventory-worker.service | cut -d= -f2)\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service='; systemctl is-active inventory-worker.service\nprintf 'enabled='; systemctl is-enabled inventory-worker.service\nprintf 'main_pid=%s\\n' \"$pid\"\nprintf 'process='; ps -o user=,group=,pid=,etime=,args= -p \"$pid\"\nprintf 'security_status:\\n'; sed -n '/^NoNewPrivs:/p;/^CapBnd:/p' \"/proc/$pid/status\"\nprintf 'unit_security_properties:\\n'; systemctl show inventory-worker.service -p User -p Group -p NoNewPrivileges -p CapabilityBoundingSet -p ReadOnlyDirectories -p ReadWriteDirectories -p InaccessibleDirectories\nprintf 'sandbox_probe:\\n'; sudo -n cat /var/lib/inventory/sandbox-check.log\nprintf 'worker_data:\\n'; sudo -n tail -3 /var/lib/inventory/worker.log\nprintf 'escape_files='; found=0; for f in /tmp/inventory-worker-escape /var/tmp/inventory-worker-escape /etc/inventory-worker-escape; do if [ -e \"$f\" ]; then printf '%s ' \"$f\"; found=1; fi; done; if [ \"$found\" -eq 0 ]; then printf 'none'; fi; printf '\\n'",
+      "stdout": "boot_id=0571f4dd-60b7-4601-9295-e4eebe622784\nservice=active\nenabled=enabled\nmain_pid=1940\nprocess=,group=,pid=,etime=,args=\ninventory-worker\nsecurity_status:\nCapBnd:\t0000000000000000\nNoNewPrivs:\t1\nunit_security_properties:\nCapabilityBoundingSet=0\nUser=inventory-worker\nGroup=inventory-worker\nReadWriteDirectories=/var/lib/inventory\nReadOnlyDirectories=/\nInaccessibleDirectories=/tmp /var/tmp /dev/shm /run /home /root\nNoNewPrivileges=yes\nsandbox_probe:\nUNEXPECTED_WRITE_ALLOWED tmp\nUNEXPECTED_WRITE_ALLOWED var_tmp\nwrite_blocked etc\nwrite_allowed inventory_dir\nworker_data:\n2026-08-26T14:36:38Z inventory scan complete\n2026-08-26T14:36:43Z inventory scan complete\n2026-08-26T14:36:48Z inventory scan complete\nescape_files=none\n"
+    },
+    {
+      "command_id": "cmd-e7058b4af4c44fc3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:42:44.543159+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2235,
+      "command": "set -eu\npid=$(systemctl show -p MainPID inventory-worker.service | cut -d= -f2)\nprintf 'service_status:\\n'; systemctl status inventory-worker.service --no-pager -l | head -25\nprintf 'journal_warnings:\\n'; sudo -n journalctl -u inventory-worker.service -b --no-pager | tail -30\nprintf 'mount_namespace_ids:\\n'; sudo -n readlink /proc/1/ns/mnt; sudo -n readlink \"/proc/$pid/ns/mnt\"\nprintf 'worker_view_paths:\\n'; sudo -n /usr/bin/nsenter -t \"$pid\" -m -- ls -ld / /tmp /var/tmp /etc /var/lib/inventory\nprintf 'relevant_mounts:\\n'; sudo -n /usr/bin/nsenter -t \"$pid\" -m -- mount | grep -E ' on /($| )| on /(tmp|var/tmp|etc|var/lib/inventory) ' || true",
+      "stdout": "service_status:\n\u25cf inventory-worker.service - Inventory background worker\n   Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; vendor preset: disabled)\n   Active: active (running) since Wed 2026-08-26 10:36:32 EDT; 28s ago\n Main PID: 1940 (inventory-worke)\n   CGroup: /system.slice/inventory-worker.service\n           \u251c\u25001940 /bin/sh /usr/local/libexec/inventory-worker\n           \u2514\u25002026 sleep 5\njournal_warnings:\n-- Logs begin at Wed 2026-08-26 10:34:10 EDT, end at Wed 2026-08-26 10:37:01 EDT. --\nAug 26 10:36:32 node1 systemd[1]: Started Inventory background worker.\nmount_namespace_ids:\nmnt:[4026531840]\nmnt:[4026532386]\nworker_view_paths:\ndr-xr-xr-x. 18 root             root              236 Aug 26 10:34 /\ndrwxr-xr-x. 76 root             root             8192 Aug 26 10:36 /etc\ndrwxrwxrwt.  8 root             root              191 Aug 26 10:36 /tmp\ndrwxr-x---.  2 inventory-worker inventory-worker   49 Aug 26 10:36 /var/lib/inventory\ndrwxrwxrwt.  3 root             root               85 Aug 26 10:36 /var/tmp\nrelevant_mounts:\n/dev/vda3 on / type xfs (rw,relatime,seclabel,attr2,inode64,noquota)\n"
+    },
+    {
+      "command_id": "cmd-aeb1653477aa4539",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:43:12.261207+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 1725,
+      "command": "sudo -n /bin/sh <<'CHROOT_SETUP_EOF'\nset -eu\nsystemctl stop inventory-worker.service\ninstall -d -o root -g inventory-worker -m 0750 /var/lib/inventory\ninstall -d -o inventory-worker -g inventory-worker -m 0750 /var/lib/inventory/data\nfor f in /var/lib/inventory/worker.log /var/lib/inventory/sandbox-check.log; do\n    if [ -f \"$f\" ]; then mv \"$f\" /var/lib/inventory/data/; fi\ndone\ninstall -d -o root -g root -m 0755 /var/lib/inventory/bin /var/lib/inventory/usr /var/lib/inventory/usr/bin /var/lib/inventory/lib /var/lib/inventory/lib64\ncp -a /bin/bash /var/lib/inventory/bin/bash\ncp -a /usr/bin/date /var/lib/inventory/usr/bin/date\ncp -a /usr/bin/sleep /var/lib/inventory/usr/bin/sleep\nldd /bin/bash /usr/bin/date /usr/bin/sleep | awk '/=> \\// {print $3} /^\\// {print $1}' | sort -u | while read lib; do cp -a --parents \"$lib\" /var/lib/inventory; done\ncat > /var/lib/inventory/worker <<'INVENTORY_CHROOT_WORKER_EOF'\n#!/bin/bash\nset -u\numask 027\nPATH=/usr/bin:/bin\nprobe() {\n    target=$1\n    label=$2\n    if (: > \"$target\") 2>/dev/null; then\n        printf 'UNEXPECTED_WRITE_ALLOWED %s\\n' \"$label\" >> /data/sandbox-check.log\n        rm -f \"$target\"\n    else\n        printf 'write_blocked %s\\n' \"$label\" >> /data/sandbox-check.log\n    fi\n}\n: > /data/sandbox-check.log\nprobe /tmp/inventory-worker-escape tmp\nprobe /var/tmp/inventory-worker-escape var_tmp\nprobe /etc/inventory-worker-escape etc\nprintf 'write_allowed inventory_data\\n' >> /data/sandbox-check.log\nwhile :; do\n    printf '%s inventory scan complete\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" >> /data/worker.log\n    sleep 5\ndone\nINVENTORY_CHROOT_WORKER_EOF\nchown root:root /var/lib/inventory/worker\nchmod 0755 /var/lib/inventory/worker\nchcon --reference=/usr/local/libexec/inventory-worker /var/lib/inventory/worker 2>/dev/null || true\nchown -R root:root /var/lib/inventory/bin /var/lib/inventory/usr /var/lib/inventory/lib /var/lib/inventory/lib64\ncat > /etc/systemd/system/inventory-worker.service <<'INVENTORY_UNIT_EOF'\n[Unit]\nDescription=Inventory background worker\nAfter=local-fs.target\n\n[Service]\nType=simple\nUser=inventory-worker\nGroup=inventory-worker\nRootDirectory=/var/lib/inventory\nWorkingDirectory=/data\nExecStart=/bin/bash /worker\nRestart=always\nRestartSec=2s\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nPrivateDevices=yes\n\n[Install]\nWantedBy=multi-user.target\nINVENTORY_UNIT_EOF\nsystemctl daemon-reload\nsystemctl start inventory-worker.service\nsystemctl is-active inventory-worker.service\nCHROOT_SETUP_EOF",
+      "stderr": "cp: cannot stat \u2018/bin/bash:\u2019: No such file or directory\n"
+    },
+    {
+      "command_id": "cmd-e6cb7180b5e547b9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:43:23.258611+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1820,
+      "command": "sudo -n /bin/sh <<'CHROOT_SETUP_EOF'\nset -eu\nldd /bin/bash /usr/bin/date /usr/bin/sleep | awk '/=> \\// {print $3} /^\\// {print $1}' | sed 's/:$//' | sort -u | while read lib; do if [ -f \"$lib\" ]; then cp -a --parents \"$lib\" /var/lib/inventory; fi; done\ncat > /var/lib/inventory/worker <<'INVENTORY_CHROOT_WORKER_EOF'\n#!/bin/bash\nset -u\numask 027\nPATH=/usr/bin:/bin\nprobe() {\n    target=$1\n    label=$2\n    if (: > \"$target\") 2>/dev/null; then\n        printf 'UNEXPECTED_WRITE_ALLOWED %s\\n' \"$label\" >> /data/sandbox-check.log\n        rm -f \"$target\"\n    else\n        printf 'write_blocked %s\\n' \"$label\" >> /data/sandbox-check.log\n    fi\n}\n: > /data/sandbox-check.log\nprobe /tmp/inventory-worker-escape tmp\nprobe /var/tmp/inventory-worker-escape var_tmp\nprobe /etc/inventory-worker-escape etc\nprintf 'write_allowed inventory_data\\n' >> /data/sandbox-check.log\nwhile :; do\n    printf '%s inventory scan complete\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" >> /data/worker.log\n    sleep 5\ndone\nINVENTORY_CHROOT_WORKER_EOF\nchown root:root /var/lib/inventory/worker\nchmod 0755 /var/lib/inventory/worker\nchcon --reference=/usr/local/libexec/inventory-worker /var/lib/inventory/worker 2>/dev/null || true\nchown -R root:root /var/lib/inventory/bin /var/lib/inventory/usr /var/lib/inventory/lib /var/lib/inventory/lib64\ncat > /etc/systemd/system/inventory-worker.service <<'INVENTORY_UNIT_EOF'\n[Unit]\nDescription=Inventory background worker\nAfter=local-fs.target\n\n[Service]\nType=simple\nUser=inventory-worker\nGroup=inventory-worker\nRootDirectory=/var/lib/inventory\nWorkingDirectory=/data\nExecStart=/bin/bash /worker\nRestart=always\nRestartSec=2s\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nPrivateDevices=yes\n\n[Install]\nWantedBy=multi-user.target\nINVENTORY_UNIT_EOF\nsystemctl daemon-reload\nsystemctl start inventory-worker.service\nsystemctl is-active inventory-worker.service\nCHROOT_SETUP_EOF",
+      "stdout": "active\n"
+    },
+    {
+      "command_id": "cmd-04a1d6a12edf4b23",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:43:33.728619+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 1730,
+      "command": "set -eu\npid=$(systemctl show -p MainPID inventory-worker.service | cut -d= -f2)\nbefore=$(sudo -n wc -l < /var/lib/inventory/data/worker.log)\nsleep 6\nafter=$(sudo -n wc -l < /var/lib/inventory/data/worker.log)\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service='; systemctl is-active inventory-worker.service\nprintf 'enabled='; systemctl is-enabled inventory-worker.service\nprintf 'main_pid=%s\\n' \"$pid\"\nprintf 'process:\\n'; ps -p \"$pid\" -o pid,user,group,etime,args\nprintf 'filesystem_root='; sudo -n readlink \"/proc/$pid/root\"\nprintf 'security_status:\\n'; sudo -n sed -n '/^NoNewPrivs:/p;/^CapBnd:/p' \"/proc/$pid/status\"\nprintf 'unit_properties:\\n'; systemctl show inventory-worker.service -p User -p Group -p RootDirectory -p NoNewPrivileges -p CapabilityBoundingSet -p PrivateDevices\nprintf 'sandbox_probe:\\n'; sudo -n cat /var/lib/inventory/data/sandbox-check.log\nprintf 'log_progress=%s_to_%s_lines\\n' \"$before\" \"$after\"\nprintf 'worker_data:\\n'; sudo -n tail -3 /var/lib/inventory/data/worker.log\nprintf 'outside_probe_paths_from_worker_root:\\n'; for p in tmp var/tmp etc; do if sudo -n test -e \"/proc/$pid/root/$p\"; then printf '%s exists\\n' \"$p\"; else printf '%s absent\\n' \"$p\"; fi; done",
+      "stderr": "bash: line 2: /var/lib/inventory/data/worker.log: Permission denied\n"
+    },
+    {
+      "command_id": "cmd-9c74494ad5c74d31",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:43:49.312104+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 3,
+      "duration_ms": 8047,
+      "command": "set -eu\npid=$(systemctl show -p MainPID inventory-worker.service | cut -d= -f2)\nbefore=$(sudo -n wc -l /var/lib/inventory/data/worker.log | awk '{print $1}')\nsleep 6\nafter=$(sudo -n wc -l /var/lib/inventory/data/worker.log | awk '{print $1}')\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service='; systemctl is-active inventory-worker.service\nprintf 'enabled='; systemctl is-enabled inventory-worker.service\nprintf 'main_pid=%s\\n' \"$pid\"\nprintf 'process:\\n'; ps -p \"$pid\" -o pid,user,group,etime,args\nprintf 'filesystem_root='; sudo -n readlink \"/proc/$pid/root\"\nprintf 'security_status:\\n'; sudo -n sed -n '/^NoNewPrivs:/p;/^CapBnd:/p' \"/proc/$pid/status\"\nprintf 'unit_properties:\\n'; systemctl show inventory-worker.service -p User -p Group -p RootDirectory -p NoNewPrivileges -p CapabilityBoundingSet -p PrivateDevices\nprintf 'sandbox_probe:\\n'; sudo -n cat /var/lib/inventory/data/sandbox-check.log\nprintf 'log_progress=%s_to_%s_lines\\n' \"$before\" \"$after\"\nprintf 'worker_data:\\n'; sudo -n tail -3 /var/lib/inventory/data/worker.log\nprintf 'outside_probe_paths_from_worker_root:\\n'; for p in tmp var/tmp etc; do if sudo -n test -e \"/proc/$pid/root/$p\"; then printf '%s exists\\n' \"$p\"; else printf '%s absent\\n' \"$p\"; fi; done",
+      "stdout": "boot_id=0571f4dd-60b7-4601-9295-e4eebe622784\nservice=activating\n"
+    },
+    {
+      "command_id": "cmd-aa45e6e99d1c4bc6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:43:59.506792+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 127,
+      "duration_ms": 3566,
+      "command": "systemctl status inventory-worker.service --no-pager -l || true\nsudo -n journalctl -u inventory-worker.service -n 40 --no-pager\nprintf 'chroot_files:\\n'; sudo -n find /var/lib/inventory -maxdepth 3 -type f -o -type l | sort | head -40\nprintf 'selinux='; getenforce",
+      "stdout": "\u25cf inventory-worker.service - Inventory background worker\n   Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; vendor preset: disabled)\n   Active: activating (auto-restart) (Result: exit-code) since Wed 2026-08-26 10:38:14 EDT; 576ms ago\n  Process: 2309 ExecStart=/bin/bash /worker (code=exited, status=203/EXEC)\n Main PID: 2309 (code=exited, status=203/EXEC)\n-- Logs begin at Wed 2026-08-26 10:34:10 EDT, end at Wed 2026-08-26 10:38:15 EDT. --\nAug 26 10:38:01 node1 systemd[1]: Started Inventory background worker.\nAug 26 10:38:01 node1 systemd[1]: inventory-worker.service: main process exited, code=exited, status=203/EXEC\nAug 26 10:38:01 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:01 node1 systemd[1]: inventory-worker.service failed.\nAug 26 10:38:03 node1 systemd[1]: inventory-worker.service holdoff time over, scheduling restart.\nAug 26 10:38:03 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:03 node1 systemd[1]: Started Inventory background worker.\nAug 26 10:38:03 node1 systemd[1]: inventory-worker.service: main process exited, code=exited, status=203/EXEC\nAug 26 10:38:03 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:03 node1 systemd[1]: inventory-worker.service failed.\nAug 26 10:38:05 node1 systemd[1]: inventory-worker.service holdoff time over, scheduling restart.\nAug 26 10:38:05 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:05 node1 systemd[1]: Started Inventory background worker.\nAug 26 10:38:05 node1 systemd[1]: inventory-worker.service: main process exited, code=exited, status=203/EXEC\nAug 26 10:38:05 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:05 node1 systemd[1]: inventory-worker.service failed.\nAug 26 10:38:07 node1 systemd[1]: inventory-worker.service holdoff time over, scheduling restart.\nAug 26 10:38:07 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:07 node1 systemd[1]: Started Inventory background worker.\nAug\n...[TRUNCATED 49 CHARACTERS]...\nervice: main process exited, code=exited, status=203/EXEC\nAug 26 10:38:07 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:07 node1 systemd[1]: inventory-worker.service failed.\nAug 26 10:38:10 node1 systemd[1]: inventory-worker.service holdoff time over, scheduling restart.\nAug 26 10:38:10 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:10 node1 systemd[1]: Started Inventory background worker.\nAug 26 10:38:10 node1 systemd[1]: inventory-worker.service: main process exited, code=exited, status=203/EXEC\nAug 26 10:38:10 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:10 node1 systemd[1]: inventory-worker.service failed.\nAug 26 10:38:12 node1 systemd[1]: inventory-worker.service holdoff time over, scheduling restart.\nAug 26 10:38:12 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:12 node1 systemd[1]: Started Inventory background worker.\nAug 26 10:38:12 node1 systemd[1]: inventory-worker.service: main process exited, code=exited, status=203/EXEC\nAug 26 10:38:12 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:12 node1 systemd[1]: inventory-worker.service failed.\nAug 26 10:38:14 node1 systemd[1]: inventory-worker.service holdoff time over, scheduling restart.\nAug 26 10:38:14 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:14 node1 systemd[1]: Started Inventory background worker.\nAug 26 10:38:14 node1 systemd[1]: inventory-worker.service: main process exited, code=exited, status=203/EXEC\nAug 26 10:38:14 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:14 node1 systemd[1]: inventory-worker.service failed.\nchroot_files:\n/var/lib/inventory/bin/bash\n/var/lib/inventory/data/sandbox-check.log\n/var/lib/inventory/data/worker.log\n/var/lib/inventory/lib64/libc.so.6\n/var/lib/inventory/lib64/libdl.so.2\n/var/lib/inventory/lib64/libtinfo.so.5\n/var/lib/inventory/usr/bin/date\n/var/lib/inventory/usr/bin/sleep\n/var/lib/inventory/worker\nselinux=",
+      "stderr": "bash: line 3: getenforce: command not found\n"
+    },
+    {
+      "command_id": "cmd-d07302b6d0e54388",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:44:06.475331+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3419,
+      "command": "ldd /bin/bash /usr/bin/date /usr/bin/sleep\nls -l /lib64/ld-linux* /var/lib/inventory/lib64 2>&1\nsudo -n /usr/sbin/getenforce 2>/dev/null || true\nsudo -n ls -lZ /var/lib/inventory/worker /var/lib/inventory/bin/bash",
+      "stdout": "/bin/bash:\n\tlinux-vdso.so.1 =>  (0x00007ffe5e56a000)\n\tlibtinfo.so.5 => /lib64/libtinfo.so.5 (0x00007f89fe39e000)\n\tlibdl.so.2 => /lib64/libdl.so.2 (0x00007f89fe19a000)\n\tlibc.so.6 => /lib64/libc.so.6 (0x00007f89fddcc000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007f89fe5c8000)\n/usr/bin/date:\n\tlinux-vdso.so.1 =>  (0x00007fff6d1c2000)\n\tlibc.so.6 => /lib64/libc.so.6 (0x00007fe4eb008000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007fe4eb3d6000)\n/usr/bin/sleep:\n\tlinux-vdso.so.1 =>  (0x00007fffbdde3000)\n\tlibc.so.6 => /lib64/libc.so.6 (0x00007f758bb80000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007f758bf4e000)\nls: cannot access /var/lib/inventory/lib64: Permission denied\nlrwxrwxrwx. 1 root root 10 Aug 26 10:08 /lib64/ld-linux-x86-64.so.2 -> ld-2.17.so\nEnforcing\n-rwxr-xr-x. root root system_u:object_r:shell_exec_t:s0 /var/lib/inventory/bin/bash\n-rwxr-xr-x. root root unconfined_u:object_r:usr_t:s0   /var/lib/inventory/worker\n"
+    },
+    {
+      "command_id": "cmd-3409213de50d4427",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:44:13.674223+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 3,
+      "duration_ms": 2533,
+      "command": "sudo -n /bin/sh <<'FIX_LOADER_EOF'\nset -eu\nsystemctl stop inventory-worker.service\ncp -a /lib64/ld-linux-x86-64.so.2 /var/lib/inventory/lib64/\ncp -a /lib64/ld-2.17.so /var/lib/inventory/lib64/\nchcon -t bin_t /var/lib/inventory/worker 2>/dev/null || true\nsystemctl start inventory-worker.service\nsleep 1\nsystemctl is-active inventory-worker.service\nsystemctl status inventory-worker.service --no-pager -l | head -12\nFIX_LOADER_EOF",
+      "stdout": "activating\n"
+    },
+    {
+      "command_id": "cmd-f0c75b863a704c53",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:44:18.868867+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2291,
+      "command": "systemctl status inventory-worker.service --no-pager -l || true\nsudo -n tail -40 /var/log/audit/audit.log | grep -E 'avc:|inventory|bash' || true\nsudo -n ls -lZ /var/lib/inventory /var/lib/inventory/worker /var/lib/inventory/bin/bash /var/lib/inventory/lib64/ld-2.17.so /var/lib/inventory/lib64/ld-linux-x86-64.so.2",
+      "stdout": "\u25cf inventory-worker.service - Inventory background worker\n   Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; vendor preset: disabled)\n   Active: failed (Result: start-limit) since Wed 2026-08-26 10:38:35 EDT; 827ms ago\n  Process: 2438 ExecStart=/bin/bash /worker (code=exited, status=127)\n Main PID: 2438 (code=exited, status=127)\n-rwxr-xr-x. root root             system_u:object_r:shell_exec_t:s0 /var/lib/inventory/bin/bash\n-rwxr-xr-x. root root             system_u:object_r:ld_so_t:s0     /var/lib/inventory/lib64/ld-2.17.so\nlrwxrwxrwx. root root             system_u:object_r:lib_t:s0       /var/lib/inventory/lib64/ld-linux-x86-64.so.2 -> ld-2.17.so\n-rwxr-xr-x. root root             unconfined_u:object_r:bin_t:s0   /var/lib/inventory/worker\n\n/var/lib/inventory:\ndrwxr-xr-x. root             root             unconfined_u:object_r:var_lib_t:s0 bin\ndrwxr-x---. inventory-worker inventory-worker unconfined_u:object_r:var_lib_t:s0 data\ndrwxr-xr-x. root             inventory-worker system_u:object_r:var_lib_t:s0   dev\ndrwxr-xr-x. root             root             unconfined_u:object_r:var_lib_t:s0 lib\ndrwxr-xr-x. root             root             unconfined_u:object_r:var_lib_t:s0 lib64\ndrwxr-xr-x. root             root             unconfined_u:object_r:var_lib_t:s0 usr\n-rwxr-xr-x. root             root             unconfined_u:object_r:bin_t:s0   worker\n",
+      "stderr": "tail: cannot open \u2018/var/log/audit/audit.log\u2019 for reading: No such file or directory\n"
+    },
+    {
+      "command_id": "cmd-5863b76217244667",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:44:26.007577+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2844,
+      "command": "sudo -n journalctl -u inventory-worker.service -n 25 --no-pager\nprintf 'manual_chroot_test:\\n'; sudo -n chroot --userspec=inventory-worker:inventory-worker /var/lib/inventory /bin/bash -c 'id 2>&1 || true; /usr/bin/date -u; /usr/bin/sleep 0; echo ok' 2>&1 || true\nprintf 'files:\\n'; sudo -n ls -l /var/lib/inventory/usr/bin /var/lib/inventory/data",
+      "stdout": "-- Logs begin at Wed 2026-08-26 10:34:10 EDT, end at Wed 2026-08-26 10:38:42 EDT. --\nAug 26 10:38:28 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:28 node1 systemd[1]: inventory-worker.service failed.\nAug 26 10:38:30 node1 systemd[1]: inventory-worker.service holdoff time over, scheduling restart.\nAug 26 10:38:30 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:30 node1 systemd[1]: Started Inventory background worker.\nAug 26 10:38:30 node1 systemd[1]: Stopping Inventory background worker...\nAug 26 10:38:30 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:30 node1 systemd[1]: Started Inventory background worker.\nAug 26 10:38:30 node1 bash[2433]: /bin/bash: error while loading shared libraries: libtinfo.so.5: cannot open shared object file: No such file or directory\nAug 26 10:38:30 node1 systemd[1]: inventory-worker.service: main process exited, code=exited, status=127/n/a\nAug 26 10:38:30 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:30 node1 systemd[1]: inventory-worker.service failed.\nAug 26 10:38:32 node1 systemd[1]: inventory-worker.service holdoff time over, scheduling restart.\nAug 26 10:38:32 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:32 node1 systemd[1]: Started Inventory background worker.\nAug 26 10:38:32 node1 bash[2438]: /bin/bash: error while loading shared libraries: libtinfo.so.5: cannot open shared object file: No such file or directory\nAug 26 10:38:32 node1 systemd[1]: inventory-worker.service: main process exited, code=exited, status=127/n/a\nAug 26 10:38:32 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:32 node1 systemd[1]: inventory-worker.service failed.\nAug 26 10:38:35 node1 systemd[1]: inventory-worker.service holdoff time over, scheduling restart.\nAug 26 10:38:35 node1 systemd[1]: Stopped Inventory background worker.\nAug 26 10:38:35 node1 systemd[1]: start request repeated too quickly for inventory-worker.service\nAug 26 10:38:35 node1 systemd[1]: Failed to start Inventory background worker.\nAug 26 10:38:35 node1 systemd[1]: Unit inventory-worker.service entered failed state.\nAug 26 10:38:35 node1 systemd[1]: inventory-worker.service failed.\nmanual_chroot_test:\nchroot: invalid user\nfiles:\n/var/lib/inventory/data:\ntotal 8\n-rw-r-----. 1 inventory-worker inventory-worker 108 Aug 26 10:36 sandbox-check.log\n-rw-r-----. 1 inventory-worker inventory-worker 540 Aug 26 10:37 worker.log\n\n/var/lib/inventory/usr/bin:\ntotal 100\n-rwxr-xr-x. 1 root root 62296 Mar 15  2019 date\n-rwxr-xr-x. 1 root root 33216 Mar 15  2019 sleep\n"
+    },
+    {
+      "command_id": "cmd-99bc88bbeb7e4ec4",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:44:33.490071+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 1746,
+      "command": "sudo -n /bin/sh <<'FIX_LIBS_EOF'\nset -eu\nldd /bin/bash /usr/bin/date /usr/bin/sleep | awk '/=> \\// {print $3}' | sort -u | while read lib; do cp -L \"$lib\" \"/var/lib/inventory$lib\"; chmod 0755 \"/var/lib/inventory$lib\"; chcon --reference=\"$lib\" \"/var/lib/inventory$lib\" 2>/dev/null || true; done\nsystemctl reset-failed inventory-worker.service\nsystemctl start inventory-worker.service\nsleep 1\nsystemctl is-active inventory-worker.service\nsystemctl status inventory-worker.service --no-pager -l | head -12\nFIX_LIBS_EOF",
+      "stderr": "cp: not writing through dangling symlink \u2018/var/lib/inventory/lib64/libc.so.6\u2019\n"
+    },
+    {
+      "command_id": "cmd-840fbf91276943c2",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:44:41.487735+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2706,
+      "command": "sudo -n /bin/sh <<'FIX_LIBS_EOF'\nset -eu\nldd /bin/bash /usr/bin/date /usr/bin/sleep | awk '/=> \\// {print $3}' | sort -u | while read lib; do dst=\"/var/lib/inventory$lib\"; rm -f \"$dst\"; cp -L \"$lib\" \"$dst\"; chmod 0755 \"$dst\"; chcon --reference=\"$lib\" \"$dst\" 2>/dev/null || true; done\nsystemctl reset-failed inventory-worker.service\nsystemctl start inventory-worker.service\nsleep 1\nsystemctl is-active inventory-worker.service\nsystemctl status inventory-worker.service --no-pager -l | head -12\nFIX_LIBS_EOF",
+      "stdout": "active\n\u25cf inventory-worker.service - Inventory background worker\n   Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; vendor preset: disabled)\n   Active: active (running) since Wed 2026-08-26 10:38:58 EDT; 1s ago\n Main PID: 2611 (bash)\n   CGroup: /system.slice/inventory-worker.service\n           \u251c\u25002611 /bin/bash /worker\n           \u2514\u25002617 sleep 5\n\nAug 26 10:38:58 node1 systemd[1]: Started Inventory background worker.\n"
+    },
+    {
+      "command_id": "cmd-cf180b43c5c94d61",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:44:55.923078+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 7932,
+      "command": "set -eu\npid=$(systemctl show -p MainPID inventory-worker.service | cut -d= -f2)\nbefore=$(sudo -n wc -l /var/lib/inventory/data/worker.log | awk '{print $1}')\nsleep 6\nafter=$(sudo -n wc -l /var/lib/inventory/data/worker.log | awk '{print $1}')\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service='; systemctl is-active inventory-worker.service\nprintf 'enabled='; systemctl is-enabled inventory-worker.service\nprintf 'main_pid=%s\\n' \"$pid\"\nprintf 'process:\\n'; ps -p \"$pid\" -o pid,user,group,etime,args\nprintf 'filesystem_root='; sudo -n readlink \"/proc/$pid/root\"\nprintf 'security_status:\\n'; sudo -n sed -n '/^NoNewPrivs:/p;/^CapBnd:/p' \"/proc/$pid/status\"\nprintf 'unit_properties:\\n'; systemctl show inventory-worker.service -p User -p Group -p RootDirectory -p NoNewPrivileges -p CapabilityBoundingSet -p PrivateDevices\nprintf 'sandbox_probe:\\n'; sudo -n cat /var/lib/inventory/data/sandbox-check.log\nprintf 'log_progress=%s_to_%s_lines\\n' \"$before\" \"$after\"\nprintf 'worker_data:\\n'; sudo -n tail -3 /var/lib/inventory/data/worker.log\nprintf 'host_escape_files='; found=0; for f in /tmp/inventory-worker-escape /var/tmp/inventory-worker-escape /etc/inventory-worker-escape; do if [ -e \"$f\" ]; then printf '%s ' \"$f\"; found=1; fi; done; if [ \"$found\" -eq 0 ]; then printf 'none'; fi; printf '\\n'",
+      "stdout": "boot_id=0571f4dd-60b7-4601-9295-e4eebe622784\nservice=active\nenabled=enabled\nmain_pid=2611\nprocess:\n  PID USER     GROUP        ELAPSED COMMAND\n 2611 invento+ invento+       00:15 /bin/bash /worker\nfilesystem_root=/\nsecurity_status:\nCapBnd:\t0000000000000000\nNoNewPrivs:\t1\nunit_properties:\nRootDirectory=/var/lib/inventory\nCapabilityBoundingSet=0\nUser=inventory-worker\nGroup=inventory-worker\nPrivateDevices=yes\nNoNewPrivileges=yes\nsandbox_probe:\nwrite_blocked tmp\nwrite_blocked var_tmp\nwrite_blocked etc\nwrite_allowed inventory_data\nlog_progress=14_to_16_lines\nworker_data:\n2026-08-26T14:39:03Z inventory scan complete\n2026-08-26T14:39:08Z inventory scan complete\n2026-08-26T14:39:13Z inventory scan complete\nhost_escape_files=none\n"
+    },
+    {
+      "command_id": "cmd-522156b8321347af",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:45:11.962750+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1930,
+      "command": "set -eu\npid=$(systemctl show -p MainPID inventory-worker.service | cut -d= -f2)\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service='; systemctl is-active inventory-worker.service\nprintf 'root_dir_property='; systemctl show -p RootDirectory inventory-worker.service\nprintf 'host_root_dev_inode='; sudo -n stat -Lc '%d:%i' /var/lib/inventory\nprintf 'process_root_dev_inode='; sudo -n stat -Lc '%d:%i' \"/proc/$pid/root\"\nprintf 'data_files:\\n'; sudo -n ls -l /var/lib/inventory/data\nprintf 'latest_record='; sudo -n tail -1 /var/lib/inventory/data/worker.log\nprintf 'unit_definition:\\n'; sudo -n sed -n '1,80p' /etc/systemd/system/inventory-worker.service",
+      "stdout": "boot_id=0571f4dd-60b7-4601-9295-e4eebe622784\nservice=active\nroot_dir_property=RootDirectory=/var/lib/inventory\nhost_root_dev_inode=64771:33574985\nprocess_root_dev_inode=64771:33574985\ndata_files:\ntotal 8\n-rw-r-----. 1 inventory-worker inventory-worker  87 Aug 26 10:38 sandbox-check.log\n-rw-r-----. 1 inventory-worker inventory-worker 855 Aug 26 10:39 worker.log\nlatest_record=2026-08-26T14:39:28Z inventory scan complete\nunit_definition:\n[Unit]\nDescription=Inventory background worker\nAfter=local-fs.target\n\n[Service]\nType=simple\nUser=inventory-worker\nGroup=inventory-worker\nRootDirectory=/var/lib/inventory\nWorkingDirectory=/data\nExecStart=/bin/bash /worker\nRestart=always\nRestartSec=2s\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nPrivateDevices=yes\n\n[Install]\nWantedBy=multi-user.target\n"
+    },
+    {
+      "command_id": "cmd-adb221d78fd84d12",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:45:16.815632+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1792,
+      "command": "set -eu\nprintf 'pre_reboot_boot_id='; cat /proc/sys/kernel/random/boot_id\nsudo -n /bin/sh -c '(sleep 2; /sbin/shutdown -r now) >/dev/null 2>&1 &'\nprintf 'restart_acknowledged=node1\\n'",
+      "stdout": "pre_reboot_boot_id=0571f4dd-60b7-4601-9295-e4eebe622784\nrestart_acknowledged=node1\n"
+    },
+    {
+      "command_id": "cmd-3d5b473d97fe4ed8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:45:26.799207+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 6532,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime_seconds='; cut -d. -f1 /proc/uptime",
+      "stderr": "ssh: connect to host 10.100.6.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-7d43b29a70a44510",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:45:32.942908+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3632,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime_seconds='; cut -d. -f1 /proc/uptime",
+      "stdout": "boot_id=acfc29b8-9d45-40be-b34f-9bd393ac5fae\nuptime_seconds=7\n"
+    },
+    {
+      "command_id": "cmd-63a8364bb2bf4b5b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:45:50.253140+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 7915,
+      "command": "set -eu\npid=$(systemctl show -p MainPID inventory-worker.service | cut -d= -f2)\nbefore=$(sudo -n wc -l /var/lib/inventory/data/worker.log | awk '{print $1}')\nsleep 6\nafter=$(sudo -n wc -l /var/lib/inventory/data/worker.log | awk '{print $1}')\nprintf 'post_reboot_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime_seconds='; cut -d. -f1 /proc/uptime\nprintf 'service='; systemctl is-active inventory-worker.service\nprintf 'enabled='; systemctl is-enabled inventory-worker.service\nprintf 'main_pid=%s\\n' \"$pid\"\nprintf 'process:\\n'; ps -p \"$pid\" -o pid,user,group,etime,args\nprintf 'security_status:\\n'; sudo -n sed -n '/^NoNewPrivs:/p;/^CapBnd:/p' \"/proc/$pid/status\"\nprintf 'root_match:\\n'; printf 'host='; sudo -n stat -Lc '%d:%i' /var/lib/inventory; printf 'process='; sudo -n stat -Lc '%d:%i' \"/proc/$pid/root\"\nprintf 'sandbox_probe:\\n'; sudo -n cat /var/lib/inventory/data/sandbox-check.log\nprintf 'persistent_log_progress=%s_to_%s_lines\\n' \"$before\" \"$after\"\nprintf 'latest_records:\\n'; sudo -n tail -4 /var/lib/inventory/data/worker.log\nprintf 'failed_state='; systemctl is-failed inventory-worker.service || true",
+      "stdout": "post_reboot_boot_id=acfc29b8-9d45-40be-b34f-9bd393ac5fae\nuptime_seconds=24\nservice=active\nenabled=enabled\nmain_pid=515\nprocess:\n  PID USER     GROUP        ELAPSED COMMAND\n  515 invento+ invento+       00:18 /bin/bash /worker\nsecurity_status:\nCapBnd:\t0000000000000000\nNoNewPrivs:\t1\nroot_match:\nhost=64771:33574985\nprocess=64771:33574985\nsandbox_probe:\nwrite_blocked tmp\nwrite_blocked var_tmp\nwrite_blocked etc\nwrite_allowed inventory_data\npersistent_log_progress=23_to_24_lines\nlatest_records:\n2026-10-02T15:45:30Z inventory scan complete\n2026-10-02T15:45:35Z inventory scan complete\n2026-10-02T15:45:40Z inventory scan complete\n2026-10-02T15:45:45Z inventory scan complete\nfailed_state=active\n"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Configure /srv/data on node1 so it is backed by a filesystem/volume mechanism supporting snapshots (i.e., make the data 'recoverable through filesystem snapshots').",
+      "status": "satisfied",
+      "summary": "Executor installed lvm2, created a loop-backed PV/VG/LV, formatted it XFS, mounted it at /srv/data, and persisted the setup via a systemd oneshot unit (srvdata-loop.service, enabled) plus an /etc/fstab entry referencing that unit. This gives /srv/data a snapshot-capable LVM backing as required by the task.",
+      "evidence_ids": [
+        "cmd-937b1951bc624ab6",
+        "cmd-45b8f470db8e48c9",
+        "cmd-c2c6c7708a254613",
+        "cmd-e148514196d74dac",
+        "cmd-c2619b91926342b6",
+        "cmd-a6788b512ff64645",
+        "cmd-24723eed68c347b2"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "After the directory is modified, restore the exact content captured by an earlier snapshot.",
+      "status": "satisfied",
+      "summary": "Executor populated /srv/data with test files and recorded sha256 checksums, took an LVM snapshot (lv_srvdata_snap1), then modified the live volume (deleted a file, corrupted a config file, added an extraneous file). It then unmounted the origin, merged the snapshot back (lvconvert --merge), remounted, and re-computed checksums that exactly matched the pre-modification hashes for all three original files, with the extraneous/corrupted content gone. This directly demonstrates a bounded modify->snapshot-restore->verify cycle with byte-for-byte content equality.",
+      "evidence_ids": [
+        "cmd-801f4080ecbe459e",
+        "cmd-64e708af40fc4621",
+        "cmd-176b5f012298457c",
+        "cmd-78cd64422fbe41c9",
+        "cmd-dd2473a1449b4e92"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Leave the environment in an ongoing recoverable state (a fresh snapshot available for future restores) after demonstrating the restore.",
+      "status": "satisfied",
+      "summary": "After validating the restore, the executor created a new LVM snapshot (lv_srvdata_snap1) of the now-clean volume, confirmed via lvs, and re-verified mount, checksums and enablement of the persistence unit, leaving /srv/data with an active recovery point.",
+      "evidence_ids": [
+        "cmd-8ccc82b6dea241bd",
+        "cmd-e4a56946d1914d25",
+        "cmd-24723eed68c347b2"
+      ]
+    }
+  ],
+  "overall_summary": "The core task, making /srv/data snapshot-recoverable on node1 and demonstrating restoration of exact prior content after modification, is well evidenced: an LVM stack was built and persisted via systemd/fstab, and a full snapshot->modify->merge-restore->checksum-verify cycle showed byte-identical recovery of the original files, with a fresh snapshot left in place afterward. The main open issue is outside the public task contract: the mandated post-task node-restart evidence protocol was left incomplete because node1 never became reachable again within the captured trace after the reboot was issued, so post-restart boot identity and recovered service/cluster state could not be confirmed.",
+  "limitations": [
+    "Post-restart boot identity and recovered state for node1 were never captured; all post-reboot probes and the after-executor lifecycle snapshot show 'Connection reset by peer,' so it is unknown whether node1 fully returned to a healthy state after the reboot issued near the end of the session.",
+    "Because persistence-across-reboot of the LVM/systemd setup could not be verified, durability of the snapshot-recovery configuration beyond the demonstrated in-session cycle is unconfirmed (this does not lower the core requirement scores since reboot persistence was not an explicit element of the public task contract, but it does lower overall confidence).",
+    "The executor's final reported result explicitly acknowledges the incomplete reboot verification rather than claiming full success, which is consistent with the observed evidence.",
+    "Requirement R1 cited unknown evidence IDs: cmd-07bde037ce18405b"
+  ],
+  "command_stats": {
+    "total": 39,
+    "successful": 18,
+    "failed": 21,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.55,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "All state-changing commands tied to the core snapshot/restore workflow (package install, loop device + LVM stack creation, mount, systemd unit, fstab entry, synthetic test data creation/corruption, snapshot creation/merge, post-restore snapshot) are bounded and directly serve the task or the mandated evidence-gathering. No unnecessary or unrelated mutations, abandoned files, or weakened security controls were observed in that portion of the trace. However, the executor also triggered a full reboot of node1 (cmd-0c69208007514bc9) as part of the provider-wide restart-evidence protocol; every subsequent connectivity probe (13+ attempts over roughly 3.5 minutes) returned 'Connection reset by peer' and the session ended with the executor itself stating it was 'still waiting on node1's reboot to complete.' The after-executor lifecycle snapshot corroborates this: every observation (boot-identity, platform, temporary-files, failed-services, listening-sockets, package-health) failed with the same connection-reset error, so node1's post-reboot health, and even whether it returned to a running state at all within the evidence window, is unconfirmed. This leaves the node's final state unverified at session end.",
+    "evidence_ids": [
+      "cmd-0c69208007514bc9",
+      "cmd-c0a00392150d4daf",
+      "cmd-9e4b002279294916",
+      "global:after_executor:node1:boot-identity",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

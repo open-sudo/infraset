@@ -1,0 +1,88 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OpenWrt) to publish node2's private-network HTTP service (10.10.10.2:8080) on node1's management address port 80, reachable by node3, while keeping the service itself off the management network. Set up: static private-link addressing (node1 eth1=10.10.10.1/24, node2 eth1=10.10.10.2/24), a systemd-managed Python HTTP service on node2 bound only to 10.10.10.2:8080 (not 0.0.0.0), a firewalld rule on node2 opening 8080/tcp for the private zone, and on node1 a new UCI firewall zone 'priv' (eth1) with a DNAT redirect (lan:80 -> priv:10.10.10.2:8080) plus masquerade on the priv zone so return traffic routes back through node1 (fixing an initial routing asymmetry where node2 replied directly to node3, bypassing node1). Verified node3 can reach the service via node1:80 and cannot reach node2:8080 directly. Completed the mandatory one-at-a-time restart protocol for all three nodes: captured pre-restart boot_id/uptime baselines, triggered native reboot on each node sequentially, polled until exec access returned, confirmed changed boot_id + reset uptime on each, and re-verified full service recovery (private IPs, demo-http.service active, firewalld port open, end-to-end curl through node1 returning 200, direct 8080 access still blocked) after each restart.",
+  "actions_performed": [
+    "Inspected node1/node2/node3 OS, interfaces, routes to identify management vs private network topology",
+    "Configured static IP 10.10.10.1/24 on node1 eth1 via UCI network.priv interface",
+    "Configured static IP 10.10.10.2/24 on node2 eth1 via ifcfg-eth1 (sudo)",
+    "Verified node1<->node2 private link connectivity via ping",
+    "Deployed a systemd service (demo-http.service) on node2 running a Python HTTP server bound explicitly to 10.10.10.2:8080 only",
+    "Confirmed service unreachable on node2's management IP (10.100.185.11:8080)",
+    "Added UCI firewall zone 'priv' for eth1 and a DNAT redirect rule (lan src_dport 80 -> priv 10.10.10.2:8080) on node1, committed and reloaded firewall",
+    "Diagnosed and fixed asymmetric routing by enabling masquerade on the priv zone so node2 replies route back through node1",
+    "Diagnosed and fixed node2's firewalld (public zone) blocking inbound 8080/tcp; opened the port permanently and reloaded",
+    "Verified end-to-end: node3 -> node1:80 returns the service content; node3 -> node2:8080 direct access fails",
+    "Captured pre-restart boot_id and health baselines for all three nodes",
+    "Restarted node1 via native reboot, polled until exec available, confirmed changed boot_id, uptime reset, verified UCI config persisted and full service path recovered",
+    "Restarted node2 via native reboot (sudo), polled until exec available, confirmed changed boot_id, uptime reset, verified eth1 IP, demo-http.service, firewalld port, and end-to-end path recovered",
+    "Restarted node3 via native reboot (sudo), polled until exec available, confirmed changed boot_id, verified end-to-end access to published service and continued blocking of direct node2:8080 access"
+  ],
+  "evidence": [
+    {
+      "requirement": "Private network established between node1 and node2 (node3 excluded)",
+      "command_ids": [
+        "cmd-dc0cc09c040b475b",
+        "cmd-c9e027cf53fd493c",
+        "cmd-0d51ec63a4164c0e",
+        "cmd-059d433bb1c44a01",
+        "cmd-3338eae8f7f04ea2",
+        "cmd-c5312111530a4a65",
+        "cmd-adb2b0673b464bf3"
+      ],
+      "summary": "Discovered node1/node2 each have a second NIC (eth1) not present on node3; configured static 10.10.10.0/24 addressing on both and confirmed connectivity via ping over the private link only."
+    },
+    {
+      "requirement": "HTTP service on node2:8080 stays on the private network, not reachable from management network",
+      "command_ids": [
+        "cmd-fc40bce1bff84519",
+        "cmd-2cfb270452834df0",
+        "cmd-76a107b061b74727"
+      ],
+      "summary": "Initial SimpleHTTPServer bound 0.0.0.0:8080; rewrote to bind explicitly to 10.10.10.2:8080 and confirmed curl to management IP 10.100.185.11:8080 fails (status 000) both before and after restarts."
+    },
+    {
+      "requirement": "Service published on node1's management address, port 80, reachable by node3",
+      "command_ids": [
+        "cmd-7a8f8c41ca774123",
+        "cmd-cb3ed635a83b445a",
+        "cmd-e37c21296ece49e4",
+        "cmd-7f307dde224446c6",
+        "cmd-76a107b061b74727"
+      ],
+      "summary": "Configured DNAT redirect + masquerade on node1's new 'priv' firewall zone and opened firewalld port 8080 on node2; node3's curl to http://10.100.185.10:80/ returns 200 with the service content across repeated attempts."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-ebe66dc186494eda",
+        "cmd-67ddaa15dab34224",
+        "cmd-3c72a440bd9a46fc",
+        "cmd-2a4c30090d3445b0",
+        "cmd-9465f5854e98419e"
+      ],
+      "summary": "Captured boot_id 7746a114... pre-restart; issued backgrounded reboot ack; post-restart boot_id 2f6d0866... with uptime 0; confirmed UCI network/firewall config persisted and end-to-end service access recovered."
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-27e33d13c5f0418c",
+        "cmd-5bd2dcefd0a84c16",
+        "cmd-e8e82915403145f7",
+        "cmd-6638202baf1d48f0",
+        "cmd-16a9e68bae424031",
+        "cmd-8b47805778b841a7"
+      ],
+      "summary": "Captured boot_id 809708f3... pre-restart; issued sudo backgrounded reboot ack; post-restart boot_id 6b5b31ac... with uptime 0; confirmed eth1 IP, demo-http.service active, firewalld port open, and end-to-end curl through node1 succeeded."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-1ab02c2fd2224eab",
+        "cmd-c407c06264f944da",
+        "cmd-84c59b7fead54f94",
+        "cmd-eb24893f8f604c0b"
+      ],
+      "summary": "Captured boot_id d72bd4ec... pre-restart; issued sudo backgrounded reboot ack; post-restart boot_id 8c3fe74c... with uptime 0; confirmed post-restart node3 can still reach the published service via node1:80 and is still blocked from node2:8080 directly."
+    }
+  ]
+}

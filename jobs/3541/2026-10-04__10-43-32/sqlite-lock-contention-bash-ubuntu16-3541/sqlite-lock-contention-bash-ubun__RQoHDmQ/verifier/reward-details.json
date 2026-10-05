@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Accept a request ID and positive integer quantity, and handle repeated successful IDs idempotently by returning the original result without another decrement.",
+      "status": "satisfied",
+      "summary": "The installed Python 2.7-compatible implementation validates its arguments and checks the reservation ID inside a write transaction. Zero, negative, and nonnumeric quantities were rejected without changing the cloned database; replay of the preserved ID returned its original quantity. Two concurrent calls using the same new ID both returned the same result, created one row, and reduced stock only once from 5 to 3.",
+      "evidence_ids": [
+        "cmd-ab383b391b5e4e5d",
+        "cmd-14086925ef514e99",
+        "cmd-9fb642fb805f4792"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Serialize competing reservations so successful requests decrement stock exactly once and remaining stock never becomes negative.",
+      "status": "satisfied",
+      "summary": "The repair uses BEGIN IMMEDIATE and a guarded relative decrement. In a direct concurrent test against a production-data clone, two distinct 3-unit requests against stock 5 produced one success and one rejection, with final stock 2 and exactly one new reservation.",
+      "evidence_ids": [
+        "cmd-ab383b391b5e4e5d",
+        "cmd-f2764c161e474423",
+        "cmd-9fb642fb805f4792"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Reject reservations when available stock is insufficient.",
+      "status": "satisfied",
+      "summary": "A competing request for 3 units after the other request had left 2 was rejected with INSUFFICIENT_STOCK and exit code 3; database assertions confirmed stock remained 2.",
+      "evidence_ids": [
+        "cmd-f2764c161e474423"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Preserve the existing stock and reservations while repairing the utility.",
+      "status": "satisfied",
+      "summary": "Before repair, the live database contained stock 5 and reservation previous-request=2. After installation and again after restart, integrity was OK and those values were unchanged; replaying that reservation also left stock unchanged.",
+      "evidence_ids": [
+        "cmd-0c9da14e12ab45c0",
+        "cmd-86a9bd19ae4a48f5",
+        "cmd-baf88ebf0610452a"
+      ]
+    },
+    {
+      "id": "R5",
+      "requirement": "Use bounded lock waits instead of hanging indefinitely.",
+      "status": "satisfied",
+      "summary": "While a separate writer held an immediate transaction, the utility stopped after 5 seconds with exit code 4, reported that the database was busy, created no reservation, and left stock at 5.",
+      "evidence_ids": [
+        "cmd-3a922ad31b544882"
+      ]
+    },
+    {
+      "id": "R6",
+      "requirement": "Keep the installed operating-system release and kernel and use software compatible with the legacy platform.",
+      "status": "satisfied",
+      "summary": "The implementation compiled and ran with Python 2.7.12. Ubuntu 16.04 and kernel 4.4.0-210-generic were observed before the change and remained the same after installation and restart.",
+      "evidence_ids": [
+        "cmd-213a2d5ca7244ff0",
+        "cmd-86a9bd19ae4a48f5",
+        "cmd-baf88ebf0610452a",
+        "global:after_prepare:node1:platform",
+        "global:after_executor:node1:platform"
+      ]
+    }
+  ],
+  "overall_summary": "All material functional outcomes are satisfied. Direct concurrent, duplicate-ID, invalid-input, insufficient-stock, and bounded-lock tests support the repaired behavior, while live observations confirm preserved production data and the legacy platform. The provider-wide restart protocol was complete: it captured a healthy pre-restart state, restart acknowledgement, a changed boot identity, and recovered utility and data state; fixed lifecycle boot identities independently agree. Operational hygiene is reduced by one malformed test that likely left an empty database outside the intended temporary test directory.",
+  "limitations": [
+    "Most state-changing functional tests appropriately used clones of the production database rather than mutating the live database; live production evidence directly covers preserved data and idempotent replay but not a new successful reservation.",
+    "The malformed lock-test output establishes that an empty SQLite database was opened outside the intended test directory, but the captured command does not explicitly print that database's absolute path or a final filesystem check confirming whether it remained."
+  ],
+  "command_stats": {
+    "total": 16,
+    "successful": 12,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.97,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Most mutations had clear roles: installing the repair, making disposable database clones for bounded tests, removing the rollback copy, and performing the mandatory restart. The malformed first lock-contention test was an unnecessary mutation: it created temporary fixtures that the corrected command later removed, but because its backgrounded command chain did not change the parent shell's directory, its final SQLite connection opened an empty stock.db in the executor's original working directory; no cleanup of that apparent stray database is captured. The exact original working-directory path is not shown. The failed initial installation attempt has no evidence of changing state and is not penalized. No failed services, package damage, or new listening sockets were observed after execution.",
+    "evidence_ids": [
+      "cmd-d62a5cd30f3344d2",
+      "cmd-3a922ad31b544882",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

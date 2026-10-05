@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Streaming replication running across node1 (primary), node2 and node3 (standbys)",
+      "status": "satisfied",
+      "summary": "node1 initialized as primary with wal_level=replica, listen_addresses, pg_hba entries for replicator; node2 and node3 built via pg_basebackup -R establishing standby.signal and primary_conninfo pointing at node1. pg_stat_replication on node1 (cmd-6b34e14d9fc44ec4) shows both 10.100.136.11 and .12 in 'streaming' state, and a canary row inserted on node1 is visible on both standbys (cmd-96653b4717394f45, cmd-b2ea3e0ccc9949d9).",
+      "evidence_ids": [
+        "cmd-cf28244fea9e45d5",
+        "cmd-8d1956037ef84aee",
+        "cmd-98fb4e2caca547ee",
+        "cmd-0657af875c1c40d3",
+        "cmd-0fe94072ce714fa3",
+        "cmd-e0bfa75bd8294e36",
+        "cmd-6b34e14d9fc44ec4",
+        "cmd-96653b4717394f45",
+        "cmd-b2ea3e0ccc9949d9"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "On loss of the primary, a standby takes over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "A committed row ('pre-failover-committed') was inserted on node1 and confirmed replicated to node2 and node3 before disruption (cmd-e128140f32b14c15, cmd-cb29ba8acf59457e, cmd-8f68ffbffdc7409c). node1 was then stopped (cmd-1b46a5a8c63b4abd, simulating primary loss). node2 was promoted via pg_promote() and pg_is_in_recovery() returned false (cmd-94c6a74da782422c). A post-promotion query on node2 shows both prior committed rows intact plus a successful new write (cmd-f0abfa519df14a14), directly demonstrating the required disruption-and-recovery transition with no data loss.",
+      "evidence_ids": [
+        "cmd-e128140f32b14c15",
+        "cmd-cb29ba8acf59457e",
+        "cmd-8f68ffbffdc7409c",
+        "cmd-1b46a5a8c63b4abd",
+        "cmd-94c6a74da782422c",
+        "cmd-f0abfa519df14a14"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Recovered former primary (node1) comes back online as a standby of whichever node is primary at that point (node2)",
+      "status": "satisfied",
+      "summary": "Surviving standby node3 was first repointed to node2 and confirmed streaming with matching post-failover data (cmd-135d2b11d52e4b93, cmd-82f9b3c5be914fb9, cmd-cf4653f0a29744e8). node1's data directory was rebuilt via pg_basebackup -R from node2 (cmd-725dc2c70d584632), started in recovery (cmd-bf62f60db632447c), and node2's pg_stat_replication shows both node1 and node3 streaming with node1's data matching the cluster (cmd-db9b3c3fe7ee4bc7, cmd-cfde10cf815f46fd), completing the required recovery topology.",
+      "evidence_ids": [
+        "cmd-135d2b11d52e4b93",
+        "cmd-82f9b3c5be914fb9",
+        "cmd-cf4653f0a29744e8",
+        "cmd-725dc2c70d584632",
+        "cmd-bf62f60db632447c",
+        "cmd-db9b3c3fe7ee4bc7",
+        "cmd-cfde10cf815f46fd"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task contract are directly and coherently satisfied: streaming replication was established with node1 primary and node2/node3 standbys, a simulated primary loss was followed by node2's promotion to writable primary with zero committed-data loss (verified via before/after queries), and both the surviving standby (node3) and the rebuilt former primary (node1) ended up correctly following node2 as standbys. The separately-mandated node-restart evidence protocol was also completed for all three nodes with pre-restart boot_id/health baselines, systemctl reboot acknowledgements, confirmed changed boot_id values, and confirmed recovered replication/data state post-restart, cross-checked against the fixed after-prepare and after-executor lifecycle snapshots which show matching boot_id deltas for all nodes and no failed services.",
+  "limitations": [
+    "No before-prepare/after-prepare distinction was available since prepare was disabled (alias snapshot), so preparer-vs-executor attribution relies entirely on the executor command timeline.",
+    "The replicator password was briefly printed in plaintext to command output (cmd-7b2b64fdfdd54e90) before the credential file was deleted; this is a minor operational hygiene note rather than a live system exposure.",
+    "Captured node restart evidence for node2 (then-primary) relies on brief polling errors (connection reset/timeout) during the reboot window as indirect confirmation of disruption, consistent with an OS-level reboot rather than a captured service-level outage window."
+  ],
+  "command_stats": {
+    "total": 71,
+    "successful": 60,
+    "failed": 11,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewed all state-changing commands chronologically. Package installs, postgresql.conf/pg_hba.conf edits, firewalld postgresql service openings (scoped to the cluster subnet via pg_hba), replicator role creation, pg_basebackup invocations, stop/promote/repoint operations, and the three systemctl reboot invocations all map directly to a material task outcome, a necessary prerequisite, or the mandated node-restart protocol. The temporary node1 data directory rename to data_old (cmd-e15dcb05674d40d7), needed before rebuilding node1 as a standby, was fully removed afterward (cmd-e9162495e4b14357), as was the temporary replication-password file /root/.repl_pw (same cleanup command). One minor issue: the replicator password was printed to command output in plaintext for verification (cmd-7b2b64fdfdd54e90) before the file was deleted; this is a low-risk, non-persistent exposure limited to the audit trail rather than live system state. No abandoned files, failed services, or unnecessary/unrelated mutations were found; after-executor snapshots show no failed-services and only expected additions (postgresql listening on 5432, install/reboot logs).",
+    "evidence_ids": [
+      "cmd-e15dcb05674d40d7",
+      "cmd-e9162495e4b14357",
+      "cmd-7b2b64fdfdd54e90",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

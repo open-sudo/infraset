@@ -1,0 +1,108 @@
+{
+  "status": "completed",
+  "summary": "Implemented an Ansible-driven port forward: node2's demo HTTP app (port 8080) runs on a dedicated private-network NIC shared with node1 (a VyOS router), and node1 publishes that app to node3 via DNAT + SNAT(masquerade), gated by a default-drop VyOS forward firewall that only permits the specific published flow plus established/related traffic. Verified from node3 that the published port works while the rest of the private network (10.50.50.0/24) stays unreachable, both immediately after deployment and after a full one-at-a-time restart of all four managed nodes.",
+  "actions_performed": [
+    "Surveyed all 4 nodes: node1=VyOS router, node2=RHEL10 app host, node3=RHEL10 external client, node4=Ubuntu Ansible control node; found node1/node2 share a second, unaddressed private NIC (eth1/enp8s0)",
+    "Provisioned SSH access for Ansible: installed node4's pubkey into node2/node3 root authorized_keys and into VyOS's persistent config (system login user vyos authentication public-keys) so access survives reboots",
+    "Wrote /root/inventory.ini and /root/playbook.yml on node4 (the control_node) implementing 3 plays: deploy+harden the demo app on node2, configure VyOS DNAT/SNAT/firewall on node1, and validate reachability/isolation from node3",
+    "Assigned static private IPs via nmcli: 10.50.50.254/24 on node1 eth1, 10.50.50.11/24 on node2 enp8s0",
+    "Deployed a systemd-managed Python HTTP demo app on node2, bound only to the private IP on port 8080, plus a firewalld 'internal' zone scoped to that NIC allowing only 8080/tcp",
+    "Configured VyOS via Ansible-rendered script: nat destination rule (eth0:8080 -> 10.50.50.11:8080), nat source rule (masquerade for eth1-bound traffic to 10.50.50.11 to keep the return path symmetric), and a default-drop ipv4 forward filter permitting only established/related plus the specific forwarded flow",
+    "Found and fixed a real bug: VyOS 'state established/related enable' syntax was invalid and silently left firewall rule 5 as an unconditional accept-all, defeating isolation; fixed to the correct 'state established' / 'state related' multi-value syntax and confirmed via nft ruleset that only the intended flow is accepted",
+    "Found and fixed a second real bug (surfaced after restarting node2): node2's NetworkManager connection profile didn't pin connection.zone, so on reboot NetworkManager rebound enp8s0 to the default 'public' firewalld zone instead of 'internal', silently blocking port 8080 for any remote (non-loopback) client; fixed by pinning connection.zone=internal via nmcli and added that step to the playbook so it's persistent",
+    "Ran the full playbook multiple times to confirm idempotency and correctness end-to-end, with node3-side Ansible tasks asserting both positive reachability of the published port and negative reachability of the private IP",
+    "Executed the mandatory restart-evidence protocol: captured boot_id and service/health baselines on all 4 nodes, restarted them one at a time (node2, node1, node3, node4) via native reboot mechanisms, polled until each came back, confirmed changed boot_id on each, and verified recovery of the app, NAT/firewall config, and end-to-end reachability/isolation after every restart, culminating in a final clean full playbook run and direct verification pass on all nodes"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 app published on port 8080 reachable from node3 through node1",
+      "command_ids": [
+        "cmd-6a67a7594e214bd9",
+        "cmd-f568088dcf0541e7",
+        "cmd-9e3349a9a9c24955",
+        "cmd-bb95221d72c641b9"
+      ],
+      "summary": "curl from node3 to node1's public IP (10.100.188.10:8080) returns HTTP 200 'Hello from node2 demo-app' both right after initial deployment and after node3's own restart; final Ansible run's node3 assertion task also passes."
+    },
+    {
+      "requirement": "Rest of the private network is NOT opened to node3",
+      "command_ids": [
+        "cmd-250f2f124b8c4814",
+        "cmd-f568088dcf0541e7",
+        "cmd-bb95221d72c641b9"
+      ],
+      "summary": "curl from node3 directly to node2's private IP (10.50.50.11:8080) and to node2's management IP on 8080 both fail (no route/timeout); Ansible's 'Assert direct access to the private IP is NOT possible' task passes both mid-flow and after final restart."
+    },
+    {
+      "requirement": "Implemented using Ansible",
+      "command_ids": [
+        "cmd-6d3d261da3f44355",
+        "cmd-c335baae82c24d3f",
+        "cmd-f568088dcf0541e7",
+        "cmd-1fa91ee4bd7246bb"
+      ],
+      "summary": "ansible-playbook syntax-check passes and multiple full runs of /root/playbook.yml against /root/inventory.ini from control node4 succeed, deploying the app, configuring VyOS NAT/firewall, and validating from node3."
+    },
+    {
+      "requirement": "VyOS NAT/firewall correctly isolates traffic to only the published flow (root-caused a real misconfiguration)",
+      "command_ids": [
+        "cmd-74dc185fe6554536",
+        "cmd-7d989a1d453f4904",
+        "cmd-1455a740705f44f3"
+      ],
+      "summary": "nft ruleset showed rule 5 was an unconditional accept due to invalid 'state established enable' syntax; after fixing to 'state established'/'state related', nft shows rule 5 correctly scoped to ct state established/related, and this persists after node1's reboot."
+    },
+    {
+      "requirement": "node2 firewalld zone persistence bug root-caused and fixed",
+      "command_ids": [
+        "cmd-dce94da0c35048c2",
+        "cmd-ccdea7e61aac4419",
+        "cmd-f8b8cb4155e64c8d"
+      ],
+      "summary": "Found enp8s0 reverted to firewalld's default 'public' zone after reboot because NetworkManager's connection.zone was unset; pinned it via nmcli, verified enp8s0 moved to 'internal' zone immediately, and confirmed it remained in 'internal' zone after node2's later verification check."
+    },
+    {
+      "requirement": "node1 (VyOS) restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-047df80afcdf4ba0",
+        "cmd-680c1ecdc1ba442e",
+        "cmd-8967f23426bd4109",
+        "cmd-e55572ee178343ce",
+        "cmd-dcc11d064cfe470a",
+        "cmd-1455a740705f44f3"
+      ],
+      "summary": "Captured baseline boot_id/config, issued systemctl reboot (VyOS's own 'reboot' op-command was blocked by a stale configure-session guard, so the standard Linux systemctl reboot was used), polled until reachable again, confirmed boot_id changed (2674ee60...->0d9770ac...), and confirmed NAT/firewall config persisted via VyOS's saved config.boot."
+    },
+    {
+      "requirement": "node2 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-62334e8aefe141c7",
+        "cmd-989325908f174746",
+        "cmd-1a7d559e0f204305",
+        "cmd-c785f03caa594ed3",
+        "cmd-f8b8cb4155e64c8d"
+      ],
+      "summary": "Captured baseline boot_id/app health, issued systemctl reboot, polled until reachable, confirmed boot_id changed (d9f8550d...->da476b9a...), and confirmed demo-app.service active and listening on the private IP after restart (with the firewalld zone-pin fix keeping it externally reachable)."
+    },
+    {
+      "requirement": "node3 restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-d40b0c02af374718",
+        "cmd-56e2cb010959408a",
+        "cmd-c7de4cda459c4c6e",
+        "cmd-9e3349a9a9c24955"
+      ],
+      "summary": "Captured baseline boot_id/reachability, issued systemctl reboot, polled until reachable, confirmed boot_id changed (646e5f74...->47541819...), and confirmed node3 could still reach the published app afterward."
+    },
+    {
+      "requirement": "node4 (control node) restart: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-00b237d584074b64",
+        "cmd-44de208a23254dec",
+        "cmd-197c836e49984515",
+        "cmd-1fa91ee4bd7246bb"
+      ],
+      "summary": "Captured baseline boot_id and confirmed ansible-playbook/inventory present, issued systemctl reboot, polled until reachable, confirmed boot_id changed (489b0bb4...->a7d89aee...), and successfully re-ran the full Ansible playbook end-to-end afterward, confirming the control node's tooling and artifacts survived."
+    }
+  ]
+}

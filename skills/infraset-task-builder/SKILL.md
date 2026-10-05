@@ -17,6 +17,7 @@ Own:
 
 - `instruction.md`
 - `task.toml`
+- `variant.toml` (searchable metadata; see `docs/variant-metadata.md` in the repository)
 - `environment/harbor_antrieb.toml`
 - optional `prepare/` setup, prompt, and baseline files
 - the fail-closed `tests/test.sh` sentinel

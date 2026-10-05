@@ -1,0 +1,85 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) as router between lan-a (vtnet1/opt1, 10.60.10.0/24, peering node2's eth1) and lan-b (vtnet2/opt2, 10.60.20.0/24, peering node3's eth1). Added default-deny-overriding pass rules for both interfaces plus a directional hybrid-mode outbound SNAT rule (OPNsense/Firewall/Filter/snatrules) that translates lan-a\u2192lan-b traffic to node1's lan-b address (10.60.20.1), while leaving lan-b\u2192lan-a traffic untouched. Verified with live TCP connections: node2\u2192node3 traffic arrives at node3 sourced from 10.60.20.1 (node1), while node3\u2192node2 traffic arrives at node2 sourced from node3's own address (10.60.20.2), confirming the required asymmetric NAT behavior. Then performed the mandatory one-at-a-time restart protocol on all three nodes (node2, node3, then node1/router), proving changed boot identity on each (Linux boot_id for node2/node3, FreeBSD kern.boottime for node1) and re-verifying full recovery of interface config, firewall/NAT rules, and the exact directional-NAT connection behavior after each restart.",
+  "actions_performed": [
+    "Inspected topology: node1=OPNsense with vtnet0 (mgmt/lan), vtnet1 & vtnet2 unconfigured; node2/node3 have eth0 (mgmt, shared /24) and eth1 (unconfigured, links to node1)",
+    "Added OPT1 (vtnet1, LANA, 10.60.10.1/24) and OPT2 (vtnet2, LANB, 10.60.20.1/24) interfaces to node1 config.xml, applied via configctl interface reconfigure",
+    "Configured static IPs on node2 eth1 (10.60.10.2/24) and node3 eth1 (10.60.20.2/24) via nmcli (raw `ip addr add` was reverted by NetworkManager), plus static routes to the peer lan via node1",
+    "Added firewall pass rules for opt1 and opt2 in legacy <filter> section, applied via configctl filter reload; opened firewalld ports 5000/5001 (permanent) on node3/node2 for test listeners",
+    "Established TCP baseline (no NAT) confirming both directions show real source IPs",
+    "Added OPNsense SNAT rule under OPNsense/Firewall/Filter/snatrules (interface=opt2, source_net=opt1, target=10.60.20.1); corrected an initial mistake where the rule was placed under legacy <nat><rule> (became a DNAT/rdr rule) by moving it to the proper snatrules model, then reloaded filter",
+    "Verified directional NAT with live TCP connections both ways",
+    "Captured baseline boot markers (kern.boottime on node1, boot_id on node2/node3) and confirmed persisted config (interfaces, NAT mode, snatrules count) in config.xml, plus saved NetworkManager connection profile files",
+    "Restarted node2 via systemctl reboot (backgrounded ack), polled until reachable, confirmed changed boot_id, restored listener, reverified NAT behavior both directions",
+    "Restarted node3 the same way, confirmed changed boot_id, restored listener, reverified NAT behavior both directions",
+    "Restarted node1 via /sbin/shutdown -r now (backgrounded ack), polled until reachable, confirmed changed kern.boottime, verified interfaces/pf NAT/filter rules auto-restored from config.xml, reverified end-to-end NAT behavior both directions"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2(lan-a)->node3(lan-b) connection observed by node3 as arriving from a chosen node1 address",
+      "command_ids": [
+        "cmd-0c9b62102bf8422d",
+        "cmd-ea06e0295fae4802"
+      ],
+      "summary": "TCP connect from node2 to node3:5000 reported by node3's listener as originating from ('10.60.20.1', ...) -- node1's lan-b interface address, not node2's real address"
+    },
+    {
+      "requirement": "node3(lan-b)->node2(lan-a) connection keeps its original source (no NAT applied in reverse direction)",
+      "command_ids": [
+        "cmd-668e9640cd454ed0",
+        "cmd-6c89b8d55ac945ae"
+      ],
+      "summary": "TCP connect from node3 to node2:5001 reported by node2's listener as originating from ('10.60.20.2', ...) -- node3's own real address, unmodified"
+    },
+    {
+      "requirement": "Directional NAT rule correctly installed in pf / config.xml (not accidentally a port-forward)",
+      "command_ids": [
+        "cmd-fdd0ee6b9ffd42fe"
+      ],
+      "summary": "pfctl -s nat shows 'nat on vtnet2 inet from (vtnet1:network) to any -> 10.60.20.1 port 1024:65535' -- outbound SNAT only for lan-a-sourced traffic exiting via lan-b interface"
+    },
+    {
+      "requirement": "Baseline (pre-restart) health of node1 router config and forwarding",
+      "command_ids": [
+        "cmd-3899f7587d104680",
+        "cmd-3453f4cb598e4510"
+      ],
+      "summary": "kern.boottime baseline captured (Sep 5 16:24:16 2026); config.xml confirmed to contain opt1/opt2 interfaces, hybrid NAT mode, 1 snatrules entry"
+    },
+    {
+      "requirement": "node2 restart: boot identity change and post-restart recovery",
+      "command_ids": [
+        "cmd-fddbdf7f26c94295",
+        "cmd-efd46828daad4915",
+        "cmd-36f1e211a3d4442a",
+        "cmd-c1485032b3ff489c",
+        "cmd-9e0a3af2a5834e19",
+        "cmd-f0652c983d3c43b8"
+      ],
+      "summary": "boot_id changed from 9bdcc129... to c6fe83df... after systemctl reboot; eth1 static IP/route and firewalld port persisted; live NAT test post-reboot confirmed correct asymmetric behavior in both directions"
+    },
+    {
+      "requirement": "node3 restart: boot identity change and post-restart recovery",
+      "command_ids": [
+        "cmd-2dd53d6b63d8493a",
+        "cmd-9aade3fc2a90438b",
+        "cmd-76a8c81aac43409e",
+        "cmd-ec226773369c45ab",
+        "cmd-4427d6ec3c234cd3",
+        "cmd-6780975e1b1a4040"
+      ],
+      "summary": "boot_id changed from f54d7366... to c182563a... after systemctl reboot; eth1 config and firewalld port persisted; live NAT test post-reboot confirmed correct asymmetric behavior in both directions"
+    },
+    {
+      "requirement": "node1 (router) restart: boot identity change and post-restart recovery of routing/firewall/NAT and full data-plane behavior",
+      "command_ids": [
+        "cmd-10a827c1fbc64316",
+        "cmd-bba0bc428ac84125",
+        "cmd-0fcd30a2dec04493",
+        "cmd-4a91711312c442c3",
+        "cmd-b27a8cdd1abc4751"
+      ],
+      "summary": "kern.boottime changed from 16:24:16 to 16:30:25 after /sbin/shutdown -r now; post-reboot pfctl confirmed opt1/opt2 interfaces, pass rules, and the directional SNAT rule auto-restored from persisted config.xml; live end-to-end TCP test post-reboot reconfirmed node2->node3 NATted to 10.60.20.1 and node3->node2 unmodified"
+    }
+  ]
+}

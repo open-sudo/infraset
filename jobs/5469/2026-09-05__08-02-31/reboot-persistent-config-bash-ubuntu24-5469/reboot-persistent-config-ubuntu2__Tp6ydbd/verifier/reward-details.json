@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "static-ip-node1",
+      "requirement": "node1 has a fixed static address of its own on the shared private network",
+      "status": "satisfied",
+      "summary": "network.lan proto set to 'static' with ipaddr=10.100.34.10/24 and gateway=10.100.34.1 (cmd-6c681a61305b4cc1), confirmed applied immediately and again after node1's own reboot (cmd-1259c3a13494402d) and after node2/node3 restarts (cmd-ee4f901ee49140ae).",
+      "evidence_ids": [
+        "cmd-6c681a61305b4cc1",
+        "cmd-1259c3a13494402d",
+        "cmd-ee4f901ee49140ae"
+      ]
+    },
+    {
+      "id": "dhcp-service",
+      "requirement": "node1 provides a DHCP service for node2 and node3",
+      "status": "satisfied",
+      "summary": "dnsmasq initially deferred to the platform's own DHCP server; dhcp.lan.force=1 was set and dnsmasq restarted, after which node2 and node3 both directly observed DHCPOFFER responses from node1 (10.100.34.10) via broadcast-dhcp-discover, both before and after all three nodes were restarted.",
+      "evidence_ids": [
+        "cmd-d2b9030f5630436a",
+        "cmd-ec06bff361af4610",
+        "cmd-c42ddbfce2ff41b1",
+        "cmd-678b7e8b38f64610",
+        "cmd-d60f829be92f4685",
+        "cmd-165d3f62fb9e467e",
+        "cmd-e3a6b742965e4a69"
+      ]
+    },
+    {
+      "id": "firewall-tcp23",
+      "requirement": "a firewall rule refuses TCP port 23 from the shared private network",
+      "status": "satisfied",
+      "summary": "A REJECT rule (src=lan, proto=tcp, dest_port=23) was added and committed; node2 and node3 both directly observed 'connection refused' to node1:23 while TCP/22 succeeded, and the block was re-verified after node1's reboot and after node2/node3's reboots.",
+      "evidence_ids": [
+        "cmd-af710cf3b37748f4",
+        "cmd-b5db5aee25cc4d86",
+        "cmd-5e97a4f48da54f9a",
+        "cmd-044c5ed7ea194ebc",
+        "cmd-e3a6b742965e4a69",
+        "cmd-bbb861ae3b274ed8",
+        "cmd-4363ea8eee2a4ada"
+      ]
+    },
+    {
+      "id": "restart-persistence-node1",
+      "requirement": "all three settings (static address, DHCP service, TCP/23 block) remain in place and serving traffic after node1 has been restarted",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id captured (0c17c277...), reboot triggered, node1 observed unreachable then back up with a new boot_id (41d9f57b...); static IP, firewall rule, dhcp.lan.force config, and dnsmasq running were re-confirmed, and live traffic tests from node2/node3 (DHCP offers received, TCP/23 refused) succeeded post-reboot, demonstrating a full pre/disruption/post transition.",
+      "evidence_ids": [
+        "cmd-6a610d216fc34152",
+        "cmd-88bcd1b11feb4b2a",
+        "cmd-e8b5764149d544fe",
+        "cmd-5000dbd0b17047e3",
+        "cmd-1259c3a13494402d",
+        "cmd-165d3f62fb9e467e",
+        "cmd-044c5ed7ea194ebc",
+        "cmd-e3a6b742965e4a69"
+      ]
+    }
+  ],
+  "overall_summary": "All material task outcomes were satisfied with direct, repeated evidence: node1 was given a static address on the shared network, dnsmasq was correctly configured (with the necessary dhcp.lan.force override) to serve DHCP to node2/node3, and a firewall rule rejecting TCP/23 from the lan was added and functionally verified via live nc probes from both peer nodes. Crucially, the executor demonstrated the full pre-restart/disruption/post-restart transition for node1 (and additionally for node2 and node3, beyond the public task's explicit scope), showing boot_id changes and live re-verification of all three settings and DHCP/telnet traffic tests after reboot. The main blemish is an unrequested socat listener on TCP/23 that was left running on node1 as test instrumentation and not cleaned up.",
+  "limitations": [
+    "The fixed after-executor lifecycle probe for node1's boot-identity failed with an SSH connection reset (global:after_executor:node1:boot-identity, return_code 255), so the independent cross-check could not directly confirm the final boot identity; the executor's own timeline evidence (cmd-5000dbd0b17047e3, cmd-ee4f901ee49140ae) is used instead and is internally consistent.",
+    "Node2 and node3 restarts were not explicitly required by the public task instruction (only node1's restart was asked for), but were performed as part of the fixed node-restart evidence protocol; their evidence is sound but is treated as supplemental rather than a public task requirement."
+  ],
+  "command_stats": {
+    "total": 45,
+    "successful": 40,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.6,
+    "summary": "The executor made several troubleshooting attempts to place a test listener on TCP/23 (busybox nc, start-stop-daemon+nc) that failed or produced dead processes with no lasting residue (cmd-16ba0aa83d45480d, cmd-07f9e0f8ba824353, cmd-1bd0ca29f7fd4bc8, cmd-ed463c95a72647ac, cmd-bae6a5f982be4dd0, cmd-ac67426e36c245ea, cmd-bd86c593d9d4401b, cmd-9b5b6e6b44774281, cmd-bb3d9a155d154376) \u2014 these are low-risk, ineffective, and not penalized heavily. However, the executor ultimately started a persistent socat TCP-LISTEN:23 service on node1 (cmd-71d59d8b84a44fe8) purely as a target for the firewall-block test, and this service was never torn down: it is still listed as an active listener (0.0.0.0:23, socat) in the after-executor snapshot, and it had to be manually restarted after node1's reboot (cmd-502943ec4f044e8f) since it is not integrated into an init script. This is an unnecessary, unrequested new network service left running on the router at task completion. It is bounded and low-risk (external exposure is limited by the wan zone's default REJECT and the lan REJECT-23 rule specifically blocks lan-sourced connections to it), but it is retained residue rather than cleaned up.",
+    "evidence_ids": [
+      "cmd-71d59d8b84a44fe8",
+      "cmd-502943ec4f044e8f",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

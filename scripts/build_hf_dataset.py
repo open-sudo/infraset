@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +33,8 @@ REPOSITORY = Path(__file__).resolve().parents[1]
 JOBS_ROOT = REPOSITORY / "jobs"
 TASKS_ROOT = REPOSITORY / "tasks"
 OUTPUT_ROOT = REPOSITORY / "data"
+sys.path.insert(0, str(Path(__file__).parent))
+from job_layout import job_location, resolve_job_path  # noqa: E402
 
 METRICS = (
     "reward",
@@ -46,8 +49,9 @@ METRICS = (
 # counts as an LLM failure even though no executor command log was created.
 NO_COMMAND_LLM_RUNS = (
     Path(
-        "single-node-os-comparison/ubuntu24/account-resource-limits-ubuntu24/"
-        "2026-09-07__23-50-19/account-resource-limits-ubuntu24__QyQkzn4"
+        "vanilla/single-node-os-comparison/2026-09-07__23-50-19/ubuntu24/"
+        "account-resource-limits-ubuntu24/"
+        "account-resource-limits-ubuntu24__QyQkzn4"
     ),
 )
 
@@ -64,22 +68,20 @@ def parse_timestamp(value: str) -> datetime | None:
 def run_identity(trial_dir: Path) -> dict[str, str]:
     """Derive category, image, task family and run id from a trial directory.
 
-    Trial paths are <jobs>/<category>/<image>/<task>/<timestamp>/<cluster>.
+    Trial paths are <jobs>/<scenario>/<timestamp>/<task>/<cluster>.
+    Older runner/date and legacy task/date layouts are also read.
     """
-    parts = trial_dir.relative_to(JOBS_ROOT).parts
-    category, image, task, stamp, cluster = (
-        parts[0],
-        parts[1],
-        parts[2],
-        parts[3],
-        parts[4],
-    )
+    location = job_location(trial_dir.parent, JOBS_ROOT)
+    category = location.category
+    image = location.task_parts[1] if len(location.task_parts) > 2 else ""
+    task = location.task_name
     return {
-        "run_id": f"{category}/{image}/{task}/{stamp}/{cluster}",
+        "run_id": str(trial_dir.relative_to(JOBS_ROOT)),
+        "runner": location.runner,
         "category": category,
         "image": image,
         "task": task,
-        "started_at_dir": stamp,
+        "started_at_dir": location.run_name,
     }
 
 
@@ -192,7 +194,7 @@ def build_runs_and_commands() -> tuple[list[dict], list[dict]]:
             commands.append({"run_id": identity["run_id"], **row})
 
     for relative in NO_COMMAND_LLM_RUNS:
-        trial_dir = JOBS_ROOT / relative
+        trial_dir = resolve_job_path(JOBS_ROOT / relative, JOBS_ROOT)
         identity = run_identity(trial_dir)
         runs.append(
             {
@@ -214,7 +216,8 @@ def build_tasks() -> list[dict]:
     tasks: list[dict] = []
     for instruction in sorted(TASKS_ROOT.rglob("instruction.md")):
         task_dir = instruction.parent
-        parts = task_dir.relative_to(TASKS_ROOT).parts
+        with (task_dir / "variant.toml").open("rb") as handle:
+            variant = tomllib.load(handle)
         config: dict = {}
         config_path = task_dir / "task.toml"
         if config_path.exists():
@@ -232,8 +235,8 @@ def build_tasks() -> list[dict]:
         tasks.append(
             {
                 "task_path": str(task_dir.relative_to(REPOSITORY)),
-                "category": parts[0],
-                "image_dir": parts[1] if len(parts) > 2 else None,
+                "category": variant["category"],
+                "image_dir": variant["os"],
                 "slug": task_dir.name,
                 "difficulty": (config.get("metadata") or {}).get("difficulty"),
                 "agent_timeout_sec": (config.get("agent") or {}).get("timeout_sec"),

@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "Created a loop-file-backed LVM stack on node1 (PV /dev/loop0 on /var/lib/lvm-backing/disk1.img, VG datavg, LV datalv), formatted ext4 and mounted it at /srv/data. Wrote test content, then grew the LV online from 800M to 2.15GiB (>2GB) using lvextend -r while mounted, verifying checksums matched before and after. Installed and enabled a systemd unit (srv-data-lvm.service) to reattach the loop device, activate the VG, and mount /srv/data at boot. Restarted node1 three times, hardening the boot unit after the first two hit udev/device-node race conditions, until the mount reliably recovers automatically; boot_id changed on every restart and checksums verified data integrity each time.",
+  "actions_performed": [
+    "Inspected node1 disk layout: single vda1 root disk, no spare block device available for a native PV",
+    "Created a 3GiB sparse backing file and attached it as loop device /dev/loop0",
+    "Ran pvcreate/vgcreate/lvcreate to build datavg/datalv (800M initial size), formatted ext4, mounted at /srv/data",
+    "Wrote testfile.txt and a 50MB payload.bin, recorded sha256 checksums as baseline content",
+    "Ran lvextend -L 2200M -r online while /srv/data stayed mounted; filesystem grew to 2.2G and checksums verified unchanged",
+    "Created /usr/local/sbin/srv-data-lvm-start.sh / stop.sh and systemd unit srv-data-lvm.service, enabled for boot",
+    "Captured pre-restart baseline (boot_id, lvs, mount, md5sums) then issued sudo reboot (cycle 1)",
+    "Polled node1 until reachable; confirmed boot_id changed; found boot service failed on a VG-not-found race, manually remounted and verified data, then hardened script with a retry loop",
+    "Repeated reboot (cycle 2); service failed again on a device-node race, added udevadm settle plus a device-wait loop, manually recovered and re-verified",
+    "Repeated reboot (cycle 3); hardened service succeeded automatically at boot, mount and checksums verified with no manual intervention"
+  ],
+  "evidence": [
+    {
+      "requirement": "LV created, formatted, and mounted at /srv/data with contents written",
+      "command_ids": [
+        "cmd-6cb1b2a0132e4f7c"
+      ],
+      "summary": "Batch script output shows pvcreate/vgcreate/lvcreate succeeding, mkfs.ext4, mount at /srv/data (772M), and testfile.txt/payload.bin written with sha256 checksums recorded"
+    },
+    {
+      "requirement": "LV grown to at least 2GB while remaining mounted, contents intact",
+      "command_ids": [
+        "cmd-6cb1b2a0132e4f7c"
+      ],
+      "summary": "Same run shows lvextend -L 2200M -r performed while filesystem was mounted (on-line resizing required), resulting in 2.2G filesystem, and sha256sum -c confirming testfile.txt and payload.bin unchanged after growth"
+    },
+    {
+      "requirement": "Healthy baseline captured before first restart",
+      "command_ids": [
+        "cmd-4ec1937327fc4a35"
+      ],
+      "summary": "Captured boot_id 6ab98831..., lvs showing datalv active at 2.15g, /srv/data mounted, and md5sums of both files prior to reboot cycle 1"
+    },
+    {
+      "requirement": "Restart 1 acknowledged and boot identity changed",
+      "command_ids": [
+        "cmd-456fe31f3172409b",
+        "cmd-f12910a5987841a9"
+      ],
+      "summary": "sudo reboot issued and connection dropped; subsequent poll returned new boot_id cc0b0ce6..., proving the node actually rebooted"
+    },
+    {
+      "requirement": "Post-restart 1 recovery verified and gap fixed",
+      "command_ids": [
+        "cmd-85ed084e14204a0e",
+        "cmd-647b479bf73346d2"
+      ],
+      "summary": "systemctl status showed the boot-time mount service failed (VG not found race) though LV was later auto-activated; manual mount plus sha256sum -c confirmed data integrity, and the startup script was hardened with a retry loop"
+    },
+    {
+      "requirement": "Baseline before restart 2 and restart 2 identity change",
+      "command_ids": [
+        "cmd-920ee2d5190e4ce0",
+        "cmd-4f603e1237ee46af",
+        "cmd-0110e3643eb74e15"
+      ],
+      "summary": "Captured boot_id cc0b0ce6... baseline with mount/md5sum healthy, issued reboot, and confirmed new boot_id f3b46d4d... after reconnecting"
+    },
+    {
+      "requirement": "Post-restart 2 diagnosis and further hardening",
+      "command_ids": [
+        "cmd-80fcd32e0d4e464a",
+        "cmd-396e2d4dd4ba450d"
+      ],
+      "summary": "Service failed again due to a device-node creation race (mount: special device does not exist); fixed by adding udevadm settle and a device-wait loop, then manually verified mount and checksums OK"
+    },
+    {
+      "requirement": "Baseline before restart 3 and restart 3 identity change",
+      "command_ids": [
+        "cmd-0e05172f59a04776",
+        "cmd-2e1f2cfaf8794630",
+        "cmd-8d1764dea3324b6f",
+        "cmd-729d30ac932f4182"
+      ],
+      "summary": "Captured boot_id f3b46d4d... baseline, issued reboot, polled through connection-refused states, and confirmed new boot_id 772f3c63... after node1 came back"
+    },
+    {
+      "requirement": "Final automatic recovery proof (LVM active, mounted, data intact) without manual intervention",
+      "command_ids": [
+        "cmd-463595bea37f4ed9"
+      ],
+      "summary": "srv-data-lvm.service reported active (exited) with successful ExecStart, lvs shows datalv active at 2.15g, /srv/data mounted via /dev/mapper/datavg-datalv, and sha256sum -c confirmed both files OK \u2014 all without any manual remediation"
+    }
+  ]
+}

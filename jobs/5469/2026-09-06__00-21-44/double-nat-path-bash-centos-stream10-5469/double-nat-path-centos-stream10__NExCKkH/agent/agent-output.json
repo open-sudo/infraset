@@ -1,0 +1,96 @@
+{
+  "status": "completed",
+  "summary": "Built a double-NAT transit path: node3 (lan-a, 192.168.10.0/24) sends to node4 (lan-b, 192.168.30.0/24:8080); node1 (VyOS) SNATs the traffic to its transit IP 192.168.20.1 as it enters the transit network; node2 (OPNsense) SNATs it again to its lan-b IP 192.168.30.1 as it enters lan-b. node4 records every connection as arriving from node2 (192.168.30.1), never from node3 or node1's addresses. Completed the mandatory restart protocol on all four nodes (node1 VyOS, node2 OPNsense/FreeBSD, node3/node4 CentOS Stream 10) one at a time, each showing a changed OS-native boot identity and full recovery of interfaces, NAT/firewall rules, routes, and the HTTP service; re-verified the full double-NAT path end-to-end after all restarts.",
+  "actions_performed": [
+    "Mapped the physical topology by testing candidate /30 point-to-point links, confirming node1 eth2<->node3 enp8s0 (lan-a), node1 eth1<->node2 vtnet1 (transit), and node2 vtnet2<->node4 enp8s0 (lan-b)",
+    "Configured VyOS node1: eth2=192.168.10.1/24 (lan-a gw), eth1=192.168.20.1/24 (transit), static route 192.168.30.0/24 via 192.168.20.2, NAT source rule 10 masquerading 192.168.10.0/24 out eth1, forward-filter default-action accept; committed and saved",
+    "Configured node3 (CentOS) enp8s0 static 192.168.10.12/24 via NetworkManager plus a static route to 192.168.30.0/24 via 192.168.10.1",
+    "Configured node4 (CentOS) enp8s0 static 192.168.30.13/24 via NetworkManager; created/enabled systemd unit lanb-http.service serving /srv/www on 0.0.0.0:8080; opened firewalld tcp/8080",
+    "Edited OPNsense node2 /conf/config.xml (backed up first) to add opt1/TRANSIT (vtnet1, 192.168.20.2/24) and opt2/LANB (vtnet2, 192.168.30.1/24) interfaces, a pass rule allowing opt1->opt2 tcp/8080, switched outbound NAT to hybrid mode, and added an outbound NAT (masquerade-to-interface-address) rule on opt2; applied with configctl interface reconfigure opt1/opt2 and configctl filter reload",
+    "Verified end-to-end HTTP request from node3 to node4:8080 succeeds (HTTP 200) and node4's access log/conntrack/pf-state chain shows the double translation: node3->node1(SNAT to 192.168.20.1)->node2(SNAT to 192.168.30.1)->node4",
+    "Captured pre-restart baselines (boot_id/kern.boottime, interface/service state) on all four nodes",
+    "Restarted node1, node2, node3, node4 one at a time using each OS's native reboot mechanism, backgrounding the command so the ack returned before disconnect, then polled each node until exec access returned",
+    "Confirmed changed boot identity on every node (new /proc/sys/kernel/random/boot_id on the three Linux nodes, new kern.boottime timestamp on OPNsense/FreeBSD) and re-verified interfaces, NAT/firewall rules, routes, and the HTTP service were intact after each restart",
+    "Re-ran the end-to-end curl test from node3 to node4 after all four restarts and confirmed node4's log again shows the source as node2's lan-b address 192.168.30.1"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 performs source NAT translating node3's lan-a address to its own transit-facing address as traffic enters the transit network",
+      "command_ids": [
+        "cmd-e24101eff21e4f61",
+        "cmd-606e06cdecbe4580",
+        "cmd-811a7262de954808",
+        "cmd-c8139a8bb79046da",
+        "cmd-5877c0d502374a73"
+      ],
+      "summary": "VyOS NAT source rule 10 (192.168.10.0/24 -> masquerade out eth1) committed and shown in 'show nat source rules'; conntrack on node1 shows src=192.168.10.12 (node3) translated to src=192.168.20.1 (node1 transit IP) toward dst=192.168.30.13 (node4), both before and after the restart cycle"
+    },
+    {
+      "requirement": "node2 performs a second source NAT translating the transit-hop address to its own lan-b-facing address as traffic enters lan-b",
+      "command_ids": [
+        "cmd-5cfb8ac5b6c0415e",
+        "cmd-ece093ce629449c1",
+        "cmd-b917dfde42834869",
+        "cmd-e54ea63cbaaf4e63",
+        "cmd-3a7f90076a90487f"
+      ],
+      "summary": "OPNsense outbound NAT rule on opt2/vtnet2 (masquerade to interface address) is active in pfctl -s nat ('nat on vtnet2 inet all -> (vtnet2:0)'); pf state shows src 192.168.20.1 (node1) translated to 192.168.30.1:port (node2 lan-b IP) toward node4:8080, both before and after the restart cycle"
+    },
+    {
+      "requirement": "node4 records the connection as arriving from node2 (192.168.30.1), not from node3 or node1",
+      "command_ids": [
+        "cmd-603625c65c45454a",
+        "cmd-a25d588faf05498e"
+      ],
+      "summary": "node4's lanb-http.service journal log shows GET requests logged with source IP 192.168.30.1 (node2's lan-b address), both in the initial test and again after all four nodes were restarted"
+    },
+    {
+      "requirement": "end-to-end HTTP connectivity from node3 (lan-a) to node4:8080 (lan-b) works through the double-NAT path",
+      "command_ids": [
+        "cmd-218d755c26994764",
+        "cmd-22efb1b2319247fe"
+      ],
+      "summary": "curl from node3 to http://192.168.30.13:8080/ returns HTTP 200 with body 'hello from node4', verified once before and once after the full restart cycle"
+    },
+    {
+      "requirement": "node1 (VyOS) restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-82f0be4350a2458a",
+        "cmd-9d77ec5aa34b4ec6",
+        "cmd-2c12c68326c745e9",
+        "cmd-043a01e467af4fc3"
+      ],
+      "summary": "Baseline boot_id 5bcff8f9... and working NAT/interfaces captured; reboot acknowledged; post-restart boot_id 59c5eb4d... (changed) with uptime 0m; NAT rule, interfaces, and route to lan-b all restored after reboot"
+    },
+    {
+      "requirement": "node2 (OPNsense/FreeBSD) restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-727083262cd64521",
+        "cmd-fcc591819c1948e6",
+        "cmd-d3dade50fc5b455b",
+        "cmd-cd55f8c0168e461d"
+      ],
+      "summary": "Baseline kern.boottime sec=1788670510 and working interfaces/pf captured; reboot invoked via rc.reboot; post-restart kern.boottime sec=1788670990 (changed, new boot) with 6s uptime; vtnet1/vtnet2 addresses, outbound NAT rule, and opt1->opt2 pass rule all restored after reboot"
+    },
+    {
+      "requirement": "node3 (CentOS, lan-a client) restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-25cc59f301844ad6",
+        "cmd-17460536c1724b11",
+        "cmd-3e0072bf0def495d",
+        "cmd-2218e2de8f8f4d0d"
+      ],
+      "summary": "Baseline boot_id d4784d1b... and static IP/route captured; reboot command issued; post-restart boot_id 182d97ff... (changed) with uptime 0m; static IP 192.168.10.12/24 and route to 192.168.30.0/24 persisted via NetworkManager after reboot"
+    },
+    {
+      "requirement": "node4 (CentOS, lan-b server) restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-3bbb1b4a8894448b",
+        "cmd-bd5533d0b2434c30",
+        "cmd-4f11c62ebe634881",
+        "cmd-ff727b1852b04664"
+      ],
+      "summary": "Baseline boot_id 984a7d52... and active lanb-http.service on :8080 captured; reboot command issued; post-restart boot_id ca041523... (changed) with uptime 0m; static IP 192.168.30.13/24 and lanb-http.service (systemd-enabled) both recovered and listening on 8080 after reboot"
+    }
+  ]
+}

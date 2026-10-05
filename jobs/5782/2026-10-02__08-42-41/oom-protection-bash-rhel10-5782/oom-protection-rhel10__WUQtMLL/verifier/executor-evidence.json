@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 16,
+    "successful": 15,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "inventory-api is a managed, OOM-protected service",
+      "command_ids": [
+        "cmd-14788d25e7b143e9",
+        "cmd-336ae0030a2540ac"
+      ],
+      "summary": "The service is enabled and active, listens on port 8080, serves health and inventory JSON, restarts automatically, and its live process has oom_score_adj=-900."
+    },
+    {
+      "requirement": "The memory hog is stopped by the kernel while inventory-api keeps serving",
+      "command_ids": [
+        "cmd-da89c54174f74923",
+        "cmd-2dfe2c6c6ca44737",
+        "cmd-3f1ecd9c1f5e4117",
+        "cmd-9cbda516fc7e4434"
+      ],
+      "summary": "The hog ran with oom_score_adj=1000. Kernel logs identify its PID as the OOM victim and systemd reports result=oom-kill; inventory-api remained active, responsive, and had zero restarts."
+    },
+    {
+      "requirement": "node1 restart persistence and recovery",
+      "command_ids": [
+        "cmd-974e141255f045ba",
+        "cmd-b81ebc83c8844d6b",
+        "cmd-e283fc55d55d4aab",
+        "cmd-a53219ad41bc4f2a"
+      ],
+      "summary": "Pre-restart boot ID and healthy data were captured, the reboot was acknowledged, the boot ID changed from 7223d5b7-fa56-4ff3-acee-959a5cf5f146 to aafdcc3d-f477-41e7-8757-995d2b2dbabe, and the enabled service returned healthy inventory data afterward with oom_score_adj=-900."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-4e97a2be83144fed",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:20:45.476256+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1659,
+      "command": "printf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"; cat /etc/redhat-release; printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; free -h; systemctl status inventory-api --no-pager 2>&1 || true; systemctl cat inventory-api 2>&1 || true; ss -ltnp",
+      "stdout": "node=node1 ip=10.100.246.10\nRed Hat Enterprise Linux release 10.0 (Coughlan)\nboot_id=7223d5b7-fa56-4ff3-acee-959a5cf5f146\n               total        used        free      shared  buff/cache   available\nMem:           1.9Gi       476Mi       1.3Gi        10Mi       305Mi       1.4Gi\nSwap:          2.0Gi          0B       2.0Gi\nUnit inventory-api.service could not be found.\nNo files found for inventory-api.service.\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                       \nLISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:((\"sshd\",pid=759,fd=7))\nLISTEN 0      128             [::]:22           [::]:*    users:((\"sshd\",pid=759,fd=8))"
+    },
+    {
+      "command_id": "cmd-895a5e92e28049b6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:20:57.366463+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2004,
+      "command": "id; command -v python3; python3 --version; systemctl --version | head -1; printf 'cgroup='; stat -fc %T /sys/fs/cgroup; getenforce; systemctl is-active systemd-oomd 2>/dev/null || true; sysctl vm.overcommit_memory vm.panic_on_oom; cat /proc/swaps",
+      "stdout": "uid=0(root) gid=0(root) groups=0(root) context=system_u:system_r:unconfined_service_t:s0\n/usr/bin/python3\nPython 3.12.9\nsystemd 257 (257-9.el10_0.1-g8cd5633)\ncgroup=cgroup2fs\nEnforcing\ninactive\nvm.overcommit_memory = 0\nvm.panic_on_oom = 0\nFilename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/dev/vda3                               partition\t2097148\t\t0\t\t-2"
+    },
+    {
+      "command_id": "cmd-426efa57fafc47d2",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:21:07.190460+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1495,
+      "command": "getent passwd inventory-api >/dev/null || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin inventory-api; getent passwd inventory-api",
+      "stdout": "inventory-api:x:992:992::/nonexistent:/usr/sbin/nologin"
+    },
+    {
+      "command_id": "cmd-7c2498088874433d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:21:19.770911+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1632,
+      "command": "install -d -m 0755 /usr/local/libexec\ncat > /usr/local/libexec/inventory-api <<'ANTRIEB_INVENTORY_API'\n#!/usr/bin/python3\nimport json\nimport os\nimport platform\nimport socket\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nclass Handler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        if self.path not in (\"/\", \"/inventory\", \"/healthz\"):\n            self.send_error(404)\n            return\n        if self.path == \"/healthz\":\n            payload = {\"service\": \"inventory-api\", \"status\": \"ok\"}\n        else:\n            with open(\"/proc/meminfo\", encoding=\"ascii\") as source:\n                mem_total = next(line.split()[1] for line in source if line.startswith(\"MemTotal:\"))\n            payload = {\n                \"service\": \"inventory-api\",\n                \"status\": \"ok\",\n                \"node\": socket.gethostname(),\n                \"os\": platform.freedesktop_os_release().get(\"PRETTY_NAME\", platform.platform()),\n                \"memory_total_kib\": int(mem_total),\n            }\n        body = json.dumps(payload, sort_keys=True).encode()\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"application/json\")\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\n\n    def log_message(self, fmt, *args):\n        print(\"%s - %s\" % (self.address_string(), fmt % args), flush=True)\n\nif __name__ == \"__main__\":\n    address = os.environ.get(\"INVENTORY_API_ADDRESS\", \"0.0.0.0\")\n    port = int(os.environ.get(\"INVENTORY_API_PORT\", \"8080\"))\n    ThreadingHTTPServer((address, port), Handler).serve_forever()\nANTRIEB_INVENTORY_API\nchmod 0755 /usr/local/libexec/inventory-api\nchown root:root /usr/local/libexec/inventory-api\n/usr/bin/python3 -m py_compile /usr/local/libexec/inventory-api\nls -lZ /usr/local/libexec/inventory-api",
+      "stdout": "-rwxr-xr-x. 1 root root system_u:object_r:usr_t:s0 1514 Oct  2 11:21 /usr/local/libexec/inventory-api"
+    },
+    {
+      "command_id": "cmd-14788d25e7b143e9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:21:30.856122+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2032,
+      "command": "cat > /etc/systemd/system/inventory-api.service <<'ANTRIEB_INVENTORY_UNIT'\n[Unit]\nDescription=Inventory API\nAfter=network.target\n\n[Service]\nType=simple\nUser=inventory-api\nGroup=inventory-api\nExecStart=/usr/local/libexec/inventory-api\nRestart=always\nRestartSec=1s\nOOMScoreAdjust=-900\nMemoryLow=64M\nMemoryMin=32M\nNoNewPrivileges=yes\nPrivateTmp=yes\nProtectSystem=strict\nProtectHome=yes\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectControlGroups=yes\nRestrictSUIDSGID=yes\nLockPersonality=yes\nRestrictAddressFamilies=AF_INET AF_INET6\nCapabilityBoundingSet=\nAmbientCapabilities=\n\n[Install]\nWantedBy=multi-user.target\nANTRIEB_INVENTORY_UNIT\nsystemctl daemon-reload\nsystemctl enable --now inventory-api\nsystemctl is-enabled inventory-api\nsystemctl is-active inventory-api",
+      "stdout": "Created symlink '/etc/systemd/system/multi-user.target.wants/inventory-api.service' \u2192 '/etc/systemd/system/inventory-api.service'.\nenabled\nactive"
+    },
+    {
+      "command_id": "cmd-336ae0030a2540ac",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:21:43.396659+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2277,
+      "command": "api_pid=$(systemctl show -p MainPID --value inventory-api); printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; systemctl is-enabled inventory-api; systemctl is-active inventory-api; systemctl show inventory-api -p MainPID -p ActiveState -p SubState -p Restart -p OOMScoreAdjust -p MemoryLow -p MemoryMin; printf 'proc_oom_score_adj='; cat /proc/$api_pid/oom_score_adj; printf 'listener:\\n'; ss -ltnp '( sport = :8080 )'; printf 'health:\\n'; curl --fail --show-error --silent \"http://$NODE_IP:8080/healthz\"; printf '\\ninventory:\\n'; curl --fail --show-error --silent \"http://$NODE_IP:8080/inventory\"; printf '\\n' ",
+      "stdout": "boot_id=7223d5b7-fa56-4ff3-acee-959a5cf5f146\nenabled\nactive\nRestart=always\nMainPID=1679\nMemoryMin=33554432\nMemoryLow=67108864\nOOMScoreAdjust=-900\nActiveState=active\nSubState=running\nproc_oom_score_adj=-900\nlistener:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                                 \nLISTEN 0      5            0.0.0.0:8080      0.0.0.0:*    users:((\"inventory-api\",pid=1679,fd=3))\nhealth:\n{\"service\": \"inventory-api\", \"status\": \"ok\"}\ninventory:\n{\"memory_total_kib\": 2007740, \"node\": \"node1\", \"os\": \"Red Hat Enterprise Linux 10.0 (Coughlan)\", \"service\": \"inventory-api\", \"status\": \"ok\"}"
+    },
+    {
+      "command_id": "cmd-da89c54174f74923",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:21:59.806844+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1631,
+      "command": "systemctl stop inventory-oom-hog-test.service 2>/dev/null || true\nsystemctl reset-failed inventory-oom-hog-test.service 2>/dev/null || true\ndate --iso-8601=seconds > /run/inventory-oom-test.start\nsystemd-run --unit=inventory-oom-hog-test --property=MemoryMax=192M --property=MemorySwapMax=0 --property=OOMScoreAdjust=1000 --property=OOMPolicy=stop /usr/bin/python3 -c 'import time\nchunks = []\nwhile True:\n    chunks.append(bytearray(4 * 1024 * 1024))\n    time.sleep(0.2)'\nsystemctl show inventory-oom-hog-test -p ActiveState -p MainPID -p MemoryMax -p MemorySwapMax -p OOMScoreAdjust",
+      "stdout": "Running as unit: inventory-oom-hog-test.service; invocation ID: 112c3cc6089849febce5e5e0d885c311\nMainPID=1727\nMemoryMax=201326592\nMemorySwapMax=0\nOOMScoreAdjust=1000\nActiveState=active"
+    },
+    {
+      "command_id": "cmd-2dfe2c6c6ca44737",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:22:04.830141+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1461,
+      "command": "hog_pid=$(systemctl show -p MainPID --value inventory-oom-hog-test); api_pid=$(systemctl show -p MainPID --value inventory-api); printf 'hog_pid=%s hog_oom_score_adj=' \"$hog_pid\"; cat /proc/$hog_pid/oom_score_adj; printf 'api_pid=%s api_oom_score_adj=' \"$api_pid\"; cat /proc/$api_pid/oom_score_adj; printf 'hog_memory_current='; systemctl show -p MemoryCurrent --value inventory-oom-hog-test; printf 'api_during_pressure='; curl --fail --silent --show-error \"http://$NODE_IP:8080/healthz\"; printf '\\n' ",
+      "stdout": "hog_pid=1727 hog_oom_score_adj=1000\napi_pid=1679 api_oom_score_adj=-900\nhog_memory_current=112672768\napi_during_pressure={\"service\": \"inventory-api\", \"status\": \"ok\"}"
+    },
+    {
+      "command_id": "cmd-3f1ecd9c1f5e4117",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:22:10.772819+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1686,
+      "command": "ok=0; failed=0; n=0\nwhile [ \"$n\" -lt 200 ]; do\n  if curl --max-time 1 --fail --silent \"http://$NODE_IP:8080/healthz\" >/dev/null; then ok=$((ok + 1)); else failed=$((failed + 1)); fi\n  n=$((n + 1))\n  if ! systemctl is-active --quiet inventory-oom-hog-test; then break; fi\n  sleep 0.05\ndone\nprintf 'health_probes_ok=%s health_probes_failed=%s\\n' \"$ok\" \"$failed\"\nsystemctl show inventory-oom-hog-test -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p MemoryCurrent -p MemoryPeak\nsystemctl is-active inventory-api\ncurl --fail --show-error --silent \"http://$NODE_IP:8080/inventory\"; printf '\\n' ",
+      "stdout": "health_probes_ok=1 health_probes_failed=0\nResult=oom-kill\nExecMainCode=2\nExecMainStatus=9\nMemoryCurrent=[not set]\nMemoryPeak=201326592\nActiveState=failed\nSubState=failed\nactive\n{\"memory_total_kib\": 2007740, \"node\": \"node1\", \"os\": \"Red Hat Enterprise Linux 10.0 (Coughlan)\", \"service\": \"inventory-api\", \"status\": \"ok\"}"
+    },
+    {
+      "command_id": "cmd-9cbda516fc7e4434",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:22:19.502811+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2217,
+      "command": "since=$(cat /run/inventory-oom-test.start); printf 'kernel_oom_events_since_%s:\\n' \"$since\"; journalctl -k --since \"$since\" --no-pager | grep -E 'oom-kill|Out of memory|Killed process|memory: usage' || true; printf 'hog_unit_log:\\n'; journalctl -u inventory-oom-hog-test --since \"$since\" --no-pager; printf 'api_state_and_pid:\\n'; systemctl show inventory-api -p ActiveState -p SubState -p MainPID -p NRestarts; curl --fail --show-error --silent \"http://$NODE_IP:8080/healthz\"; printf '\\n' ",
+      "stdout": "kernel_oom_events_since_2026-10-02T11:21:58-04:00:\nOct 02 11:22:08 node1 kernel: python3 invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=0, oom_score_adj=1000\nOct 02 11:22:08 node1 kernel: memory: usage 196608kB, limit 196608kB, failcnt 30\nOct 02 11:22:08 node1 kernel: oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=/,mems_allowed=0,oom_memcg=/system.slice/inventory-oom-hog-test.service,task_memcg=/system.slice/inventory-oom-hog-test.service,task=python3,pid=1727,uid=0\nOct 02 11:22:08 node1 kernel: Memory cgroup out of memory: Killed process 1727 (python3) total-vm:209688kB, anon-rss:196108kB, file-rss:5652kB, shmem-rss:0kB, UID:0 pgtables:452kB oom_score_adj:1000\nhog_unit_log:\nOct 02 11:21:58 node1 systemd[1]: Started inventory-oom-hog-test.service - [systemd-run] /usr/bin/python3 -c \"import time\\nchunks = []\\nwhile True:\\n    chunks.append(bytearray(4 * 1024 * 1024))\\n    time.sleep(0.2)\".\nOct 02 11:22:08 node1 systemd[1]: inventory-oom-hog-test.service: A process of this unit has been killed by the OOM killer.\nOct 02 11:22:08 node1 systemd[1]: inventory-oom-hog-test.service: Main process exited, code=killed, status=9/KILL\nOct 02 11:22:08 node1 systemd[1]: inventory-oom-hog-test.service: Failed with result 'oom-kill'.\nOct 02 11:22:08 node1 systemd[1]: inventory-oom-hog-test.service: Consumed 66ms CPU time, 192M memory peak.\napi_state_and_pid:\nMainPID=1679\nNRestarts=0\nActiveState=active\nSubState=running\n{\"service\": \"inventory-api\", \"status\": \"ok\"}"
+    },
+    {
+      "command_id": "cmd-974e141255f045ba",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:22:32.288096+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2015,
+      "command": "systemctl reset-failed inventory-oom-hog-test.service 2>/dev/null || true\nrm -f /run/inventory-oom-test.start\nprintf 'pre_restart_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service_enabled='; systemctl is-enabled inventory-api\nprintf 'service_active='; systemctl is-active inventory-api\nsystemctl show inventory-api -p MainPID -p NRestarts -p OOMScoreAdjust\nprintf 'health='; curl --fail --show-error --silent \"http://$NODE_IP:8080/healthz\"; printf '\\n'\nprintf 'inventory='; curl --fail --show-error --silent \"http://$NODE_IP:8080/inventory\"; printf '\\n' ",
+      "stdout": "pre_restart_boot_id=7223d5b7-fa56-4ff3-acee-959a5cf5f146\nservice_enabled=enabled\nservice_active=active\nMainPID=1679\nNRestarts=0\nOOMScoreAdjust=-900\nhealth={\"service\": \"inventory-api\", \"status\": \"ok\"}\ninventory={\"memory_total_kib\": 2007740, \"node\": \"node1\", \"os\": \"Red Hat Enterprise Linux 10.0 (Coughlan)\", \"service\": \"inventory-api\", \"status\": \"ok\"}"
+    },
+    {
+      "command_id": "cmd-b81ebc83c8844d6b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:22:36.682031+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1764,
+      "command": "systemd-run --unit=[REDACTED] --on-active=3s /usr/bin/systemctl reboot; printf 'reboot_acknowledged node=%s boot_id=' \"$NODE_NAME\"; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "Running timer as unit: [REDACTED].timer\nWill run service as unit: [REDACTED].service\nreboot_acknowledged node=node1 boot_id=7223d5b7-fa56-4ff3-acee-959a5cf5f146"
+    },
+    {
+      "command_id": "cmd-aa4998e290b2412b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:22:40.353709+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 444,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; systemctl is-system-running --wait 2>/dev/null || systemctl is-system-running",
+      "stdout": "boot_id=7223d5b7-fa56-4ff3-acee-959a5cf5f146\nrunning"
+    },
+    {
+      "command_id": "cmd-dc20228733f048ae",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:22:45.477025+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2485,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-e283fc55d55d4aab",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:22:56.487714+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1438,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id; systemctl is-system-running",
+      "stdout": "boot_id=aafdcc3d-f477-41e7-8757-995d2b2dbabe\nrunning"
+    },
+    {
+      "command_id": "cmd-a53219ad41bc4f2a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:23:03.687851+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1998,
+      "command": "api_pid=$(systemctl show -p MainPID --value inventory-api); printf 'post_restart_boot_id='; cat /proc/sys/kernel/random/boot_id; printf 'service_enabled='; systemctl is-enabled inventory-api; printf 'service_active='; systemctl is-active inventory-api; systemctl show inventory-api -p MainPID -p ActiveState -p SubState -p Restart -p OOMScoreAdjust -p MemoryLow -p MemoryMin; printf 'proc_oom_score_adj='; cat /proc/$api_pid/oom_score_adj; printf 'current_boot_service_log:\\n'; journalctl -b -u inventory-api --no-pager; printf 'listener:\\n'; ss -ltnp '( sport = :8080 )'; printf 'health='; curl --fail --show-error --silent \"http://$NODE_IP:8080/healthz\"; printf '\\ninventory='; curl --fail --show-error --silent \"http://$NODE_IP:8080/inventory\"; printf '\\n' ",
+      "stdout": "post_restart_boot_id=aafdcc3d-f477-41e7-8757-995d2b2dbabe\nservice_enabled=enabled\nservice_active=active\nRestart=always\nMainPID=743\nMemoryMin=33554432\nMemoryLow=67108864\nOOMScoreAdjust=-900\nActiveState=active\nSubState=running\nproc_oom_score_adj=-900\ncurrent_boot_service_log:\nOct 02 11:22:50 node1 systemd[1]: Started inventory-api.service - Inventory API.\nlistener:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                                \nLISTEN 0      5            0.0.0.0:8080      0.0.0.0:*    users:((\"inventory-api\",pid=743,fd=3))\nhealth={\"service\": \"inventory-api\", \"status\": \"ok\"}\ninventory={\"memory_total_kib\": 2007736, \"node\": \"node1\", \"os\": \"Red Hat Enterprise Linux 10.0 (Coughlan)\", \"service\": \"inventory-api\", \"status\": \"ok\"}"
+    }
+  ]
+}

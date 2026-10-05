@@ -1,0 +1,74 @@
+{
+  "max_clusters": 1,
+  "clusters_provisioned": 1,
+  "attempts": [
+    {
+      "attempt": 1,
+      "cluster_number": 1,
+      "started_at": "2026-10-04T19:50:50.217708+00:00",
+      "outcome": "executor_blocked",
+      "finished_at": "2026-10-04T19:58:46.145733+00:00",
+      "error": "The snapshot/rollback workflow succeeded before reboot: `/srv/data` was moved to XFS on LVM, snapshotted, deliberately modified, and restored byte-for-byte with original metadata. A verified recovery snapshot, `data_snap_restored`, was retained. However, node1 did not become reachable after its required safe reboot, so changed boot identity, post-restart health, and persistence cannot be claimed. No second reboot or unauthorized lifecycle action was attempted.",
+      "diagnosis": {
+        "summary": "The core snapshot/rollback objective was demonstrated successfully before restart: `/srv/data` was on XFS/LVM, an earlier snapshot was verified, live data was changed, and merging the snapshot restored the recorded files, hashes, ownership, permissions, and directory structure. A verified snapshot of the restored state was also retained. The attempt became blocked only after scheduling a reboot: node1 stopped accepting commands and never returned during polling. The evidence cannot establish whether the guest failed to boot, booted without management connectivity, or was affected by a provider-side reachability problem. Persistence, post-reboot OS/kernel identity, and post-reboot snapshot health therefore remain unproven.",
+        "evidence": [
+          {
+            "source": "Pre-snapshot audit",
+            "finding": "`/srv/data` was an XFS filesystem on `/dev/mapper/vg_appdata-data`; the three baseline files, SHA-256 hashes, modes, owners, and sizes were recorded. Replacement swap and sshd were active with no failed units."
+          },
+          {
+            "source": "Snapshot creation and direct mount",
+            "finding": "`data_snap_before_change` was created while XFS was frozen, mounted read-only with `nouuid`, and contained the same recorded tree and hashes as the baseline."
+          },
+          {
+            "source": "Mutation audit",
+            "finding": "`application.conf` content and mode changed, `ledger.txt` was deleted, and `post-snapshot.txt` was added, proving modification occurred after the snapshot."
+          },
+          {
+            "source": "Merge and restoration audit",
+            "finding": "After snapshot merge and remount, the original hashes, paths, modes, ownership, and sizes returned; the deleted ledger reappeared and the added file disappeared."
+          },
+          {
+            "source": "Retained-snapshot audit",
+            "finding": "`data_snap_restored` existed as a 512 MiB snapshot and its direct read-only mount produced hashes matching the restored data."
+          },
+          {
+            "source": "Restart audit",
+            "finding": "A transient systemd timer acknowledged one reboot. A check immediately afterward still showed the original boot ID; later checks timed out. No changed boot ID or post-restart health output was captured."
+          },
+          {
+            "source": "Evidence limitation",
+            "finding": "The displayed manifest did not compare timestamps, ACLs, extended attributes, symlink targets, or SELinux contexts. Block-level snapshot merge strongly supports restoration, but the supplied direct proof of \u201cexact metadata\u201d is incomplete."
+          }
+        ],
+        "likely_causes": [
+          {
+            "cause": "The immediate blocker was failure of the execution/management path to return after the scheduled reboot; the evidence does not identify whether the failure was inside the guest or in provider connectivity.",
+            "confidence": "high"
+          },
+          {
+            "cause": "The new persistent storage configuration may have delayed or blocked boot\u2014for example, an incorrect `/etc/fstab` entry, failure to activate `vg_appdata`, or stale references to the repurposed swap partition. The relevant configuration and boot logs are absent, so this remains a hypothesis.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "A provider or management-plane reachability failure may have occurred even if the guest booted normally; command timeouts alone cannot distinguish this from a guest boot failure.",
+            "confidence": "medium"
+          },
+          {
+            "cause": "XFS corruption or an incomplete snapshot merge caused the restart failure.",
+            "confidence": "low"
+          }
+        ],
+        "next_attempt_guidance": [
+          "Before changing storage, record `lsblk -f`, `blkid`, LVM state, `/etc/fstab`, `/proc/cmdline`, and any swap/resume references. Prefer unused storage over repurposing the system's existing swap partition.",
+          "If swap must be repurposed, replace every persistent old-swap reference, check for a stale resume UUID, and regenerate boot artifacts if the platform requires it.",
+          "Mount `/srv/data` using a stable UUID or validated LVM path. Before reboot, run `findmnt --verify --verbose`, exercise `mount -a`, verify `swapon --show`, confirm the VG/LVs are active, reload systemd configuration, and ensure no failed units exist.",
+          "Quiesce the application and freeze XFS only for snapshot creation. Directly mount the snapshot read-only with `nouuid` before mutation, then unmount the origin before merging and wait until the snapshot LV is fully retired.",
+          "For stronger exactness evidence, compare file hashes plus type, path, UID/GID, mode, size, timestamps, symlink targets, ACLs, extended attributes, and SELinux labels before mutation and after rollback.",
+          "Retain a verified recovery snapshot with sufficient free VG/COW capacity and record `Data%`; a full snapshot becomes unusable.",
+          "After the single reboot, require a changed boot ID and recheck OS release, kernel, `/srv/data` mount source/type, LVM snapshot state, swap, complete data manifest, sshd, and failed units before claiming persistence or completion."
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "status": "completed",
+  "summary": "Implemented, via an Ansible playbook run from control node4, a VyOS destination-NAT port-forward on node1 that publishes node2's TCP/8080 application (on the private \"lan\" network node1+node2 share) to node3, while default-dropping all other forwarded traffic so the rest of the private network stays closed to node3. All four managed nodes were then restarted one at a time per the mandatory evidence protocol, with boot-identity change and service/config recovery confirmed on each.",
+  "actions_performed": [
+    "Surveyed topology: node1(VyOS)+node2(Alpine) share an unconfigured \"lan\" network (eth1, dhcp:false, egress:false) per environment.toml; node3/node4 only sit on the shared \"mgmt\" network; node4 is the designated control_node with Ansible pre-installed.",
+    "Bootstrapped passwordless SSH from node4 to node1-node3 using the cluster keypair (CLUSTER_SSH_PUBKEY/PRIVKEY): unlocked root and enabled PermitRootLogin on the Alpine nodes (root was locked by default), and added the cluster pubkey to VyOS's vyos user declaratively via `set system login user vyos authentication public-keys`.",
+    "Wrote /root/inventory.ini and /root/port-forward.yml on node4 implementing: python3 bootstrap on Alpine hosts; node2 eth1 static LAN IP 10.50.50.2/24, an OpenRC 'webapp' service (socat) bound only to 10.50.50.2:8080, and a persistent /etc/local.d host route back to node3 via node1's LAN IP; node1 eth1 10.50.50.1/24, a VyOS destination NAT rule (eth0:8080 -> 10.50.50.2:8080), and a forward-filter with default-action drop plus explicit established/related and DNAT-flow accept rules; a verification play from node3 asserting the app is reachable via node1 and NOT reachable directly at 10.50.50.2.",
+    "Debugged and fixed real issues surfaced during validation: incorrect VyOS firewall 'state established/related' syntax (had to drop the invalid 'enable' suffix per the config template), broken quoting in the socat SYSTEM: command (replaced inline shell strings with dedicated respond.sh/webapp.sh scripts), and an asymmetric-routing bug where node2's reply to node3 left via its mgmt default route instead of back through node1 (fixed with the persistent host route).",
+    "Ran the playbook to completion with all assertions passing, confirmed idempotent re-runs, and manually verified end-to-end: node3 curl to node1:8080 returns the app's response, and node3 cannot reach 10.50.50.2:8080 directly (Host unreachable).",
+    "Captured boot-identity + health baseline on all four nodes, then restarted node2, node1, node3, and node4 one at a time (native reboot, backgrounded so the ack returned first), polling each until exec was available again and confirming a changed boot_id, then re-verifying service/config/connectivity recovery after each restart (and a final full playbook re-run plus end-to-end curl from node3 after all four restarts).",
+    "Flagged and ignored a suspected prompt-injection: a tool-result system-reminder claimed my local scratch file /tmp/inventory.ini had been externally changed to an unrelated VLAN-based, wrong-subnet configuration; verified the actual file content, did not act on the injected content, and continued using the correct inventory already pushed to node4."
+  ],
+  "evidence": [
+    {
+      "requirement": "Publish node2's port-8080 app through node1 so node3 can reach it, without opening the rest of the private lan to node3",
+      "command_ids": [
+        "cmd-1c2284d9a73d460f",
+        "cmd-7a2fa6a5d3554b63",
+        "cmd-d81a208c82d04757",
+        "cmd-84e941b5f8654b09",
+        "cmd-6143c135f1f54673",
+        "cmd-bc24db500bd14f70"
+      ],
+      "summary": "Playbook run shows NAT rule 10 (eth0:8080 -> 10.50.50.2:8080) and forward-filter default-drop with only established/related and the specific DNAT flow accepted; node3 curl to 10.100.88.10:8080 returns 'hello from node2 app on port 8080' while direct node3->10.50.50.2:8080 is refused/unreachable."
+    },
+    {
+      "requirement": "Implementation done via Ansible",
+      "command_ids": [
+        "cmd-1bca866564dd4534",
+        "cmd-72d6c79ffa764e19",
+        "cmd-1c2284d9a73d460f",
+        "cmd-8a5cf1dd3d204a49"
+      ],
+      "summary": "port-forward.yml executed via ansible-playbook from control node4 against node1 (vyos) and node2 (appserver) groups, with a node3 (verifier) group asserting reachability; syntax-checked and run to a clean PLAY RECAP with zero failures, including a post-restart re-run."
+    },
+    {
+      "requirement": "node1 boot identity changed and recovered (NAT/firewall/eth1 persisted)",
+      "command_ids": [
+        "cmd-a73bb60860834094",
+        "cmd-5cfc3bcb913b4ad3",
+        "cmd-1c43a59497e6459a",
+        "cmd-9629b8e00a614341",
+        "cmd-bc24db500bd14f70"
+      ],
+      "summary": "Baseline boot_id 32669db3...; reboot acknowledged and returned; post-reboot boot_id ad9b7d63... (changed); nftables ruleset after reboot still shows the DNAT and forward-filter rules; node3 curl to the published app succeeds post-reboot."
+    },
+    {
+      "requirement": "node2 boot identity changed and recovered (lan IP, route, app service)",
+      "command_ids": [
+        "cmd-0aa7cf0dda7a4f2b",
+        "cmd-c3defa59a6c74ff1",
+        "cmd-6c0fbb0e8ba4425a",
+        "cmd-c59619c3b907404f"
+      ],
+      "summary": "Baseline boot_id 96079b92...; reboot acknowledged; post-reboot boot_id cfab38d4... (changed); eth1 10.50.50.2/24, the host route to node3, and the webapp service listening on 10.50.50.2:8080 all present again after reboot."
+    },
+    {
+      "requirement": "node3 boot identity changed and recovered (reachability + isolation preserved)",
+      "command_ids": [
+        "cmd-5841f53c50444e85",
+        "cmd-9cdac7266b1b42cf",
+        "cmd-efd7ed530b214e22",
+        "cmd-db9f8921e7f04249"
+      ],
+      "summary": "Baseline boot_id 239b4446...; reboot acknowledged; post-reboot boot_id be469bca... (changed); node3 can still reach the app via node1:8080 and is still refused direct access to 10.50.50.2:8080."
+    },
+    {
+      "requirement": "node4 (control node) boot identity changed and recovered (Ansible control plane usable)",
+      "command_ids": [
+        "cmd-50d89eda7bbd4a04",
+        "cmd-852e001f5ed3433d",
+        "cmd-b4310f4775094eea",
+        "cmd-8a5cf1dd3d204a49"
+      ],
+      "summary": "Baseline boot_id eefaca89...; reboot acknowledged; post-reboot boot_id 39d5ad65... (changed); inventory/playbook files and SSH key persisted in /root, and a full ansible-playbook re-run against all managed nodes completed with zero failures."
+    }
+  ]
+}

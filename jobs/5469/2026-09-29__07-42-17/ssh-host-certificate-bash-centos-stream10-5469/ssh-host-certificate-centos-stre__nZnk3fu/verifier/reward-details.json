@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-created",
+      "requirement": "Create an SSH certificate authority on node1",
+      "status": "satisfied",
+      "summary": "ssh-keygen -t ed25519 generated /etc/ssh/ca/ssh_ca and ssh_ca.pub with fingerprint SHA256:9lJuX1ygq6xkf7KCplXVZq6+GEUS3nUf/qTry209buU, confirmed present in pre- and post-restart checks.",
+      "evidence_ids": [
+        "cmd-8574958ecf4f4ed5",
+        "cmd-32a15bd0f3bf4802",
+        "cmd-3aba7b972f2f4134"
+      ]
+    },
+    {
+      "id": "host-presents-cert",
+      "requirement": "Host presents a certificate signed by that CA",
+      "status": "satisfied",
+      "summary": "ssh-keygen -s signed the host's ed25519 host key producing ssh_host_ed25519_key-cert.pub; ssh-keygen -L confirms the certificate's Signing CA matches the created CA fingerprint; sshd_config.d/99-ssh-ca-cert.conf sets HostCertificate, sshd -t passed and sshd restarted/remained active, and the certificate is actually presented on the wire per the ssh -vvv debug output.",
+      "evidence_ids": [
+        "cmd-8574958ecf4f4ed5",
+        "cmd-32a15bd0f3bf4802",
+        "cmd-3f8df76b26f34e42",
+        "cmd-3aba7b972f2f4134"
+      ]
+    },
+    {
+      "id": "client-no-pin",
+      "requirement": "A client trusting only the CA (no pinned host key) connects without a host-key warning",
+      "status": "satisfied",
+      "summary": "ssh -vvv using a known_hosts file containing only an @cert-authority line (no pinned host key) shows the client validating the host via the certificate: \"Host '10.100.107.10' is known and matches the ED25519-CERT host certificate\", with no authenticity/host-key warning; the session proceeds to the expected authentication-method failure, not a host-verification failure.",
+      "evidence_ids": [
+        "cmd-3f8df76b26f34e42",
+        "cmd-8574958ecf4f4ed5"
+      ]
+    }
+  ],
+  "overall_summary": "The executor created an SSH CA on node1, signed the host's ed25519 key into a certificate from that CA, and configured sshd to present it. A client trusting only the CA (with no pinned host key) was directly shown validating the host via the certificate rather than any pinned key, satisfying the core task contract. The independently required node-restart evidence protocol was also completed correctly: a pre-restart baseline (boot_id d052eb57...) was captured, systemctl reboot was issued and acknowledged, the connection dropped and later recovered with a changed boot_id (9db63d0b...) consistent with the fixed lifecycle snapshots, and post-restart checks confirmed sshd health, certificate persistence, and a successful CA-trust connection identical to the pre-restart check. Hygiene is good apart from one minor leftover temp file used for verification.",
+  "limitations": [
+    "The final ssh connection attempts terminate at 'Permission denied' because no valid credentials were supplied; this is expected given the task only concerns host authentication, but it means user-authentication success was never itself tested (not required by the task).",
+    "No evidence was captured of a client attempt without the @cert-authority trust line to explicitly contrast/demonstrate the pinning failure that CA trust avoids; this is a minor completeness gap that does not affect the satisfied determinations, which rely on the direct 'is known and matches the ED25519-CERT host certificate' debug output."
+  ],
+  "command_stats": {
+    "total": 8,
+    "successful": 4,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All state-changing commands map directly to task or restart-protocol needs: CA generation, host-key signing, sshd_config.d creation, sshd restart, and the systemctl reboot for the mandated restart evidence protocol (cmd-8574958ecf4f4ed5, cmd-7d5290fa42e741ac). The only residue is /tmp/known_hosts_ca, a test known_hosts file created during verification (cmd-8574958ecf4f4ed5) that was still present in the after_executor snapshot rather than cleaned up; it is low-risk (contains only the CA public key, no secrets) and bounded, but was not removed. No failed services, no unnecessary package changes, and package-health/listening-socket state is consistent before and after aside from expected PID changes from the reboot.",
+    "evidence_ids": [
+      "cmd-8574958ecf4f4ed5",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

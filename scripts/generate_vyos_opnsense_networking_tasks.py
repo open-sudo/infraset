@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
+from variant_metadata import dumps, initial_metadata
+from scenario_layout import resolve_task_path, collection_asset
 
 try:
     import tomllib
@@ -31,8 +33,8 @@ except ModuleNotFoundError:  # Python 3.10 and earlier
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-MATRIX_ROOT = REPOSITORY / "tasks" / "vyos-opnsense-networking"
-CATALOG_PATH = MATRIX_ROOT / "catalog.toml"
+MATRIX_ROOT = REPOSITORY / "tasks" / "vanilla" / "vyos-opnsense-networking"
+CATALOG_PATH = collection_asset("vanilla", "vyos-opnsense-networking/catalog.toml")
 
 EXPECTED_SYSTEMS = 8
 EXPECTED_TASKS = 10
@@ -258,9 +260,8 @@ def generate() -> int:
     generated = 0
     for system in systems:
         os_root = MATRIX_ROOT / system["id"]
-        os_root.mkdir(parents=True, exist_ok=True)
         for task in tasks:
-            task_root = os_root / f'{task["slug"]}-{system["id"]}'
+            task_root = resolve_task_path(os_root / f'{task["slug"]}-{system["id"]}')
             task_root.mkdir(parents=True, exist_ok=True)
 
             write(task_root / "instruction.md", clean_block(task["instruction"]))
@@ -277,6 +278,7 @@ def generate() -> int:
                 environment_text(system, task),
             )
             write(task_root / "tests" / "test.sh", SENTINEL, 0o755)
+            write(task_root / "variant.toml", dumps(initial_metadata(task_root)))
             generated += 1
 
     print(

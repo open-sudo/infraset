@@ -1,0 +1,111 @@
+{
+  "status": "completed",
+  "summary": "Established an IKEv2/IPsec site-to-site tunnel between node1 (VyOS) and node2 (OPNsense) over the transit network (10.10.0.0/30), carrying lan-a (10.10.1.0/24, behind node1, host node3) and lan-b (10.10.2.0/24, behind node2, host node4). Mapped physical interface adjacency via ARP probing since all nodes shared one platform-assigned management subnet with unaddressed secondary interfaces. Configured static addressing on all routed interfaces, static cross-LAN routes on node3/node4, VyOS site-to-site IPsec (AES256-SHA256, PSK), and OPNsense's Swanctl model plus a custom pf pass rule on enc0 (had to work around two OPNsense quirks: LegacyLinkField for ipsec.enable is read-only via the model API and must be set directly in $config, and filter rules using interface=ipsec are silently dropped, requiring the literal enc0 device name with explicit direction=in). Verified bidirectional ping between node3 and node4 using their private addresses, and confirmed via tcpdump that only ESP crosses the transit wire while plaintext ICMP is visible only on each LAN segment. Completed the mandatory one-at-a-time restart protocol for all four nodes: captured pre-restart boot identity and IPsec/connectivity health, triggered each node's native reboot, polled until exec access returned, proved boot identity changed, and reverified addressing, IPsec re-establishment, and encrypted node3\u2194node4 connectivity after every restart.",
+  "actions_performed": [
+    "Probed interface adjacency (arping/tcpdump) across node1-node4 to map transit, lan-a, and lan-b physical links",
+    "Configured VyOS (node1) eth1=10.10.0.1/30 and eth2=10.10.1.254/24 via configure/commit/save",
+    "Configured OPNsense (node2) opt1(vtnet1)=10.10.0.2/30 and opt2(vtnet2)=10.10.2.254/24 via config.xml + configctl interface reconfigure",
+    "Added OPNsense firewall pass rules for IKE/ESP on opt1 and allow-any on opt2",
+    "Configured static IP + cross-LAN static route on node3 (10.10.1.10/24) and node4 (10.10.2.10/24) via nmcli",
+    "Configured VyOS IPsec: ike-group/esp-group (AES256/SHA256/DH14), authentication psk, site-to-site peer with tunnel local/remote prefixes",
+    "Configured OPNsense IPsec via Swanctl PHP model (Connection/local/remote/child) and preSharedKeys; fixed legacy ipsec.enable flag and enc0 pf pass-rule-direction quirks; applied via ipsec_configure_do()",
+    "Deduplicated redundant IKE SAs by setting unique=replace on both peers",
+    "Verified end-to-end ping node3<->node4 and encryption-in-transit via tcpdump on transit vs LAN interfaces",
+    "Captured baseline boot identity and IPsec/connectivity health on all 4 nodes",
+    "Rebooted node1, node2, node3, node4 sequentially (one at a time), polling for exec availability and confirming changed boot_id/kern.boottime on each",
+    "Reverified addressing, IPsec SA re-establishment, and node3<->node4 encrypted connectivity after each node's restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "IPsec tunnel established between node1 and node2 carrying both private networks",
+      "command_ids": [
+        "cmd-4456b96683c942a7",
+        "cmd-81cf46704d68487d",
+        "cmd-e747e2c4b0bc4015"
+      ],
+      "summary": "swanctl -l on both node1 and node2 shows ESTABLISHED IKEv2 SA with INSTALLED tunnel, local/remote traffic selectors 10.10.1.0/24 <-> 10.10.2.0/24"
+    },
+    {
+      "requirement": "node3 and node4 reach each other by private addresses",
+      "command_ids": [
+        "cmd-6cda75fe25614b2a",
+        "cmd-6b24f4fe41374e06",
+        "cmd-95e5a61bdba04090"
+      ],
+      "summary": "Bidirectional ping success between node3 (10.10.1.10) and node4 (10.10.2.10) using private addresses, both with explicit source binding and default routing"
+    },
+    {
+      "requirement": "Traffic is encrypted in transit across the transit network",
+      "command_ids": [
+        "cmd-b8c8f4060702470d",
+        "cmd-74e35c10ba9a48f0",
+        "cmd-2b15d2c503424f56"
+      ],
+      "summary": "tcpdump on node1 eth1 (transit interface) during a node3->node4 ping shows only ESP packets between 10.10.0.1 and 10.10.0.2, matching the ping's timing/sequence"
+    },
+    {
+      "requirement": "Plaintext only visible on LAN segments, not on transit wire",
+      "command_ids": [
+        "cmd-d63030eb4c3e4698",
+        "cmd-cf21e0445d9a45b9",
+        "cmd-35cc65f48c264aa1",
+        "cmd-c9997f85e0cf446a"
+      ],
+      "summary": "Simultaneous captures on node1 eth2 (lan-a) and node2 vtnet1(transit)/vtnet2(lan-b) show plaintext ICMP only on eth2, ESP only on vtnet1, decrypted ICMP delivered to vtnet2"
+    },
+    {
+      "requirement": "node1 (VyOS) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-d59ec41df36d4888",
+        "cmd-5145436a087d4259",
+        "cmd-dba979eb2cc04299",
+        "cmd-492510ba4e9a4840",
+        "cmd-aa35ad9e4ac449bf",
+        "cmd-47e9d256e49c4200"
+      ],
+      "summary": "Baseline boot_id 9d3cb897...; reboot acknowledged then connection timed out; post-restart boot_id 544096da... (changed); interfaces/IPsec/tunnel connectivity confirmed recovered"
+    },
+    {
+      "requirement": "node2 (OPNsense) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-14491c0f84be4718",
+        "cmd-6ce24d21c74247e5",
+        "cmd-ac8114e702384147",
+        "cmd-c4c32e428c914595",
+        "cmd-3525950a36d441f4",
+        "cmd-020fa1d10a334f30"
+      ],
+      "summary": "Baseline kern.boottime 04:22:27; reboot ack then SSH connection timeout; post-restart kern.boottime 04:38:41 (changed); interfaces, strongswan/IPsec SA, and tunnel connectivity confirmed recovered without manual intervention"
+    },
+    {
+      "requirement": "node3 (AlmaLinux, lan-a host) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-3d00a68bb6f24c19",
+        "cmd-3b295d2c84284a20",
+        "cmd-7bf89335ed96410e",
+        "cmd-7cd98f79bd9642ee",
+        "cmd-a48e7071fbff4116"
+      ],
+      "summary": "Baseline boot_id e31962a9...; reboot acknowledged then connection timed out; post-restart boot_id 9e0ce2b8... (changed); static IP, route, and encrypted ping to node4 confirmed recovered"
+    },
+    {
+      "requirement": "node4 (AlmaLinux, lan-b host) restart: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-eb1247add8414216",
+        "cmd-576f486f4f004c23",
+        "cmd-8fda4670a9e44cca",
+        "cmd-038e1c4c994144b0",
+        "cmd-d564e1c7d0ec4917"
+      ],
+      "summary": "Baseline boot_id d527ba47...; reboot acknowledged then connection timed out; post-restart boot_id ba653804... (changed); static IP, route, and encrypted ping to node3 confirmed recovered"
+    },
+    {
+      "requirement": "Post-restart end-to-end tunnel state with live traffic counters",
+      "command_ids": [
+        "cmd-ca945cff4a514b3a",
+        "cmd-a55d7907120741a9"
+      ],
+      "summary": "swanctl -l on both node1 and node2 after all 4 restarts shows ESTABLISHED SA with non-zero in/out packet/byte counters matching recent test traffic"
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "wg-tunnel",
+      "requirement": "Establish a WireGuard tunnel between node1 (VyOS) and node2 (OPNsense) across the transit network",
+      "status": "satisfied",
+      "summary": "WireGuard wg0 was configured on both routers (VyOS via configure/commit, OPNsense via config.xml + template regeneration after fixing a missing 'enabled' field and a directory bug) with a valid keypair exchange. Final state shows a live handshake and bidirectional traffic on both sides both before and after each node's restart.",
+      "evidence_ids": [
+        "cmd-829ba5ec4dc343ab",
+        "cmd-3811eea562544bc0",
+        "cmd-90f5ce44a8484a30",
+        "cmd-96585218239d4ca2",
+        "cmd-05440ff67f004763"
+      ]
+    },
+    {
+      "id": "private-net-reachability",
+      "requirement": "Hosts node3 and node4 (behind node1/node2 respectively) reach each other by their private addresses",
+      "status": "satisfied",
+      "summary": "node3 (10.10.13.2) pinged node4's private address 172.20.20.2 with 0% loss, and node4 pinged node3's private address 10.10.13.2 with 0% loss, both after routes were installed pointing across wg0.",
+      "evidence_ids": [
+        "cmd-e667246e947f48cc",
+        "cmd-57a4f9c430684faa"
+      ]
+    },
+    {
+      "id": "traffic-inside-tunnel",
+      "requirement": "Traffic between the routers travels inside the WireGuard tunnel rather than in the clear across the transit link",
+      "status": "satisfied",
+      "summary": "A tcpdump capture on node1's transit interface (eth1) during an active node3->node4 ping showed only encrypted WireGuard UDP/51820 packets crossing the transit link, with no plaintext ICMP visible.",
+      "evidence_ids": [
+        "cmd-5698b3902ffb49d5"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart baseline, restart acknowledgement, changed boot identity, and recovered state for each of the four managed nodes",
+      "status": "satisfied",
+      "summary": "All four nodes were rebooted one at a time with pre-restart health, reboot acknowledgement, unreachability during the disruption, a changed boot identity, and post-restart functional recovery (ping/handshake) captured; all four boot identities match the fixed after-executor lifecycle snapshot. Node2's first reboot directly exposed a genuine persistence bug (wg0 address/route lost) which was then fixed and re-validated on a second reboot, providing a complete break-then-heal transition rather than just a clean pass.",
+      "evidence_ids": [
+        "cmd-90f5ce44a8484a30",
+        "cmd-bf275ba048f344b0",
+        "cmd-8b46be36bb88427d",
+        "cmd-71e02d50c4d34cce",
+        "cmd-b9f88e7539114f8a",
+        "cmd-e9d1c2603c1345d3",
+        "cmd-17156323def34161",
+        "cmd-96585218239d4ca2",
+        "cmd-a287c9c64a354230",
+        "cmd-c3e5d41329ef49ce",
+        "cmd-05440ff67f004763",
+        "cmd-b275e0d8df164fcd",
+        "cmd-a7d18482825844c3",
+        "cmd-025e35563b024549",
+        "cmd-b873862dfd214977",
+        "cmd-d7a347e3aa4c4fa7"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully built a working WireGuard site-to-site tunnel between node1 (VyOS) and node2 (OPNsense), joining node3's and node4's private networks. End-to-end ICMP connectivity between node3 and node4 by private address was directly demonstrated, and a transit-link tcpdump confirmed only encrypted WireGuard traffic crosses between the routers. All four nodes were individually restarted with pre/post boot-identity and functional-recovery evidence, consistent with the fixed lifecycle snapshots; node2's persistence bug was discovered on the first reboot and demonstrably fixed and re-verified on a second reboot, which is strong restart evidence rather than a single clean pass. Hygiene is moderately good: the main issues are a temporarily disabled firewall during diagnosis (restored), churn from trial-and-error re-addressing during blackhole troubleshooting, a leftover unused route/gateway config entry, and unreverted /tmp debug scripts, none of which are destructive or left the system in a broken state.",
+  "limitations": [
+    "The exact cause and permanence of the 'stale-flow blackhole' on node2's vtnet2 interface is not independently confirmed beyond the executor's diagnosis; it is accepted based on repeated consistent packet-loss evidence.",
+    "No evidence was captured of behavior with 172.20.20.0/30 while under simultaneous transit-link disruption (e.g., a WireGuard-specific failover scenario); only full node reboot was demonstrated.",
+    "The GW_WG_NODE1 gateway/static-route entries added to node2's config.xml (cmd-b980d0c3404f478f) may be dead/unused configuration since 'configctl routes apply' was rejected; this could not be conclusively verified as harmless from the available evidence."
+  ],
+  "command_stats": {
+    "total": 239,
+    "successful": 186,
+    "failed": 53,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most mutations were necessary configuration steps or bounded, reverted troubleshooting. However several unnecessary or loosely-scoped mutations occurred: (1) node2's firewall was fully disabled with `pfctl -d` (cmd-b48a0661752644e1) during blackhole diagnosis and only re-enabled roughly 10 minutes later (cmd-99807ca74b674165) - a bounded but security-weakening action during live troubleshooting; (2) repeated address churn on node2/node4 interfaces while diagnosing a virtio stale-flow blackhole (cmd-441b4fc3e2ec4fc8, cmd-080281918737469c, cmd-8cce6ba03d684bb1, cmd-334ca75ca1fe4103, cmd-42b2b4afb25e46b4) which was eventually superseded by the final 172.20.20.0/30 addressing - low risk and self-corrected, but reflects trial-and-error rather than diagnosis-then-fix; (3) a static route/gateway entry (GW_WG_NODE1, 10.10.13.0/30) was added to node2's config.xml (cmd-b980d0c3404f478f) but `configctl routes apply` returned 'Action not allowed', so this persisted config entry appears unused - the working route instead comes from the rc.syshook fixup script - leaving a low-risk but functionally dead configuration artifact; (4) numerous debug scripts (dbg.php, dbg2.php, f.py, f2.py, fixif.py, fixenabled.py, addroute.py) were left in /tmp on node2, unreverted temporary residue, though /tmp is expected to be ephemeral and low-risk.",
+    "evidence_ids": [
+      "cmd-b48a0661752644e1",
+      "cmd-99807ca74b674165",
+      "cmd-441b4fc3e2ec4fc8",
+      "cmd-080281918737469c",
+      "cmd-8cce6ba03d684bb1",
+      "cmd-334ca75ca1fe4103",
+      "cmd-42b2b4afb25e46b4",
+      "cmd-b980d0c3404f478f",
+      "cmd-87a30a0eab114e09",
+      "cmd-986df35a75324c33",
+      "cmd-50c444565b274b18"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

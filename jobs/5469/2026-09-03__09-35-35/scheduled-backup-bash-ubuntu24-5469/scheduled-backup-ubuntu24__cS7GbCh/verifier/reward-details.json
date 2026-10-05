@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Nightly backup mechanism runs on node1, pulling /srv/inventory/data from node2 into dated archives under /var/backups/inventory",
+      "status": "satisfied",
+      "summary": "A cron job (0 2 * * *) was installed on node1 running /usr/local/sbin/backup-inventory.sh, which SSHes to node2 and tars /srv/inventory/data into /var/backups/inventory/inventory-<date>.tar.gz. A manual invocation of the script produced inventory-2026-09-03.tar.gz containing the actual data/inventory.csv content pulled from node2, confirming the mechanism works end-to-end, not just configured.",
+      "evidence_ids": [
+        "cmd-4b133dd4b2cf42de",
+        "cmd-088cfab642ee4872",
+        "cmd-5a4ec12bf86b4a1c",
+        "cmd-0c61b8af7e464b1b",
+        "cmd-dd84cb1fe9c84578"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Retain the last 7 days of archives (older ones pruned)",
+      "status": "satisfied",
+      "summary": "Executor seeded 8 dated archives spanning 2026-08-26 through 2026-09-02 plus a live 09-03 archive, then re-ran the script. After execution, exactly the 7 most recent archives (08-28 through 09-03) remained; the two oldest (08-26, 08-27) were deleted by the script's find -mtime +6 -delete logic. This directly demonstrates the retention behavior rather than just its configuration.",
+      "evidence_ids": [
+        "cmd-94b8320287ec46c4"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Backup transfer path (node2 to node1) is reliably established (SSH connectivity, hostname resolution) so nightly cron execution will actually succeed",
+      "status": "satisfied",
+      "summary": "sshd on node2 was broken (no host keys, missing /run/sshd) and was fixed with ssh-keygen -A plus a tmpfiles.d rule for persistence; passwordless key-based auth from node1 to node2 was configured and verified; /etc/hosts on node1 was populated for reliable resolution under cron's minimal environment. A full pull-based backup succeeded afterward, and post-restart the same pipeline succeeded again, confirming durability.",
+      "evidence_ids": [
+        "cmd-be3525ef79f54998",
+        "cmd-1248ce9cf9754fc5",
+        "cmd-3fe24d4bc45d45c9",
+        "cmd-3e8180a479ac43e8",
+        "cmd-2b66a3f332b0459f",
+        "cmd-e626b654a8024c58",
+        "cmd-a35b3fbc8f8f427a",
+        "cmd-e0a28404d039454b"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all managed nodes (node1, node2) with pre-restart baseline, acknowledgement, changed boot identity, and recovered service/data state",
+      "status": "satisfied",
+      "summary": "For node1: pre-restart baseline captured boot_id 29011044... with cron active and backup file present; systemctl reboot was acknowledged; node briefly unreachable; reconnected with new boot_id 3ac58281...; cron/job/backup-dir/hosts entries intact and the backup script re-ran successfully. For node2: pre-restart baseline captured boot_id 1e0cb179... with sshd active and source data present; reboot acknowledged; node briefly unreachable; reconnected with new boot_id f5b20e8d...; sshd active and listening on :22 (confirming the tmpfiles persistence fix survived reboot) and source data intact. A final end-to-end backup run from node1 after both restarts succeeded, and the fixed global before/after-executor snapshots independently corroborate both boot-identity changes and recovered failed-services/package-health state.",
+      "evidence_ids": [
+        "cmd-f53a93e2215e441d",
+        "cmd-370f93d1840a4d22",
+        "cmd-68255fc80d8449a2",
+        "cmd-bac8850a474d4f70",
+        "cmd-aedbf7a354524764",
+        "cmd-ad3658089f14401c",
+        "cmd-60f2d7e53906406e",
+        "cmd-423422162e334356",
+        "cmd-0dee54df89e3442b",
+        "cmd-95d4aa10d4b24e38",
+        "cmd-45794cd000214249",
+        "cmd-9be8ccdd13c44095",
+        "cmd-592d33f2087b4eab",
+        "cmd-87c0d697a7624ff8",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node1:failed-services",
+        "global:after_executor:node2:failed-services"
+      ]
+    }
+  ],
+  "overall_summary": "The executor delivered a working nightly cron-based backup of /srv/inventory/data from node2 to node1, storing dated tar.gz archives under /var/backups/inventory with verified 7-day retention (directly demonstrated via seeded archives and a real prune). Necessary prerequisite fixes (broken sshd on node2, passwordless SSH auth, /etc/hosts entries for cron-safe resolution) were applied and validated with an actual end-to-end pull. The mandatory node-restart evidence protocol was completed for both node1 and node2 with clear pre-restart baselines, reboot acknowledgements, changed boot IDs, and fully recovered service/data/pipeline state, cross-checked by the fixed global lifecycle snapshots.",
+  "limitations": [
+    "No evidence of an actual scheduled (cron-triggered, as opposed to manually invoked) run of the backup script was captured, since the observation window did not span 02:00; correctness of the cron trigger itself is inferred from crontab -l and the confirmed cron-environment (HOME=/root) match rather than an observed automatic firing.",
+    "The retention test used synthetic zero-byte files with backdated mtimes rather than 8 real nightly runs, so retention logic was verified structurally (via find -mtime) rather than through a full 8-day operational history."
+  ],
+  "command_stats": {
+    "total": 39,
+    "successful": 32,
+    "failed": 7,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "One unnecessary, bounded troubleshooting mutation was made and fully reverted: cmd-519189a1149247b5 temporarily added two extra crontab entries (cron_env_test.log writers) to probe cron's environment for HOME/PATH, unrelated to a discovered problem in the actual backup script -- this was exploratory rather than corrective. It was cleaned up in cmd-99055843932f45a4, which restored the crontab to only the backup-inventory.sh line and removed /tmp/cron_env_test.log. The synthetic retention-test archives (seeded via touch -d in cmd-94b8320287ec46c4) were purposeful test artifacts and were subsequently cleaned up in cmd-99055843932f45a4, leaving only the legitimate inventory-2026-09-03.tar.gz. All other state-changing commands (sshd host-key generation, /run/sshd creation, tmpfiles.d rule, authorized_keys, /etc/hosts entries, crontab install, backup script creation) map directly to required prerequisites or the final solution. The after-executor lifecycle snapshot shows no failed services, no unexplained package-health issues, and only expected boot-dependent artifact churn (new systemd-private tmp dirs, new boot_id-tied ephemeral ports) on both nodes.",
+    "evidence_ids": [
+      "cmd-519189a1149247b5",
+      "cmd-99055843932f45a4",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 9,
+    "successful": 7,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Every sudo command is recorded with user and timestamp to /var/log/sudo-commands.log",
+      "command_ids": [
+        "cmd-b7564bfa4eb04093",
+        "cmd-ba5312a62b7b4711"
+      ],
+      "summary": "sudo-commands.log entries show format 'TIMESTAMP : user : HOST=node1 ... USER=root ; COMMAND=...' both before and after the reboot"
+    },
+    {
+      "requirement": "Sudo command entries are kept out of the general system log",
+      "command_ids": [
+        "cmd-b7564bfa4eb04093",
+        "cmd-cdc73656b6164091"
+      ],
+      "summary": "After applying Defaults !syslog, no new COMMAND= lines appear in /var/log/auth.log or the journal; grep of auth.log shows the only COMMAND= matches predate the config change at 09:16:16, and journalctl -b for the post-reboot boot shows zero COMMAND= entries"
+    },
+    {
+      "requirement": "Node1 restart with proof of changed boot identity",
+      "command_ids": [
+        "cmd-8f726ee93e564311",
+        "cmd-2bd4cb4294ee4bd7",
+        "cmd-e1cce210f22a4989",
+        "cmd-fac369ccef904320",
+        "cmd-0f03f07678be4483"
+      ],
+      "summary": "Baseline boot_id b185f188-42be-40d1-84ea-f7c9a76f5c8d captured, reboot acknowledged and returned before disconnect, node briefly unreachable, then came back with new boot_id 85b662c9-2240-4412-963e-20ae03173743"
+    },
+    {
+      "requirement": "Post-restart recovery of required configuration/service",
+      "command_ids": [
+        "cmd-ba5312a62b7b4711"
+      ],
+      "summary": "After reboot, /etc/sudoers.d/99-command-logging still parses OK via visudo, log file persists, and a fresh sudo command correctly appends to sudo-commands.log with no leakage elsewhere"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-c47cc3e21b5b40c2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:15:58.804665+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 389,
+      "command": "set -Eeuo pipefail\necho \"== os ==\"; cat /etc/os-release\necho \"== sudo version ==\"; sudo -V | head -1\necho \"== hostnamectl/boot id ==\"; cat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"; uptime -s || true\necho \"== existing sudoers.d ==\"; ls -la /etc/sudoers.d/\necho \"== rsyslog present ==\"; systemctl is-active rsyslog || true\necho \"== journald present ==\"; systemctl is-active systemd-journald || true\necho \"== auth log location ==\"; ls -la /var/log/auth.log /var/log/secure 2>/dev/null || true\n",
+      "stdout": "== os ==\nNAME=\"Ubuntu\"\nVERSION=\"16.04.7 LTS (Xenial Xerus)\"\nID=ubuntu\nID_LIKE=debian\nPRETTY_NAME=\"Ubuntu 16.04.7 LTS\"\nVERSION_ID=\"16.04\"\nHOME_URL=\"http://www.ubuntu.com/\"\nSUPPORT_URL=\"http://help.ubuntu.com/\"\nBUG_REPORT_URL=\"http://bugs.launchpad.net/ubuntu/\"\nVERSION_CODENAME=xenial\nUBUNTU_CODENAME=xenial\n== sudo version ==\nSudo version 1.8.16\n== hostnamectl/boot id ==\nb185f188-42be-40d1-84ea-f7c9a76f5c8d\n== uptime ==\n2026-09-29 09:15:22\n== existing sudoers.d ==\ntotal 16\ndrwxr-xr-x  2 root root 4096 Jun 14 21:05 .\ndrwxr-xr-x 94 root root 4096 Jun 15 00:26 ..\n-r--r-----  1 root root  958 Mar 30  2016 README\n-r--r-----  1 root root   31 Jun 14 21:05 antrieb\n== rsyslog present ==\nactive\n== journald present ==\nactive\n== auth log location ==\n-rw-r----- 1 syslog adm 24105 Sep 29 09:15 /var/log/auth.log\n"
+    },
+    {
+      "command_id": "cmd-b7564bfa4eb04093",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:16:16.933171+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 369,
+      "command": "set -Eeuo pipefail\necho \"== step: baseline auth.log tail ==\"\nsudo -n tail -5 /var/log/auth.log\n\necho \"== step: write drop-in ==\"\ncat <<'EOF' | sudo -n tee /etc/sudoers.d/99-command-logging >/dev/null\nDefaults logfile=\"/var/log/sudo-commands.log\"\nDefaults log_year, log_host\nDefaults !syslog\nEOF\nsudo -n chmod 0440 /etc/sudoers.d/99-command-logging\n\necho \"== step: validate sudoers syntax ==\"\nsudo -n visudo -cf /etc/sudoers.d/99-command-logging\n\necho \"== step: pre-create log file with safe perms ==\"\nsudo -n touch /var/log/sudo-commands.log\nsudo -n chown root:root /var/log/sudo-commands.log\nsudo -n chmod 0600 /var/log/sudo-commands.log\n\necho \"== step: trigger a sudo command to test logging ==\"\nsudo -n whoami\nsudo -n id\n\necho \"== verify: sudo-commands.log contents ==\"\nsudo -n cat /var/log/sudo-commands.log\n\necho \"== verify: no new sudo entries reached auth.log ==\"\nsudo -n tail -5 /var/log/auth.log\n\necho \"== verify: journal has no fresh sudo COMMAND entries ==\"\nsudo -n journalctl -q --no-pager -n 20 | grep -i sudo || echo \"no sudo entries in recent journal\"\n",
+      "stdout": "== step: baseline auth.log tail ==\nSep 29 09:16:16 ubuntu sshd[2039]: pam_unix(sshd:session): session opened for user antrieb by (uid=0)\nSep 29 09:16:16 ubuntu systemd: pam_unix(systemd-user:session): session opened for user antrieb by (uid=0)\nSep 29 09:16:16 ubuntu systemd-logind[727]: New session 15 of user antrieb.\nSep 29 09:16:16 ubuntu sudo:  antrieb : TTY=unknown ; PWD=/home/antrieb ; USER=root ; COMMAND=/usr/bin/tail -5 /var/log/auth.log\nSep 29 09:16:16 ubuntu sudo: pam_unix(sudo:session): session opened for user root by (uid=0)\n== step: write drop-in ==\n== step: validate sudoers syntax ==\n/etc/sudoers.d/99-command-logging: parsed OK\n== step: pre-create log file with safe perms ==\n== step: trigger a sudo command to test logging ==\nroot\nuid=0(root) gid=0(root) groups=0(root)\n== verify: sudo-commands.log contents ==\nSep 29 09:16:16 2026 : antrieb : HOST=node1 : TTY=unknown ; PWD=/home/antrieb ;\n    USER=root ; COMMAND=/bin/chmod 0440 /etc/sudoers.d/99-command-logging\nSep 29 09:16:16 2026 : antrieb : HOST=node1 : TTY=unknown ; PWD=/home/antrieb ;\n    USER=root ; COMMAND=/usr/sbin/visudo -cf /etc/sudoers.d/99-command-logging\nSep 29 09:16:16 2026 : antrieb : HOST=node1 : TTY=unknown ; PWD=/home/antrieb ;\n    USER=root ; COMMAND=/usr/bin/touch /var/log/sudo-commands.log\nSep 29 09:16:16 2026 : antrieb : HOST=node1 : TTY=unknown ; PWD=/home/antrieb ;\n    USER=root ; COMMAND=/bin/chown root:root /var/log/sudo-commands.log\nSep 29 09:16:16 2026 : antrieb : HOST=node1 : TTY=unknown ; PWD=/home/antrieb ;\n    USER=root ; COMMAND=/bin/chmod 0600 /var/log/sudo-commands.log\nSep 29 09:16:16 2026 : antrieb : HOST=node1 : TTY=unknown ; PWD=/home/antrieb ;\n    USER=root ; COMMAND=/usr/bin/whoami\nSep 29 09:16:16 2026 : antrieb : HOST=node1 : TTY=unknown ; PWD=/home/antrieb ;\n    USER=root ; COMMAND=/usr/bin/id\nSep 29 09:16:16 2026 : antrieb : HOST=node1 : TTY=unknown ; PWD=/home/antrieb ;\n    USER=root ; COMMAND=/bin/cat /var/log/sudo-commands.log\n== verify: no new sudo entries reached auth.log ==\nSep 29 09:16:16 ubuntu sudo: p\n...[TRUNCATED 271 CHARACTERS]...\nunix(sudo:session): session closed for user root\nSep 29 09:16:16 ubuntu sudo: pam_unix(sudo:session): session opened for user root by (uid=0)\n== verify: journal has no fresh sudo COMMAND entries ==\nSep 29 09:16:16 node1 sudo[2094]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2096]: pam_unix(sudo:session): session opened for user root by (uid=0)\nSep 29 09:16:16 node1 sudo[2096]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2098]: pam_unix(sudo:session): session opened for user root by (uid=0)\nSep 29 09:16:16 node1 sudo[2098]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2100]: pam_unix(sudo:session): session opened for user root by (uid=0)\nSep 29 09:16:16 node1 sudo[2100]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2102]: pam_unix(sudo:session): session opened for user root by (uid=0)\nSep 29 09:16:16 node1 sudo[2102]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2104]: pam_unix(sudo:session): session opened for user root by (uid=0)\nSep 29 09:16:16 node1 sudo[2104]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2106]: pam_unix(sudo:session): session opened for user root by (uid=0)\nSep 29 09:16:16 node1 sudo[2106]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2108]: pam_unix(sudo:session): session opened for user root by (uid=0)\nSep 29 09:16:16 node1 sudo[2108]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2110]: pam_unix(sudo:session): session opened for user root by (uid=0)\nSep 29 09:16:16 node1 sudo[2110]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2112]: pam_unix(sudo:session): session opened for user root by (uid=0)\nSep 29 09:16:16 node1 sudo[2112]: pam_unix(sudo:session): session closed for user root\nSep 29 09:16:16 node1 sudo[2114]: pam_unix(sudo:session): session opened for user root by (uid=0)\n"
+    },
+    {
+      "command_id": "cmd-8f726ee93e564311",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:16:23.425344+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 332,
+      "command": "set -Eeuo pipefail\necho \"== pre-restart boot_id ==\"; cat /proc/sys/kernel/random/boot_id\necho \"== pre-restart sudoers file ==\"; sudo -n cat /etc/sudoers.d/99-command-logging\necho \"== pre-restart log file perms ==\"; sudo -n ls -la /var/log/sudo-commands.log\necho \"== pre-restart log line count ==\"; sudo -n wc -l /var/log/sudo-commands.log\n",
+      "stdout": "== pre-restart boot_id ==\nb185f188-42be-40d1-84ea-f7c9a76f5c8d\n== pre-restart sudoers file ==\nDefaults logfile=\"/var/log/sudo-commands.log\"\nDefaults log_year, log_host\nDefaults !syslog\n== pre-restart log file perms ==\n-rw------- 1 root root 1703 Sep 29 09:16 /var/log/sudo-commands.log\n== pre-restart log line count ==\n26 /var/log/sudo-commands.log\n"
+    },
+    {
+      "command_id": "cmd-2bd4cb4294ee4bd7",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:16:26.915558+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 225,
+      "command": "set -Eeuo pipefail\nsudo -n sh -c 'sleep 2; systemctl reboot' >/tmp/reboot.log 2>&1 &\ndisown\necho \"reboot scheduled\"\n",
+      "stdout": "reboot scheduled\n"
+    },
+    {
+      "command_id": "cmd-e1cce210f22a4989",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:16:28.933672+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 186,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo NOTUP",
+      "stderr": "Connection to 10.100.96.10 closed by remote host.\r\n"
+    },
+    {
+      "command_id": "cmd-fac369ccef904320",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:16:33.016530+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 2107,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo NOTUP",
+      "stderr": "ssh: connect to host 10.100.96.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-0f03f07678be4483",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:16:34.971198+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 258,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo NOTUP",
+      "stdout": "85b662c9-2240-4412-963e-20ae03173743\n"
+    },
+    {
+      "command_id": "cmd-ba5312a62b7b4711",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:16:40.120593+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 290,
+      "command": "set -Eeuo pipefail\necho \"== post-restart boot_id ==\"; cat /proc/sys/kernel/random/boot_id\necho \"== post-restart sudoers file ==\"; sudo -n cat /etc/sudoers.d/99-command-logging\necho \"== post-restart visudo check ==\"; sudo -n visudo -cf /etc/sudoers.d/99-command-logging\necho \"== post-restart log file exists ==\"; sudo -n ls -la /var/log/sudo-commands.log\necho \"== post-restart line count before test ==\"; sudo -n wc -l /var/log/sudo-commands.log\necho \"== run a fresh sudo command ==\"; sudo -n hostname\necho \"== tail of sudo-commands.log ==\"; sudo -n tail -3 /var/log/sudo-commands.log\necho \"== confirm no COMMAND= leakage into auth.log ==\"; sudo -n grep -c 'COMMAND=' /var/log/auth.log || echo \"0 matches\"\necho \"== confirm no COMMAND= leakage into journal ==\"; sudo -n journalctl -b -q --no-pager | grep -i 'COMMAND=' || echo \"no COMMAND= entries in this boot's journal\"\n",
+      "stdout": "== post-restart boot_id ==\n85b662c9-2240-4412-963e-20ae03173743\n== post-restart sudoers file ==\nDefaults logfile=\"/var/log/sudo-commands.log\"\nDefaults log_year, log_host\nDefaults !syslog\n== post-restart visudo check ==\n/etc/sudoers.d/99-command-logging: parsed OK\n== post-restart log file exists ==\n-rw------- 1 root root 2439 Sep 29 09:16 /var/log/sudo-commands.log\n== post-restart line count before test ==\n36 /var/log/sudo-commands.log\n== run a fresh sudo command ==\nnode1\n== tail of sudo-commands.log ==\n    USER=root ; COMMAND=/bin/hostname\nSep 29 09:16:40 2026 : antrieb : HOST=node1 : TTY=unknown ; PWD=/home/antrieb ;\n    USER=root ; COMMAND=/usr/bin/tail -3 /var/log/sudo-commands.log\n== confirm no COMMAND= leakage into auth.log ==\n13\n== confirm no COMMAND= leakage into journal ==\nno COMMAND= entries in this boot's journal\n"
+    },
+    {
+      "command_id": "cmd-cdc73656b6164091",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:16:42.632718+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 267,
+      "command": "sudo -n grep 'COMMAND=' /var/log/auth.log | tail -3\necho \"---boot time---\"\nuptime -s",
+      "stdout": "Jun 15 00:26:24 ubuntu sudo:  antrieb : TTY=unknown ; PWD=/home/antrieb ; USER=root ; COMMAND=/usr/bin/env NODE_NAME=node1 NODE_INDEX=1 NODE_IP=10.100.96.10 CLUSTER_HOSTS=10.100.96.10 node1 CLUSTER_SSH_PUBKEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILYqjbwSTaV0+/VQII0wPzfbMd9VfBOL4AocX4W0isLO [REDACTED] CLUSTER_SSH_PRIVKEY=-----BEGIN OPENSSH PRIVATE KEY-----#012b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW#012QyNTUxOQAAACC2Ko28Ek2ldPv1UCCNMD832zHfVXwTi+AKHF+FtIrCzgAAALADjG9DA4xv#012QwAAAAtzc2gtZWQyNTUxOQAAACC2Ko28Ek2ldPv1UCCNMD832zHfVXwTi+AKHF+FtIrCzg#012AAAEDr7yUTRVx2WmtOP0h9NdYzeK6swHjacAereFopDDRiRbYqjbwSTaV0+/VQII0wPzfb#012Md9VfBOL4AocX4W0isLOAAAAKGFudHJpZWItY2x1c3Rlci02YWJiYjlmNzMyMGIwY2Q2ND#012FiNGRjNDgBAgMEBQ==#012-----END OPENSSH PRIVATE KEY----- env HOME=/root USER=root LOGNAME=root /bin/sh -c if command -v bash >/dev/null 2>&1; then exec bash -lc 'if command -v ss >/dev/null 2>&1; then ss -lntupH 2>/dev/null; elif command -v netstat\nSep 29 09:16:16 ubuntu sudo:  antrieb : TTY=unknown ; PWD=/home/antrieb ; USER=root ; COMMAND=/usr/bin/tail -5 /var/log/auth.log\nSep 29 09:16:16 ubuntu sudo:  antrieb : TTY=unknown ; PWD=/home/antrieb ; USER=root ; COMMAND=/usr/bin/tee /etc/sudoers.d/99-command-logging\n---boot time---\n2026-09-29 09:16:30\n"
+    }
+  ]
+}

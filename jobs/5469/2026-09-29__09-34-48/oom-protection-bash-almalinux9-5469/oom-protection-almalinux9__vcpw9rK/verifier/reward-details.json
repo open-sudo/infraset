@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "inventory-api runs as a managed (systemd) service on node1",
+      "status": "satisfied",
+      "summary": "inventory-api.service created with Restart=always, enabled and started via systemctl; confirmed active with correct PID and serving JSON on /health and /inventory.",
+      "evidence_ids": [
+        "cmd-6f680fb4eb99445a",
+        "cmd-da6af51bc72e48b3"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "A memory-hungry process drives the system out of memory",
+      "status": "satisfied",
+      "summary": "mem-hog.service (unprotected, oom_score_adj=0) allocated memory until free memory dropped from ~1.5Gi to ~95Mi, and dmesg confirms the kernel invoked its OOM killer (global_oom, task=python3 pid=1422).",
+      "evidence_ids": [
+        "cmd-534d4a5145e14039",
+        "cmd-1223b3441207422d",
+        "cmd-4d784ce3447644b9"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "The kernel OOM killer stops the memory hog, not inventory-api",
+      "status": "satisfied",
+      "summary": "dmesg shows 'Killed process 1422 (python3) ... oom_score_adj:0' (the hog); mem-hog.service reports Result: oom-kill; inventory-api PID 1316 with oom_score_adj:-1000 is listed unharmed in the same dmesg OOM dump.",
+      "evidence_ids": [
+        "cmd-4d784ce3447644b9",
+        "cmd-2098eb256d944f47"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "inventory-api keeps serving through the OOM event",
+      "status": "satisfied",
+      "summary": "Immediately after the OOM kill, the same PID (1316) is still active and curl returns HTTP 200 with correct JSON on both /health and /inventory.",
+      "evidence_ids": [
+        "cmd-2098eb256d944f47"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "Provider-wide node-restart evidence protocol on node1 (independent check)",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (4a743885...) and healthy baseline captured; reboot acknowledged before disconnect; node became unreachable then reconnected with a new boot_id (95222ed8...), cross-checked by the fixed after-prepare/after-executor boot-identity snapshots; post-restart inventory-api auto-started, enabled, active, oom_score_adj=-1000 preserved, and both endpoints returned correct JSON.",
+      "evidence_ids": [
+        "cmd-e9b2cce8d6bd41fc",
+        "cmd-b40a342ddb0149ef",
+        "cmd-15ab10635b204165",
+        "cmd-51c7ca4bd61d4e60",
+        "cmd-5b58c80cadd04410",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor deployed inventory-api as a systemd service hardened with OOMScoreAdjust=-1000, then directly demonstrated the required behavior: an unprotected memory hog drove the system to near-zero free memory, the kernel OOM killer (per dmesg) killed the hog (pid 1422, oom_score_adj:0) while inventory-api (pid 1316, oom_score_adj:-1000) was untouched, and inventory-api continued returning HTTP 200 with correct JSON throughout and after the event. The independent restart protocol is fully evidenced: pre-restart boot_id, an acknowledged reboot, a changed boot_id on reconnect (cross-checked against fixed lifecycle snapshots), and full post-restart recovery of the service, its OOM protection, and its data. Minor hygiene deduction for leftover mem-hog test artifacts (disabled unit file and script) not fully removed.",
+  "limitations": [
+    "The mem-hog unit file and memhog.py script were left on disk in a disabled/inactive state rather than deleted, though this does not affect functional correctness.",
+    "No independent restart evidence gap exists here since the restart transition (pre-baseline, disruption, changed boot_id, recovery) is directly observed for node1, the only managed node."
+  ],
+  "command_stats": {
+    "total": 17,
+    "successful": 14,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "All state-changing commands map clearly to the task: creating inventory-api's app/unit (necessary), creating mem-hog and its unit to induce and verify the required OOM behavior (necessary discovery/demonstration for the task contract), disabling and reset-failed on mem-hog.service after the test (cmd-f8f00d24333148bf), and the mandated reboot. Minor residue: the mem-hog.service unit file and /opt/inventory-api/memhog.py remain on disk (disabled/inactive rather than removed) after serving their purpose \u2014 a small, low-risk leftover from a necessary test rather than an unrelated mutation. No failed or conflicting services remain, no security controls were weakened, and package health is unaffected before/after (global:before_prepare:node1:failed-services and global:after_executor:node1:failed-services both empty).",
+    "evidence_ids": [
+      "cmd-a18b242da6254c8e",
+      "cmd-f8f00d24333148bf",
+      "global:after_executor:node1:failed-services",
+      "global:before_prepare:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

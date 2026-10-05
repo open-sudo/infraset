@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "tmp-hardening",
+      "requirement": "/tmp mounted so that exec, setuid, and device nodes are ignored",
+      "status": "satisfied",
+      "summary": "Baseline showed /tmp had no dedicated mount (part of root xfs, no noexec/nosuid/nodev enforcement). Executor added a tmpfs /tmp fstab entry with nosuid,nodev,noexec, applied it live, and findmnt confirmed all three options active. Functional test showed a chmod +x'd script in /tmp failed to execute (Permission denied, rc 126) and a setuid-copied binary retained the 4755 bit on disk but noexec already blocks any execution attempts from that mount, demonstrating the intended lockdown.",
+      "evidence_ids": [
+        "cmd-9a1abac6cf4840f9",
+        "cmd-cf483930618844eb",
+        "cmd-15c4b859c173460e",
+        "cmd-9193fd27724b49a5",
+        "cmd-2604c8001c104416"
+      ]
+    },
+    {
+      "id": "devshm-hardening",
+      "requirement": "/dev/shm mounted so that exec, setuid, and device nodes are ignored",
+      "status": "satisfied",
+      "summary": "Baseline /dev/shm was tmpfs with only nosuid,nodev (no noexec). Executor added a fstab entry and remounted with nosuid,nodev,noexec; findmnt confirmed all three flags. Functional test showed a chmod +x'd script in /dev/shm failed to execute (Permission denied, rc 126).",
+      "evidence_ids": [
+        "cmd-9a1abac6cf4840f9",
+        "cmd-a2a6968a72814ecf",
+        "cmd-15c4b859c173460e",
+        "cmd-9193fd27724b49a5",
+        "cmd-2604c8001c104416"
+      ]
+    },
+    {
+      "id": "reboot-persistence",
+      "requirement": "Settings survive a reboot on node1",
+      "status": "satisfied",
+      "summary": "Full disruption/recovery transition is directly observed: pre-reboot healthy baseline (boot_id d052eb57..., both mounts hardened) was captured, systemctl reboot was issued and acknowledged (connection dropped as expected), polling during the outage showed connection failures consistent with an actual reboot, and post-reboot polling returned a new boot_id (0c9068e8...), matching the fixed lifecycle before_prepare/after_executor boot-identity cross-check. After reconnection, findmnt showed both /tmp and /dev/shm automatically remounted via fstab with nosuid,nodev,noexec intact, and freshly created executable scripts in both locations again failed with Permission denied, confirming the hardening persisted across the reboot.",
+      "evidence_ids": [
+        "cmd-6fa36227957e4280",
+        "cmd-93d74e83d2314c74",
+        "cmd-8c6b22789d034bf5",
+        "cmd-cbd675fb00734f91",
+        "cmd-547e0db065e741c6",
+        "cmd-beb518de77994493",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly configured /tmp and /dev/shm as tmpfs mounts with nosuid,nodev,noexec via persistent /etc/fstab entries, verified enforcement both before and after a full reboot cycle with a directly observed boot-identity change, and cleaned up all test artifacts it created (aside from a harmless fstab backup file). All three material outcomes of the task are satisfied with direct, coherent evidence.",
+  "limitations": [
+    "The setuid enforcement was inferred from the nosuid mount flag and the fact that noexec independently blocks all execution from the mount; no test isolated setuid-specific behavior from a binary that could otherwise execute (e.g. testing on a non-noexec mount) \u2014 this is a minor evidentiary gap but not a functional one, since nosuid was confirmed present via findmnt on both mounts pre- and post-reboot.",
+    "The /etc/fstab.bak.* backup file's exact final presence was not re-verified after reboot, though fstab backups are standard practice and pose no functional risk."
+  ],
+  "command_stats": {
+    "total": 12,
+    "successful": 7,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All temporary test artifacts (t.sh, s.sh, su_t, t2.sh, s2.sh) created during functional verification were explicitly removed in the same or a subsequent command (cmd-6fa36227957e4280, cmd-beb518de77994493), leaving no residue. The one minor item is the /etc/fstab backup file created by cmd-15c4b859c173460e (cp /etc/fstab /etc/fstab.bak.$(date +%s)), which was never removed and remains on disk; this is a low-risk, standard precaution before editing a critical config file and does not affect functionality or security posture, so it is treated as a very minor residue rather than a serious hygiene issue. No failed services, unsafe exposure, or package-state damage appear in the after_executor lifecycle snapshot (failed-services empty, package-health unchanged, listening sockets unchanged except for PID churn from the reboot itself). The single systemctl reboot was authorized by the task's own persistence requirement.",
+    "evidence_ids": [
+      "cmd-15c4b859c173460e",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

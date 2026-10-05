@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-forwarding",
+      "requirement": "Forward the inventory application's log messages from node2 to a centralized log collector on node1",
+      "status": "satisfied",
+      "summary": "No pre-existing 'inventory' app was found on node2 (cmd-979f834e4134427d), so the executor created a systemd-managed heartbeat generator (inventory.service, logger -t inventory) to represent it and configured node2 rsyslog to forward programname=inventory messages via omfwd/TCP to node1:10514 (cmd-675bf7c7c619425f). node1 was configured with imtcp on port 10514 (cmd-7ae8f079849d4668) and confirmed receiving forwarded messages with sequential heartbeat entries (cmd-6880e1fb53054a07, cmd-087490c62f6749f7).",
+      "evidence_ids": [
+        "cmd-979f834e4134427d",
+        "cmd-675bf7c7c619425f",
+        "cmd-6880e1fb53054a07",
+        "cmd-7ae8f079849d4668",
+        "cmd-087490c62f6749f7"
+      ]
+    },
+    {
+      "id": "req-2-persistence",
+      "requirement": "Persist received messages on node1 under /var/log/inventory/node2.log",
+      "status": "satisfied",
+      "summary": "rsyslog ruleset on node1 writes to /var/log/inventory/node2.log; an initial permission issue (root:root 755 directory blocking syslog user) was diagnosed and fixed (cmd-c3e7a00b5f384b84), after which the file was confirmed to exist with real heartbeat content (cmd-087490c62f6749f7, cmd-d9b547acdccc4dd2).",
+      "evidence_ids": [
+        "cmd-7ae8f079849d4668",
+        "cmd-c3e7a00b5f384b84",
+        "cmd-087490c62f6749f7",
+        "cmd-d9b547acdccc4dd2"
+      ]
+    },
+    {
+      "id": "req-3-node1-restart-resilience",
+      "requirement": "Log flow keeps working after node1 restarts",
+      "status": "satisfied",
+      "summary": "Healthy baseline captured (boot_id e8afb731, rsyslog active/enabled, log content present: cmd-d9b547acdccc4dd2). node1 was rebooted (cmd-0329eca4597f4414); unreachable during the transition (cmd-2802fa93ec3340e9, cmd-6e4a21a1e9494a97); came back with a new boot_id a3dcf461 (cmd-7631214eed304de4). Post-reboot, rsyslog was active with the TCP listener restored and new heartbeat messages (seq 13-19) continued arriving without manual intervention (cmd-b119a14aec3f4108, cmd-f7b8cbf8501f448c), directly demonstrating the full disruption-and-recovery cycle.",
+      "evidence_ids": [
+        "cmd-d9b547acdccc4dd2",
+        "cmd-0329eca4597f4414",
+        "cmd-2802fa93ec3340e9",
+        "cmd-6e4a21a1e9494a97",
+        "cmd-7631214eed304de4",
+        "cmd-b119a14aec3f4108",
+        "cmd-f7b8cbf8501f448c"
+      ]
+    },
+    {
+      "id": "req-4-node2-restart-resilience",
+      "requirement": "Log flow keeps working after node2 restarts",
+      "status": "satisfied",
+      "summary": "Healthy baseline captured (boot_id a0c36ad2, rsyslog and inventory.service active/enabled: cmd-66618d3a0dfe4c84). node2 was rebooted only after node1 had fully recovered (cmd-ba15d7c634a04370); unreachable during the transition (cmd-2ab695288db84350, cmd-5f6439056bb94838, cmd-bde3f71cb1f84a3f); came back with a new boot_id 9e8b1a6e (cmd-46bcd1466602442f). Post-reboot, rsyslog and inventory.service both auto-started active+enabled with no manual intervention (cmd-ee97b79a1b104227), and node1's log file resumed receiving a fresh sequence of heartbeat messages (cmd-445e6b948b9a4653, cmd-4549e177f6d14a95), directly demonstrating full end-to-end recovery.",
+      "evidence_ids": [
+        "cmd-66618d3a0dfe4c84",
+        "cmd-ba15d7c634a04370",
+        "cmd-2ab695288db84350",
+        "cmd-5f6439056bb94838",
+        "cmd-bde3f71cb1f84a3f",
+        "cmd-46bcd1466602442f",
+        "cmd-ee97b79a1b104227",
+        "cmd-445e6b948b9a4653",
+        "cmd-4549e177f6d14a95"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes are satisfied with direct evidence: log forwarding from node2 to node1's rsyslog collector over TCP is configured and confirmed working, messages are persisted at /var/log/inventory/node2.log on node1 (after a permission fix), and both node1's and node2's independent restarts were captured through a full baseline -> disruption -> changed-boot-id -> recovered-flow cycle showing the pipeline self-heals without manual intervention. The one notable caveat is that no real 'inventory' application pre-existed on node2; the executor built a systemd-managed heartbeat generator to stand in for it, which is a reasonable and transparent substitution given the absence of a real app, but is worth flagging.",
+  "limitations": [
+    "No genuine 'inventory' application existed on node2 prior to this task; the executor substituted a systemd-managed heartbeat script emitting via `logger -t inventory`. The forwarding/persistence/restart evidence validates this simulated app's traffic rather than a pre-existing production workload.",
+    "The final captured log file only contains a modest number of lines (12) spanning a short observation window; longer-term durability of the queue/retry configuration (e.g., under prolonged network outages) was not exercised beyond the two reboot events."
+  ],
+  "command_stats": {
+    "total": 39,
+    "successful": 31,
+    "failed": 8,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.93,
+    "summary": "State-changing commands trace cleanly to task setup, prerequisite fixes, or bounded evidence collection. cmd-7ae8f079849d4668/cmd-675bf7c7c619425f/cmd-6880e1fb53054a07 established the receive/forward/app pipeline; cmd-c3e7a00b5f384b84 was a necessary corrective fix for an omfile permission failure discovered in testing; cmd-d105424a673a45fa/cmd-1dbb093eeaa74190/cmd-fa744d46382043c9 restarted rsyslog to apply configs. cmd-c48b8b54c48b4844 (a manual `nc` test message sent to node1:10514) was a bounded, low-risk diagnostic during troubleshooting of the initial write failure; it produced no retained file residue (the write was still blocked by directory permissions at that point) and is not connected to the final solution, so it counts as a minor unnecessary mutation but was inconsequential and left no lasting state. No failed/conflicting services, no unsafe exposure (ufw remained inactive on both nodes, unchanged from baseline), and no package-state damage were observed; after-executor snapshots show only the expected new listening socket (10514) and boot-id/tmp changes attributable to the two intentional reboots.",
+    "evidence_ids": [
+      "cmd-c48b8b54c48b4844",
+      "cmd-c3e7a00b5f384b84",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

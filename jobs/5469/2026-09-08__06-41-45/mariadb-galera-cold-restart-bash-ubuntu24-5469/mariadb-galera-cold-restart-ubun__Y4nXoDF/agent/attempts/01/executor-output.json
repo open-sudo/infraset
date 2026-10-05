@@ -1,0 +1,101 @@
+{
+  "status": "completed",
+  "summary": "Built a fresh 3-member MariaDB Galera cluster (mariadb-server 10.11 + galera-4) on node1/node2/node3, which started as plain Ubuntu 24.04 hosts with nothing preinstalled. Loaded application data, took the entire cluster down completely for a maintenance window, and brought it back up with all committed writes intact and all three members Synced/serving. Then executed the mandatory one-node-at-a-time restart protocol on all three nodes, proving changed boot IDs and full cluster/data recovery after each restart.",
+  "actions_performed": [
+    "Installed mariadb-server, mariadb-client, galera-4, rsync on node1, node2, node3",
+    "Configured /etc/mysql/mariadb.conf.d/60-galera.cnf on each node with wsrep_cluster_address=gcomm://node1,node2,node3 and per-node wsrep_node_address/name",
+    "Bootstrapped Galera on node1 via galera_new_cluster, then started mariadb normally on node2 and node3 to join via SST, reaching wsrep_cluster_size=3, all Synced",
+    "Generated root and app-user credentials on node1 with openssl rand; set root password; created appuser@% and appdb database",
+    "Created appdb.orders table, inserted seed rows, confirmed synchronous replication to node2 and node3",
+    "Inserted a pre-maintenance committed row (widget-4-pre-maintenance)",
+    "Stopped mariadb on node3, then node2, then node1 in that order to bring the full cluster down for maintenance; confirmed node1's grastate.dat had safe_to_bootstrap:1",
+    "Brought the cluster back up: galera_new_cluster on node1 (verified pre-maintenance row present), started mariadb on node2 and node3 to rejoin (cluster_size 3, all Synced)",
+    "Inserted a post-maintenance row (widget-5-post-maintenance) and verified it replicated to node1, proving full read/write operability of all three members after the maintenance window",
+    "Captured pre-restart boot_id baseline plus healthy cluster/data state on all three nodes",
+    "Restarted node2 via systemctl reboot (backgrounded ack), polled until reachable, confirmed boot_id changed (8d1d94e2->533debc3) and mariadb rejoined with cluster_size=3, Synced, data intact",
+    "Restarted node3, confirmed boot_id changed (96c08b66->1fdc7b43) and full rejoin/data recovery",
+    "Restarted node1 (the original bootstrap node) last, confirmed boot_id changed (cfdbaef8->5dcf86b2) and it rejoined the existing Primary cluster as a regular member (not a re-bootstrap) with cluster_size=3, Synced, data intact",
+    "Final cross-check from node2 showing wsrep_cluster_size=3 and wsrep_incoming_addresses listing all three node IPs"
+  ],
+  "evidence": [
+    {
+      "requirement": "Healthy 3-member Galera cluster established with application data, before maintenance",
+      "command_ids": [
+        "cmd-6982cb24c6314dba",
+        "cmd-fa635759c9464a0f",
+        "cmd-e8dd301026404f9b",
+        "cmd-166ed4ab5210403a",
+        "cmd-186dda81ebcc4ada",
+        "cmd-80e25a8022fa48d4"
+      ],
+      "summary": "Cluster bootstrapped on node1, joined by node2 and node3 (cluster_size 3, all Synced); appdb.orders created on node1 and confirmed replicated with identical rows on node2 and node3"
+    },
+    {
+      "requirement": "Committed write present immediately before the full cluster shutdown",
+      "command_ids": [
+        "cmd-8b61e2c2b1414453"
+      ],
+      "summary": "Inserted widget-4-pre-maintenance row on node2, synchronously certified across the cluster"
+    },
+    {
+      "requirement": "Cluster brought down completely for the maintenance window",
+      "command_ids": [
+        "cmd-9194fa8cb87f48ab",
+        "cmd-1f7e31ba369b4b9f",
+        "cmd-a6c58d18ca6d433c"
+      ],
+      "summary": "mariadb stopped on node3, then node2, then node1 in sequence (all report inactive); node1 grastate.dat confirms safe_to_bootstrap:1 for safe restart"
+    },
+    {
+      "requirement": "Cluster brought back up with every committed write still present and all three members serving",
+      "command_ids": [
+        "cmd-54bc455bbd1042c3",
+        "cmd-27b7e1eded9d45a5",
+        "cmd-a84172c2ebe24511",
+        "cmd-9ceba75366f64de1",
+        "cmd-4cac76d7582749eb"
+      ],
+      "summary": "node1 re-bootstrapped and shows all 4 pre-maintenance rows; node2 and node3 rejoined (cluster_size 3, Synced) each showing identical data; post-maintenance insert on node3 replicated to node1, proving full read/write recovery"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node2 boot-identity change and post-restart cluster/data recovery",
+      "command_ids": [
+        "cmd-71794b4296274253",
+        "cmd-4d1edddd449b496d",
+        "cmd-6420176d3acb4eb8",
+        "cmd-c2a1c8dcfa2d4c25",
+        "cmd-3565ad9d775e46ae"
+      ],
+      "summary": "Baseline boot_id 8d1d94e2 captured; systemctl reboot acknowledged before disconnect; node unreachable then reachable with new boot_id 533debc3; mariadb active with cluster_size 3, Synced, and all 5 orders rows present"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node3 boot-identity change and post-restart cluster/data recovery",
+      "command_ids": [
+        "cmd-f4ecab35685745fd",
+        "cmd-1c36c213229a4cd0",
+        "cmd-04aee8a48eb1436a",
+        "cmd-fc88d5000b3649c5",
+        "cmd-d1d6be82445545f6"
+      ],
+      "summary": "Baseline boot_id 96c08b66 captured; reboot acknowledged before disconnect; node unreachable then reachable with new boot_id 1fdc7b43; mariadb active with cluster_size 3, Synced, and all 5 orders rows present"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node1 boot-identity change and post-restart cluster/data recovery",
+      "command_ids": [
+        "cmd-4e6c120585e549bb",
+        "cmd-d2b559e4900643ea",
+        "cmd-c93bca722211455a",
+        "cmd-e78a87ecf6524258",
+        "cmd-d6bf12f03af4470e"
+      ],
+      "summary": "Baseline boot_id cfdbaef8 captured; reboot acknowledged before disconnect; node unreachable then reachable with new boot_id 5dcf86b2; mariadb active, rejoined as Primary member with cluster_size 3, Synced, and all 5 orders rows present"
+    },
+    {
+      "requirement": "Independent cross-node confirmation of full 3-member cluster membership post-restart cycle",
+      "command_ids": [
+        "cmd-93428e3787d146a6"
+      ],
+      "summary": "From node2, wsrep_cluster_size=3 and wsrep_incoming_addresses lists all three node IPs (10.100.188.10/.11/.12), confirming full quorum after all restarts"
+    }
+  ]
+}

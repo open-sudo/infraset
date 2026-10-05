@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "replication-topology",
+      "requirement": "PostgreSQL streaming replication configured with node1 as writable primary, node2 and node3 as read-only hot standbys",
+      "status": "satisfied",
+      "summary": "node1 configured with wal_level=hot_standby, max_wal_senders=10, replicator role, and pg_hba entries for node2/node3 (cmd-c6f2ba5beedb4277, cmd-478e1c669aa94005, cmd-d62f38b555324f28, cmd-9abf14ed68de4f34). node2 and node3 seeded via pg_basebackup -R from node1 and started with pg_is_in_recovery()=true (cmd-24741cc3885b491b, cmd-3c1ed03aa4004c96, cmd-e98f77b5982d4f00, cmd-bc3791da86564cad). pg_stat_replication on node1 confirms both standbys in 'streaming' state (cmd-80d540b8c1d14b86). Standby write rejection directly confirmed (cmd-b813c3c369c243a6, ERROR: cannot execute CREATE TABLE in a read-only transaction). node1 confirmed writable/not in recovery post-restart (cmd-c5ff5ebcf774451f).",
+      "evidence_ids": [
+        "cmd-c6f2ba5beedb4277",
+        "cmd-478e1c669aa94005",
+        "cmd-d62f38b555324f28",
+        "cmd-9abf14ed68de4f34",
+        "cmd-24741cc3885b491b",
+        "cmd-3c1ed03aa4004c96",
+        "cmd-e98f77b5982d4f00",
+        "cmd-bc3791da86564cad",
+        "cmd-80d540b8c1d14b86",
+        "cmd-b813c3c369c243a6",
+        "cmd-c5ff5ebcf774451f"
+      ]
+    },
+    {
+      "id": "data-visibility",
+      "requirement": "Changes committed on the primary are visible on both standbys",
+      "status": "satisfied",
+      "summary": "A table was created and rows inserted on node1 (cmd-87c1cba0646347a9); identical rows were immediately visible via SELECT on node2 (cmd-6b7f3ff321964973) and node3 (cmd-cd2cdf0216a84281). A second write after the full restart cycle (cmd-c5ff5ebcf774451f) also propagated and was confirmed on both standbys (cmd-4c8f9b8177a7409b, cmd-b0c8bd9e79ab47ca), demonstrating durable, repeatable replication rather than a one-off snapshot.",
+      "evidence_ids": [
+        "cmd-87c1cba0646347a9",
+        "cmd-6b7f3ff321964973",
+        "cmd-cd2cdf0216a84281",
+        "cmd-c5ff5ebcf774451f",
+        "cmd-4c8f9b8177a7409b",
+        "cmd-b0c8bd9e79ab47ca"
+      ]
+    },
+    {
+      "id": "restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node with pre-restart baseline, acknowledgement, changed boot identity, and recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "For node2: pre-restart boot_id 6ab98831... and data check (cmd-389ee8097dbf4789, cmd-6b7f3ff321964973), reboot ack, transient unreachability (connection refused), new boot_id 238bf8e3..., recovered postgresql active/in-recovery with data intact, and primary shows it streaming again (cmd-4a9f78c659994252, cmd-5628b6c289c04982, cmd-73509ff3fddd4d64, cmd-b31551e301554da2, cmd-70ddf0782d094ec2). For node3: same pattern with boot_id changing 225ffbf7...\u2192f3315e09... (cmd-93c2f58811cb4dde, cmd-06c2c58ec3db45c7, cmd-767c30df3f77401e, cmd-9a7380478de941b4, cmd-e170322f19174d54). For node1 (primary): boot_id changed 2b3a8d87...\u21921ee0626a..., pg_is_in_recovery()=false post-restart confirming primary role retained, a fresh write accepted and propagated to both standbys, and pg_stat_replication showing both reconnected (cmd-7cbaf4792f9a42ce, cmd-4083cb01c3a24edb, cmd-17443ede92dc4208, cmd-c5ff5ebcf774451f, cmd-99247f1e004e4789). The fixed lifecycle before-prepare and after-executor boot-identity snapshots corroborate the same boot_id transitions for all three nodes, and show no failed services or listening-socket anomalies post-restart.",
+      "evidence_ids": [
+        "cmd-389ee8097dbf4789",
+        "cmd-6b7f3ff321964973",
+        "cmd-4a9f78c659994252",
+        "cmd-5628b6c289c04982",
+        "cmd-73509ff3fddd4d64",
+        "cmd-b31551e301554da2",
+        "cmd-70ddf0782d094ec2",
+        "cmd-b5d10d30c662493a",
+        "cmd-cd2cdf0216a84281",
+        "cmd-93c2f58811cb4dde",
+        "cmd-06c2c58ec3db45c7",
+        "cmd-767c30df3f77401e",
+        "cmd-9a7380478de941b4",
+        "cmd-e170322f19174d54",
+        "cmd-95a2be2857a24b09",
+        "cmd-7cbaf4792f9a42ce",
+        "cmd-4083cb01c3a24edb",
+        "cmd-17443ede92dc4208",
+        "cmd-c5ff5ebcf774451f",
+        "cmd-99247f1e004e4789",
+        "cmd-4c8f9b8177a7409b",
+        "cmd-b0c8bd9e79ab47ca",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:before_prepare:node3:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor stood up a functioning three-node PostgreSQL 9.5 streaming replication cluster (node1 writable primary, node2/node3 read-only hot standbys), directly demonstrated that writes on the primary propagate to both standbys and that standbys reject writes, and then executed the full provider-wide restart protocol on all three nodes with clear pre-restart baselines, reboot acknowledgements, changed boot identities, and confirmed post-restart recovery of service, data, and replication state \u2014 including a second successful write-and-propagate cycle after the primary's own restart. Hygiene is clean: the one temporary artifact (a replication password file) was shredded before completion.",
+  "limitations": [
+    "Password file content was briefly exposed in command output (cmd-4e09476d437746ed) before being shredded; this is a minor operational note rather than a task-outcome gap.",
+    "Replication is asynchronous (sync_state=async per cmd-80d540b8c1d14b86), which was not explicitly required by the task instruction but is worth noting as an implementation detail."
+  ],
+  "command_stats": {
+    "total": 52,
+    "successful": 47,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "Reviewed all state-changing commands chronologically. Package installs, config edits, data-directory wipes on node2/node3 (required prior to pg_basebackup reseeding), pg_basebackup runs, and service restarts/reboots all map directly to satisfying the replication or restart-protocol outcomes. The only ancillary mutation was a temporary plaintext replication password file created on node1 (cmd-56c0cc900c694be7), which was fully removed via shred at the end of the run (cmd-522c83dffddd467b) \u2014 a bounded, low-risk mutation that was reverted, so it is noted but not penalized heavily. Lifecycle after_executor snapshots show no failed services, no unexpected listening sockets, and no residual /tmp entries beyond the expected per-boot systemd-private directories. No unnecessary or unreverted mutations were found.",
+    "evidence_ids": [
+      "cmd-56c0cc900c694be7",
+      "cmd-522c83dffddd467b",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

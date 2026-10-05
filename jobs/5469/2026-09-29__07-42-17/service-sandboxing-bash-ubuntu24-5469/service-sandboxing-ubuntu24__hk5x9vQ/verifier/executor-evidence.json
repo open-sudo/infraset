@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 7,
+    "successful": 6,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "inventory-worker service created, sandboxed, running",
+      "command_ids": [
+        "cmd-f869f229f1aa4a71"
+      ],
+      "summary": "Service enabled+active immediately after creation; systemctl show confirms NoNewPrivileges=yes, ProtectSystem=strict, ReadWritePaths=/var/lib/inventory; log file being written under /var/lib/inventory"
+    },
+    {
+      "requirement": "confinement to /var/lib/inventory and no-new-privileges enforced",
+      "command_ids": [
+        "cmd-1218871723e34518"
+      ],
+      "summary": "systemd-run using the identical sandbox settings shows writing to /etc fails (exit 2, file never created) while writing inside /var/lib/inventory succeeds"
+    },
+    {
+      "requirement": "pre-restart healthy baseline on node1",
+      "command_ids": [
+        "cmd-1004aaf990f644d2"
+      ],
+      "summary": "Captured boot_id=96c08b66-... , uptime since original boot, service active/enabled, and current inventory.log contents before restart"
+    },
+    {
+      "requirement": "node1 restart acknowledgement",
+      "command_ids": [
+        "cmd-488c0ad7d46e493c"
+      ],
+      "summary": "Backgrounded native reboot command returned acknowledgement before the node disconnected"
+    },
+    {
+      "requirement": "node1 changed boot identity / restart proof",
+      "command_ids": [
+        "cmd-e088bd7c7d1e46cc",
+        "cmd-8370f9f3a9ea4821"
+      ],
+      "summary": "Connection reset confirms node went down; subsequent poll succeeds with a new boot_id (29b72a4e-...) differing from baseline and a fresh uptime start time, proving an actual restart occurred"
+    },
+    {
+      "requirement": "post-restart recovery of inventory-worker service and data",
+      "command_ids": [
+        "cmd-0b05d1cd445e4a9e"
+      ],
+      "summary": "After restart, service is active/running/enabled with identical hardening settings, prior log entries preserved, and new heartbeats (new PID 649) being appended, confirming full recovery"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-f869f229f1aa4a71",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:25:10.889079+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 11528,
+      "command": "set -Eeuo pipefail\n\necho \"== STEP: baseline\"\ndate -u +%Y-%m-%dT%H:%M:%SZ\ncat /proc/sys/kernel/random/boot_id\nuptime -s\n\necho \"== STEP: create data dir\"\nsudo -n mkdir -p /var/lib/inventory\nsudo -n useradd --system --no-create-home --shell /usr/sbin/nologin inventory-worker 2>/dev/null || true\nsudo -n chown -R inventory-worker:inventory-worker /var/lib/inventory\nsudo -n chmod 750 /var/lib/inventory\n\necho \"== STEP: worker script\"\nsudo -n tee /usr/local/bin/inventory-worker.sh >/dev/null <<'EOF'\n#!/bin/sh\nset -eu\nOUT=/var/lib/inventory/inventory.log\nwhile true; do\n  printf '%s heartbeat pid=%s\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" \"$$\" >> \"$OUT\"\n  sleep 10\ndone\nEOF\nsudo -n chmod 755 /usr/local/bin/inventory-worker.sh\n\necho \"== STEP: unit file\"\nsudo -n tee /etc/systemd/system/inventory-worker.service >/dev/null <<'EOF'\n[Unit]\nDescription=Inventory background worker\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/usr/local/bin/inventory-worker.sh\nUser=inventory-worker\nGroup=inventory-worker\nRestart=always\n\n# Sandboxing: writes confined to /var/lib/inventory, no new privileges\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths=/var/lib/inventory\nPrivateTmp=true\nPrivateDevices=true\nProtectKernelTunables=true\nProtectKernelModules=true\nProtectControlGroups=true\nRestrictSUIDSGID=true\nRestrictRealtime=true\nLockPersonality=true\nMemoryDenyWriteExecute=true\nCapabilityBoundingSet=\nAmbientCapabilities=\n\n[Install]\nWantedBy=multi-user.target\nEOF\n\necho \"== STEP: enable+start\"\nsudo -n systemctl daemon-reload\nsudo -n systemctl enable --now inventory-worker.service\n\nsleep 3\necho \"== STEP: verify status\"\nsudo -n systemctl is-active inventory-worker.service\nsudo -n systemctl is-enabled inventory-worker.service\nsudo -n systemctl show inventory-worker.service -p NoNewPrivileges -p ProtectSystem -p ReadWritePaths\n\necho \"== STEP: verify data written\"\nsleep 8\nls -la /var/lib/inventory\nsudo -n cat /var/lib/inventory/inventory.log\n\necho \"== STEP: verify no-new-privs enforced (attempt sudo from within service context is n/a; check systemd status flags)\"\nsudo -n systemctl status inventory-worker.service --no-pager | head -20\n",
+      "stdout": "== STEP: baseline\n2026-09-29T13:24:59Z\n96c08b66-5aa4-4e9a-b76f-04e2c6e34ced\n2026-09-29 09:24:37\n== STEP: create data dir\n== STEP: worker script\n== STEP: unit file\n== STEP: enable+start\nCreated symlink /etc/systemd/system/multi-user.target.wants/inventory-worker.service \u2192 /etc/systemd/system/inventory-worker.service.\n== STEP: verify status\nactive\nenabled\nReadWritePaths=/var/lib/inventory\nProtectSystem=strict\nNoNewPrivileges=yes\n== STEP: verify data written\ntotal 12\ndrwxr-x---  2 inventory-worker inventory-worker 4096 Sep 29 09:24 .\ndrwxr-xr-x 41 root             root             4096 Sep 29 09:24 ..\n-rw-r--r--  1 inventory-worker inventory-worker   80 Sep 29 09:25 inventory.log\n2026-09-29T13:24:59Z heartbeat pid=1270\n2026-09-29T13:25:09Z heartbeat pid=1270\n== STEP: verify no-new-privs enforced (attempt sudo from within service context is n/a; check systemd status flags)\n\u25cf inventory-worker.service - Inventory background worker\n     Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; preset: enabled)\n     Active: active (running) since Tue 2026-09-29 09:24:59 EDT; 11s ago\n   Main PID: 1270 (inventory-worke)\n      Tasks: 2 (limit: 2317)\n     Memory: 588.0K (peak: 1.0M)\n        CPU: 10ms\n     CGroup: /system.slice/inventory-worker.service\n             \u251c\u25001270 /bin/sh /usr/local/bin/inventory-worker.sh\n             \u2514\u25001282 sleep 10\n\nSep 29 09:24:59 node1 systemd[1]: Started inventory-worker.service - Inventory background worker."
+    },
+    {
+      "command_id": "cmd-1218871723e34518",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:25:17.583838+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 170,
+      "command": "set -Eeuo pipefail\necho \"== STEP: confinement test - try writing outside /var/lib/inventory as the service user via systemd-run with same sandbox\"\nsudo -n systemd-run --unit=inventory-confinement-test --wait --collect \\\n  -p User=inventory-worker -p Group=inventory-worker \\\n  -p NoNewPrivileges=true -p ProtectSystem=strict -p ProtectHome=true \\\n  -p ReadWritePaths=/var/lib/inventory -p PrivateTmp=true \\\n  /bin/sh -c 'echo denied-test > /etc/should-not-write.txt' 2>&1 || echo \"EXIT_CODE=$?\"\n\necho \"== STEP: confirm no file was created\"\nls -la /etc/should-not-write.txt 2>&1 || echo \"confirmed: file does not exist\"\n\necho \"== STEP: confirm write inside allowed path still works\"\nsudo -n systemd-run --unit=inventory-confinement-ok --wait --collect \\\n  -p User=inventory-worker -p Group=inventory-worker \\\n  -p NoNewPrivileges=true -p ProtectSystem=strict -p ProtectHome=true \\\n  -p ReadWritePaths=/var/lib/inventory -p PrivateTmp=true \\\n  /bin/sh -c 'echo ok-test >> /var/lib/inventory/confinement-check.log'\nsudo -n cat /var/lib/inventory/confinement-check.log\n",
+      "stdout": "== STEP: confinement test - try writing outside /var/lib/inventory as the service user via systemd-run with same sandbox\nRunning as unit: inventory-confinement-test.service; invocation ID: 72824c55f2334d9c9c8a63f434876f12\nFinished with result: exit-code\nMain processes terminated with: code=exited/status=2\nService runtime: 3ms\nCPU time consumed: 2ms\nMemory peak: 316.0K\nMemory swap peak: 0B\nEXIT_CODE=2\n== STEP: confirm no file was created\nls: cannot access '/etc/should-not-write.txt': No such file or directory\nconfirmed: file does not exist\n== STEP: confirm write inside allowed path still works\nRunning as unit: inventory-confinement-ok.service; invocation ID: 438799af5dee43599609b29b3cc87ec5\nFinished with result: success\nMain processes terminated with: code=exited/status=0\nService runtime: 4ms\nCPU time consumed: 4ms\nMemory peak: 1.6M\nMemory swap peak: 0B\nok-test"
+    },
+    {
+      "command_id": "cmd-1004aaf990f644d2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:25:21.282582+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 97,
+      "command": "set -Eeuo pipefail\necho \"== STEP: pre-restart baseline\"\necho \"BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)\"\nuptime -s\nsudo -n systemctl is-active inventory-worker.service\nsudo -n systemctl is-enabled inventory-worker.service\nsudo -n wc -l /var/lib/inventory/inventory.log\nsudo -n tail -3 /var/lib/inventory/inventory.log\n",
+      "stdout": "== STEP: pre-restart baseline\nBOOT_ID=96c08b66-5aa4-4e9a-b76f-04e2c6e34ced\n2026-09-29 09:24:37\nactive\nenabled\n3 /var/lib/inventory/inventory.log\n2026-09-29T13:24:59Z heartbeat pid=1270\n2026-09-29T13:25:09Z heartbeat pid=1270\n2026-09-29T13:25:19Z heartbeat pid=1270"
+    },
+    {
+      "command_id": "cmd-488c0ad7d46e493c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:25:23.849973+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 73,
+      "command": "sudo -n sh -c 'nohup reboot >/tmp/reboot.log 2>&1 &' ; echo \"reboot acknowledged and issued\"",
+      "stdout": "reboot acknowledged and issued"
+    },
+    {
+      "command_id": "cmd-e088bd7c7d1e46cc",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:25:27.659089+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 1554,
+      "command": "echo alive; cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-8370f9f3a9ea4821",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:25:30.145201+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 81,
+      "command": "echo alive; cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stdout": "alive\n29b72a4e-3db7-4c89-8617-457666a36e36\n2026-09-29 09:25:25"
+    },
+    {
+      "command_id": "cmd-0b05d1cd445e4a9e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:25:40.128621+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 6108,
+      "command": "set -Eeuo pipefail\necho \"== STEP: post-restart service verification\"\nsudo -n systemctl is-active inventory-worker.service\nsudo -n systemctl is-enabled inventory-worker.service\nsudo -n systemctl show inventory-worker.service -p NoNewPrivileges -p ProtectSystem -p ReadWritePaths -p ActiveState -p SubState\n\necho \"== STEP: data persisted and worker resumed writing\"\nsudo -n ls -la /var/lib/inventory\nsudo -n wc -l /var/lib/inventory/inventory.log\nsleep 6\nsudo -n tail -5 /var/lib/inventory/inventory.log\n",
+      "stdout": "== STEP: post-restart service verification\nactive\nenabled\nReadWritePaths=/var/lib/inventory\nProtectSystem=strict\nNoNewPrivileges=yes\nActiveState=active\nSubState=running\n== STEP: data persisted and worker resumed writing\ntotal 16\ndrwxr-x---  2 inventory-worker inventory-worker 4096 Sep 29 09:25 .\ndrwxr-xr-x 41 root             root             4096 Sep 29 09:24 ..\n-rw-r--r--  1 inventory-worker inventory-worker    8 Sep 29 09:25 confinement-check.log\n-rw-r--r--  1 inventory-worker inventory-worker  159 Sep 29 09:25 inventory.log\n4 /var/lib/inventory/inventory.log\n2026-09-29T13:24:59Z heartbeat pid=1270\n2026-09-29T13:25:09Z heartbeat pid=1270\n2026-09-29T13:25:19Z heartbeat pid=1270\n2026-09-29T13:25:27Z heartbeat pid=649\n2026-09-29T13:25:37Z heartbeat pid=649"
+    }
+  ]
+}

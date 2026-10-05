@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "Published node2's port-8080 HTTP service on node1's management address port 80, reachable only by node3 and refused for every other source; validated across a full one-at-a-time restart of all three nodes.",
+  "actions_performed": [
+    "Discovered topology: node1 (OPNsense/FreeBSD) and node2 (RHEL10) share a private, unconfigured second NIC (vtnet1/enp8s0); node1, node2, node3 also share a management LAN 10.100.141.0/24.",
+    "Assigned static IPs on the private link: node1 opt1/vtnet1 = 192.168.50.1/24 (via OPNsense config.xml + configctl interface reconfigure opt1), node2 enp8s0 = 192.168.50.2/24 (via nmcli, persistent connection profile).",
+    "Created and enabled a persistent systemd service simple-http.service on node2 serving HTTP on 0.0.0.0:8080 with a distinctive body 'node2-8080-ok'.",
+    "Restricted node2's firewalld to only accept port 8080 from node1's private IP (192.168.50.1/32) via a permanent rich rule.",
+    "On node1 (OPNsense), edited /conf/config.xml via Python/ElementTree (with backup) to: add a WAN-facing style NAT port-forward (rdr) on the lan interface for tcp/80 restricted to source 10.100.141.12 (node3) targeting 192.168.50.2:8080; add a filter reject rule (type=reject -> pf 'block return', i.e. TCP RST) blocking all non-node3 sources from reaching lan-ip:80; add a filter pass rule for node3's forwarded traffic; disable the built-in webConfigurator http-redirect anti-lockout rule (disablehttpredirect=1) which was unconditionally passing all traffic to port 80 ahead of the new rules; add a hybrid-mode outbound NAT (masquerade) rule on opt1 for traffic to 192.168.50.2:8080 to fix an asymmetric-routing bug where node2 replied directly to node3 instead of via node1.",
+    "Applied changes with configctl interface reconfigure/webgui restart/filter reload and verified via pfctl -s nat/rules and pf state table.",
+    "Verified end-to-end: node3 -> node1:80 returns HTTP 200 with body 'node2-8080-ok'; node2 and node1 itself -> node1:80 get TCP connection refused (exit 7 / RST).",
+    "Captured healthy baseline boot identity and service state on all 3 nodes, then restarted node3, node2, and node1 sequentially (one at a time) using native reboot commands backgrounded so the exec ack returned first, polled each node until exec was available again, proved boot_id/kern.boottime changed, and re-verified the full topology, NAT/firewall config persistence, and node3-allow/node2-refuse behavior after each restart, culminating in a final full verification after node1's reboot."
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 HTTP service listening on 8080 on the private network shared with node1",
+      "command_ids": [
+        "cmd-c6e4a6cfeeae4d37",
+        "cmd-4f7fbca61afe4cd7",
+        "cmd-baacf1a8b2d2406c",
+        "cmd-f709d462319747e1",
+        "cmd-84e519644a7c4aa0"
+      ],
+      "summary": "enp8s0/vtnet1 private link configured 192.168.50.2 (node2) / 192.168.50.1 (node1); simple-http.service active on 0.0.0.0:8080; curl from node1 over the private link returns HTTP 200."
+    },
+    {
+      "requirement": "Service published on node1's management address port 80",
+      "command_ids": [
+        "cmd-1be5a57a530646a8",
+        "cmd-73da89d1458c4457",
+        "cmd-548a6d91d1044e90",
+        "cmd-73d55e772f7744cb"
+      ],
+      "summary": "OPNsense config.xml updated with NAT rdr (tcp/80 -> 192.168.50.2:8080), filter reject/pass rules, disabled anti-lockout http redirect, added outbound masquerade on opt1; confirmed via pfctl -s nat/rules after filter reload."
+    },
+    {
+      "requirement": "node3 can reach the published port 80 service and gets the correct content",
+      "command_ids": [
+        "cmd-eb798c2197eb4072",
+        "cmd-94b0c1f9f5af4946",
+        "cmd-33883087a2bf4b96"
+      ],
+      "summary": "curl from node3 to http://10.100.141.10:80/index.html returns HTTP 200 with body 'node2-8080-ok', both before and after node2/node1 reboots."
+    },
+    {
+      "requirement": "Published port refused for every other source address",
+      "command_ids": [
+        "cmd-2e8b48888f134e67",
+        "cmd-e4990fccea5d4803",
+        "cmd-255180432d7247ba"
+      ],
+      "summary": "curl from node2 and from node1 itself to 10.100.141.10:80 both fail with 'Connection refused' (exit code 7, TCP RST), confirmed again after node1's reboot."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-24bf192e66ad43f6",
+        "cmd-989974153414498b",
+        "cmd-ce1998406a70413b",
+        "cmd-94b0c1f9f5af4946"
+      ],
+      "summary": "Baseline boot_id 73237116...; reboot command acked and backgrounded; new boot_id ed2bb013... with uptime 0 min; post-reboot curl to published service succeeded (200)."
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-8bc62b8fcf3142d1",
+        "cmd-98d4082bbc5e4f0c",
+        "cmd-655f1439f1324c2d",
+        "cmd-2daf3821da724776",
+        "cmd-0bb647bfaa484a2f"
+      ],
+      "summary": "Baseline boot_id 434803ac...; reboot acked; new boot_id 7bc582fc... with uptime 0 min; private IP, systemd service, and firewalld rich rule all persisted; node3 access confirmed working post-reboot."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-0b8814d0b4874472",
+        "cmd-1d8f69edeeb94287",
+        "cmd-632a11bb28d94d1d",
+        "cmd-085d1b5590214c3f",
+        "cmd-f778b719dd714f1b",
+        "cmd-33883087a2bf4b96",
+        "cmd-255180432d7247ba"
+      ],
+      "summary": "Baseline kern.boottime sec=1788627902; reboot command acked (background); SSH transport down mid-reboot then recovered; new kern.boottime sec=1788628395 (uptime 12s); NAT/filter rules and opt1 IP restored from persisted config.xml; end-to-end node3-allow/node2-refuse behavior re-verified."
+    }
+  ]
+}

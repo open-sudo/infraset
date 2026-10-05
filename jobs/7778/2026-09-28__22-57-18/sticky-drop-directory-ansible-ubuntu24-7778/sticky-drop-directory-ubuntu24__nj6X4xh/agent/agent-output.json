@@ -1,0 +1,76 @@
+{
+  "status": "completed",
+  "summary": "Configured /srv/drop on node1 as a shared, sticky-bit-protected writable directory using an Ansible playbook run from node2 (the control node, chosen because it has Ansible and existing SSH keys). Fixed node1's SSH (missing host keys blocked sshd) and set up root key trust so node2 could orchestrate it. Verified sticky-bit behavior functionally with two test users, then restarted both node1 and node2 one at a time, confirming boot-identity change and full recovery after each restart.",
+  "actions_performed": [
+    "Diagnosed control-node candidacy: node2 has Ansible core 2.20.5 and an existing root SSH keypair; node1 has neither Ansible nor a running sshd",
+    "Found node1 sshd failing due to missing host keys; ran ssh-keygen -A and restarted ssh.service on node1",
+    "Added node2's root public key to node1 /root/.ssh/authorized_keys to enable passwordless SSH from node2 to node1",
+    "Created /root/ansible/inventory.ini on node2 with node1 (10.100.37.10) as the managed host",
+    "Wrote /root/ansible/drop-directory.yml using ansible.builtin.file to create /srv/drop with owner root:root, mode 1777 (world-writable + sticky bit)",
+    "Ran the playbook from node2 targeting node1 via ansible-playbook -i inventory.ini drop-directory.yml; directory created successfully",
+    "Functionally verified sticky-bit enforcement: created dropuser_alice and dropuser_bob, each wrote a file to /srv/drop, confirmed bob's rm of alice's file failed with 'Operation not permitted'",
+    "Cleaned up test files and removed the two test users, leaving /srv/drop clean with 1777 permissions",
+    "Captured healthy baseline (boot_id, /srv/drop stat, ansible files) on node1 and node2 before any restarts",
+    "Restarted node1 via backgrounded systemctl reboot so the ack returned before disconnect; polled until exec resumed; confirmed new boot_id and /srv/drop permissions intact (1777 root:root)",
+    "Restarted node2 via the same pattern; polled until exec resumed; confirmed new boot_id and that /root/ansible/inventory.ini and drop-directory.yml persisted",
+    "Re-ran the playbook from node2 against node1 post-restart: result changed=0, confirming idempotent, persisted configuration and working cross-node SSH/Ansible connectivity"
+  ],
+  "evidence": [
+    {
+      "requirement": "/srv/drop created on node1 with shared writable, sticky (no cross-user delete) semantics via Ansible",
+      "command_ids": [
+        "cmd-8c352c67aaec4115",
+        "cmd-d73ca582c626455b",
+        "cmd-900a1fe957c04a92"
+      ],
+      "summary": "Playbook written on node2 and executed against node1; resulting directory is drwxrwxrwt root:root (mode 1777)"
+    },
+    {
+      "requirement": "Functional proof that users cannot remove files owned by other users",
+      "command_ids": [
+        "cmd-af6ffa3e729f49ce",
+        "cmd-d1d0445261104dce"
+      ],
+      "summary": "Two test users each created a file in /srv/drop; dropuser_bob's attempt to rm dropuser_alice's file failed with 'Operation not permitted' due to the sticky bit"
+    },
+    {
+      "requirement": "Implementation uses Ansible from a legitimate control node (node2) rather than local commands on node1",
+      "command_ids": [
+        "cmd-a5ef369e6b57416f",
+        "cmd-d71346a7a4ea4bf2",
+        "cmd-e305cd32a0ca47cc",
+        "cmd-8c352c67aaec4115",
+        "cmd-d73ca582c626455b"
+      ],
+      "summary": "Confirmed node2 has ansible-core and used it with an inventory/playbook targeting node1 over SSH"
+    },
+    {
+      "requirement": "Node1 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-91f4344abd2c44c4",
+        "cmd-9c2d0fd3bbab4760",
+        "cmd-e1ae35674cc04ba2",
+        "cmd-852025f1e94b4d9f"
+      ],
+      "summary": "Baseline boot_id 901ef286...; reboot command acknowledged before disconnect; post-reboot boot_id f8551547... (changed); /srv/drop permissions (1777 root:root) confirmed intact post-reboot"
+    },
+    {
+      "requirement": "Node2 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-7c50fdfb1ce64e55",
+        "cmd-83d74e119cf1466c",
+        "cmd-0d2a28f0208a4df2",
+        "cmd-9398f0a609a2490e"
+      ],
+      "summary": "Baseline boot_id 6fd57414...; reboot command acknowledged before disconnect; post-reboot boot_id 0d4caa87... (changed); Ansible files and SSH connectivity to node1 confirmed functional via a successful idempotent playbook re-run (changed=0)"
+    },
+    {
+      "requirement": "Cluster remained functional end-to-end after both restarts",
+      "command_ids": [
+        "cmd-9398f0a609a2490e",
+        "cmd-584ac74996994b03"
+      ],
+      "summary": "Post-restart idempotent Ansible run from node2 against node1 reported ok=2, changed=0; final stat on node1 confirms /srv/drop is drwxrwxrwt root:root 1777"
+    }
+  ]
+}

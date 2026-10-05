@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "nightly-backup-transfer",
+      "requirement": "Every night, back up /srv/inventory/data from node2 to node1",
+      "status": "satisfied",
+      "summary": "backup-inventory.sh was deployed on node2, tars /srv/inventory/data, and rsyncs it over SSH to node1. Manual execution succeeded and sha256sum of the extracted archive on node1 exactly matched the source files on node2 (cmd-5573052878354866 vs cmd-8deefcf95e6f4a2c). A root crontab entry running the script at 02:00 UTC daily was installed on node2 and cron service confirmed active/enabled (cmd-55fcb2eecb0a4867, cmd-ef113b1188fc4888). No actual overnight cron firing was observed (expected, given task duration), but the schedule and script are correctly configured and manually proven to work end-to-end, including after both nodes were rebooted (cmd-c02dc34b47664af2, cmd-e87e07c588a0455b).",
+      "evidence_ids": [
+        "cmd-fcb8e693b4cc44a0",
+        "cmd-1b4a97de6e7e456a",
+        "cmd-20b86ee946c0465e",
+        "cmd-b618cf690e7d4506",
+        "cmd-5573052878354866",
+        "cmd-55fcb2eecb0a4867",
+        "cmd-ef113b1188fc4888",
+        "cmd-c02dc34b47664af2",
+        "cmd-e87e07c588a0455b"
+      ]
+    },
+    {
+      "id": "dated-archive-storage",
+      "requirement": "Store dated archives under /var/backups/inventory on node1",
+      "status": "satisfied",
+      "summary": "/var/backups/inventory was created on node1 (mode 750) and the backup script produces UTC-date-stamped archive names (inventory-YYYY-MM-DD.tar.gz) landing in that directory, confirmed by directory listing and successful extraction/checksum verification.",
+      "evidence_ids": [
+        "cmd-7f98fa3ff1e645a4",
+        "cmd-b618cf690e7d4506",
+        "cmd-5573052878354866"
+      ]
+    },
+    {
+      "id": "seven-day-retention",
+      "requirement": "Retain the last 7 days of archives on node1",
+      "status": "satisfied",
+      "summary": "Executor seeded synthetic archives aged 1,3,6,7,8,10,15 days and reran the backup script; the post-run listing shows only the 1/3/6-day-old archives plus the new day's archive survived, while 7/8/10/15-day-old archives were pruned via the script's remote find -mtime command. This directly demonstrates the retention window behaves as a 7-day retention policy. Test archives were then cleaned up, leaving only the real archive.",
+      "evidence_ids": [
+        "cmd-05dfac43a2354cfa",
+        "cmd-08c2718fd9cd4d3a",
+        "cmd-3b071dfa27e44eb0",
+        "cmd-59355e78e04b41e7"
+      ]
+    },
+    {
+      "id": "node1-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on node1 (independent of task contract)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id cf34dc87... with ssh/cron active and the backup archive present (cmd-5aed6f4e8fe74686), matching the fixed before-prepare snapshot. Reboot was issued and acknowledged (cmd-117dafb79c164a4a), a bounded connection timeout was observed mid-restart (cmd-2a87c8cc3d5f488f), and a new boot_id 833a2eed... was confirmed afterward (cmd-27b883784f664442), matching the fixed after-executor snapshot. Recovered state (ssh active, backup archive intact with sha256 recomputed) was directly observed (cmd-c23b4e3f477a4355), and node2 confirmed continued SSH connectivity to node1 post-restart (cmd-9204d1462d8840f7).",
+      "evidence_ids": [
+        "cmd-5aed6f4e8fe74686",
+        "cmd-117dafb79c164a4a",
+        "cmd-2a87c8cc3d5f488f",
+        "cmd-27b883784f664442",
+        "cmd-c23b4e3f477a4355",
+        "cmd-9204d1462d8840f7",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "node2-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol on node2 (independent of task contract)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id bfd05127... with ssh/cron active, crontab installed, and source data intact (cmd-dbfd1ed889934c72), matching the fixed before-prepare snapshot. Reboot acknowledged (cmd-5c9139acce4d476e), bounded timeout observed (cmd-91b12a816a214b0e), new boot_id 3c4f98bd... confirmed (cmd-20a08f8e112040a1), matching the fixed after-executor snapshot. Recovered state (ssh/cron active, crontab intact, source data intact, SSH to node1 functional) was directly observed (cmd-5b885ae08ec1478f), and a fresh end-to-end backup run succeeded afterward (cmd-c02dc34b47664af2, cmd-e87e07c588a0455b).",
+      "evidence_ids": [
+        "cmd-dbfd1ed889934c72",
+        "cmd-5c9139acce4d476e",
+        "cmd-91b12a816a214b0e",
+        "cmd-20a08f8e112040a1",
+        "cmd-5b885ae08ec1478f",
+        "cmd-c02dc34b47664af2",
+        "cmd-e87e07c588a0455b",
+        "global:before_prepare:node2:boot-identity",
+        "global:after_executor:node2:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task \u2014 nightly backup of /srv/inventory/data from node2 to node1, dated archives stored under /var/backups/inventory on node1, and 7-day retention \u2014 are directly and coherently satisfied by observed command output, including an explicit test of the retention boundary with synthetic aged files. The executor also had to fix a pre-existing cluster-wide sshd host-key failure to make the required passwordless node2->node1 transport work, which was a legitimate prerequisite rather than scope creep. The independently mandated node-restart evidence protocol was completed for both nodes with pre-restart baselines, acknowledged reboots, bounded timeouts, changed boot identities (cross-checked against the fixed lifecycle snapshots), and fully recovered service/data/cluster state, followed by a successful post-restart end-to-end backup run.",
+  "limitations": [
+    "The nightly 02:00 UTC cron firing itself was not observed live (only manually invoked runs were captured); this is expected given the bounded evidence window and is not evidence of failure.",
+    "Retention behavior was validated using synthetic aged copies rather than genuine 7-day-old production archives, since the task environment does not span multiple real days; this is a reasonable proxy but not a literal multi-day observation.",
+    "The retention prune command uses `-mtime +6` (RETAIN_DAYS-1), which the test confirms deletes archives at 7+ days old and keeps up to 6 days old plus the current day (7 archives total) \u2014 a defensible interpretation of 'last 7 days' but worth noting as an implementation detail."
+  ],
+  "command_stats": {
+    "total": 42,
+    "successful": 33,
+    "failed": 9,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.88,
+    "summary": "Most state-changing commands map cleanly to task prerequisites (fixing cluster-wide broken sshd host keys and passwordless SSH, creating missing source/destination directories, deploying the script and cron job) or to the mandatory restart protocol. One bounded, low-risk mutation stands out: cmd-05dfac43a2354cfa seeded seven synthetic aged 'inventory-oldtest-*' archives directly in the production destination /var/backups/inventory on node1 to validate the retention prune logic. This was a deliberate verification step for a material task outcome (retention) rather than an unrelated experiment, and it was fully reverted immediately afterward (cmd-59355e78e04b41e7), leaving only the real dated archive \u2014 confirmed by the after-executor snapshot showing no test-archive residue. No failed/conflicting services, no unnecessary broad or destructive mutations, and no weakened security controls (authorized_keys and directory permissions were set narrowly, backups dir kept at 750).",
+    "evidence_ids": [
+      "cmd-05dfac43a2354cfa",
+      "cmd-59355e78e04b41e7",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

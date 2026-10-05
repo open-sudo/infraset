@@ -1,0 +1,95 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-api as a systemd-managed service on node1 (Ubuntu 24.04) that survives kernel OOM events. The service (/opt/inventory-api/app.py, a threaded HTTP server on :8080 serving /health and /inventory) runs under unit inventory-api.service with Restart=always and OOMScoreAdjust=-1000, making it effectively immune to OOM-killer selection. Verified the protection by launching a memory-hog process that exhausted the node's RAM (no swap configured): the kernel OOM killer selected and killed the memory hog (oom_score_adj:0) while inventory-api (oom_score_adj:-1000) was never touched and kept serving requests throughout. Completed the mandatory node-restart evidence protocol on node1: captured pre-restart boot_id and healthy service state, issued a native `systemctl reboot`, polled until the node was reachable again, confirmed the boot_id changed, and verified inventory-api came back active/enabled with OOM protection intact and correct API responses post-recovery.",
+  "actions_performed": [
+    "Inspected node1 (Ubuntu 24.04.3, 1.9GiB RAM, no swap, systemd-oomd inactive)",
+    "Wrote /opt/inventory-api/app.py: threaded HTTP server exposing /health and /inventory on port 8080",
+    "Created /etc/systemd/system/inventory-api.service with Restart=always and OOMScoreAdjust=-1000, enabled and started it",
+    "Verified running process has oom_score_adj=-1000 and API responds correctly",
+    "Captured healthy baseline: free -h, systemctl status, curl responses, dmesg oom-kill count=0",
+    "Wrote /tmp/memhog.py, launched it in background to continuously allocate memory",
+    "Drove the node to full memory exhaustion; kernel OOM killer fired and killed the memhog process (pid 1392, oom_score_adj:0) per dmesg",
+    "Verified inventory-api (pid 1311, oom_score_adj:-1000) was untouched, never restarted, and continued serving /health and /inventory correctly after the OOM event",
+    "Captured pre-restart boot_id (1e0cb179...) and service health as baseline",
+    "Issued `systemctl reboot` on node1 via a detached background invocation so the acknowledgment returned before disconnect",
+    "Polled node1 until exec connectivity returned",
+    "Confirmed boot_id changed to 367aa6aa..., proving an actual restart occurred",
+    "Verified inventory-api is active/enabled post-restart with OOMScoreAdjust=-1000 reapplied and correct API responses, confirming full recovery"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-api deployed as a managed (systemd) service and serving traffic",
+      "command_ids": [
+        "cmd-810b0534683e45e2",
+        "cmd-d847ed7259284885"
+      ],
+      "summary": "Created app.py and inventory-api.service, enabled/started it; systemctl is-active=active and curl /health, /inventory return correct JSON"
+    },
+    {
+      "requirement": "Service is configured to be spared by the OOM killer (protected process)",
+      "command_ids": [
+        "cmd-ed446218bfd24a2f"
+      ],
+      "summary": "Running inventory-api PID 1311 has /proc/PID/oom_score_adj = -1000, confirming kernel OOM protection is applied"
+    },
+    {
+      "requirement": "Healthy baseline captured before disruption",
+      "command_ids": [
+        "cmd-65ed984b76b54dc9",
+        "cmd-05af2ccbc72c4f0a"
+      ],
+      "summary": "free -h, systemctl status (active, low memory footprint), zero prior oom-kill events in dmesg, and a passing /health check just before inducing memory pressure"
+    },
+    {
+      "requirement": "Real OOM condition induced (memory-hungry process drives system out of memory)",
+      "command_ids": [
+        "cmd-5c1ee33f4e034042",
+        "cmd-6f17391f07614a57"
+      ],
+      "summary": "Launched memhog.py (PID 1392) in background; system memory usage climbed to 1.9Gi/1.9Gi used with 52Mi free, confirming genuine memory exhaustion"
+    },
+    {
+      "requirement": "Kernel OOM killer targets the memory hog, not inventory-api",
+      "command_ids": [
+        "cmd-44b7e48d9a40462d"
+      ],
+      "summary": "dmesg shows 'Out of memory: Killed process 1392 (python3) ... oom_score_adj:0' \u2014 the memhog was killed while inventory-api (oom_score_adj:-1000) was not selected"
+    },
+    {
+      "requirement": "inventory-api kept serving throughout/after the OOM event",
+      "command_ids": [
+        "cmd-06ab3fbb42d24837"
+      ],
+      "summary": "Post-OOM: inventory-api still active with uptime 28.1s (never restarted since original start) and /health, /inventory return correct data"
+    },
+    {
+      "requirement": "node1 restart: pre-restart boot identity baseline",
+      "command_ids": [
+        "cmd-05af2ccbc72c4f0a"
+      ],
+      "summary": "boot_id=1e0cb179-d384-41f8-aa25-9390b31eec45 captured alongside a passing health check before reboot"
+    },
+    {
+      "requirement": "node1 restart: acknowledgment returned before disconnect, one node at a time, native mechanism",
+      "command_ids": [
+        "cmd-6d8e2ec7bd954049"
+      ],
+      "summary": "Issued detached `systemctl reboot`; exec stream closed as the node went down, confirming the restart was triggered"
+    },
+    {
+      "requirement": "node1 restart: changed boot identity proves actual restart",
+      "command_ids": [
+        "cmd-f846ba89e8f54591",
+        "cmd-c01eae437b2c4467"
+      ],
+      "summary": "Polled until reachable; new boot_id=367aa6aa-b012-4b01-a63c-07ca1994d4cb differs from pre-restart value, proving a real reboot occurred"
+    },
+    {
+      "requirement": "node1 restart: post-restart recovery of service, OOM protection, and data",
+      "command_ids": [
+        "cmd-6a1e6bbf9b6644d5"
+      ],
+      "summary": "inventory-api is active/enabled with oom_score_adj=-1000 reapplied automatically, and /health and /inventory respond correctly after restart"
+    }
+  ]
+}

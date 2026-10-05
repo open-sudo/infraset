@@ -1,0 +1,58 @@
+{
+  "status": "blocked",
+  "summary": "Created a 2.5 GiB LVM logical volume (datavg/datalv) mounted at /srv/data on node1, backed by a loopback-attached file since the node has no spare disk (the 20 GiB vda is fully consumed by boot/swap/root partitions). The volume was created at 1 GiB, populated with 50 MiB of test files plus a checksum manifest, then grown online to 2.5 GiB via lvextend + xfs_growfs while mounted, and data integrity was verified intact both before and after the grow. Persistence across reboot was configured via a systemd oneshot service that re-attaches the loop device before local-fs-pre.target, referenced from /etc/fstab via x-systemd.requires. However, the mandatory restart-and-recover verification is blocked: after issuing systemctl reboot on node1, the node has been unreachable via the exec tool for over 90 minutes (consistent \"Connection reset by peer\" on every poll), far beyond any normal VM boot window. I cannot observe a changed boot identity or post-restart health for node1, and therefore cannot claim restart persistence was verified for this node, per the protocol's own instruction to report such a limitation explicitly rather than assume success.",
+  "actions_performed": [
+    "Inspected node1 disk layout: single 20 GiB vda disk fully partitioned (BIOS boot, /boot, swap, root xfs) with no free space or spare disk for a native LVM PV",
+    "Created a 3 GiB sparse backing file at /var/lib/lvm-backing/data.img and attached it as /dev/loop0",
+    "Created PV on /dev/loop0, VG datavg, and a 1 GiB LV datalv",
+    "Formatted datalv with xfs and mounted it at /srv/data",
+    "Wrote 50 x 1MiB random test files plus a sha256 checksum manifest to /srv/data and verified integrity",
+    "Grew datalv online to 2.5 GiB via lvextend -L 2.5G and xfs_growfs /srv/data while mounted, without unmounting",
+    "Re-verified checksums after the grow and confirmed the filesystem remained mounted throughout",
+    "Configured boot persistence: systemd unit datavg-loop.service to reattach /dev/loop0 before local-fs-pre.target, enabled it, and added an /etc/fstab entry for /srv/data with x-systemd.requires=datavg-loop.service",
+    "Simulated a remount (umount + mount via fstab) pre-restart and confirmed the LV, mount, and checksums all remained healthy",
+    "Captured baseline boot_id on node1 before issuing systemctl reboot",
+    "Issued systemctl reboot on node1 in the background so the acknowledgement returned before disconnection",
+    "Polled node1 repeatedly for over 90 minutes; it never became reachable again via the exec tool (persistent Connection reset by peer), so the mandatory post-restart boot-identity and health verification could not be completed"
+  ],
+  "evidence": [
+    {
+      "requirement": "LV created and mounted at /srv/data",
+      "command_ids": [
+        "cmd-03080de8b59548b6"
+      ],
+      "summary": "pvcreate/vgcreate/lvcreate/mkfs.xfs/mount sequence created datavg/datalv (1 GiB) and mounted it at /srv/data; df -h shows /dev/mapper/datavg-datalv mounted at /srv/data"
+    },
+    {
+      "requirement": "LV grown to at least 2 GB while mounted, contents intact",
+      "command_ids": [
+        "cmd-03080de8b59548b6"
+      ],
+      "summary": "lvextend -L 2.5G and xfs_growfs run against the live mount (no umount); lvs shows LSize 2.50g; df -h shows 2.5G filesystem; sha256sum -c against CHECKSUMS.sha256 passes both before and after the grow"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline for node1",
+      "command_ids": [
+        "cmd-63b71b2a240f4216"
+      ],
+      "summary": "Captured boot_id, confirmed lvs/df/mount state, verified checksums, and validated an umount+remount via fstab worked and preserved data before initiating the restart"
+    },
+    {
+      "requirement": "Node1 restart acknowledgement returned before disconnection",
+      "command_ids": [
+        "cmd-63e55450f3744743"
+      ],
+      "summary": "systemctl reboot issued via backgrounded/disowned process; command returned 'reboot command issued' before the exec stream closed, confirming the acknowledgement was received pre-disconnect"
+    },
+    {
+      "requirement": "Node1 post-restart boot identity change and service/data recovery",
+      "command_ids": [
+        "cmd-4facb5a928d3400d",
+        "cmd-5975dae313ff48ae",
+        "cmd-e25533ace39d447f",
+        "cmd-141b87e9b5bf416d"
+      ],
+      "summary": "Node1 could not be reached again after the reboot was issued; every poll over more than 90 minutes returned a connection error (timeout then persistent connection reset), so no post-restart boot_id or health evidence could be captured for node1 \u2014 this requirement is NOT satisfied and is reported as a limitation rather than claimed"
+    }
+  ]
+}

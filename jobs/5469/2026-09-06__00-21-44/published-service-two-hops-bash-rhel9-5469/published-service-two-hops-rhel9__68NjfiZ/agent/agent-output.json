@@ -1,0 +1,135 @@
+{
+  "status": "completed",
+  "summary": "Published node4's port-8080 HTTP service on node2's transit address (10.10.2.2) port 80, and configured routing on node1 and node3 so node3 (on lan-a) reaches the service by asking node2 rather than addressing node4 directly. All four nodes were then restarted one at a time per the mandatory protocol, each confirmed via changed boot identity, with full service/route recovery verified after each restart.",
+  "actions_performed": [
+    "Discovered L2 topology via ARP broadcast + tcpdump probing on candidate interfaces: node1 eth2 <-> node3 enp8s0 (lan-a segment), node1 eth1 <-> node2 vtnet1 (transit segment), node2 vtnet2 <-> node4 enp8s0 (lan-b segment)",
+    "Found node2's vtnet1/vtnet2 interfaces were administratively down (missing UP flag); brought them up with ifconfig",
+    "Assigned static IPs: node1 eth2=10.10.1.1/24 and node3 enp8s0=10.10.1.2/24 on lan-a; node1 eth1=10.10.2.1/24 and node2 opt1(vtnet1)=10.10.2.2/24 on transit; node2 opt2(vtnet2)=10.10.3.1/24 and node4 enp8s0=10.10.3.2/24 on lan-b",
+    "Created and enabled node4-http.service (python3 http.server on port 8080) since no HTTP service was actually running on node4 despite the task premise; opened firewalld port 8080/tcp on node4 which was blocking inbound connections",
+    "Edited node2's /conf/config.xml via a python script to assign opt1/opt2 interfaces, add a DNAT/port-forward rule (transit:80 -> 10.10.3.2:8080) with an associated pf pass rule, and add a static route for 10.10.1.0/24 via node1's transit address (10.10.2.1); applied with configctl interface reconfigure, configctl filter reload, and configctl interface routes configure",
+    "Diagnosed and fixed two routing asymmetries: node4 had a lower-metric default route via the platform mgmt gateway that won over the lan-b path, so added explicit routes on node4 to 10.10.1.0/24 and 10.10.2.0/24 via node2 (10.10.3.1); node3 needed a specific route to 10.10.2.0/24 via node1 (10.10.1.1) rather than only a default route",
+    "Verified end-to-end functionality: curl from node3 to http://10.10.2.2:80/ successfully retrieves node4's content via node2's port-forward, while node3 has no route to node4/lan-b directly (only via node1->node2)",
+    "Captured healthy baselines (boot_id/kern.boottime, interface addresses, NAT/pf rules, routing tables, service status) on all 4 nodes before any restart",
+    "Restarted node4 (leaf), polled until exec was available again, confirmed changed boot_id, and verified enp8s0 IP, routes, node4-http.service, and firewalld port persisted; re-verified end-to-end reachability from node3",
+    "Restarted node2 (OPNsense), polled until exec was available again, confirmed changed kern.boottime, and verified vtnet1/vtnet2 IPs, the NAT rdr rule, and the 10.10.1.0/24 static route all persisted from config.xml; re-verified end-to-end reachability",
+    "Restarted node1 (VyOS), polled until exec was available again, confirmed changed boot_id, and verified eth1/eth2 addresses and ip_forward=1 persisted from the committed/saved VyOS config; re-verified end-to-end reachability",
+    "Restarted node3 (RHEL9, last node), polled until exec was available again, confirmed changed boot_id, and verified enp8s0 IP and the static route to 10.10.2.0/24 persisted via NetworkManager; performed a final successful end-to-end curl from node3 through node2 to node4's service"
+  ],
+  "evidence": [
+    {
+      "requirement": "L2 topology discovery (lan-a, transit, lan-b segment mapping)",
+      "command_ids": [
+        "cmd-60f51247c9264f9a",
+        "cmd-f2a8938f36b6410b",
+        "cmd-6030f23d396b48da",
+        "cmd-0085cca7d7b7439c",
+        "cmd-b303bb24c48c4c5d",
+        "cmd-51e08980a8bc440e",
+        "cmd-e51220145f5c48dd",
+        "cmd-5774e3892edb4528",
+        "cmd-cb820ae29c454a49",
+        "cmd-69ae6e57ee1e43b0",
+        "cmd-9e8a7c9ccb3544b7",
+        "cmd-acc4a811b44942d7"
+      ],
+      "summary": "ARP broadcast probes captured via tcpdump on node1 eth1/eth2 and node2 vtnet1/vtnet2 established which physical link connects which node pair"
+    },
+    {
+      "requirement": "node2 vtnet1/vtnet2 brought up (were administratively down)",
+      "command_ids": [
+        "cmd-09740b6675214f39",
+        "cmd-9d757591dd5a4bd1"
+      ],
+      "summary": "netstat -i showed vtnet1*/vtnet2* down; ifconfig up brought both interfaces to UP,RUNNING state"
+    },
+    {
+      "requirement": "IP addressing on lan-a, transit, lan-b interfaces",
+      "command_ids": [
+        "cmd-9064f401b7d04e60",
+        "cmd-175afcdbd9c34327",
+        "cmd-ffdf700e5f7f4a7d",
+        "cmd-4dae192f4414423a"
+      ],
+      "summary": "Confirmed 10.10.1.1/.2 on lan-a, 10.10.2.1 on node1 transit, 10.10.2.2/10.10.3.1 on node2 transit/lan-b, 10.10.3.2 on node4"
+    },
+    {
+      "requirement": "node2 port-forward (transit:80 -> node4:8080) published and effective",
+      "command_ids": [
+        "cmd-f1273c54a6554ffd",
+        "cmd-47fd63282c8941c9",
+        "cmd-32daed1bbde14421",
+        "cmd-aa9c356a8e024851",
+        "cmd-d68e0dd4a9884729"
+      ],
+      "summary": "config.xml edited with DNAT rule and pass filter rule; pfctl -s nat shows the rdr rule; curl from node2 to 10.10.3.2:8080 succeeds directly"
+    },
+    {
+      "requirement": "node4 HTTP service created and reachable (task premise required creating it)",
+      "command_ids": [
+        "cmd-557c7c90e7bb43a5",
+        "cmd-d318db1e190745e9"
+      ],
+      "summary": "node4-http.service created/enabled serving on 0.0.0.0:8080; firewalld port 8080/tcp opened"
+    },
+    {
+      "requirement": "node1 given a route to node2's transit address; node3 reaches service via node2, not node4 directly",
+      "command_ids": [
+        "cmd-f2a7df42e4e64655",
+        "cmd-f6a7f639d4564566",
+        "cmd-c1a40e259085470e",
+        "cmd-76235dbc28c74301",
+        "cmd-f19875b063b546ff",
+        "cmd-7eedef5395e246f4",
+        "cmd-0d5b744edead48b4"
+      ],
+      "summary": "node1 has connected route to 10.10.2.0/24 (transit) via eth1; node3 given static route to 10.10.2.0/24 via node1 (10.10.1.1); node2 given return route to 10.10.1.0/24 via node1; node4 given return routes via node2; final curl from node3 to 10.10.2.2:80 succeeds while node3 has no route to node4/lan-b directly"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-7540d3eb78674054",
+        "cmd-8899b5c217c34a52",
+        "cmd-472ad19e29374689",
+        "cmd-33f489bf71c74827",
+        "cmd-c42bad1f4bcd4c02",
+        "cmd-3d5772f8b49e43f6"
+      ],
+      "summary": "Baseline boot_id 31949c21...; reboot acknowledged; post-reboot unreachable then boot_id c6ba754e... confirms restart; enp8s0 IP, routes, node4-http.service active, firewalld port, and end-to-end curl all recovered"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-73df834925044d34",
+        "cmd-9c7c25b8627a4b2d",
+        "cmd-aaba372726ea49ec",
+        "cmd-4af0b925877b4968",
+        "cmd-20feb61d124f4364",
+        "cmd-25347fbda0a04c75"
+      ],
+      "summary": "Baseline kern.boottime 06:01:14; reboot acknowledged; post-reboot SSH timeout then kern.boottime 06:20:30 confirms restart; vtnet1/vtnet2 IPs, NAT rdr rule, static route, and end-to-end curl all recovered from config.xml"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a29103892a7b4a5a",
+        "cmd-43c98405ccba4a3a",
+        "cmd-141fe5fc40ae4892",
+        "cmd-2c9481f91a6a443e",
+        "cmd-01698100543f448a",
+        "cmd-48576c1c5e6445e7"
+      ],
+      "summary": "Baseline boot_id 5bcff8f9...; reboot acknowledged; post-reboot unreachable then boot_id e6e3961e... confirms restart; eth1/eth2 addresses, ip_forward=1, and end-to-end curl all recovered from saved VyOS config"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-5c5a463366d44d01",
+        "cmd-9e30040f014a471d",
+        "cmd-b9346f5ae25746bf",
+        "cmd-cbfe221c63fe4020",
+        "cmd-39b1167db770424d"
+      ],
+      "summary": "Baseline boot_id 55595e92...; reboot acknowledged; post-reboot unreachable then boot_id 9a8acefa... confirms restart; enp8s0 IP, static route to 10.10.2.0/24, and final successful end-to-end curl to node2's published service all recovered"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "status": "completed",
+  "summary": "Deployed an Ansible playbook from node2 (the only node with Ansible installed, used as control node) that installs /etc/logrotate.d/inventory-app on node1 with daily rotation, 7 compressed rotations, and copytruncate so the application keeps writing to the same file after rotation. Verified functionally (forced rotations, write continuity, retention pruning to exactly 7 .gz files) and confirmed persistence and idempotency across a full restart of both managed nodes.",
+  "actions_performed": [
+    "Surveyed both nodes: node2 had ansible-core 2.20.5 + ansible.netcommon installed (used as control_node); node1 hosts the static /var/log/inventory/app.log with no live writer process",
+    "Fixed pre-existing broken sshd on node1 (missing host keys causing ssh.service crash loop) via ssh-keygen -A + systemctl restart ssh, required for Ansible SSH connectivity",
+    "Added node2's root SSH pubkey to node1's /root/.ssh/authorized_keys and created an Ansible inventory (inventory.ini) targeting node1 as root",
+    "Wrote /root/ansible/playbook.yml on node2 and a Jinja2 template logrotate/inventory-app.j2 defining: daily, rotate 7, compress, missingok, notifempty, copytruncate",
+    "Ran ansible-playbook, which installed logrotate (if needed), deployed /etc/logrotate.d/inventory-app on node1, and validated the config with `logrotate -d`",
+    "Functionally tested: appended data and ran `logrotate -f` 9 times in sequence, confirming app.log.1.gz through app.log.7.gz retained (older ones pruned) and app.log remained writable (reset and reused) after every rotation via copytruncate",
+    "Captured healthy baseline (boot_id, config state) on both nodes, then restarted node1 and node2 one at a time via native reboot, polled until reachable, and proved boot_id changed on each",
+    "Verified post-restart recovery on node1: logrotate config and all 7 compressed rotations persisted on disk, app.log still writable, logrotate.timer active",
+    "Verified post-restart recovery on node2: Ansible workspace persisted, control node functional, re-ran playbook against node1 showing changed=0 (idempotent, config stable across both node restarts)"
+  ],
+  "evidence": [
+    {
+      "requirement": "logrotate policy deployed via Ansible: daily, rotate 7, compress, allow continued writing",
+      "command_ids": [
+        "cmd-e7079185ef394dbd",
+        "cmd-8097704bd9a64130",
+        "cmd-6b77254544164ac7"
+      ],
+      "summary": "Playbook authored on node2 and applied to node1 (ok=4, changed=1); deployed /etc/logrotate.d/inventory-app confirmed with daily/rotate 7/compress/copytruncate; logrotate -d validated the config"
+    },
+    {
+      "requirement": "functional proof of 7 compressed rotations retained and app continues writing",
+      "command_ids": [
+        "cmd-05c0aa72434c4041",
+        "cmd-83d91edabf9e4220"
+      ],
+      "summary": "Forced 9 sequential rotations; app.log.1.gz through app.log.7.gz present (older pruned), and writes to app.log succeeded after each rotation via copytruncate"
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-2ad9d183140d449f"
+      ],
+      "summary": "Captured boot_id 96c08b66-... plus logrotate config and 7 rotated files present, ssh active"
+    },
+    {
+      "requirement": "node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-6885fc0253684022",
+        "cmd-c161f12e5a5244fa",
+        "cmd-c40539f431a44b52"
+      ],
+      "summary": "Reboot command acknowledged and returned before disconnect; connection timed out mid-reboot; boot_id changed to fd3ad85f-... confirming restart"
+    },
+    {
+      "requirement": "node1 post-restart recovery of required config/data",
+      "command_ids": [
+        "cmd-7c5ce5ec237e4b03"
+      ],
+      "summary": "Post-reboot: logrotate config and all 7 .gz rotations persisted on disk, app.log still accepted new writes, logrotate.timer active"
+    },
+    {
+      "requirement": "node2 (control node) healthy baseline before restart",
+      "command_ids": [
+        "cmd-941561ab442f4f60",
+        "cmd-5248e36f91774126"
+      ],
+      "summary": "Captured boot_id a6937a34-... plus intact /root/ansible workspace (inventory.ini, playbook.yml, template)"
+    },
+    {
+      "requirement": "node2 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-5248e36f91774126",
+        "cmd-eb8c365913984979",
+        "cmd-199e1bd141a24531"
+      ],
+      "summary": "Reboot command acknowledged and returned before disconnect; connection timed out mid-reboot; boot_id changed to 89ce676a-... confirming restart"
+    },
+    {
+      "requirement": "node2 post-restart recovery and cluster-wide functional verification",
+      "command_ids": [
+        "cmd-d7be9ff7c6aa42eb"
+      ],
+      "summary": "Ansible workspace intact post-reboot; playbook re-run against node1 succeeded with changed=0, proving idempotent config and full control-node-to-node connectivity recovery after both restarts"
+    }
+  ]
+}

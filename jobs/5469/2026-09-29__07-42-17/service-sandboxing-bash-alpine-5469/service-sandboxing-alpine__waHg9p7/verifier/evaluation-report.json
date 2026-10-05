@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "managed-service",
+      "requirement": "Run inventory-worker as a managed, long-running background service on node1",
+      "status": "satisfied",
+      "summary": "OpenRC service /etc/init.d/inventory-worker was installed, enabled in the default runlevel (rc-update add), started, and confirmed 'started' both before and after a reboot with the worker process actively looping and appending to its log every ~5s.",
+      "evidence_ids": [
+        "cmd-5e451a4a95184f19",
+        "cmd-50b2cd42699242fb",
+        "cmd-0c1e54f2cf3b4401",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "write-confinement",
+      "requirement": "Worker is confined so it writes only inside /var/lib/inventory",
+      "status": "satisfied",
+      "summary": "Final wrapper mounts a tmpfs-backed rw overlay of '/', bind-remounts that view read-only, then re-exposes the real /var/lib/inventory as the only writable bind mount before chrooting and dropping to the unprivileged worker. Direct tests show writes elsewhere fail with 'Read-only file system' while writes inside /var/lib/inventory succeed, and the worker's own /proc/PID/mountinfo shows its root mount as 'ro,relatime' both pre- and post-restart. One later diagnostic (nsenter -m into the worker's mount namespace, touching /etc) unexpectedly succeeded, but this was a flawed probe: nsenter -m alone does not apply the process's chroot, so it wrote to the real host /etc rather than the sandboxed view, and the stray file was immediately removed. It does not contradict the direct in-namespace evidence of confinement.",
+      "evidence_ids": [
+        "cmd-63e13e79fede4777",
+        "cmd-6116b59f9cd54f79",
+        "cmd-8ee032356e5c44fb",
+        "cmd-50b2cd42699242fb",
+        "cmd-0c1e54f2cf3b4401",
+        "cmd-5aab66f9cd5a4139",
+        "cmd-4ef93e3c3e25451d"
+      ]
+    },
+    {
+      "id": "no-new-privs",
+      "requirement": "Worker gains no new privileges",
+      "status": "satisfied",
+      "summary": "Worker process is launched via setpriv --no-new-privs and runs as unprivileged uid/gid 103/104 with CapEff 0000000000000000; /proc/PID/status shows NoNewPrivs:1 both before and after the mandatory restart.",
+      "evidence_ids": [
+        "cmd-5e451a4a95184f19",
+        "cmd-8ee032356e5c44fb",
+        "cmd-50b2cd42699242fb",
+        "cmd-0c1e54f2cf3b4401"
+      ]
+    },
+    {
+      "id": "restart-evidence-protocol",
+      "requirement": "(Independent) provider-wide node-restart evidence protocol executed and coherent for node1",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline boot_id (7b162ed4...) with healthy service/process/confinement state was captured, a backgrounded reboot was acknowledged, connection loss confirmed the node went down, a new boot_id (18690a58...) was observed post-recovery, and post-restart checks show the service auto-started, the worker process running under a new PID, the log persisted and continued appending, and all confinement flags (ro root, CapEff 0, NoNewPrivs 1, unprivileged uid/gid) intact. The fixed lifecycle boot-identity snapshots (before/after-executor) corroborate the same boot_id transition.",
+      "evidence_ids": [
+        "cmd-50b2cd42699242fb",
+        "cmd-3acd485743264e91",
+        "cmd-2b21eb21e65945d8",
+        "cmd-43dff021d1924fa4",
+        "cmd-9df4aeb0d7434472",
+        "cmd-0c1e54f2cf3b4401",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task contract are satisfied with direct evidence: inventory-worker runs as an OpenRC-managed, boot-enabled, long-running service on node1; it is confined via a read-only overlay root with only /var/lib/inventory bind-mounted writable (writes elsewhere fail, writes inside succeed, confirmed via the worker's own mountinfo); and it runs with NoNewPrivs=1 and CapEff=0 under an unprivileged uid/gid. The independent restart-evidence protocol is also fully and coherently demonstrated: healthy pre-restart baseline, acknowledged reboot, confirmed boot_id change, and full post-restart recovery of service, data, and confinement state, corroborated by the fixed lifecycle boot-identity snapshots. Operational hygiene is moderate: the path to the working sandbox design involved several failed mount experiments (expected iteration, mostly cleaned up) plus one flawed nsenter diagnostic whose stray file was promptly removed, and a small amount of leftover scratch script residue in /tmp that was never cleaned up.",
+  "limitations": [
+    "The nsenter-based root-bypass probe (cmd-5aab66f9cd5a4139) was methodologically flawed (it did not apply the process's chroot) so it neither confirms nor refutes whether a colluding root actor joining the worker's mount namespace could bypass the read-only confinement; this scenario is outside the literal task contract but is noted as an evidence gap.",
+    "Leftover /tmp scratch files (setup-inventory-worker*.sh, reboot.log) remain on node1 after the task; low risk but not cleaned up.",
+    "Systemd-oriented lifecycle checks (failed-services) were unsupported on this OpenRC/Alpine node, so that portion of the fixed lifecycle snapshot provides no signal either way."
+  ],
+  "command_stats": {
+    "total": 33,
+    "successful": 17,
+    "failed": 16,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "The executor iterated through several failed sandboxing approaches (direct remount,ro hitting EBUSY on the ext4 root; overlay mounts with wrong syntax) before landing on the working tmpfs-overlay + bind-remount-ro technique used in the final service (cmd-11d07a929582473b rc=1, cmd-1e2226fa75464743 rc=32 leaving the service in a 'crashed' state until fixed, cmd-b89aac9fc66c42d3, cmd-0c49ff804ad64ca5, cmd-8f0f48e49b5d4eed, cmd-e656f3f6545e47bc, cmd-f69be2e5710a4859). These were bounded, low-risk discovery steps that directly informed and fed into the final working configuration rather than being abandoned dead ends, and associated test mounts/dirs under /run were subsequently torn down (cmd-6116b59f9cd54f79, cmd-63e13e79fede4777, cmd-23a17c2740ae4e75 confirms 'no leftover mounts'). One diagnostic command (cmd-5aab66f9cd5a4139) used nsenter incorrectly and stray-wrote /etc/should-fail-write on the real host filesystem; this residue was identified and removed in the very next command (cmd-4ef93e3c3e25451d). Remaining unreverted residue: scratch setup scripts (/tmp/setup-inventory-worker.sh, -2.sh, -3.sh) and /tmp/reboot.log are still present in the after-executor temp-files snapshot -- low-risk but unnecessary leftover files that were never cleaned up.",
+    "evidence_ids": [
+      "cmd-11d07a929582473b",
+      "cmd-1e2226fa75464743",
+      "cmd-b89aac9fc66c42d3",
+      "cmd-0c49ff804ad64ca5",
+      "cmd-8f0f48e49b5d4eed",
+      "cmd-e656f3f6545e47bc",
+      "cmd-f69be2e5710a4859",
+      "cmd-6116b59f9cd54f79",
+      "cmd-63e13e79fede4777",
+      "cmd-23a17c2740ae4e75",
+      "cmd-5aab66f9cd5a4139",
+      "cmd-4ef93e3c3e25451d",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

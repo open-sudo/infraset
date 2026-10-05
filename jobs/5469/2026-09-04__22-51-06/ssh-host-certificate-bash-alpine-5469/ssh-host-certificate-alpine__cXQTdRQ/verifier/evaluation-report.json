@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-created",
+      "requirement": "Create an SSH certificate authority on node1",
+      "status": "satisfied",
+      "summary": "An ed25519 CA keypair was generated at /etc/ssh/ca/ssh_host_ca(.pub) on node1 via ssh-keygen, confirmed present with correct permissions.",
+      "evidence_ids": [
+        "cmd-6d6d89961cd04004"
+      ]
+    },
+    {
+      "id": "host-cert-signed",
+      "requirement": "Host key signed by the CA to produce a host certificate",
+      "status": "satisfied",
+      "summary": "node1's ed25519 host public key was signed by the CA with principals node1 and its IP and a 10-year validity, producing /etc/ssh/ssh_host_ed25519_key-cert.pub; ssh-keygen -L confirms the cert's signing CA fingerprint matches the generated CA.",
+      "evidence_ids": [
+        "cmd-dce7b55fc1b2443d"
+      ]
+    },
+    {
+      "id": "sshd-presents-cert",
+      "requirement": "sshd on node1 configured to present the signed certificate to clients",
+      "status": "satisfied",
+      "summary": "A HostCertificate directive was added via sshd_config.d drop-in, validated with sshd -t/-T (hostcertificate resolved to the correct path), and sshd was restarted; the certificate was subsequently observed to be presented in live handshakes.",
+      "evidence_ids": [
+        "cmd-6257e998e9ee476a",
+        "cmd-ce10a98634d640ff",
+        "cmd-67ba57109f164628"
+      ]
+    },
+    {
+      "id": "client-trusts-ca-no-pinning",
+      "requirement": "A client that trusts the CA (not the host key) connects without pinning the host key, under strict host-key checking",
+      "status": "satisfied",
+      "summary": "With StrictHostKeyChecking=yes and an empty known_hosts, the connection failed as expected ('Host key verification failed'), establishing the baseline. With only an '@cert-authority' line for the CA public key (no pinned host key) in known_hosts, the same strict connection succeeded (EXIT=0), and verbose debug output confirms the server presented the ED25519-CERT host certificate and the client matched it via the CA, directly demonstrating the required outcome.",
+      "evidence_ids": [
+        "cmd-e52e449602f14111",
+        "cmd-94ac659f7735408f"
+      ]
+    },
+    {
+      "id": "restart-persistence",
+      "requirement": "(Independent restart-evidence protocol, not itself required by the public task) CA/certificate configuration and CA-based trust survive a node restart",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (77765c08...) and file hashes for the CA key/pubkey/cert were captured while sshd and CA trust were healthy; a backgrounded reboot returned an acknowledgement before the node became unreachable (multiple connection-reset/timeout polls confirm a genuine outage); post-restart boot_id changed to f7657926..., matching the fixed after-executor snapshot; sshd was running with hostcertificate still configured, file hashes were identical to pre-restart, and the CA-only known_hosts SSH connection succeeded again with identical certificate/CA fingerprints.",
+      "evidence_ids": [
+        "cmd-779f40b3c04340cf",
+        "cmd-696941c5541446be",
+        "cmd-3a315aa403da4715",
+        "cmd-39b86159bdb246de",
+        "cmd-29f391e04c8b494f",
+        "cmd-794f87d9b09342a1",
+        "cmd-2cf572f471b44203",
+        "cmd-ab5eccbd445e4a04",
+        "cmd-0ba284518e1b455b",
+        "global:after_executor:node1:boot-identity",
+        "global:before_prepare:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task were directly and satisfactorily demonstrated: node1 hosts a new SSH CA, its host key was signed into a certificate, sshd was configured and confirmed to present that certificate, and a client trusting only the CA (via @cert-authority, no pinned host key) connected successfully under strict host-key checking, contrasted against a documented baseline failure without CA trust. The independent restart-evidence protocol was also fully and coherently executed, showing a genuine reboot (boot_id change matching the fixed lifecycle snapshots) with healthy pre- and post-restart sshd/CA state and re-verified CA-based trust afterward. Minor hygiene issues (a failed intermediate reload requiring a corrective restart, and two small leftover temp files) do not affect functional correctness.",
+  "limitations": [
+    "Trust verification relied on ssh debug1/debug2 log lines and process exit codes rather than an independently reproduced client session outside the executor's own commands.",
+    "No test was shown confirming the client would reject a host presenting a certificate NOT signed by the trusted CA (negative-case for certificate validation), though this was not explicitly required by the task instruction.",
+    "The brief sshd 'crashed' status after the reload (cmd-eff0301f16a7415c) is unexplained beyond ps/netstat output; root cause of the reload failure was not diagnosed further, only worked around via full restart."
+  ],
+  "command_stats": {
+    "total": 28,
+    "successful": 16,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "An sshd reload (cmd-eff0301f16a7415c) intended to load the new HostCertificate directive left sshd in a 'crashed' status (unexpected outcome of a state-changing action); this was diagnosed with read-only commands (cmd-d8369823479f4b40) and corrected by a full stop/start restart (cmd-67ba57109f164628), which is a legitimate corrective action rather than an unnecessary mutation, but the failed reload itself is worth noting as a bounded hiccup with no lasting negative effect (sshd ended healthy and listening). Two low-risk temporary files (/tmp/known_hosts_ca, /tmp/reboot.log) were left behind per the after-executor snapshot rather than cleaned up; these are small, non-sensitive test/log artifacts (the CA test known_hosts file and a reboot scheduling log) posing minimal risk. No unnecessary, broad, or destructive mutations were found; no security controls were weakened (strict host-key checking remained enforced throughout, and the CA private key retained restrictive permissions).",
+    "evidence_ids": [
+      "cmd-eff0301f16a7415c",
+      "cmd-d8369823479f4b40",
+      "cmd-67ba57109f164628",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

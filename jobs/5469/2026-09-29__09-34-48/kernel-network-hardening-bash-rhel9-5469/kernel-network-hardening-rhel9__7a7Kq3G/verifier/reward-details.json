@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "icmp-redirects",
+      "requirement": "Persistently disable acceptance of ICMP redirects for IPv4 on node1",
+      "status": "partially_satisfied",
+      "summary": "A sysctl.d config file setting net.ipv4.conf.all/default.accept_redirects=0 was created and confirmed to survive a full reboot (cmd-54005e511a4b4ee2, cmd-5066fd7fe36e48b8), and the enp1s0 physical interface correctly shows accept_redirects=0 post-reboot. However, per-interface state for lo reverted to accept_redirects=1 after the reboot (visible in cmd-5066fd7fe36e48b8 post-restart per-interface dump), even though the executor had manually set lo to 0 live before rebooting (cmd-81d933956c3b4f87). This shows the persisted configuration does not fully cover all IPv4 interfaces as intended by 'IPv4 networking' scope, so the hardening is not completely persistent across all interfaces.",
+      "evidence_ids": [
+        "cmd-54005e511a4b4ee2",
+        "cmd-7f631e433c174743",
+        "cmd-f04d30dc64d84f05",
+        "cmd-81d933956c3b4f87",
+        "cmd-5066fd7fe36e48b8"
+      ]
+    },
+    {
+      "id": "source-routed-packets",
+      "requirement": "Persistently disable acceptance of source-routed packets for IPv4 on node1",
+      "status": "satisfied",
+      "summary": "net.ipv4.conf.all/default.accept_source_route=0 was written to /etc/sysctl.d/60-disable-icmp-redirects-source-route.conf and applied live (cmd-54005e511a4b4ee2). Baseline was already 0 (cmd-798cce5a56cd4a08), and post-reboot checks confirm all/default/enp1s0/lo accept_source_route remain 0 with the config file intact (cmd-5066fd7fe36e48b8), directly demonstrating persistence across a genuine restart (boot_id changed bf4e9cbb...->ea140a49..., cmd-eb7ce09a32444731, cmd-06dc82c60bfa4a33).",
+      "evidence_ids": [
+        "cmd-798cce5a56cd4a08",
+        "cmd-54005e511a4b4ee2",
+        "cmd-eb7ce09a32444731",
+        "cmd-06dc82c60bfa4a33",
+        "cmd-5066fd7fe36e48b8"
+      ]
+    },
+    {
+      "id": "reboot-transition",
+      "requirement": "Demonstrate the settings survive an actual node restart (bounded disruption, not just static config)",
+      "status": "satisfied",
+      "summary": "Executor captured pre-restart boot_id (bf4e9cbb-84f9-45f0-9b81-6602b98cea07, cmd-eb7ce09a32444731), issued systemctl reboot (cmd-ba2f057892c84780), observed connection loss during the disruption (cmd-df7ccc6fd3574ce6, cmd-f174a72fd6dd4c9b, cmd-fc6aff35969c4194), and confirmed recovery with a new boot_id (ea140a49-71f2-473f-ad64-5f0f3940cfc1, cmd-06dc82c60bfa4a33), matching the fixed lifecycle snapshot boot-identity change. Post-recovery service state (no failed units, ssh/chrony listening normally) is confirmed in the after_executor global snapshot.",
+      "evidence_ids": [
+        "cmd-eb7ce09a32444731",
+        "cmd-ba2f057892c84780",
+        "cmd-df7ccc6fd3574ce6",
+        "cmd-f174a72fd6dd4c9b",
+        "cmd-fc6aff35969c4194",
+        "cmd-06dc82c60bfa4a33",
+        "global:after_executor:node1:failed-services",
+        "global:after_executor:node1:listening-sockets",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor persistently disabled IPv4 source-routed packet acceptance on node1 and demonstrated its survival across a genuine, directly-observed reboot. ICMP redirect acceptance was persistently disabled for the all/default sysctl keys and the enp1s0 network interface, but the loopback (lo) interface reverted to accept_redirects=1 after the reboot despite a live fix beforehand, showing the persisted config does not fully cover all IPv4 interfaces. The reboot-based restart evidence (pre-restart boot id, disruption, differing post-restart boot id, and recovered clean service/socket state) is directly observed and satisfies the general node-restart evidence protocol for this single-node topology.",
+  "limitations": [
+    "Only IPv4 conf.all/default and per-interface enp1s0/lo values were checked; other interfaces (if any) were not individually verified, though enp1s0 is the only non-loopback NIC observed on this node.",
+    "The lo interface's accept_redirects reverting to 1 post-reboot is a minor observed gap; since lo does not process externally-arriving redirects in practice, its security impact is likely negligible, but strictly the persistent config does not enforce 0 on all interfaces as configured live pre-reboot."
+  ],
+  "command_stats": {
+    "total": 13,
+    "successful": 9,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.8333,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All state-changing commands trace directly to the task: the sysctl.d file creation and sysctl --system apply (cmd-54005e511a4b4ee2), and the two live sysctl -w tweaks on enp1s0 and lo (cmd-f04d30dc64d84f05, cmd-81d933956c3b4f87) taken to eliminate stale pre-existing interface state before verifying reboot persistence. These live -w mutations are bounded, low-risk, and not independently persisted (they are superseded by the reboot itself), so they do not constitute unnecessary residue, though they only partially achieved their goal since lo reverted post-reboot. The reboot itself (cmd-ba2f057892c84780) was a necessary and expected disruption for verifying persistence. No abandoned files, failed services, or unsafe exposure are visible in the after_executor global snapshot compared to before_prepare (only expected boot-id-tagged temp dirs and PID/session-tied ephemeral socket details differ).",
+    "evidence_ids": [
+      "cmd-54005e511a4b4ee2",
+      "cmd-f04d30dc64d84f05",
+      "cmd-81d933956c3b4f87",
+      "cmd-ba2f057892c84780",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:temporary-files",
+      "global:before_prepare:node1:temporary-files"
+    ]
+  },
+  "reward": 0.8333,
+  "provisional_reward": 0.8333
+}

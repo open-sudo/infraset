@@ -1,0 +1,83 @@
+{
+  "status": "completed",
+  "summary": "Configured sudo command logging on node1: sudo now logs via syslog facility local2 (Defaults syslog=local2 in /etc/sudoers.d/sudo-syslog), and rsyslog routes local2.* to a dedicated /var/log/sudo-commands.log with a stop directive so entries never reach /var/log/messages or /var/log/secure. Verified logging works (user + timestamp + command recorded), verified isolation from general logs, and completed the mandatory single-node restart protocol (boot_id changed, config and log persisted, logging pipeline confirmed working post-restart).",
+  "actions_performed": [
+    "Inspected node1 OS (RHEL 9.8), sudo/rsyslog versions, and existing rsyslog.conf rules for messages/secure logs",
+    "Added /etc/sudoers.d/sudo-syslog with 'Defaults syslog=local2' and 'Defaults syslog_goodpri=info', validated with visudo -c",
+    "Added /etc/rsyslog.d/00-sudo-commands.conf routing local2.* to /var/log/sudo-commands.log with a 'stop' directive; confirmed rsyslog.d includes are processed before the messages/secure rules in rsyslog.conf so no exclusion edits were needed there",
+    "Created /var/log/sudo-commands.log with 0600 permissions, validated rsyslog config, restarted rsyslog",
+    "Added logrotate config for the new log file",
+    "Created a temporary test user (testsudo) with a temporary NOPASSWD sudoers drop-in, ran a sudo command, verified the entry appeared in /var/log/sudo-commands.log with user/command/timestamp and did NOT appear as a sudo command line in /var/log/messages or /var/log/secure, then fully removed the temporary user and sudoers drop-in",
+    "Captured pre-restart baseline: boot_id, config file contents, rsyslog active state, log file contents",
+    "Restarted node1 via 'systemctl reboot' backgrounded so the acknowledgement returned before disconnection, polled until exec was available again",
+    "Confirmed boot_id changed (bf4e9cbb-84f9-45f0-9b81-6602b98cea07 -> d8113afa-ba47-4fbc-b86a-252ecf1c4317) proving an actual restart occurred",
+    "Post-restart verified rsyslog active, sudoers drop-in and rsyslog rule files persisted, prior log content persisted",
+    "Ran a fresh sudo command post-restart and confirmed it was captured in /var/log/sudo-commands.log while /var/log/messages showed zero sudo command lines",
+    "Confirmed the 3 pre-existing sudo command lines in /var/log/secure were all timestamped before the local2 config was applied (host bootstrap), i.e. no leakage occurred after configuration"
+  ],
+  "evidence": [
+    {
+      "requirement": "Every command run through sudo is recorded with user and timestamp",
+      "command_ids": [
+        "cmd-41d14f0e465c4eac",
+        "cmd-342a8548bafb4a3c",
+        "cmd-2ca9e4a7699b4a8f"
+      ],
+      "summary": "sudo-commands.log contains lines like 'Sep 4 23:46:42 node1 sudo[1662]: testsudo : PWD=/ ; USER=root ; COMMAND=/usr/bin/whoami' and a post-reboot entry for user root, showing timestamp, invoking user, and command captured."
+    },
+    {
+      "requirement": "Sudo log entries are kept out of the general system log and secure log",
+      "command_ids": [
+        "cmd-342a8548bafb4a3c",
+        "cmd-5e93f26ea2f0400f",
+        "cmd-646604ecac984962",
+        "cmd-5dc078f59a334ee5"
+      ],
+      "summary": "grep for sudo COMMAND= lines in /var/log/messages returns 0 matches both before and after reboot; the only 3 matches in /var/log/secure are timestamped at 23:45:03/10:26:56, before the local2 logging config was applied at ~23:46, confirming no post-configuration leakage into either general log."
+    },
+    {
+      "requirement": "Configuration mechanism (syslog facility routing) is correct and persistent",
+      "command_ids": [
+        "cmd-0f80af2fcdfa49d3",
+        "cmd-d42123cc4b0c43f3",
+        "cmd-f2673978ec084b5a",
+        "cmd-3f13b89255594c36",
+        "cmd-b6c2ebc6b53e438b"
+      ],
+      "summary": "sudo configured to log to syslog facility local2 via validated sudoers.d drop-in; rsyslog.d/00-sudo-commands.conf routes local2.* to /var/log/sudo-commands.log with stop; confirmed rsyslog.d includes load before the messages/secure catch-all rules; config verified present and unchanged after restart."
+    },
+    {
+      "requirement": "Pre-restart healthy baseline captured on node1",
+      "command_ids": [
+        "cmd-c996513faf4c497f"
+      ],
+      "summary": "Captured boot_id (bf4e9cbb-84f9-45f0-9b81-6602b98cea07), rsyslog active status, sudoers/rsyslog config contents, and existing log contents before restart."
+    },
+    {
+      "requirement": "node1 restart acknowledgement returns before disconnection, restart actually occurs",
+      "command_ids": [
+        "cmd-5e274db90c214c4a",
+        "cmd-0a53fb4d6b084b33",
+        "cmd-f4d4c4028c0948c7"
+      ],
+      "summary": "Backgrounded systemctl reboot returned 'reboot scheduled' immediately; subsequent poll still succeeded briefly then a poll returned connection timed out, showing the node went down for restart."
+    },
+    {
+      "requirement": "node1 boot identity changed after restart (proof of actual restart)",
+      "command_ids": [
+        "cmd-149656a76771403c"
+      ],
+      "summary": "boot_id changed from bf4e9cbb-84f9-45f0-9b81-6602b98cea07 to d8113afa-ba47-4fbc-b86a-252ecf1c4317, and uptime -s shows a new boot time (23:47:10), proving the kernel actually restarted."
+    },
+    {
+      "requirement": "node1 post-restart recovery of required service/config/data",
+      "command_ids": [
+        "cmd-b6c2ebc6b53e438b",
+        "cmd-5e93f26ea2f0400f",
+        "cmd-2ca9e4a7699b4a8f",
+        "cmd-646604ecac984962"
+      ],
+      "summary": "After restart, rsyslog is active, sudoers.d and rsyslog.d config files are intact, prior log entries persisted, and a new sudo command issued post-restart was correctly captured only in /var/log/sudo-commands.log with zero leakage into /var/log/messages, confirming full functional recovery."
+    }
+  ]
+}

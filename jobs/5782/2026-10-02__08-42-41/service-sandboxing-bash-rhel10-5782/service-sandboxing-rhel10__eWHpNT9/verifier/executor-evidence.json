@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 10,
+    "successful": 9,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "inventory-worker is a managed, enabled, long-running service",
+      "command_ids": [
+        "cmd-103282fd39c34934",
+        "cmd-30e84da65e20414a",
+        "cmd-92a8756bf8794be9"
+      ],
+      "summary": "The service was enabled and started; it remained active with the same PID while its worker log continued growing."
+    },
+    {
+      "requirement": "Worker writes are confined to /var/lib/inventory",
+      "command_ids": [
+        "cmd-30e84da65e20414a",
+        "cmd-0669381d3213412f"
+      ],
+      "summary": "ProtectSystem=strict and ReadWritePaths=/var/lib/inventory were active. Direct worker probes before and after restart confirmed writes under the inventory directory succeeded while an outside write to /var/tmp was denied."
+    },
+    {
+      "requirement": "Worker gains no new privileges",
+      "command_ids": [
+        "cmd-30e84da65e20414a",
+        "cmd-0669381d3213412f"
+      ],
+      "summary": "Live process state before and after restart showed NoNewPrivs=1 and zero inherited, permitted, effective, bounding, and ambient capabilities."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-6d47063d83e34e0f",
+        "cmd-99c1c64c85fb48bb",
+        "cmd-0669381d3213412f",
+        "cmd-92a8756bf8794be9"
+      ],
+      "summary": "Captured a healthy pre-restart baseline and safe-reboot acknowledgement; boot ID changed from 646e5f74-dc0e-45e7-9746-226c4351af28 to f5bed50e-818f-4a31-bb07-9681f7f113c9. Post-restart evidence confirmed full system health, active/enabled service state, preserved data, confinement, privilege restrictions, and continued worker output."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-68369c9f56ef41be",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:23:09.818642+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2008,
+      "command": "set -eu\nprintf 'OS='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nprintf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'SELINUX='; getenforce 2>/dev/null || true\nprintf 'SYSTEMD='; systemctl --version | head -n 1\nprintf 'SERVICE_LOAD='; systemctl show inventory-worker.service -p LoadState -p ActiveState -p UnitFileState --no-pager 2>/dev/null || true\nprintf 'TARGET_DIR='; ls -ldZ /var/lib/inventory 2>/dev/null || printf 'absent\\n'\nprintf 'UNIT_FILE='; systemctl cat inventory-worker.service --no-pager 2>/dev/null || true",
+      "stdout": "OS=rhel 10.0\nBOOT_ID=646e5f74-dc0e-45e7-9746-226c4351af28\nSELINUX=Enforcing\nSYSTEMD=systemd 257 (257-9.el10_0.1-g8cd5633)\nSERVICE_LOAD=LoadState=not-found\nActiveState=inactive\nUnitFileState=\nTARGET_DIR=absent\nUNIT_FILE="
+    },
+    {
+      "command_id": "cmd-103282fd39c34934",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:23:30.780049+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1777,
+      "command": "set -eu\ngetent group inventory-worker >/dev/null 2>&1 || groupadd --system inventory-worker\nid inventory-worker >/dev/null 2>&1 || useradd --system --gid inventory-worker --home-dir /var/lib/inventory --shell /usr/sbin/nologin inventory-worker\ninstall -d -o inventory-worker -g inventory-worker -m 0700 /var/lib/inventory\ninstall -d -o root -g root -m 0755 /usr/local/libexec\ncat > /usr/local/libexec/inventory-worker <<'ANTRIEB_WORKER'\n#!/bin/sh\nset -eu\numask 077\nwhile :; do\n    printf '%s inventory worker healthy\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" >> /var/lib/inventory/worker.log\n    sleep 30\ndone\nANTRIEB_WORKER\nchown root:root /usr/local/libexec/inventory-worker\nchmod 0755 /usr/local/libexec/inventory-worker\nrestorecon -RF /usr/local/libexec/inventory-worker /var/lib/inventory 2>/dev/null || true\ncat > /etc/systemd/system/inventory-worker.service <<'ANTRIEB_UNIT'\n[Unit]\nDescription=Inventory background worker\nAfter=local-fs.target\n\n[Service]\nType=simple\nUser=inventory-worker\nGroup=inventory-worker\nExecStart=/usr/local/libexec/inventory-worker\nRestart=always\nRestartSec=2s\nUMask=0077\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nAmbientCapabilities=\nProtectSystem=strict\nReadWritePaths=/var/lib/inventory\nProtectHome=yes\nPrivateDevices=yes\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nProtectClock=yes\nProtectHostname=yes\nProtectProc=invisible\nProcSubset=pid\nRestrictSUIDSGID=yes\nRestrictRealtime=yes\nLockPersonality=yes\nMemoryDenyWriteExecute=yes\nRestrictAddressFamilies=AF_UNIX\nIPAddressDeny=any\nSystemCallArchitectures=native\n\n[Install]\nWantedBy=multi-user.target\nANTRIEB_UNIT\nrestorecon /etc/systemd/system/inventory-worker.service 2>/dev/null || true\nsystemctl daemon-reload\nsystemctl enable --now inventory-worker.service\nsystemctl is-active inventory-worker.service\nsystemctl is-enabled inventory-worker.service",
+      "stdout": "Created symlink '/etc/systemd/system/multi-user.target.wants/inventory-worker.service' \u2192 '/etc/systemd/system/inventory-worker.service'.\nactive\nenabled"
+    },
+    {
+      "command_id": "cmd-8fffde248f164b21",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:23:47.167569+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2543,
+      "command": "set -eu\nrm -f /var/tmp/inventory-worker-escape\ncat > /usr/local/libexec/inventory-worker <<'ANTRIEB_WORKER'\n#!/bin/sh\nset -eu\numask 077\nlog=/var/lib/inventory/worker.log\nprintf '%s startup uid=%s gid=%s\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" \"$(id -u)\" \"$(id -g)\" >> \"$log\"\nawk '/^(NoNewPrivs|CapEff):/ { print }' /proc/self/status >> \"$log\"\nif printf 'escape\\n' > /var/tmp/inventory-worker-escape 2>/dev/null; then\n    printf 'CONFINEMENT_FAILED outside write succeeded\\n' >> \"$log\"\nelse\n    printf 'confinement-ok outside write denied\\n' >> \"$log\"\nfi\nwhile :; do\n    printf '%s inventory worker healthy\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" >> \"$log\"\n    sleep 30\ndone\nANTRIEB_WORKER\nchown root:root /usr/local/libexec/inventory-worker\nchmod 0755 /usr/local/libexec/inventory-worker\nrestorecon /usr/local/libexec/inventory-worker 2>/dev/null || true\nsystemctl restart inventory-worker.service\nsleep 2\nsystemctl is-active inventory-worker.service",
+      "stdout": "active"
+    },
+    {
+      "command_id": "cmd-30e84da65e20414a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:24:01.409480+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3788,
+      "command": "set -eu\npid=$(systemctl show inventory-worker.service -p MainPID --value)\nprintf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'ACTIVE='; systemctl is-active inventory-worker.service\nprintf 'ENABLED='; systemctl is-enabled inventory-worker.service\nprintf 'PID=%s\\n' \"$pid\"\nps -o pid=,user=,group=,etime=,cmd= -p \"$pid\"\nprintf '%s\\n' '--- kernel privilege state ---'\ngrep -E '^(Uid|Gid|CapInh|CapPrm|CapEff|CapBnd|CapAmb|NoNewPrivs):' \"/proc/$pid/status\"\nprintf '%s\\n' '--- enforced systemd properties ---'\nsystemctl show inventory-worker.service -p ProtectSystem -p ReadWritePaths -p NoNewPrivileges -p CapabilityBoundingSet -p AmbientCapabilities -p User -p Group -p Restart -p NRestarts --no-pager\nprintf '%s\\n' '--- worker-owned data ---'\nstat -c 'path=%n owner=%U:%G mode=%a bytes=%s' /var/lib/inventory /var/lib/inventory/worker.log\ntail -n 8 /var/lib/inventory/worker.log\nprintf '%s\\n' '--- prohibited path check ---'\nif test -e /var/tmp/inventory-worker-escape; then echo 'FAIL: outside file exists'; exit 1; else echo 'PASS: outside write was denied and no file exists'; fi",
+      "stdout": "BOOT_ID=646e5f74-dc0e-45e7-9746-226c4351af28\nACTIVE=active\nENABLED=enabled\nPID=1661\n   1661 invento+ invento+       00:12 /bin/sh /usr/local/libexec/inventory-worker\n--- kernel privilege state ---\nUid:\t992\t992\t992\t992\nGid:\t992\t992\t992\t992\nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t0000000000000000\nCapAmb:\t0000000000000000\nNoNewPrivs:\t1\n--- enforced systemd properties ---\nRestart=always\nNRestarts=0\nCapabilityBoundingSet=\nAmbientCapabilities=\nUser=inventory-worker\nGroup=inventory-worker\nReadWritePaths=/var/lib/inventory\nProtectSystem=strict\nNoNewPrivileges=yes\n--- worker-owned data ---\npath=/var/lib/inventory owner=inventory-worker:inventory-worker mode=700 bytes=24\npath=/var/lib/inventory/worker.log owner=inventory-worker:inventory-worker mode=600 bytes=212\n2026-10-02T15:23:29Z inventory worker healthy\n2026-10-02T15:23:44Z startup uid=992 gid=992\nCapEff:\t0000000000000000\nNoNewPrivs:\t1\nconfinement-ok outside write denied\n2026-10-02T15:23:44Z inventory worker healthy\n--- prohibited path check ---\nPASS: outside write was denied and no file exists"
+    },
+    {
+      "command_id": "cmd-6d47063d83e34e0f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:24:09.023140+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1554,
+      "command": "set -eu\nprintf 'PRE_REBOOT_BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'PRE_REBOOT_SERVICE='; systemctl is-active inventory-worker.service\nprintf 'PRE_REBOOT_LAST_DATA='; tail -n 1 /var/lib/inventory/worker.log\nsystemd-run --unit=[REDACTED] --on-active=3s /usr/bin/systemctl reboot\nprintf '%s\\n' 'REBOOT_ACK=safe reboot scheduled in 3 seconds'",
+      "stdout": "PRE_REBOOT_BOOT_ID=646e5f74-dc0e-45e7-9746-226c4351af28\nPRE_REBOOT_SERVICE=active\nPRE_REBOOT_LAST_DATA=2026-10-02T15:23:44Z inventory worker healthy\nRunning timer as unit: [REDACTED].timer\nWill run service as unit: [REDACTED].service\nREBOOT_ACK=safe reboot scheduled in 3 seconds"
+    },
+    {
+      "command_id": "cmd-796d7de3505b4170",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:24:13.620662+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1532,
+      "command": "printf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id; printf 'SYSTEM='; systemctl is-system-running 2>/dev/null || true",
+      "stdout": "BOOT_ID=646e5f74-dc0e-45e7-9746-226c4351af28\nSYSTEM=running"
+    },
+    {
+      "command_id": "cmd-d73d97f8ee724bb8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:24:18.919461+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2443,
+      "command": "printf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id; printf 'UPTIME_SECONDS='; cut -d. -f1 /proc/uptime; printf 'SYSTEM='; systemctl is-system-running 2>/dev/null || true",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-99c1c64c85fb48bb",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:24:28.980567+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1281,
+      "command": "printf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id; printf 'UPTIME_SECONDS='; cut -d. -f1 /proc/uptime; printf 'SYSTEM='; systemctl is-system-running 2>/dev/null || true",
+      "stdout": "BOOT_ID=f5bed50e-818f-4a31-bb07-9681f7f113c9\nUPTIME_SECONDS=8\nSYSTEM=running"
+    },
+    {
+      "command_id": "cmd-0669381d3213412f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:24:39.724565+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2440,
+      "command": "set -eu\npid=$(systemctl show inventory-worker.service -p MainPID --value)\nprintf 'POST_BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'SYSTEM_STATE='; systemctl is-system-running\nprintf 'SERVICE_ACTIVE='; systemctl is-active inventory-worker.service\nprintf 'SERVICE_ENABLED='; systemctl is-enabled inventory-worker.service\nprintf 'PID=%s\\n' \"$pid\"\nps -o pid=,user=,group=,etime=,cmd= -p \"$pid\"\nprintf '%s\\n' '--- recovered privilege state ---'\ngrep -E '^(Uid|Gid|CapInh|CapPrm|CapEff|CapBnd|CapAmb|NoNewPrivs):' \"/proc/$pid/status\"\nprintf '%s\\n' '--- recovered confinement properties ---'\nsystemctl show inventory-worker.service -p ProtectSystem -p ReadWritePaths -p NoNewPrivileges -p CapabilityBoundingSet -p AmbientCapabilities -p Restart -p NRestarts --no-pager\nprintf '%s\\n' '--- recovered persistent data ---'\nstat -c 'path=%n owner=%U:%G mode=%a bytes=%s mtime=%y' /var/lib/inventory/worker.log\ntail -n 10 /var/lib/inventory/worker.log\nprintf '%s\\n' '--- recovered prohibited path check ---'\nif test -e /var/tmp/inventory-worker-escape; then echo 'FAIL: outside file exists'; exit 1; else echo 'PASS: post-reboot outside write was denied and no file exists'; fi",
+      "stdout": "POST_BOOT_ID=f5bed50e-818f-4a31-bb07-9681f7f113c9\nSYSTEM_STATE=running\nSERVICE_ACTIVE=active\nSERVICE_ENABLED=enabled\nPID=702\n    702 invento+ invento+       00:15 /bin/sh /usr/local/libexec/inventory-worker\n--- recovered privilege state ---\nUid:\t992\t992\t992\t992\nGid:\t992\t992\t992\t992\nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t0000000000000000\nCapAmb:\t0000000000000000\nNoNewPrivs:\t1\n--- recovered confinement properties ---\nRestart=always\nNRestarts=0\nCapabilityBoundingSet=\nAmbientCapabilities=\nReadWritePaths=/var/lib/inventory\nProtectSystem=strict\nNoNewPrivileges=yes\n--- recovered persistent data ---\npath=/var/lib/inventory/worker.log owner=inventory-worker:inventory-worker mode=600 bytes=378 mtime=2026-10-02 11:24:22.530061636 -0400\n2026-10-02T15:23:44Z startup uid=992 gid=992\nCapEff:\t0000000000000000\nNoNewPrivs:\t1\nconfinement-ok outside write denied\n2026-10-02T15:23:44Z inventory worker healthy\n2026-10-02T15:24:22Z startup uid=992 gid=992\nCapEff:\t0000000000000000\nNoNewPrivs:\t1\nconfinement-ok outside write denied\n2026-10-02T15:24:22Z inventory worker healthy\n--- recovered prohibited path check ---\nPASS: post-reboot outside write was denied and no file exists"
+    },
+    {
+      "command_id": "cmd-92a8756bf8794be9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:25:09.869244+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 21506,
+      "command": "set -eu\npid_before=$(systemctl show inventory-worker.service -p MainPID --value)\nsize_before=$(stat -c %s /var/lib/inventory/worker.log)\nsleep 20\npid_after=$(systemctl show inventory-worker.service -p MainPID --value)\nsize_after=$(stat -c %s /var/lib/inventory/worker.log)\nprintf 'PID_BEFORE=%s PID_AFTER=%s\\n' \"$pid_before\" \"$pid_after\"\nprintf 'BYTES_BEFORE=%s BYTES_AFTER=%s\\n' \"$size_before\" \"$size_after\"\ntest \"$pid_before\" = \"$pid_after\"\ntest \"$size_after\" -gt \"$size_before\"\nprintf 'ACTIVE='; systemctl is-active inventory-worker.service\ntail -n 2 /var/lib/inventory/worker.log",
+      "stdout": "PID_BEFORE=702 PID_AFTER=702\nBYTES_BEFORE=378 BYTES_AFTER=424\nACTIVE=active\n2026-10-02T15:24:22Z inventory worker healthy\n2026-10-02T15:24:52Z inventory worker healthy"
+    }
+  ]
+}

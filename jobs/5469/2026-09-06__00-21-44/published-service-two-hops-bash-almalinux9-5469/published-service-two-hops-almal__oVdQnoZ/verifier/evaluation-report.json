@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "publish-service",
+      "requirement": "Publish node4's HTTP service (port 8080 on lan-b) on TCP port 80 of node2's transit address",
+      "status": "satisfied",
+      "summary": "node2's transit interface (opt1/vtnet1) was assigned 10.10.2.2/30, and a destination-NAT (rdr) rule was added redirecting TRANSIT:80 to node4's lan-b address (10.10.3.2:8080), with matching pf pass rules. After debugging two pf issues (a self-IP macro resolution bug and post-NAT vs pre-NAT rule matching), curl from node1 and node3 to http://10.10.2.2:80/ returned HTTP 200 with node4's page content, directly confirming the publish worked end-to-end.",
+      "evidence_ids": [
+        "cmd-2fd1b751226c44ca",
+        "cmd-95c0079b57894b3c",
+        "cmd-44ccf91e2b0b484c",
+        "cmd-9f524821b5b24fa1",
+        "cmd-ff82cefb27cd4bd6",
+        "cmd-db328857b8f44ac3"
+      ]
+    },
+    {
+      "id": "node1-route",
+      "requirement": "Give node1 a route to node2's transit address",
+      "status": "satisfied",
+      "summary": "node1 (VyOS) eth1 was configured with 10.10.2.1/30 via 'configure/commit/save', placing node1 directly on the same transit subnet as node2's 10.10.2.2 address, giving it a connected route. Verified with 'ip -4 addr show eth1' output and later successful curl to 10.10.2.2:80 confirming reachability.",
+      "evidence_ids": [
+        "cmd-ad990fc31c3e4c45",
+        "cmd-e88ede956a944da1",
+        "cmd-ff82cefb27cd4bd6"
+      ]
+    },
+    {
+      "id": "node3-via-node2",
+      "requirement": "node3 on lan-a reaches the service by asking node2 rather than addressing node4 directly",
+      "status": "satisfied",
+      "summary": "node3 was configured with a static IP (10.10.1.2/30) and a route to 10.10.0.0/16 via node1 (its only path toward the transit/lan-b networks). node3 has no interface or route to node4's lan-b subnet (10.10.3.0/30), so its successful curl to http://10.10.2.2:80/ (node2's transit address) necessarily traverses node2, not node4 directly. This was verified again after all four node restarts.",
+      "evidence_ids": [
+        "cmd-ddff35de24244014",
+        "cmd-db328857b8f44ac3",
+        "cmd-abbbecfe3ce24e9b"
+      ]
+    },
+    {
+      "id": "restart-node1",
+      "requirement": "Provider-wide restart evidence protocol: node1 baseline, restart, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 01e92881... captured, reboot triggered via nohup reboot, connection loss/timeouts observed during the transition, and a new boot_id 4d1eed11... confirmed afterward. Post-restart checks show eth1/eth2 addresses, ip_forward, and a successful curl to the published service, all recovered. Cross-checked against the fixed after-executor lifecycle snapshot, which shows the same new boot_id.",
+      "evidence_ids": [
+        "cmd-34c428ad7337462e",
+        "cmd-494fbcbb5cca4995",
+        "cmd-4075c1b5e9304d04",
+        "cmd-71933e08e93445bd"
+      ]
+    },
+    {
+      "id": "restart-node2",
+      "requirement": "Provider-wide restart evidence protocol: node2 baseline, restart, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline kern.boottime 04:22:28 captured, reboot issued via shutdown -r now, and a new boottime of 04:44:24 (uptime '1 min') confirmed the restart. Post-restart checks show opt1/opt2 interface addresses, the static route, and the NAT rdr rule all persisted in config.xml, and a curl from node2 to node4 succeeded, demonstrating full recovery. Matches the fixed after-executor snapshot's boot-identity.",
+      "evidence_ids": [
+        "cmd-c71efd4e9ac845e2",
+        "cmd-842269f242774e41",
+        "cmd-ced000c7b96d4d31",
+        "cmd-da60f3783c374987"
+      ]
+    },
+    {
+      "id": "restart-node3",
+      "requirement": "Provider-wide restart evidence protocol: node3 baseline, restart, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 9bdcc129... captured, reboot issued, connection loss observed, and new boot_id 15330935... confirmed. Post-restart checks show the nmcli-persisted static IP/route intact and a successful curl to the published service (200), confirming recovery. Matches the fixed after-executor snapshot's boot-identity.",
+      "evidence_ids": [
+        "cmd-0bde39f8899d49cf",
+        "cmd-3cbd89351e514b69",
+        "cmd-6d0e1c74be7e4c90",
+        "cmd-8fcdecd656dc4db4"
+      ]
+    },
+    {
+      "id": "restart-node4",
+      "requirement": "Provider-wide restart evidence protocol: node4 baseline, restart, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id f54d7366... captured, reboot issued, connection loss observed, and new boot_id 76a4217f... confirmed. Post-restart checks show the systemd service active, the firewalld port persisted, and localhost curl returning 200; a final cross-node curl (node3->node2->node4) also succeeded after all four restarts, confirming full end-to-end recovery. Matches the fixed after-executor snapshot's boot-identity.",
+      "evidence_ids": [
+        "cmd-651f69b114de4ef4",
+        "cmd-c2dd16c267e541d9",
+        "cmd-06942d3174404f3c",
+        "cmd-1ef76f2505944ca8",
+        "cmd-abbbecfe3ce24e9b"
+      ]
+    }
+  ],
+  "overall_summary": "All three material task outcomes are satisfied with direct evidence: node2's transit address (10.10.2.2:80) now dest-NATs to node4's service (10.10.3.2:8080), node1 was given connectivity to that transit address via a directly-connected VyOS interface, and node3 was shown to reach the service exclusively through node2 (it has no route/interface to node4's lan-b subnet). The mandatory provider-wide restart protocol was executed and fully evidenced for all four nodes, each showing a genuine baseline-to-post-restart boot-identity change followed by re-verified healthy/recovered state, and these boot identities are corroborated by the fixed after-executor lifecycle snapshot. Hygiene is good but not perfect: several bounded, fully-reverted temporary IP-addressing experiments were used for topology discovery when read-only tools likely would have sufficed, though they left no residue and posed no risk.",
+  "limitations": [
+    "The claim that node4's lan-b address is unreachable from node3/node1 is inferred from the observed routing/interface configuration rather than from a captured direct negative-reachability test (e.g., a failed curl from node3 to 10.10.3.2).",
+    "Some restart-protocol timeline commands (e.g., intermediate timeout/connection-reset probes) are omitted from the cited evidence for brevity but are consistent with the cited baseline/post-restart pairs.",
+    "Package-health and failed-service checks for node2 (OPNsense) are marked 'unsupported' in the lifecycle snapshots since it lacks systemd/dpkg equivalents, so hygiene for that node relies on pf/NAT/interface state comparisons rather than a native health check."
+  ],
+  "command_stats": {
+    "total": 132,
+    "successful": 108,
+    "failed": 23,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "The executor ran several bounded topology-discovery experiments that mutated interface addressing beyond read-only diagnostics, all of which were fully reverted with no residue confirmed in the after-executor snapshot: (1) temporary link-local 169.254.99.1/24 and 172.31.99.1/30 addresses added and immediately deleted within the same command on node1/node3/node4 for arping-based link mapping (cmd-a507e92bdac349e8, cmd-edc8e076e54d47df, cmd-3918995c3b88462c); (2) a broader temporary 172.31.50.0/24 addressing scheme applied to all four nodes' inter-node interfaces to ping-test the mesh (cmd-e1583906c12d43ef, cmd-f206e16f4f1e4668, cmd-eb657753b25f4d06, cmd-2c3d34c9b6e94b81), later fully removed (cmd-f5a33ae8eb6c4793, cmd-3cafb67d2dec4831, cmd-b85c741f0b9046b7, cmd-0c7f32f28bcc483d). These were low-risk, private-range, bounded mutations with no lasting effect, but they were not strictly necessary since the topology was already derivable from ip/ARP read-only inspection. Extensive tcpdump/pfctl troubleshooting during the NAT/pf debugging was read-only or self-cleaning (processes killed, temp log files left under /tmp are inconsequential and consistent with normal OS churn). No failed services, no unremediated address/config drift, and no security-control weakening were found in the after-executor lifecycle comparison.",
+    "evidence_ids": [
+      "cmd-a507e92bdac349e8",
+      "cmd-edc8e076e54d47df",
+      "cmd-3918995c3b88462c",
+      "cmd-e1583906c12d43ef",
+      "cmd-f206e16f4f1e4668",
+      "cmd-eb657753b25f4d06",
+      "cmd-2c3d34c9b6e94b81",
+      "cmd-f5a33ae8eb6c4793",
+      "cmd-3cafb67d2dec4831",
+      "cmd-b85c741f0b9046b7",
+      "cmd-0c7f32f28bcc483d",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node2:listening-sockets",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node4:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

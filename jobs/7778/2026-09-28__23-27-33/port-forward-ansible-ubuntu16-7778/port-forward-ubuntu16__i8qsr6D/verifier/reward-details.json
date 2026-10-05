@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node3 can reach node2's application on TCP port 8080 via node1",
+      "status": "satisfied",
+      "summary": "Ansible playbook run (cmd-014a7bce67c74870) configured DNAT on node1 (eth0:8080 -> 10.50.50.2:8080) plus hairpin SNAT, and node3 successfully curled http://10.100.201.10:8080/ and received 'served-by-node2-private-network' both during the run and in a dedicated post-restart check (cmd-05d5572a0c77446c), confirming the published path survives a reboot of every node.",
+      "evidence_ids": [
+        "cmd-014a7bce67c74870",
+        "cmd-b923070f9e0740eb",
+        "cmd-05d5572a0c77446c",
+        "cmd-84135ad38fec47f3"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Rest of the private network (node1<->node2 link) is not opened to node3",
+      "status": "satisfied",
+      "summary": "A default-drop forward firewall filter with a single narrow accept rule (dest 10.50.50.2:8080 only, plus established/related) was committed on node1. node3's direct attempt to reach node2's private IP (10.50.50.2:8080) failed with 'No route to host' both immediately after configuration and again after all four nodes were rebooted, showing only the published port is reachable.",
+      "evidence_ids": [
+        "cmd-9473643e243c45ab",
+        "cmd-5ee577e4633d4c82",
+        "cmd-05d5572a0c77446c",
+        "cmd-f7d3b93cc0aa40fe"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Implementation done via Ansible, run from the designated control node (node4)",
+      "status": "satisfied",
+      "summary": "A 3-play site.yml was executed with ansible-playbook from node4 (control node), configuring node2's interface/app and node1's NAT/firewall and verifying from node3. The vyos.vyos collection's vyos_config module was found to not reliably persist commits in this environment, so the final working task used Ansible's built-in raw module (still an Ansible-orchestrated task) to run the native VyOS configure/commit/save sequence; this is a reasonable engineering workaround for a demonstrated collection defect rather than an abandonment of Ansible, but it is a materially thinner use of Ansible's declarative VyOS support than a working vyos_config/vyos_command approach would have been.",
+      "evidence_ids": [
+        "cmd-014a7bce67c74870",
+        "cmd-5294a41a63c344ce",
+        "cmd-4d240fb62e8c47a6",
+        "cmd-987c24c3a69e4e20"
+      ]
+    }
+  ],
+  "overall_summary": "The core task was accomplished: node3 can reach node2's app on port 8080 via node1 through DNAT/hairpin-SNAT, while direct access to the rest of the private network from node3 is blocked by a default-drop forward firewall with a single narrow allow rule. This was implemented and applied via ansible-playbook from the designated control node (node4), though the working VyOS configuration task ultimately used Ansible's raw module rather than the vyos.vyos collection's structured config modules, after the executor demonstrated those modules failed to persist commits in this environment. The provider-wide restart protocol was completed on all four nodes with clear pre-restart baselines, restart acknowledgements, changed boot IDs (cross-checked against the fixed after-executor lifecycle snapshot), and confirmed recovery of NAT/firewall config, private IPs, the app service, and the node3->node1->node2 path \u2014 persistence through a real reboot for all managed nodes is directly demonstrated, not just inferred from static config. Hygiene is acceptable but not clean: several diagnostic mutations were applied directly to node1 outside of Ansible (including a temporary root SSH key) before the working Ansible approach was found; all were bounded and reverted or superseded, with no negative residue in the final state.",
+  "limitations": [
+    "The isolation check only directly tests one alternate destination (node2's private IP on port 8080/other ports were not individually curled); the default-drop firewall design is structurally strong evidence but per-port exhaustive testing from node3 was not captured.",
+    "The final VyOS configuration task relies on Ansible's generic raw module rather than the vyos.vyos collection's structured modules, due to a demonstrated collection defect; this satisfies 'implemented via Ansible' but is a less idiomatic use of Ansible's VyOS support than intended.",
+    "Several state-changing diagnostic commands were run directly on node1 outside the final playbook during troubleshooting; while bounded and reverted/superseded, this slightly weakens confidence that all of node1's final state was produced solely by the Ansible playbook."
+  ],
+  "command_stats": {
+    "total": 144,
+    "successful": 112,
+    "failed": 31,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most exploratory mutations were bounded and either reverted or superseded by the final Ansible-applied state, and leftover scratch files were cleaned up (cmd-b7b0c8f55e3046ae removed assign_only.yml/full.log/run.log). However, several unnecessary mutations occurred during troubleshooting: (1) node1's NAT/firewall config was manually set via raw bash outside Ansible (cmd-c3d58b76b2b04517) to diagnose the vyos_config bug, verified working, then explicitly deleted (cmd-0a66ef445e6e4afe) before being reapplied through the fixed playbook \u2014 bounded and fully reverted, but a real production-config mutation with no lasting connection to the final solution. (2) eth1's private address was set manually via raw bash outside Ansible (cmd-e7f856f51c74410d, cmd-359f4490483e4f16) rather than solely through the playbook; this became part of the final state but was not applied by Ansible. (3) Root SSH access was temporarily enabled on the VyOS router (mkdir /root/.ssh + authorized_keys, cmd-2888fb8db3a24c4a) purely to test whether login-shell type explained a bug, then removed (cmd-615998b8013d420d) \u2014 a security-sensitive but low-risk, fully-reverted diagnostic. (4) A hostname was changed to 'testcheck' and back twice (cmd-a7532607198346b4, cmd-a8efdc2ce9da45c9) purely to probe config-session persistence \u2014 reverted, negligible residue beyond extra commit-history entries. None of these left harmful residue or weakened final security posture (the final firewall is default-drop with one narrow allow rule), but the volume of ad hoc direct-device mutations during debugging, some overlapping with what the final playbook re-applied, is more than minimal.",
+    "evidence_ids": [
+      "cmd-c3d58b76b2b04517",
+      "cmd-0a66ef445e6e4afe",
+      "cmd-e7f856f51c74410d",
+      "cmd-359f4490483e4f16",
+      "cmd-2888fb8db3a24c4a",
+      "cmd-615998b8013d420d",
+      "cmd-a7532607198346b4",
+      "cmd-a8efdc2ce9da45c9",
+      "cmd-b7b0c8f55e3046ae"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

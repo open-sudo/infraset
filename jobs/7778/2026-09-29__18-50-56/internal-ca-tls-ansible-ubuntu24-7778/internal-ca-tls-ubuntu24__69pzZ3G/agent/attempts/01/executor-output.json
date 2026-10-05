@@ -1,0 +1,99 @@
+{
+  "status": "completed",
+  "summary": "Built an Ansible playbook on node1 that creates a \"Fleet Internal CA\" (self-signed openssl CA), issues a TLS certificate for node2 (CN=node2, SAN DNS:node2/IP:10.100.196.11), deploys nginx on node2 to serve HTTPS on port 8443 with that certificate, and installs the CA into the system trust store on both node1 and node2. Verified end-to-end with an openssl chain verify and a curl request to https://node2:8443 that validated successfully against the system CA trust store. Also fixed a pre-existing broken sshd on node2 (missing host keys, missing /run/sshd, service disabled) so Ansible could reach it over SSH. Completed the mandatory sequential restart-and-recovery protocol on all three nodes with boot-id proof of restart and post-restart health verification.",
+  "actions_performed": [
+    "Installed ansible and sshpass on node1 (the control node) via apt",
+    "Set up cluster SSH keys and /etc/hosts on node1 and node2 for Ansible connectivity",
+    "Diagnosed and fixed broken sshd on node2: generated missing host keys, created /run/sshd, added a tmpfiles.d rule for persistence across boots, enabled and started ssh.service",
+    "Wrote Ansible inventory.ini and playbook.yml at /root/ansible/fleet-ca on node1",
+    "Playbook play 1 (hosts: node1/local): creates CA directory structure, generates CA private key and self-signed 'Fleet Internal CA' certificate, generates node2 key/CSR/signed certificate with SAN, installs the CA into node1's system trust store via update-ca-certificates",
+    "Playbook play 2 (hosts: node2): installs nginx, copies node2 key/cert/CA cert from the controller, configures an nginx site listening on 0.0.0.0:8443 with ssl_certificate/ssl_certificate_key, installs the CA into node2's system trust store, ensures nginx is enabled and started",
+    "Ran ansible-playbook (syntax-check then full apply): all tasks ok/changed, 0 failed",
+    "Verified CA cert subject/issuer, node2 cert SAN and CA signature via openssl verify, and the HTTPS 8443 endpoint via curl from node1 (validated against system trust store) and node2 (localhost curl with cacert)",
+    "Captured a healthy baseline (boot_id, service state) on all three nodes, then sequentially rebooted node1, node2, and node3, polling each until reachable and confirming a changed boot_id as restart proof, and re-verified CA/cert files, system trust store, and nginx/8443 health after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "Fleet Internal CA created on node1",
+      "command_ids": [
+        "cmd-a185712e08044f19",
+        "cmd-1ab0d811477d47a9"
+      ],
+      "summary": "Ansible run generated the CA key/cert on node1; openssl x509 shows subject=CN=Fleet Internal CA, issuer=CN=Fleet Internal CA (self-signed)"
+    },
+    {
+      "requirement": "TLS certificate issued for node2 by the CA",
+      "command_ids": [
+        "cmd-1ab0d811477d47a9"
+      ],
+      "summary": "node2.crt has subject=CN=node2, issuer=CN=Fleet Internal CA, SAN DNS:node2/IP:10.100.196.11; openssl verify against ca.crt returns OK"
+    },
+    {
+      "requirement": "node2 serves HTTPS on port 8443 with the issued certificate",
+      "command_ids": [
+        "cmd-4185804813004499",
+        "cmd-328f2ae174034cc7",
+        "cmd-1c8e6e10b9b74e4e"
+      ],
+      "summary": "ss shows nginx listening on 0.0.0.0:8443; curl from node1 with --resolve completed a TLS 1.3 handshake showing 'SSL certificate verify ok' and matching SAN; curl from node2 using the system CA bundle got HTTP=200"
+    },
+    {
+      "requirement": "CA installed as trusted system CA on node1",
+      "command_ids": [
+        "cmd-a185712e08044f19",
+        "cmd-88f47fc0495d4ff8"
+      ],
+      "summary": "update-ca-certificates ran (changed) on node1; /etc/ssl/certs shows fleet-internal-ca.pem symlink and hash link c9601fe1.0"
+    },
+    {
+      "requirement": "CA installed as trusted system CA on node2",
+      "command_ids": [
+        "cmd-a185712e08044f19",
+        "cmd-1c8e6e10b9b74e4e"
+      ],
+      "summary": "update-ca-certificates ran (changed) on node2; /etc/ssl/certs shows fleet-internal-ca.pem symlink and hash link c9601fe1.0"
+    },
+    {
+      "requirement": "Implemented using Ansible",
+      "command_ids": [
+        "cmd-c792e1bd68ac424d",
+        "cmd-03ad90a1c76c4f59",
+        "cmd-a185712e08044f19"
+      ],
+      "summary": "ansible-core 2.16.3 installed on node1; playbook.yml passed --syntax-check and executed both plays successfully against inventory (ca group=node1 local, web group=node2 ssh)"
+    },
+    {
+      "requirement": "node1 restart evidence: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-918699a07ae8451b",
+        "cmd-0cb8c76821924af6",
+        "cmd-fc6f7f40f1b04526",
+        "cmd-652aed6842144d37",
+        "cmd-3334c19ce2e94551"
+      ],
+      "summary": "Baseline boot_id 3fad4432...; reboot acknowledged and returned before disconnect; subsequent poll timed out (node down) then succeeded with new boot_id 1172c683...; post-restart openssl verify of node2.crt against ca.crt still OK and CA trust symlinks intact"
+    },
+    {
+      "requirement": "node2 restart evidence: baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-4185804813004499",
+        "cmd-274845ae4ef34dd0",
+        "cmd-6ffc9577a5664361",
+        "cmd-dcb9a4fc58ca4cf5",
+        "cmd-a016bcabab044239"
+      ],
+      "summary": "Baseline boot_id df9e2dce...; reboot acknowledged; poll timed out then returned new boot_id 888db5eb...; post-restart nginx active, listening on 8443, curl HTTPS returned 200, CA trust symlinks intact"
+    },
+    {
+      "requirement": "node3 restart evidence: baseline, restart, changed boot identity",
+      "command_ids": [
+        "cmd-200f103992af46fd",
+        "cmd-7da3e687807e455b",
+        "cmd-0ad0cfd445934725",
+        "cmd-bbb4c4c425eb465d",
+        "cmd-44b571f91dfc4113"
+      ],
+      "summary": "Baseline boot_id 416c5cf5...; reboot acknowledged; poll timed out then returned new boot_id 26a940cc...; node reachable again (no cluster service on node3 to re-verify beyond reachability)"
+    }
+  ]
+}

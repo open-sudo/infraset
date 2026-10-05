@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
+import sys
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -14,28 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_JOBS = ROOT / "jobs"
 DEFAULT_OUTPUT = ROOT / "data" / "collector-observations.jsonl"
 PHASES = ("before_prepare", "after_prepare", "after_executor")
-JOB_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}__\d{2}-\d{2}-\d{2}$")
-
-
-def find_task_dirs(root: Path) -> list[Path]:
-    """Find task directories anywhere under root, regardless of category nesting.
-
-    A task directory is any directory whose direct children include at least
-    one job (timestamp-named) directory, so this works whether jobs live
-    directly under `jobs/<task>/` or nested under category subdirectories
-    such as `jobs/<category>/<os>/<task>/`.
-    """
-    found = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_dir():
-            continue
-        if any(
-            JOB_NAME.fullmatch(child.name)
-            for child in path.iterdir()
-            if child.is_dir()
-        ):
-            found.append(path)
-    return found
+sys.path.insert(0, str(Path(__file__).parent))
+from job_layout import iter_job_dirs, job_location  # noqa: E402
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
@@ -110,9 +90,7 @@ def snapshot_rows(
                 "node": str(node.get("name", "")),
                 "image": str(image_ani) if image_ani is not None else "",
                 "observation_id": str(observation.get("id", "")),
-                "observation_description": str(
-                    observation.get("description", "")
-                ),
+                "observation_description": str(observation.get("description", "")),
                 "observation_status": str(observation.get("status", "")),
                 "return_code": (
                     observation.get("return_code")
@@ -166,9 +144,7 @@ def collector_rows(
         cluster_number = cluster_value if isinstance(cluster_value, int) else 0
         prepare_value = manifest.get("prepare_enabled")
         prepare_enabled = (
-            str(prepare_value).lower()
-            if isinstance(prepare_value, bool)
-            else "unknown"
+            str(prepare_value).lower() if isinstance(prepare_value, bool) else "unknown"
         )
         phases = manifest.get("phases", {})
         phases = phases if isinstance(phases, dict) else {}
@@ -185,14 +161,10 @@ def collector_rows(
             snapshot_path = (
                 trial_dir / path_value
                 if isinstance(path_value, str)
-                else attempt_dir
-                / "snapshots"
-                / f"{phase.replace('_', '-')}.json"
+                else attempt_dir / "snapshots" / f"{phase.replace('_', '-')}.json"
             )
             snapshot = read_json(snapshot_path)
-            captured_at = (
-                snapshot.get("captured_at") if snapshot is not None else None
-            )
+            captured_at = snapshot.get("captured_at") if snapshot is not None else None
             source = (
                 display_path(snapshot_path)
                 if snapshot_path.exists()
@@ -281,17 +253,17 @@ def legacy_rows(
 
 
 def rows(jobs_dir: Path) -> Iterable[dict[str, Any]]:
-    for task_dir in find_task_dirs(jobs_dir):
-        for job_dir in sorted(path for path in task_dir.iterdir() if path.is_dir()):
-            for trial_dir in sorted(path for path in job_dir.iterdir() if path.is_dir()):
-                if not (trial_dir / "config.json").is_file():
-                    continue
-                yield from collector_rows(
-                    trial_dir,
-                    task=task_dir.name,
-                    job=job_dir.name,
-                    trial=trial_dir.name,
-                )
+    for job_dir in iter_job_dirs(jobs_dir):
+        location = job_location(job_dir, jobs_dir)
+        for trial_dir in sorted(path for path in job_dir.iterdir() if path.is_dir()):
+            if not (trial_dir / "config.json").is_file():
+                continue
+            yield from collector_rows(
+                trial_dir,
+                task=location.task_name,
+                job=f"{location.runner}/{location.run_name}",
+                trial=trial_dir.name,
+            )
 
 
 def parse_args() -> argparse.Namespace:

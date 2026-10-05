@@ -1,0 +1,147 @@
+timeout_sec = 900
+
+[[steps]]
+id = "install-server-prerequisites"
+stage = 10
+node = "node1"
+retries = 2
+retry_delay_sec = 5
+command = '''
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq nginx openssl curl ca-certificates
+if ! grep -q '^# infraset cluster hosts$' /etc/hosts; then
+  printf '\n%s\n%s\n' '# infraset cluster hosts' "$CLUSTER_HOSTS" >> /etc/hosts
+fi
+'''
+
+[[steps]]
+id = "install-client-prerequisites"
+stage = 10
+node = "node2"
+retries = 2
+retry_delay_sec = 5
+command = '''
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq openssl curl ca-certificates
+if ! grep -q '^# infraset cluster hosts$' /etc/hosts; then
+  printf '\n%s\n%s\n' '# infraset cluster hosts' "$CLUSTER_HOSTS" >> /etc/hosts
+fi
+'''
+
+[[steps]]
+id = "configure-expired-nginx-tls"
+stage = 20
+node = "node1"
+command = '''
+set -eu
+install -d -o root -g root -m 0700 /etc/nginx/tls
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /etc/nginx/tls/server.key
+cat > /etc/nginx/tls/expired-cert.ext <<'INFRASET_EXT'
+subjectAltName=DNS:node1
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+INFRASET_EXT
+openssl x509 -new \
+  -key /etc/nginx/tls/server.key \
+  -subj '/CN=node1' \
+  -set_serial 0x01 \
+  -not_before 20240101000000Z \
+  -not_after 20250101000000Z \
+  -extfile /etc/nginx/tls/expired-cert.ext \
+  -out /etc/nginx/tls/server.crt
+rm -f /etc/nginx/tls/expired-cert.ext
+chown root:root /etc/nginx/tls/server.key /etc/nginx/tls/server.crt
+chmod 0600 /etc/nginx/tls/server.key
+chmod 0644 /etc/nginx/tls/server.crt
+printf '%s\n' 'existing HTTPS content: preserve during certificate rotation' > /var/www/html/index.html
+truncate -s 100M /var/www/html/continuity.bin
+cat > /etc/nginx/sites-available/infraset-tls <<'INFRASET_NGINX'
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name node1;
+
+    ssl_certificate     /etc/nginx/tls/server.crt;
+    ssl_certificate_key /etc/nginx/tls/server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+
+    root /var/www/html;
+    index index.html;
+
+    location = /healthz {
+        default_type text/plain;
+        return 200 "certificate-rotation-ready\n";
+    }
+
+    location = /continuity.bin {
+        limit_rate 20k;
+        try_files $uri =404;
+    }
+}
+INFRASET_NGINX
+rm -f /etc/nginx/sites-enabled/default
+ln -sfn /etc/nginx/sites-available/infraset-tls /etc/nginx/sites-enabled/infraset-tls
+nginx -t
+systemctl enable nginx.service >/dev/null
+systemctl restart nginx.service
+systemctl is-active --quiet nginx.service
+if openssl x509 -in /etc/nginx/tls/server.crt -checkend 0 -noout; then
+  exit 1
+fi
+openssl x509 -in /etc/nginx/tls/server.crt -checkhost node1 -noout >/dev/null
+'''
+
+[[steps]]
+id = "start-client-continuity-probes"
+stage = 30
+node = "node2"
+command = '''
+set -eu
+install -d -o root -g root -m 0755 /run/systemd/system
+cat > /run/systemd/system/infraset-continuity.service <<'INFRASET_UNIT'
+[Unit]
+Description=InfraSet prepared long-lived HTTPS connection
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/curl --insecure --fail --silent --show-error --connect-timeout 3 --max-time 7200 https://node1/continuity.bin -o /dev/null
+Restart=no
+INFRASET_UNIT
+cat > /run/systemd/system/infraset-availability.service <<'INFRASET_UNIT'
+[Unit]
+Description=InfraSet prepared rapid HTTPS availability probe
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c 'while :; do /usr/bin/curl --insecure --fail --silent --show-error --connect-timeout 1 --max-time 2 https://node1/healthz | /usr/bin/grep -qx certificate-rotation-ready || exit 1; sleep 0.2; done'
+Restart=no
+INFRASET_UNIT
+systemctl daemon-reload
+systemctl start infraset-continuity.service infraset-availability.service
+'''
+
+[[steps]]
+id = "confirm-prepared-expired-endpoint"
+stage = 40
+node = "node2"
+retries = 20
+retry_delay_sec = 1
+command = '''
+set -eu
+systemctl is-active --quiet infraset-continuity.service
+systemctl is-active --quiet infraset-availability.service
+cert="$(timeout 8 openssl s_client -connect node1:443 -servername node1 </dev/null 2>/dev/null | openssl x509 -outform PEM)"
+printf '%s\n' "$cert" | openssl x509 -checkhost node1 -noout >/dev/null
+if printf '%s\n' "$cert" | openssl x509 -checkend 0 -noout >/dev/null; then
+  exit 1
+fi
+curl -kfsS --max-time 3 https://node1/healthz | grep -qx certificate-rotation-ready
+'''

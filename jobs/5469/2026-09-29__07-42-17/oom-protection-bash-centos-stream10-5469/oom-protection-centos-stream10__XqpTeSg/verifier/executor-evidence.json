@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 10,
+    "successful": 7,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "inventory-api runs as a managed (systemd) service",
+      "command_ids": [
+        "cmd-20bc22bace8c4e42"
+      ],
+      "summary": "systemctl enable --now inventory-api succeeded; systemctl status shows active/enabled with the unit's OOMScoreAdjust=-1000 config; curl confirms API responds on $NODE_IP:8080"
+    },
+    {
+      "requirement": "Service keeps serving through a system-wide OOM event",
+      "command_ids": [
+        "cmd-a3d0aecc6ef14502",
+        "cmd-a0afb042ab484c23"
+      ],
+      "summary": "Memory hog launched with default oom_score_adj=0; polling loop shows hog process exiting after iteration 4; inventory-api remained active and answered /health (uptime continuous at 17.0s, same PID 2466) immediately after the OOM event"
+    },
+    {
+      "requirement": "Kernel OOM killer stops the memory hog, not inventory-api",
+      "command_ids": [
+        "cmd-a0afb042ab484c23"
+      ],
+      "summary": "dmesg shows 'Out of memory: Killed process 2532 (python3) ... oom_score_adj:0' \u2014 matching the hog's PID and score, distinct from inventory-api's protected PID 2466 (oom_score_adj -1000), which stayed up"
+    },
+    {
+      "requirement": "Post-disruption cleanup and continued healthy service state",
+      "command_ids": [
+        "cmd-80fcfa5ded22402a"
+      ],
+      "summary": "Hog artifacts removed, memory reclaimed to 1.4Gi free, inventory-api status active with original PID 2466 and uptime 21.3s (uninterrupted), API endpoints still returning correct data"
+    },
+    {
+      "requirement": "Mandatory restart protocol: healthy baseline before restart",
+      "command_ids": [
+        "cmd-e0212b129f354a6c"
+      ],
+      "summary": "Captured pre-restart boot_id 71f12f87-337d-4ff3-b414-9680244c2694, service active/enabled, and working /health and /inventory responses immediately before issuing reboot"
+    },
+    {
+      "requirement": "Mandatory restart protocol: restart acknowledged and node returns",
+      "command_ids": [
+        "cmd-e0212b129f354a6c",
+        "cmd-8c641dbca19042bc",
+        "cmd-7a9837fa19294390",
+        "cmd-5d34a92b045e4c76"
+      ],
+      "summary": "systemctl reboot issued non-blocking (ack returned before disconnect); two subsequent polls timed out (node down); third poll succeeded, node reachable again"
+    },
+    {
+      "requirement": "Mandatory restart protocol: proof of changed boot identity",
+      "command_ids": [
+        "cmd-5d34a92b045e4c76",
+        "cmd-85bdf36aa4494895"
+      ],
+      "summary": "boot_id changed from 71f12f87-337d-4ff3-b414-9680244c2694 to 80c9f19c-c352-44cd-8459-67a942024182, and uptime -s shows a fresh boot time, confirming an actual restart occurred"
+    },
+    {
+      "requirement": "Mandatory restart protocol: post-restart recovery of required service and data",
+      "command_ids": [
+        "cmd-85bdf36aa4494895"
+      ],
+      "summary": "inventory-api is active/enabled with a new MainPID (939, fresh invocation ID), OOMScoreAdjust=-1000 preserved on the new process, and /health and /inventory endpoints respond correctly with original inventory data"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-12d56cb57b93461e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:50.709858+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 181,
+      "command": "set -Eeuo pipefail\necho \"== os ==\"; cat /etc/os-release | head -5\necho \"== mem ==\"; free -h\necho \"== cpu ==\"; nproc\necho \"== systemd ==\"; systemctl --version | head -1\necho \"== python ==\"; command -v python3 || true\necho \"== existing services ==\"; systemctl list-units --type=service | grep -i inventory || echo none\necho \"== boot id ==\"; cat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"; uptime -s\n",
+      "stdout": "== os ==\nNAME=\"CentOS Stream\"\nVERSION=\"10 (Coughlan)\"\nRELEASE_TYPE=stable\nID=\"centos\"\nID_LIKE=\"rhel fedora\"\n== mem ==\n               total        used        free      shared  buff/cache   available\nMem:           1.7Gi       421Mi       1.2Gi       9.6Mi       234Mi       1.3Gi\nSwap:             0B          0B          0B\n== cpu ==\n4\n== systemd ==\nsystemd 257 (257-21.el10-ge74d732)\n== python ==\n/usr/bin/python3\n== existing services ==\nnone\n== boot id ==\n71f12f87-337d-4ff3-b414-9680244c2694\n== uptime ==\n2026-09-29 08:12:33"
+    },
+    {
+      "command_id": "cmd-20bc22bace8c4e42",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:13:31.097775+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1765,
+      "command": "set -Eeuo pipefail\n\necho \"== STEP 1: create inventory-api application ==\"\nsudo -n mkdir -p /opt/inventory-api\nsudo -n tee /opt/inventory-api/app.py > /dev/null <<'PYEOF'\nimport json\nimport time\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nINVENTORY = {\n    \"widgets\": 120,\n    \"gadgets\": 45,\n    \"gizmos\": 300,\n}\nSTART = time.time()\n\nclass Handler(BaseHTTPRequestHandler):\n    def _json(self, code, payload):\n        body = json.dumps(payload).encode()\n        self.send_response(code)\n        self.send_header(\"Content-Type\", \"application/json\")\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\n\n    def do_GET(self):\n        if self.path == \"/health\":\n            self._json(200, {\"status\": \"ok\", \"uptime_s\": round(time.time() - START, 1)})\n        elif self.path == \"/inventory\":\n            self._json(200, INVENTORY)\n        else:\n            self._json(404, {\"error\": \"not found\"})\n\n    def log_message(self, fmt, *args):\n        pass\n\nif __name__ == \"__main__\":\n    server = ThreadingHTTPServer((\"0.0.0.0\", 8080), Handler)\n    server.serve_forever()\nPYEOF\nsudo -n chmod 755 /opt/inventory-api/app.py\n\necho \"== STEP 2: create dedicated service user ==\"\nif ! id inventoryapi >/dev/null 2>&1; then\n  sudo -n useradd --system --no-create-home --shell /usr/sbin/nologin inventoryapi\nfi\nsudo -n chown -R inventoryapi:inventoryapi /opt/inventory-api\n\necho \"== STEP 3: create systemd unit with OOM protection ==\"\nsudo -n tee /etc/systemd/system/inventory-api.service > /dev/null <<'UNITEOF'\n[Unit]\nDescription=Inventory API service\nAfter=network.target\n\n[Service]\nType=simple\nUser=inventoryapi\nGroup=inventoryapi\nExecStart=/usr/bin/python3 /opt/inventory-api/app.py\nRestart=always\nRestartSec=1\n# Shield this service from the kernel OOM killer: the more negative,\n# the less likely this process is chosen when memory is exhausted.\nOOMScoreAdjust=-1000\nOOMPolicy=continue\n\n[Install]\nWantedBy=multi-user.target\nUNITEOF\n\necho \"== STEP 4: enable and start ==\"\nsudo -n systemctl daemon-reload\nsudo -n systemctl enable --now inventory-api\n\nsleep 1\necho \"== STEP 5: verify service state ==\"\nsudo -n systemctl is-active inventory-api\nsudo -n systemctl is-enabled inventory-api\nsudo -n systemctl status inventory-api --no-pager | head -15\n\necho \"== STEP 6: verify oom_score_adj applied ==\"\nPID=$(sudo -n systemctl show -p MainPID --value inventory-api)\necho \"MainPID=$PID\"\ncat /proc/$PID/oom_score_adj\ncat /proc/$PID/oom_score\n\necho \"== STEP 7: verify API responds ==\"\ncurl -s \"http://$NODE_IP:8080/health\"; echo\ncurl -s \"http://$NODE_IP:8080/inventory\"; echo\n",
+      "stdout": "== STEP 1: create inventory-api application ==\n== STEP 2: create dedicated service user ==\n== STEP 3: create systemd unit with OOM protection ==\n== STEP 4: enable and start ==\nCreated symlink '/etc/systemd/system/multi-user.target.wants/inventory-api.service' \u2192 '/etc/systemd/system/inventory-api.service'.\n== STEP 5: verify service state ==\nactive\nenabled\n\u25cf inventory-api.service - Inventory API service\n     Loaded: loaded (/etc/systemd/system/inventory-api.service; enabled; preset: disabled)\n     Active: active (running) since Tue 2026-09-29 08:13:29 EDT; 1s ago\n Invocation: a12147dd4a0d432b85198498f61c72a1\n   Main PID: 2466 (python3)\n      Tasks: 1 (limit: 9416)\n     Memory: 9.8M (peak: 10.1M)\n        CPU: 34ms\n     CGroup: /system.slice/inventory-api.service\n             \u2514\u25002466 /usr/bin/python3 /opt/inventory-api/app.py\n\nSep 29 08:13:29 node1 systemd[1]: Started inventory-api.service - Inventory API service.\n== STEP 6: verify oom_score_adj applied ==\nMainPID=2466\n-1000\n0\n== STEP 7: verify API responds ==\n{\"status\": \"ok\", \"uptime_s\": 1.1}\n{\"widgets\": 120, \"gadgets\": 45, \"gizmos\": 300}"
+    },
+    {
+      "command_id": "cmd-a3d0aecc6ef14502",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:13:37.478692+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1251,
+      "command": "set -Eeuo pipefail\n\necho \"== STEP 1: baseline memory ==\"\nfree -h\necho \"== STEP 2: create memory hog script ==\"\nsudo -n mkdir -p /opt/oom-test\nsudo -n tee /opt/oom-test/hog.py > /dev/null <<'PYEOF'\nimport time\nchunks = []\ni = 0\nwhile True:\n    block = bytearray(20 * 1024 * 1024)  # 20MB\n    for j in range(0, len(block), 4096):\n        block[j] = 1\n    chunks.append(block)\n    i += 1\n    print(\"allocated_mb=%d\" % (i * 20), flush=True)\n    time.sleep(0.1)\nPYEOF\nsudo -n chmod 755 /opt/oot-test/hog.py 2>/dev/null || sudo -n chmod 755 /opt/oom-test/hog.py\n\necho \"== STEP 3: launch hog in background ==\"\nsudo -n rm -f /tmp/hog.log\nsudo -n sh -c 'nohup python3 /opt/oom-test/hog.py > /tmp/hog.log 2>&1 & echo $! > /tmp/hog.pid'\nsleep 1\nHOGPID=$(cat /tmp/hog.pid)\necho \"HOGPID=$HOGPID\"\ncat /proc/$HOGPID/oom_score_adj || true\necho \"hog started\"\n",
+      "stdout": "== STEP 1: baseline memory ==\n               total        used        free      shared  buff/cache   available\nMem:           1.7Gi       367Mi       1.2Gi       9.6Mi       235Mi       1.3Gi\nSwap:             0B          0B          0B\n== STEP 2: create memory hog script ==\n== STEP 3: launch hog in background ==\nHOGPID=2532\n0\nhog started"
+    },
+    {
+      "command_id": "cmd-a0afb042ab484c23",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:13:47.084812+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 6194,
+      "command": "set -Eeuo pipefail\nfor i in $(seq 1 30); do\n  if ! kill -0 \"$(cat /tmp/hog.pid)\" 2>/dev/null; then\n    echo \"hog process gone after iteration $i\"\n    break\n  fi\n  sleep 2\ndone\necho \"== free mem now ==\"\nfree -h\necho \"== last hog log lines ==\"\ntail -5 /tmp/hog.log || true\necho \"== dmesg oom lines ==\"\nsudo -n dmesg -T | grep -iE \"oom|out of memory|killed process\" | tail -30 || true\necho \"== inventory-api status ==\"\nsudo -n systemctl is-active inventory-api\ncurl -s \"http://$NODE_IP:8080/health\"; echo\n",
+      "stdout": "hog process gone after iteration 4\n== free mem now ==\n               total        used        free      shared  buff/cache   available\nMem:           1.7Gi       268Mi       1.5Gi       9.6Mi        38Mi       1.4Gi\nSwap:             0B          0B          0B\n== last hog log lines ==\nallocated_mb=1380\nallocated_mb=1400\nallocated_mb=1420\nallocated_mb=1440\nallocated_mb=1460\n== dmesg oom lines ==\n[Tue Sep 29 08:13:45 2026] python3 invoked oom-killer: gfp_mask=0x140cca(GFP_HIGHUSER_MOVABLE|__GFP_COMP), order=0, oom_score_adj=0\n[Tue Sep 29 08:13:45 2026]  oom_kill_process.cold+0x8/0x8b\n[Tue Sep 29 08:13:45 2026] [  pid  ]   uid  tgid total_vm      rss rss_anon rss_file rss_shmem pgtables_bytes swapents oom_score_adj name\n[Tue Sep 29 08:13:45 2026] oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=/,mems_allowed=0,global_oom,task_memcg=/user.slice/user-0.slice/session-c21.scope,task=python3,pid=2532,uid=0\n[Tue Sep 29 08:13:45 2026] Out of memory: Killed process 2532 (python3) total-vm:1528716kB, anon-rss:1510192kB, file-rss:16kB, shmem-rss:0kB, UID:0 pgtables:3020kB oom_score_adj:0\n== inventory-api status ==\nactive\n{\"status\": \"ok\", \"uptime_s\": 17.0}"
+    },
+    {
+      "command_id": "cmd-80fcfa5ded22402a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:13:51.396842+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 144,
+      "command": "set -Eeuo pipefail\necho \"== cleanup hog artifacts ==\"\nsudo -n rm -f /tmp/hog.pid /tmp/hog.log\nsudo -n rm -rf /opt/oom-test\necho \"== final verification ==\"\nfree -h\nsudo -n systemctl status inventory-api --no-pager | head -10\ncurl -s \"http://$NODE_IP:8080/health\"; echo\ncurl -s \"http://$NODE_IP:8080/inventory\"; echo\n",
+      "stdout": "== cleanup hog artifacts ==\n== final verification ==\n               total        used        free      shared  buff/cache   available\nMem:           1.7Gi       292Mi       1.4Gi       9.6Mi        56Mi       1.4Gi\nSwap:             0B          0B          0B\n\u25cf inventory-api.service - Inventory API service\n     Loaded: loaded (/etc/systemd/system/inventory-api.service; enabled; preset: disabled)\n     Active: active (running) since Tue 2026-09-29 08:13:29 EDT; 21s ago\n Invocation: a12147dd4a0d432b85198498f61c72a1\n   Main PID: 2466 (python3)\n      Tasks: 1 (limit: 9416)\n     Memory: 13M (peak: 13.3M)\n        CPU: 39ms\n     CGroup: /system.slice/inventory-api.service\n             \u2514\u25002466 /usr/bin/python3 /opt/inventory-api/app.py\n{\"status\": \"ok\", \"uptime_s\": 21.3}\n{\"widgets\": 120, \"gadgets\": 45, \"gizmos\": 300}"
+    },
+    {
+      "command_id": "cmd-e0212b129f354a6c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:13:54.560730+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 191,
+      "command": "set -Eeuo pipefail\necho \"== pre-restart boot id ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== pre-restart service health ==\"\nsudo -n systemctl is-active inventory-api\nsudo -n systemctl is-enabled inventory-api\ncurl -s \"http://$NODE_IP:8080/health\"; echo\ncurl -s \"http://$NODE_IP:8080/inventory\"; echo\necho \"== issuing reboot ==\"\nsudo -n sh -c 'nohup systemctl reboot >/dev/null 2>&1 &'\nsleep 1\necho \"reboot command issued\"\n",
+      "stdout": "== pre-restart boot id ==\n71f12f87-337d-4ff3-b414-9680244c2694\n== pre-restart service health ==\nactive\nenabled\n{\"status\": \"ok\", \"uptime_s\": 24.4}\n{\"widgets\": 120, \"gadgets\": 45, \"gizmos\": 300}\n== issuing reboot ==\n",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-8c641dbca19042bc",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:13:58.811801+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2073,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-7a9837fa19294390",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:14:02.266900+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2080,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-5d34a92b045e4c76",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:14:03.502206+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 76,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stdout": "80c9f19c-c352-44cd-8459-67a942024182\n2026-09-29 08:13:58"
+    },
+    {
+      "command_id": "cmd-85bdf36aa4494895",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:14:07.167364+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 323,
+      "command": "set -Eeuo pipefail\necho \"== post-restart boot id ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== service state ==\"\nsudo -n systemctl is-active inventory-api\nsudo -n systemctl is-enabled inventory-api\nsudo -n systemctl status inventory-api --no-pager | head -10\necho \"== oom_score_adj persisted ==\"\nPID=$(sudo -n systemctl show -p MainPID --value inventory-api)\ncat /proc/$PID/oom_score_adj\necho \"== API responds ==\"\ncurl -s \"http://$NODE_IP:8080/health\"; echo\ncurl -s \"http://$NODE_IP:8080/inventory\"; echo\n",
+      "stdout": "== post-restart boot id ==\n80c9f19c-c352-44cd-8459-67a942024182\n== service state ==\nactive\nenabled\n\u25cf inventory-api.service - Inventory API service\n     Loaded: loaded (/etc/systemd/system/inventory-api.service; enabled; preset: disabled)\n     Active: active (running) since Tue 2026-09-29 08:14:03 EDT; 3s ago\n Invocation: e4dcf331059c47a9a5c5d9abdb403ef7\n   Main PID: 939 (python3)\n      Tasks: 1 (limit: 9416)\n     Memory: 10.1M (peak: 10.3M)\n        CPU: 30ms\n     CGroup: /system.slice/inventory-api.service\n             \u2514\u2500939 /usr/bin/python3 /opt/inventory-api/app.py\n== oom_score_adj persisted ==\n-1000\n== API responds ==\n{\"status\": \"ok\", \"uptime_s\": 3.5}\n{\"widgets\": 120, \"gadgets\": 45, \"gizmos\": 300}"
+    }
+  ]
+}

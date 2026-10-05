@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 16,
+    "successful": 11,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Managed service inventory-worker created and running as a long-running background worker",
+      "command_ids": [
+        "cmd-502b90769f9d4567",
+        "cmd-cfd9b7ebeeba45f0"
+      ],
+      "summary": "systemctl status shows inventory-worker.service active/running; state.log shows repeated heartbeats proving continuous background operation"
+    },
+    {
+      "requirement": "Confined so it writes only inside /var/lib/inventory",
+      "command_ids": [
+        "cmd-9942e8bad3df423d"
+      ],
+      "summary": "nsenter into the running service's actual mount namespace: write to /etc failed with Read-only file system, write to /var/lib/inventory succeeded"
+    },
+    {
+      "requirement": "Gains no new privileges",
+      "command_ids": [
+        "cmd-561990acae3f4c34",
+        "cmd-502b90769f9d4567"
+      ],
+      "summary": "/proc/<pid>/status shows NoNewPrivs:1 for the running worker process; systemd unit declares NoNewPrivileges=yes"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline on node1",
+      "command_ids": [
+        "cmd-8f4d64e37a214d16"
+      ],
+      "summary": "Captured boot_id 19062a82-..., service enabled+active, and 4 heartbeat lines in state.log before restart"
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnection",
+      "command_ids": [
+        "cmd-33ddcbdcff4e4c17"
+      ],
+      "summary": "Backgrounded systemctl reboot command returned 'reboot scheduled' successfully before the node disconnected"
+    },
+    {
+      "requirement": "Node restart occurred; connection loss and recovery observed",
+      "command_ids": [
+        "cmd-a4b51776e195495f",
+        "cmd-785e3d3c89f0405d",
+        "cmd-08f37fb95d524c1f"
+      ],
+      "summary": "Subsequent exec calls failed with connection reset/timeout while node1 was rebooting"
+    },
+    {
+      "requirement": "Changed boot identity proves an actual restart occurred",
+      "command_ids": [
+        "cmd-b58469b4aec94587"
+      ],
+      "summary": "boot_id changed from 19062a82-6390-435d-a09f-4dba1593d529 to 606dce61-acb8-4d76-beb7-a13f8ff9f64a after polling succeeded again"
+    },
+    {
+      "requirement": "Post-restart recovery of service, data, and sandbox confinement",
+      "command_ids": [
+        "cmd-0558b8c8f2304d64"
+      ],
+      "summary": "Post-reboot: uptime -s shows fresh boot time, service enabled/active with new PID 756, new heartbeats appended to the same state.log, and NoNewPrivileges/ProtectSystem=strict/ReadWritePaths settings all persisted"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-20958ebe416c45d1",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:21:52.151818+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 101,
+      "command": "id; cat /etc/os-release | head -3; systemctl --version | head -1",
+      "stdout": "uid=0(root) gid=0(root) groups=0(root) context=system_u:system_r:unconfined_service_t:s0\nNAME=\"Red Hat Enterprise Linux\"\nVERSION=\"10.0 (Coughlan)\"\nID=\"rhel\"\nsystemd 257 (257-9.el10_0.1-g8cd5633)"
+    },
+    {
+      "command_id": "cmd-7b817c08ded44f5a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:21:56.186031+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 44,
+      "command": "mkdir -p /var/lib/inventory && cat > /usr/local/bin/inventory-worker.sh <<'EOF'\n#!/bin/sh\nset -eu\nSTATE=/var/lib/inventory/state.log\nwhile true; do\n  printf '%s inventory-worker heartbeat pid=%s\\n' \"$(date -Iseconds)\" \"$$\" >> \"$STATE\"\n  sleep 10\ndone\nEOF\nchmod 755 /usr/local/bin/inventory-worker.sh\ncat /usr/local/bin/inventory-worker.sh",
+      "stdout": "#!/bin/sh\nset -eu\nSTATE=/var/lib/inventory/state.log\nwhile true; do\n  printf '%s inventory-worker heartbeat pid=%s\\n' \"$(date -Iseconds)\" \"$$\" >> \"$STATE\"\n  sleep 10\ndone"
+    },
+    {
+      "command_id": "cmd-62b6bc383e27478f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:00.355421+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 76,
+      "command": "useradd --system --no-create-home --shell /sbin/nologin inventory-worker 2>&1 || true\nchown -R inventory-worker:inventory-worker /var/lib/inventory\nls -ld /var/lib/inventory; id inventory-worker",
+      "stdout": "drwxr-xr-x. 2 inventory-worker inventory-worker 6 Sep  4 23:21 /var/lib/inventory\nuid=992(inventory-worker) gid=992(inventory-worker) groups=992(inventory-worker)"
+    },
+    {
+      "command_id": "cmd-502b90769f9d4567",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:07.452530+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2250,
+      "command": "cat > /etc/systemd/system/inventory-worker.service <<'EOF'\n[Unit]\nDescription=Inventory background worker\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/usr/local/bin/inventory-worker.sh\nUser=inventory-worker\nGroup=inventory-worker\nRestart=on-failure\n\n# Sandboxing: confine writes to /var/lib/inventory, no privilege escalation\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nReadWritePaths=/var/lib/inventory\nPrivateTmp=yes\nPrivateDevices=yes\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectControlGroups=yes\nRestrictSUIDSGID=yes\nRestrictRealtime=yes\nLockPersonality=yes\nMemoryDenyWriteExecute=yes\n\n[Install]\nWantedBy=multi-user.target\nEOF\nsystemctl daemon-reload\nsystemctl enable --now inventory-worker.service\nsleep 2\nsystemctl is-active inventory-worker.service\nsystemctl status inventory-worker.service --no-pager -l | head -20",
+      "stdout": "Created symlink '/etc/systemd/system/multi-user.target.wants/inventory-worker.service' \u2192 '/etc/systemd/system/inventory-worker.service'.\nactive\n\u25cf inventory-worker.service - Inventory background worker\n     Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; preset: disabled)\n     Active: active (running) since Fri 2026-09-04 23:22:05 EDT; 2s ago\n Invocation: 1e4c030ccb8c4002b815c75f7d972d06\n   Main PID: 1650 (inventory-worke)\n      Tasks: 2 (limit: 12343)\n     Memory: 772K (peak: 2.8M)\n        CPU: 11ms\n     CGroup: /system.slice/inventory-worker.service\n             \u251c\u25001650 /bin/sh /usr/local/bin/inventory-worker.sh\n             \u2514\u25001657 sleep 10\n\nSep 04 23:22:05 node1 systemd[1]: Started inventory-worker.service - Inventory background worker."
+    },
+    {
+      "command_id": "cmd-cfd9b7ebeeba45f0",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:22.486633+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 12049,
+      "command": "sleep 12\ncat /var/lib/inventory/state.log\necho \"---\"\nsystemctl show inventory-worker.service -p NoNewPrivileges -p ProtectSystem -p ReadWritePaths -p ReadOnlyPaths",
+      "stdout": "2026-09-04T23:22:05-04:00 inventory-worker heartbeat pid=1650\n2026-09-04T23:22:15-04:00 inventory-worker heartbeat pid=1650\n---\nReadWritePaths=/var/lib/inventory\nReadOnlyPaths=\nProtectSystem=strict\nNoNewPrivileges=yes"
+    },
+    {
+      "command_id": "cmd-9f2302396b364738",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:27.626651+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 64,
+      "command": "systemd-run --unit=inventory-worker-writetest --uid=inventory-worker --gid=inventory-worker -p NoNewPrivileges=yes -p ProtectSystem=strict -p ProtectHome=yes -p ReadWritePaths=/var/lib/inventory --wait --pipe /bin/sh -c 'echo test > /var/lib/inventory/ok.txt && echo WROTE_OK_INSIDE; echo test2 > /etc/should-fail.txt 2>&1; echo \"exit_outside=$?\"'",
+      "stdout": "Failed to start transient service unit: Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-a1ed0ed9606e445e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:31.455419+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 49,
+      "command": "systemctl status systemd-run 2>&1 | head -5; journalctl -u inventory-worker-writetest -n 20 --no-pager 2>&1 | tail -20",
+      "stdout": "Unit systemd-run.service could not be found.\n-- No entries --"
+    },
+    {
+      "command_id": "cmd-9942e8bad3df423d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:36.042411+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 2,
+      "duration_ms": 58,
+      "command": "MAINPID=$(systemctl show -p MainPID --value inventory-worker.service)\necho \"MAINPID=$MAINPID\"\nnsenter -t \"$MAINPID\" -m -- sh -c 'echo hello > /etc/inventory-write-test 2>&1; echo \"etc_write_exit=$?\"; echo hello2 > /var/lib/inventory/nsenter-test.txt 2>&1; echo \"invdir_write_exit=$?\"'\ncat /var/lib/inventory/nsenter-test.txt 2>&1\nls -l /etc/inventory-write-test 2>&1",
+      "stdout": "MAINPID=1650\nsh: line 1: /etc/inventory-write-test: Read-only file system\netc_write_exit=1\ninvdir_write_exit=0\nhello2\nls: cannot access '/etc/inventory-write-test': No such file or directory"
+    },
+    {
+      "command_id": "cmd-561990acae3f4c34",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:39.385352+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 49,
+      "command": "rm -f /var/lib/inventory/nsenter-test.txt /var/lib/inventory/ok.txt\ngrep NoNewPrivs /proc/1650/status\nls -la /var/lib/inventory",
+      "stdout": "NoNewPrivs:\t1\ntotal 8\ndrwxr-xr-x.  2 inventory-worker inventory-worker   23 Sep  4 23:22 .\ndrwxr-xr-x. 25 root             root             4096 Sep  4 23:21 ..\n-rw-r--r--.  1 inventory-worker inventory-worker  248 Sep  4 23:22 state.log"
+    },
+    {
+      "command_id": "cmd-8f4d64e37a214d16",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:42.590191+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 66,
+      "command": "cat /proc/sys/kernel/random/boot_id\nuptime -s\nsystemctl is-enabled inventory-worker.service\nsystemctl is-active inventory-worker.service\nwc -l /var/lib/inventory/state.log\ntail -3 /var/lib/inventory/state.log",
+      "stdout": "19062a82-6390-435d-a09f-4dba1593d529\n2026-09-04 23:21:17\nenabled\nactive\n4 /var/lib/inventory/state.log\n2026-09-04T23:22:15-04:00 inventory-worker heartbeat pid=1650\n2026-09-04T23:22:25-04:00 inventory-worker heartbeat pid=1650\n2026-09-04T23:22:35-04:00 inventory-worker heartbeat pid=1650"
+    },
+    {
+      "command_id": "cmd-33ddcbdcff4e4c17",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:46.660794+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 41,
+      "command": "nohup sh -c 'sleep 2 && systemctl reboot' > /tmp/reboot.log 2>&1 < /dev/null & disown; echo \"reboot scheduled\"",
+      "stdout": "reboot scheduled"
+    },
+    {
+      "command_id": "cmd-a4b51776e195495f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:49.022868+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 31,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-785e3d3c89f0405d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:53.418901+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2060,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-08f37fb95d524c1f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:22:57.963279+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2087,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-b58469b4aec94587",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:23:00.113410+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 43,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "606dce61-acb8-4d76-beb7-a13f8ff9f64a"
+    },
+    {
+      "command_id": "cmd-0558b8c8f2304d64",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-05T03:23:15.063444+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 11831,
+      "command": "uptime -s\nsystemctl is-enabled inventory-worker.service\nsystemctl is-active inventory-worker.service\nsleep 12\ntail -5 /var/lib/inventory/state.log\nsystemctl show inventory-worker.service -p NoNewPrivileges -p ProtectSystem -p ReadWritePaths",
+      "stdout": "2026-09-04 23:22:54\nenabled\nactive\n2026-09-04T23:22:25-04:00 inventory-worker heartbeat pid=1650\n2026-09-04T23:22:35-04:00 inventory-worker heartbeat pid=1650\n2026-09-04T23:22:45-04:00 inventory-worker heartbeat pid=1650\n2026-09-04T23:22:59-04:00 inventory-worker heartbeat pid=756\n2026-09-04T23:23:09-04:00 inventory-worker heartbeat pid=756\nReadWritePaths=/var/lib/inventory\nProtectSystem=strict\nNoNewPrivileges=yes"
+    }
+  ]
+}

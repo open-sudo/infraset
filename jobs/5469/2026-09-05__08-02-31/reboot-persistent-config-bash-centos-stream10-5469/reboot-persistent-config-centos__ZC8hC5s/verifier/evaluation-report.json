@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "fixed-address",
+      "requirement": "node1 has a fixed address of its own on the shared private network",
+      "status": "satisfied",
+      "summary": "network.lan set to proto=static, ipaddr=10.100.70.10/24, gateway/dns=10.100.70.1; committed and confirmed live via `ip addr` both before and after the reboot (cmd-96251519e7d445cd, cmd-333d65f32c074b00, cmd-2098261411494f4d, cmd-76877b98f3f3430d, cmd-33177098703f4ac9).",
+      "evidence_ids": [
+        "cmd-96251519e7d445cd",
+        "cmd-333d65f32c074b00",
+        "cmd-2098261411494f4d",
+        "cmd-76877b98f3f3430d",
+        "cmd-33177098703f4ac9"
+      ]
+    },
+    {
+      "id": "dhcp-service",
+      "requirement": "node1 provides a DHCP service for node2 and node3",
+      "status": "satisfied",
+      "summary": "dnsmasq's coexistence-conflict with the platform's built-in DHCP responder was diagnosed and resolved with dhcp.lan.force=1; host reservations added for node2/node3; logs show real DHCPACK exchanges to both peers before the reboot and a fresh DHCPACK to node3 after the reboot (node2's DHCP path after reboot was not independently re-forced, only its port connectivity was re-tested, which is a minor gap).",
+      "evidence_ids": [
+        "cmd-1316bc1dd2654d6e",
+        "cmd-68123fff73134aca",
+        "cmd-097c4799ee834c86",
+        "cmd-745ece306ae54215",
+        "cmd-61e669620de445bc",
+        "cmd-0c30b273314d4f00"
+      ]
+    },
+    {
+      "id": "firewall-telnet",
+      "requirement": "A rule refuses inbound TCP port 23 from the shared network",
+      "status": "satisfied",
+      "summary": "UCI firewall rule 'Refuse-Telnet-From-LAN' (src=lan, proto=tcp, dest_port=23, target=REJECT) committed and present in the live nft ruleset; node2's connection to port 23 was refused while port 22 succeeded, both before and after the reboot.",
+      "evidence_ids": [
+        "cmd-bbe801b74b5e4e78",
+        "cmd-a53abaf4a1344751",
+        "cmd-c67fa39db6334785",
+        "cmd-93d3917f25ca4882",
+        "cmd-bd5881b4638f4696"
+      ]
+    },
+    {
+      "id": "restart-persistence",
+      "requirement": "All of the above settings remain in place and serving traffic after node1 is restarted",
+      "status": "satisfied",
+      "summary": "A pre-restart baseline (boot_id, IP, dnsmasq status, firewall rule) was captured, a native `reboot` was issued and acknowledged, a poll during the outage confirmed the node was unreachable, and a subsequent poll showed a new boot_id (49dd3e91... vs b71dca56...) with uptime reset to 0, proving a genuine restart. Post-restart checks then directly re-observed: static IP intact, dnsmasq running with host reservations, the nft firewall rule present and blocking port 23 (port 22 still open) from node2, and a fresh DHCPACK issued to node3. `uci changes` was empty post-restart, confirming persisted (non-volatile) configuration rather than a runtime-only fix.",
+      "evidence_ids": [
+        "cmd-33f11ccf0896478e",
+        "cmd-6675afbf99d74246",
+        "cmd-9ac39e384b7244fd",
+        "cmd-6c74c0ec520e47cb",
+        "cmd-b3af78b66b354d6e",
+        "cmd-76877b98f3f3430d",
+        "cmd-bd5881b4638f4696",
+        "cmd-8680df1cdee349ea",
+        "cmd-0c30b273314d4f00",
+        "cmd-33177098703f4ac9"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the task \u2014 node1's fixed address, its DHCP service for node2/node3, the TCP/23 reject rule, and persistence of all three across a real node1 restart \u2014 are directly supported by observed command output, including a genuine boot-identity change and a bounded outage window. Minor gaps exist: node2's DHCP path was not independently re-forced after the reboot (only its port-reachability was re-tested), and a couple of low-risk diagnostic artifacts (debug logging left enabled, a leftover test script on node2) were not cleaned up. The independent provider-wide node-restart evidence protocol was only demonstrated for node1; node2 and node3 show unchanged boot identities across the whole run, indicating they were not restarted as part of that separate protocol.",
+  "limitations": [
+    "node2's DHCP lease renewal was not independently re-forced and re-verified after node1's reboot; only its TCP port connectivity (22/23) was re-tested post-restart, while node3's DHCP renewal was the one re-verified.",
+    "The provider-wide node-restart evidence protocol appears to have been executed only for node1; node2 and node3 boot-identity observations are identical in before-prepare and after-executor snapshots, indicating no restart evidence was collected for them. This is not a public task requirement (task only specifies restarting node1) but is a gap in the independent protocol.",
+    "Two low-risk diagnostic residues (dnsmasq debug logging enabled on node1, a leftover Python test script on node2) were not confirmed as reverted or removed by the end of the run."
+  ],
+  "command_stats": {
+    "total": 56,
+    "successful": 53,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands were directly tied to satisfying the task (static IP, DHCP force+reservations, firewall rule) or to bounded diagnostic/verification steps (forced DHCP renewals via nmcli on node2/node3, TCP connect tests, a temporary nc listener on port 23, an attempted tcpdump capture that failed because the binary was absent). None of these were destructive or weakened security controls, and node1's own reboot cleared any transient processes/PID files it created (cmd-2eb8c649dad74381, cmd-36702dace22940ef). However, a few low-risk residue items were left un-reverted and not confirmed cleaned up: dnsmasq debug logging (logdhcp/log_queries) enabled on node1 during troubleshooting (cmd-0867095af6a54fd8) with no evidence it was later disabled, and a diagnostic script /tmp/dhcp_discover_test.py left on node2 (cmd-06ff0f6ef65b4e4b), confirmed present in the after-executor snapshot. These are minor, bounded, and non-security-impacting but represent unnecessary residual artifacts.",
+    "evidence_ids": [
+      "cmd-0867095af6a54fd8",
+      "cmd-06ff0f6ef65b4e4b",
+      "cmd-2eb8c649dad74381",
+      "cmd-36702dace22940ef",
+      "global:after_executor:node2:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

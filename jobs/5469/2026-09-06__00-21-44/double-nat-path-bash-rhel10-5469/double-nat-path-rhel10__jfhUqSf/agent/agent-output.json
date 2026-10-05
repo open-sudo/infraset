@@ -1,0 +1,142 @@
+{
+  "status": "completed",
+  "summary": "Built the double-NAT path across the 4-node cluster: node3 (lan-a, RHEL) -> node1 (VyOS, SNAT #1 on transit egress) -> node2 (OPNsense, SNAT #2 on lan-b egress) -> node4 (lan-b, RHEL, serving HTTP on :8080). Verified node4 records connections as arriving from node2's lan-b IP (10.10.3.254), not node3 or node1. All 4 nodes were restarted one at a time using their native reboot mechanisms, boot identity changes were proven, and full config/service/NAT persistence plus the double-NAT behavior were reconfirmed after each restart.",
+  "actions_performed": [
+    "Discovered actual physical topology (node1 eth1/eth2 <-> node2 vtnet1/vtnet2 <-> node3/node4 enp8s0) via ip/ifconfig/arping/tcpdump, correcting an initial wrong NIC-to-link assumption on node1 by testing ARP reachability",
+    "Configured VyOS node1: eth2=10.10.1.254/24 (lan-a), eth1=10.10.2.1/24 (transit), NAT source rule 10 masquerading 10.10.1.0/24 to 10.10.2.1 on eth1 egress, static route 10.10.3.0/24 via 10.10.2.2",
+    "Configured OPNsense node2 via config.xml surgery + configctl: opt1=vtnet1=10.10.2.2/24 (transit), opt2=vtnet2=10.10.3.254/24 (lan-b), hybrid-mode outbound NAT rule SNATing 10.10.2.0/24 to the opt2 interface address, plus pass filter rules on opt1/opt2",
+    "Assigned static IPs via nmcli on node3 (10.10.1.10/24 + route to 10.10.3.0/24 via 10.10.1.254) and node4 (10.10.3.10/24)",
+    "Deployed a persistent systemd HTTP service (simple-http.service) on node4 listening on 0.0.0.0:8080, opened RHEL firewalld port 8080",
+    "Verified end-to-end curl from node3 to node4:8080 succeeds, and cross-checked both NAT hops via VyOS 'show nat source rules' and OPNsense 'pfctl -s states' showing the chain 10.10.1.x -> 10.10.2.1 -> 10.10.3.254 -> node4:8080",
+    "Captured boot_id/boottime baseline on all 4 nodes, restarted each node one at a time (native reboot: VyOS /sbin/reboot, FreeBSD /sbin/reboot, RHEL systemctl reboot), polled until exec was available again, confirmed changed boot identity, and reconfirmed interfaces/NAT/filter/service/route persistence and the working double-NAT connection after each restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline topology discovery and NIC-to-link mapping",
+      "command_ids": [
+        "cmd-00ddee9927f049b5",
+        "cmd-bc6953c7eafc49e5",
+        "cmd-df3067429a57406c",
+        "cmd-0104e1de00e94bc6",
+        "cmd-fa47c8f718054054",
+        "cmd-0042e0b9ea7141e9",
+        "cmd-c3d47a725d534471",
+        "cmd-9b1760bc38964382"
+      ],
+      "summary": "Established each node's OS/image (VyOS, OPNsense, RHEL10 x2) and enumerated all NICs including unconfigured secondary interfaces"
+    },
+    {
+      "requirement": "Corrected wrong initial NIC pairing via ARP/tcpdump evidence",
+      "command_ids": [
+        "cmd-656e095550ab4862",
+        "cmd-5c647b34f5ce472b",
+        "cmd-bb0393d663b04961",
+        "cmd-74c0479aa03c4b80",
+        "cmd-5f498123b764499f",
+        "cmd-d80013c8ba2b42f9"
+      ],
+      "summary": "arping from node3 failed on assumed eth1 link; tcpdump on node1 eth2 showed the actual ARP requests, proving node3 is wired to node1 eth2 not eth1, and the config was corrected accordingly"
+    },
+    {
+      "requirement": "VyOS node1 SNAT #1 (lan-a source translated as it enters transit) configured and verified",
+      "command_ids": [
+        "cmd-498c7ab4f3d24f19",
+        "cmd-548ca5a59587446d",
+        "cmd-00fb9471991a4311"
+      ],
+      "summary": "VyOS nat source rule 10 masquerades 10.10.1.0/24 to 10.10.2.1 on eth1 (transit) egress; show nat source rules confirms rule active; ping confirms transit link up"
+    },
+    {
+      "requirement": "OPNsense node2 SNAT #2 (transit source translated as it enters lan-b) configured and verified",
+      "command_ids": [
+        "cmd-c6561721dc0c4bff",
+        "cmd-0e200dd2bdba4331",
+        "cmd-2a8e1706f4ec4e95",
+        "cmd-2e225455dad344fd"
+      ],
+      "summary": "config.xml surgery added opt1/opt2 interfaces and a hybrid-mode outbound NAT rule; configctl filter reload applied it; pfctl -s nat/rules shows 'nat on vtnet2 ... from 10.10.2.0/24 to any -> (vtnet2:0)' and pass rules on vtnet1/vtnet2"
+    },
+    {
+      "requirement": "node4 records connection source as node2's lan-b address (10.10.3.254), not node3 or node1",
+      "command_ids": [
+        "cmd-903938b7f2ce49c0",
+        "cmd-d3587b71b3da4da7",
+        "cmd-bc9078d98a724250"
+      ],
+      "summary": "curl from node3 to node4:8080 succeeded; node4's HTTP access log shows client IP 10.10.3.254; OPNsense pf state table shows the double translation 10.10.2.1 -> 10.10.3.254 -> 10.10.3.10:8080"
+    },
+    {
+      "requirement": "node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-fb7e3a21499f4258",
+        "cmd-149195abc67b49da"
+      ],
+      "summary": "Captured boot_id 7668189d... and confirmed interfaces/NAT/route/ip_forward all correct prior to reboot"
+    },
+    {
+      "requirement": "node1 restart acknowledgement, changed boot identity, and post-restart recovery",
+      "command_ids": [
+        "cmd-fd5d57e5d74940c9",
+        "cmd-3236196109904aef",
+        "cmd-5ae34583514644db",
+        "cmd-ba2042539a2b4f14"
+      ],
+      "summary": "Reboot command acknowledged before disconnect; exec timed out during reboot; boot_id changed to 637ca974...; interfaces/NAT/static route/ip_forward all confirmed restored"
+    },
+    {
+      "requirement": "node2 healthy baseline before restart",
+      "command_ids": [
+        "cmd-335b732e320a49d0",
+        "cmd-955f0e3063a9412a"
+      ],
+      "summary": "Captured kern.boottime (05:14:41) and confirmed vtnet1/vtnet2 NAT+filter rules active prior to reboot"
+    },
+    {
+      "requirement": "node2 restart acknowledgement, changed boot identity, and post-restart recovery",
+      "command_ids": [
+        "cmd-d1b110544edc4f21",
+        "cmd-e2c7a1d7fbd14a87",
+        "cmd-7e3e7248fa884c5c",
+        "cmd-77f9546e7fa74f69"
+      ],
+      "summary": "Reboot acknowledged; SSH connection timed out during reboot; kern.boottime changed to 05:23:21; vtnet1 (10.10.2.2) and vtnet2 (10.10.3.254) confirmed restored with correct descriptions/IPs"
+    },
+    {
+      "requirement": "node3 healthy baseline before restart",
+      "command_ids": [
+        "cmd-2debd9e23791418d"
+      ],
+      "summary": "Captured boot_id aad96cc9... prior to reboot"
+    },
+    {
+      "requirement": "node3 restart acknowledgement, changed boot identity, and post-restart recovery",
+      "command_ids": [
+        "cmd-936e5decf0df46f4",
+        "cmd-997568bc488b4729",
+        "cmd-a408c994f2a04c69",
+        "cmd-f0ed61e2c6ad40de"
+      ],
+      "summary": "Reboot acknowledged; exec timed out during reboot; boot_id changed to 65e1f53f...; enp8s0 static IP and route restored, and curl to node4:8080 succeeded again post-restart"
+    },
+    {
+      "requirement": "node4 healthy baseline before restart",
+      "command_ids": [
+        "cmd-a96e892c86a343c7",
+        "cmd-3cd80ea6ae344907"
+      ],
+      "summary": "Captured boot_id 739c9792... and confirmed simple-http.service active and listening on 8080 prior to reboot"
+    },
+    {
+      "requirement": "node4 restart acknowledgement, changed boot identity, and post-restart recovery with re-verified double-NAT behavior",
+      "command_ids": [
+        "cmd-9ab4b3f66f0b40e7",
+        "cmd-d470920dde4c448e",
+        "cmd-247b8d301ca54831",
+        "cmd-b4c0cc05aa654781",
+        "cmd-4ee9baeb2a094f2d",
+        "cmd-2da9570c3e4642b1"
+      ],
+      "summary": "Reboot acknowledged; exec timed out during reboot; boot_id changed to 336bb0d1...; enp8s0 IP and simple-http.service (auto-started) confirmed restored; final curl from node3 succeeded and node4's access log shows source 10.10.3.254, confirming the double-NAT chain survived all four restarts"
+    }
+  ]
+}

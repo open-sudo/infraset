@@ -1,0 +1,55 @@
+{
+  "summary": "The online LVM work was successfully demonstrated before reboot: `/srv/data` stayed mounted, the LV grew, and file checksums were unchanged. The attempt became blocked only after reboot because the authorized management connection never returned; the evidence cannot distinguish a boot failure from a control-plane reconnection failure. One sizing caveat remains: 2,143,289,344 bytes exceeds 2 decimal GB but is 4 MiB short of 2 GiB.",
+  "evidence": [
+    {
+      "source": "Online-growth audit",
+      "finding": "`/srv/data` was mounted read-write on `/dev/mapper/vg_data-lv_data` before and after `lvextend --resizefs`; XFS was grown online."
+    },
+    {
+      "source": "LVM size output",
+      "finding": "The LV grew from 805,306,368 to 2,143,289,344 bytes. This satisfies a decimal 2 GB threshold, but not a 2 GiB threshold of 2,147,483,648 bytes."
+    },
+    {
+      "source": "Integrity checks",
+      "finding": "SHA-256 hashes of both preservation files were identical before and after growth."
+    },
+    {
+      "source": "Pre-reboot validation",
+      "finding": "The UUID-based `/srv/data` fstab entry resolved correctly, the replacement swap file was active, SSH was healthy, no units were failed, and the OS release and kernel were unchanged."
+    },
+    {
+      "source": "Partition conversion audit",
+      "finding": "Changing `/dev/vda3` from swap to an LVM partition succeeded on disk, although `sfdisk` warned that the running kernel retained the old partition table until reboot."
+    },
+    {
+      "source": "Restart evidence",
+      "finding": "Systemd acknowledged the delayed reboot and the connection dropped, but every subsequent managed probe timed out. No new boot ID or post-reboot storage state was observed."
+    }
+  ],
+  "likely_causes": [
+    {
+      "cause": "The immediate blocker was failure of the authorized management path to recover after reboot.",
+      "confidence": "high"
+    },
+    {
+      "cause": "The VM may have booted successfully while the platform control path failed to reconnect; the available timeout evidence cannot verify this.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "The VM may instead have stalled or failed during boot after the partition, swap, LVM, or fstab changes. Pre-reboot validation argues against this, but no console or post-boot evidence exists.",
+      "confidence": "low"
+    },
+    {
+      "cause": "The LV may fail a verifier that interprets \u201c2 GB\u201d as 2 GiB, because LVM metadata left it 4 MiB below that boundary.",
+      "confidence": "medium"
+    }
+  ],
+  "next_attempt_guidance": [
+    "Inspect storage first and prefer an unused disk or partition; avoid converting swap unless it is genuinely the only suitable space.",
+    "Provide a PV large enough for an LV comfortably above both interpretations of 2 GB\u2014prefer at least 2.1 GiB\u2014and verify the LV with `lvs --units b --nosuffix`, not only `df`.",
+    "Create and mount the initial filesystem, record checksums, then use `lvextend --resizefs` while mounted and immediately recheck `findmnt`, LV size, filesystem size, and checksums.",
+    "Use UUID-based fstab entries and run `findmnt --verify`; if swap is converted, activate and persist the replacement before touching the partition.",
+    "Keep the existing OS and kernel and use its installed LVM/XFS tooling; do not perform upgrades.",
+    "Do not reboot solely for a task whose requirement is online growth. If a separate benchmark rule mandates reboot, capture the boot ID first, perform one controlled reboot, and reserve time for post-boot verification of the changed boot ID, mount, LV size, swap, and checksums."
+  ]
+}

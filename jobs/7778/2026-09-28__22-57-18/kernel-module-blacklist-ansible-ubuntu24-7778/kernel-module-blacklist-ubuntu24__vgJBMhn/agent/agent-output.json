@@ -1,0 +1,61 @@
+{
+  "status": "completed",
+  "summary": "Used Ansible (run from node2, the only node with ansible/ansible-playbook installed, acting as control node) to blacklist the usb-storage kernel module on node1. The playbook creates /etc/modprobe.d/blacklist-usb-storage.conf with `blacklist usb-storage` and `install usb-storage /bin/false`, runs update-initramfs -u, and ensures the module isn't currently loaded via community.general.modprobe. Had to first bootstrap sshd on node1 (missing host keys) and set up key-based root SSH from node2, since the default ansible.cfg assumed a pre-provisioned 'antrieb' user that doesn't exist on this vanilla Ubuntu image. Verified modprobe usb-storage fails (rc=1) and the module stays unloaded, both before and after restarting node1. Completed the mandatory restart protocol on both node1 and node2: captured boot_id baselines, restarted each node one at a time, confirmed boot_id changed after each restart, and verified recovery (blacklist enforced on node1; ansible control tooling and connectivity to node1 recovered on node2, confirmed via an idempotent playbook re-run showing changed=0).",
+  "actions_performed": [
+    "Checked node1 and node2 for ansible availability; node2 has ansible-core 2.20.5 + community.general 12.6.0, so it served as the Ansible control node",
+    "Captured pre-change baseline on node1: usb-storage not loaded (lsmod empty), no blacklist file present",
+    "Diagnosed and fixed non-functional sshd on node1 (missing host keys) via ssh-keygen -A and systemctl restart ssh",
+    "Set up passwordless root SSH from node2 to node1 using CLUSTER_SSH_PUBKEY/CLUSTER_SSH_PRIVKEY",
+    "Wrote Ansible inventory (/root/ansible/inventory.ini) and playbook (/root/ansible/blacklist-usb-storage.yml) on node2, overriding the default ansible.cfg (which assumed a non-existent 'antrieb' user) to connect as root using the cluster SSH key",
+    "Ran the playbook: created /etc/modprobe.d/blacklist-usb-storage.conf (blacklist + install /bin/false), ran update-initramfs -u, ensured usb-storage absent",
+    "Verified immediate effect: modprobe usb-storage now fails with rc=1 and lsmod stays empty",
+    "Captured boot_id baselines for node1 and node2 before restarting either",
+    "Restarted node1 via backgrounded `reboot`, polled until exec succeeded again, confirmed boot_id changed",
+    "Re-verified on node1 post-reboot: blacklist file intact, module still blocked by modprobe, lsmod empty",
+    "Restarted node2 via backgrounded `reboot`, polled until exec succeeded again, confirmed boot_id changed",
+    "Re-verified node2 recovery: ansible tooling functional, re-ran playbook against node1 showing changed=0 (idempotent), confirming persisted state and restored cross-node connectivity"
+  ],
+  "evidence": [
+    {
+      "requirement": "usb-storage module blacklisted on node1 (immediate + persistent)",
+      "command_ids": [
+        "cmd-55de29ecc7a0494b",
+        "cmd-4b731f48756449b2",
+        "cmd-2f8d02ea92144dc2",
+        "cmd-caa57d6719044407"
+      ],
+      "summary": "Baseline showed no blacklist file and module unloaded; after the Ansible playbook ran (changed=2), /etc/modprobe.d/blacklist-usb-storage.conf was created, initramfs updated, and modprobe usb-storage explicitly failed (rc=1) confirming the block is active immediately."
+    },
+    {
+      "requirement": "Implementation done via Ansible from a designated control node",
+      "command_ids": [
+        "cmd-e384874676f94ccb",
+        "cmd-8954a3960f524edd",
+        "cmd-4b731f48756449b2"
+      ],
+      "summary": "Confirmed node2 has ansible/ansible-playbook (node1 does not) and used node2 as the control node to run the blacklist playbook against node1 over SSH."
+    },
+    {
+      "requirement": "node1 restart evidence: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-e44f6c1f1b76433f",
+        "cmd-71cc473d5cdf45e8",
+        "cmd-8b14c51e8f164270",
+        "cmd-fe5e3ecd4c404e05",
+        "cmd-1a9afa498dc44815"
+      ],
+      "summary": "Captured boot_id 901ef286... and healthy blacklist state before restart; reboot acknowledgement returned before disconnect; post-restart boot_id changed to d397e892...; verified blacklist config intact and modprobe still blocked after reboot."
+    },
+    {
+      "requirement": "node2 restart evidence: baseline, restart ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-7ae338b30ee3497e",
+        "cmd-7665bd2eaad64ee1",
+        "cmd-dca33bae13774192",
+        "cmd-5e8358c140e94836",
+        "cmd-37770848fe2d49a2"
+      ],
+      "summary": "Captured boot_id 6fd57414... and working ansible install before restart; reboot acknowledgement returned before disconnect; post-restart boot_id changed to b0b9b35a...; verified ansible tooling and SSH connectivity to node1 recovered via a successful idempotent playbook re-run (changed=0)."
+    }
+  ]
+}

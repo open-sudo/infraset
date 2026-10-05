@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ssh-anywhere",
+      "requirement": "Node1 firewall persistently allows SSH from any address",
+      "status": "partially_satisfied",
+      "summary": "ufw rule '22/tcp ALLOW IN Anywhere' was correctly configured and functional connectivity tests (node3->node1:22) succeeded both before and after node1's reboot (cmd-57c61d6320bd49e1, cmd-5716985f2a064d4e, cmd-ee710100681d4dfd). However, the fixed final after_executor lifecycle snapshot \u2014 captured ~36s after the executor's last check \u2014 shows ssh.service and ssh.socket in the FAILED state on node1 and no process listening on port 22/tcp at all (global:after_executor:node1:failed-services, global:after_executor:node1:listening-sockets). This is the last directly observed state of node1 and contradicts the requirement that SSH be reachable from anywhere. No executor command in the window between the last successful check (cmd-d26cb1cbdc0643db, 23:48:21) and the snapshot (23:48:57) explains or remediates this, and the executor never re-tested SSH after this point.",
+      "evidence_ids": [
+        "cmd-57c61d6320bd49e1",
+        "cmd-5716985f2a064d4e",
+        "cmd-ee710100681d4dfd",
+        "global:after_executor:node1:failed-services",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "tcp9000-node2-only",
+      "requirement": "TCP 9000 on node1 allowed only from node2",
+      "status": "satisfied",
+      "summary": "ufw rule '9000/tcp ALLOW IN 10.100.56.11' present and live nc connection tests from node2 to node1:9000 succeeded before node1's restart, after node1's restart, and after node2's own restart, demonstrating the allow rule is functional and persistent.",
+      "evidence_ids": [
+        "cmd-17eadcaa89bb43dd",
+        "cmd-d6ef6b10c33742ff",
+        "cmd-accb9e59d1a94c89",
+        "cmd-5601cfdbfa9b44b0"
+      ]
+    },
+    {
+      "id": "tcp9000-node3-and-others-rejected",
+      "requirement": "TCP 9000 rejected from node3 and everywhere else",
+      "status": "satisfied",
+      "summary": "ufw rules reject 9000/tcp from 10.100.56.12 and from Anywhere (IPv4/IPv6); live nc tests from node3 to node1:9000 returned 'Connection refused' before node1's restart, after node1's restart, and after node3's own restart, confirming the reject behavior is functional and persists across reboots.",
+      "evidence_ids": [
+        "cmd-17eadcaa89bb43dd",
+        "cmd-2ba0cc74ad58420c",
+        "cmd-574d9928f1bf4f58",
+        "cmd-ee710100681d4dfd"
+      ]
+    },
+    {
+      "id": "persistent-firewall",
+      "requirement": "Firewall is enabled persistently (survives reboot) on node1",
+      "status": "satisfied",
+      "summary": "systemctl is-enabled/is-active show ufw enabled and active both before and after node1's reboot; ufw status verbose is identical pre- and post-reboot (same rule set and order), and boot-identity changed confirming a real restart occurred (baseline 242af11e -> post 8b4b99f6).",
+      "evidence_ids": [
+        "cmd-eb4bd02daf34454d",
+        "cmd-6441bcce869d40cd",
+        "cmd-7538798e9285485c",
+        "cmd-44c4a8a7a13a497f"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly configured and functionally verified a persistent UFW firewall on node1 satisfying the port-9000 scoping (allow node2, reject node3/everywhere) and persistence-across-reboot requirements, with solid live nc-based evidence collected before and after each node's restart including boot-id proof of the restarts. The SSH-from-anywhere requirement was also correctly configured and tested successfully mid-session, but the final fixed lifecycle snapshot of node1 \u2014 the last directly observed state \u2014 shows sshd (ssh.service/ssh.socket) failed and port 22 no longer listening at all, which the executor's own checks did not catch since they stopped testing before this point. This is a material, unresolved discrepancy between the executor's 'completed' claim and the last observed state of the very requirement (SSH access) the task explicitly calls for. Minor additional hygiene issues include leftover temporary nc test log files on node1 despite a claimed cleanup.",
+  "limitations": [
+    "The window between the executor's last SSH check on node1 (23:48:21) and the final lifecycle snapshot (23:48:57) is not covered by any executor command, so the cause of the ssh.service failure cannot be attributed to a specific action.",
+    "It is unclear from the evidence whether the lifecycle snapshot's data collection method depends on network SSH to node1; if it does not, the collector succeeding for other node1 observations despite a failed sshd is plausible but the mechanism is not documented in the evidence provided.",
+    "No further executor evidence exists after the final ufw status check to confirm SSH was restored, so the true end-state of the SSH requirement is unresolved rather than affirmatively broken beyond the snapshot."
+  ],
+  "command_stats": {
+    "total": 35,
+    "successful": 29,
+    "failed": 6,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.55,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 0.875,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "Executor's mutations were largely bounded and purposeful: ufw default/rule configuration (required), and three short-lived nc listener sessions on node1 used only to verify allow/reject behavior (cmd-bcab7680810447ef, cmd-21f976a7237c42f2, cmd-6427fc7fb82d4ce2), each followed by a pkill teardown (cmd-d4948e9c80bd4e05, cmd-cf2e7b9f97c9453f, cmd-860d5f5b900d4d22). However, contrary to the executor's own claim of having 'cleaned up temporary nc listener/test processes,' the log files /tmp/nc9000.log and /tmp/nc9000.out remain present on node1 in the final after_executor snapshot \u2014 abandoned residue not removed (global:after_executor:node1:temporary-files, cmd-bcab7680810447ef). More seriously, node1's final observed state shows ssh.service and ssh.socket in a failed state with no listener on port 22 (global:after_executor:node1:failed-services, global:after_executor:node1:listening-sockets), an unexplained and unremediated regression in the final captured environment that the executor did not detect or address after its last check at cmd-d26cb1cbdc0643db.",
+    "evidence_ids": [
+      "cmd-bcab7680810447ef",
+      "cmd-d4948e9c80bd4e05",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 0.875,
+  "provisional_reward": 0.875
+}

@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-cluster-baseline",
+      "requirement": "Run a healthy three-member MariaDB Galera cluster across node1, node2, node3 holding application data",
+      "status": "satisfied",
+      "summary": "Cluster bootstrapped on node1 via galera_new_cluster, node2 and node3 joined via SST; wsrep_cluster_size=3, status Primary, state Synced observed directly on node1. appdb.orders table created with rows and verified identical on all three nodes, including a pre-maintenance write.",
+      "evidence_ids": [
+        "cmd-b00d887d219c4f38",
+        "cmd-ec5baf23061340eb",
+        "cmd-f37b2f57f8dc46ec",
+        "cmd-8725b3337f3c4e87",
+        "cmd-7a796644409e4c7c"
+      ]
+    },
+    {
+      "id": "req-2-full-shutdown",
+      "requirement": "Bring the entire cluster down completely for a maintenance window",
+      "status": "satisfied",
+      "summary": "mariadb was stopped sequentially on node3, node2, then node1, each confirmed inactive, producing a full cluster outage before any restart activity began.",
+      "evidence_ids": [
+        "cmd-52498e517a104fa6",
+        "cmd-d087fd3b7ebe458c",
+        "cmd-d0b0a3b3e5384e8a"
+      ]
+    },
+    {
+      "id": "req-3-safe-restore",
+      "requirement": "Restore the cluster afterward using the correct procedure (bootstrap from the most advanced node)",
+      "status": "satisfied",
+      "summary": "grastate.dat was inspected on all three nodes post-shutdown; node1 had the highest seqno (9, safe_to_bootstrap=1) versus node2 (8) and node3 (7). node1 was correctly bootstrapped via galera_new_cluster rather than an arbitrary node.",
+      "evidence_ids": [
+        "cmd-ca8ebff2d87e4edf",
+        "cmd-596e28084a834abf",
+        "cmd-188a6524aa224c7e",
+        "cmd-50397ccd7d8841a9"
+      ]
+    },
+    {
+      "id": "req-4-writes-and-members",
+      "requirement": "All committed writes still present and all three members serving again after restart",
+      "status": "satisfied",
+      "summary": "After node2 and node3 rejoined via SST, wsrep_cluster_size=3/Primary/Synced was observed on node1, node2, and node3, and all pre-maintenance rows (including the row written just before shutdown) were present identically on every node. A new post-restore write from node3 replicated instantly to node1, confirming a live, functioning 3-way cluster.",
+      "evidence_ids": [
+        "cmd-5224c8c1d5ce4108",
+        "cmd-2b31af4612ae450e",
+        "cmd-a5ede6fd6a064dd3",
+        "cmd-aec3cea679c84dbe",
+        "cmd-0021857e02984170",
+        "cmd-2721dfb1287f40d2",
+        "cmd-2561648b2a9d4a28"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a genuine 3-node MariaDB Galera cluster, demonstrated a complete cluster shutdown (all three nodes stopped, full outage), and correctly restored it by bootstrapping from the node with the highest grastate seqno and rejoining the other two via SST. Post-restore evidence directly shows all three nodes serving (cluster size 3, Primary, Synced) with every committed write intact, satisfying the maintenance-window contract with a clear before/disruption/after transition. The independently mandated per-node restart evidence protocol was also executed correctly: each node was rebooted one at a time, boot_id changes were directly observed and match the fixed after-executor snapshot exactly, and the cluster/service/data state was confirmed recovered after each individual reboot without ever dropping below quorum. Hygiene is good overall, with only a trivial, non-security leftover reboot.log file per node.",
+  "limitations": [
+    "Selected evidence relies on command outputs bounded by the executor's own capture; broader logs (e.g., full SST transfer logs, mysqld error logs) were not reviewed, though the key state-transition commands (stop/start, grastate.dat, wsrep status, SELECT queries) directly support the conclusions.",
+    "The semodule/libsemanage warning during mariadb-server-galera installation was not further investigated; it did not appear to affect subsequent cluster or service operation based on the observed evidence."
+  ],
+  "command_stats": {
+    "total": 72,
+    "successful": 63,
+    "failed": 9,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.88,
+    "summary": "Executor actions were tightly scoped to the task: package installs, /etc/hosts and galera.cnf edits, and firewalld port openings on all three nodes were all necessary prerequisites for a Galera cluster and were retained, not abandoned experiments. The initial `dnf install mariadb-server galera` before discovering that mariadb-server-galera (containing galera_new_cluster) was also required is normal iterative discovery, not a wasted mutation, since all installed packages remained in active use. A GPG-parse failure and retry on node3's dnf install (cmd-59055c8a761e4cff -> cmd-4ef0700203784df0) was a transient failure corrected immediately, not a lasting issue. The only minor residue is a /tmp/reboot.log file left behind on each node from the `nohup reboot >/tmp/reboot.log 2>&1 &` commands used for the mandatory restart protocol (visible in after-executor temporary-files diff on all three nodes); this is bounded, low-risk, and not a security or functional concern, but it was not cleaned up. No failed services, no unexpected listening sockets beyond mariadb/galera ports, and no package-manager health degradation were observed after-executor.",
+    "evidence_ids": [
+      "cmd-ce298bf2e6ce429d",
+      "cmd-5c980915863f4086",
+      "cmd-79d6ee49d3cb45bc",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

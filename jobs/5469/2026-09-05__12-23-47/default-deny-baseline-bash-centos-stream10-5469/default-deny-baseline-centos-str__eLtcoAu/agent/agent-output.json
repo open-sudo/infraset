@@ -1,0 +1,119 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) to route between lan-a (node2, vtnet1/opt1) and lan-b (node3, vtnet2/opt2), added a single default-deny-preserving pf pass rule allowing TCP/8080 from lan-a to lan-b, statically addressed node2/node3's second NICs via NetworkManager (persistent), opened firewalld port 8080 on node3, verified only the intended flow is permitted (all other ports/protocols/directions remain refused), then restarted all three nodes one at a time and re-verified boot-identity change and full recovery of network config, firewall rule, and the TCP/8080 path.",
+  "actions_performed": [
+    "Mapped node1's unaddressed vtnet1/vtnet2 to node2/node3 segments via temp-IP ARP probing",
+    "Added opt1 (LANA, vtnet1, 10.50.1.1/24) and opt2 (LANB, vtnet2, 10.50.2.1/24) interfaces to OPNsense config.xml and applied via configctl interface reconfigure",
+    "Assigned static IPs 10.50.1.2/24 (node2) and 10.50.2.2/24 (node3) via nmcli on enp8s0, with cross routes, so config persists across reboot (raw ip addr/ip route changes were reverted by NetworkManager)",
+    "Confirmed default-deny baseline blocked TCP/8080 and ICMP between lan-a and lan-b before adding any rule",
+    "Added single pf pass rule: interface opt1, source opt1 network, destination opt2 network, tcp/8080, then configctl filter reload",
+    "Opened firewalld port 8080/tcp on node3 (host-level firewall was separately blocking the allowed flow) and started a python http.server test listener on node3:8080",
+    "Verified only node2->node3:8080 succeeds; node2->node3:2222, node3->node2:8080 (reverse), and ICMP both directions all remain refused",
+    "Captured pre-restart boot identities (kern.boottime on node1, boot_id on node2/node3) and health evidence (pf rule, interface IPs, curl 200, ping loss)",
+    "Restarted node1 via shutdown -r now, polled until exec available, confirmed kern.boottime changed, verified interfaces/pf rule/8080 path recovered",
+    "Restarted node2 via systemctl reboot, confirmed boot_id changed, verified enp8s0 IP/route persisted and 8080 path still worked",
+    "Restarted node3 via systemctl reboot, confirmed boot_id changed, verified enp8s0 IP/route/firewalld port persisted, restarted the test listener, and confirmed the 8080 path plus continued blocking of other flows"
+  ],
+  "evidence": [
+    {
+      "requirement": "Baseline: default-deny between lan-a and lan-b before any rule added",
+      "command_ids": [
+        "cmd-206c72d1c49e4f5a",
+        "cmd-474fe90ff15449af"
+      ],
+      "summary": "node3 http.server on 10.50.2.2:8080 running; node2 curl to it times out (exit 28) and ping 100% loss, proving default-deny was in effect prior to the new rule"
+    },
+    {
+      "requirement": "Exactly one pf pass rule added, scoped to opt1(lan-a)->opt2(lan-b) tcp/8080",
+      "command_ids": [
+        "cmd-4bf73798646744aa",
+        "cmd-0fafd5ad80d0464d",
+        "cmd-00ec0e6e53e3436c"
+      ],
+      "summary": "Python script added a single filter rule (interface opt1, source opt1 network, destination opt2 network, port 8080) to config.xml; configctl filter reload succeeded; pfctl/rules.debug show exactly this new pass rule alongside pre-existing management-network rules, nothing else changed"
+    },
+    {
+      "requirement": "node2 (lan-a) can reach node3 (lan-b) on TCP 8080",
+      "command_ids": [
+        "cmd-8cb2558f783d40fc"
+      ],
+      "summary": "curl from node2 to http://10.50.2.2:8080/ returns HTTP_CODE:200 after firewalld on node3 was opened for 8080"
+    },
+    {
+      "requirement": "Every other flow between lan-a and lan-b remains refused",
+      "command_ids": [
+        "cmd-5bebddfd157e465c",
+        "cmd-2eb1bfe30f844e7b"
+      ],
+      "summary": "node2->node3:2222 (different port) fails (curl exit 28/connection refused-timeout), node3->node2:8080 (reverse direction) fails (HTTP_CODE:000), and ICMP is blocked in both directions (100% ping loss each way)"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline before restart",
+      "command_ids": [
+        "cmd-8860320dbbb3464d",
+        "cmd-81e820aa423c4712",
+        "cmd-0b3964ed73db44bd"
+      ],
+      "summary": "Pre-restart: vtnet1/vtnet2 have correct IPs, node2 curl to node3:8080 returns 200, and pfctl -sr shows the http-alt (8080) pass rule present"
+    },
+    {
+      "requirement": "node1 restart: acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-c72fc60c60db4af1",
+        "cmd-e983e58dbb314a53",
+        "cmd-45f3e239418c4a9f"
+      ],
+      "summary": "shutdown -r now acknowledged before disconnect; subsequent exec attempt times out (node down); later exec succeeds with kern.boottime changed from 16:44:16 to 16:49:44, proving an actual reboot occurred"
+    },
+    {
+      "requirement": "node1 restart: post-restart recovery of firewall/interfaces/service",
+      "command_ids": [
+        "cmd-51d428721e064c8d",
+        "cmd-340a049af9d44293"
+      ],
+      "summary": "After reboot, vtnet1/vtnet2 IPs and the pf pass rule for 8080 persisted (config.xml-driven), and node2 curl to node3:8080 again returns 200 while ICMP remains blocked"
+    },
+    {
+      "requirement": "node2 restart: acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-d909fbe791c548b8",
+        "cmd-4ac80cf397074cca",
+        "cmd-b19b39ebada146b6"
+      ],
+      "summary": "systemctl reboot acknowledged before disconnect; exec then times out; later exec succeeds with boot_id changed from 06339ff3-... to 16e5f39d-..., proving reboot occurred"
+    },
+    {
+      "requirement": "node2 restart: post-restart recovery of network config and service reachability",
+      "command_ids": [
+        "cmd-4d970eec99b94b17"
+      ],
+      "summary": "After reboot, enp8s0 retained static IP 10.50.1.2/24 and the 10.50.2.0/24 route via NetworkManager persistence, and curl to node3:8080 again returns 200"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline before restart",
+      "command_ids": [
+        "cmd-751ff4d0d63844ad"
+      ],
+      "summary": "Pre-restart: http.server listener running on 10.50.2.2:8080, firewalld shows port 8080/tcp open, boot_id captured as bccb87ac-..."
+    },
+    {
+      "requirement": "node3 restart: acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-65fee84251c14f8d",
+        "cmd-fda41ea9b6b44e14",
+        "cmd-58f76840b0cd4774"
+      ],
+      "summary": "systemctl reboot acknowledged before disconnect; exec then fails with connection reset (node down); later exec succeeds with boot_id changed from bccb87ac-... to f9b46956-..., proving reboot occurred"
+    },
+    {
+      "requirement": "node3 restart: post-restart recovery of network config, firewalld, and service reachability",
+      "command_ids": [
+        "cmd-b2eba06a07bc4e45",
+        "cmd-ecb7486667304ed8",
+        "cmd-23f9959c2bbe4a89",
+        "cmd-c3bc9063f635460d"
+      ],
+      "summary": "After reboot, enp8s0 kept static IP 10.50.2.2/24, route, and firewalld port 8080 (all via persistent NM/firewalld config); node1's pf rule for 8080 still present; test listener restarted; final curl from node2 to node3:8080 returns 200 while ping remains 100% blocked, confirming the exact required policy survived all three restarts"
+    }
+  ]
+}

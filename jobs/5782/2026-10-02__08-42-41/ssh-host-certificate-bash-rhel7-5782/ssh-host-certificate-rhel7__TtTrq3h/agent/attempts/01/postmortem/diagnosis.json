@@ -1,0 +1,56 @@
+{
+  "summary": "The attempt successfully created the CA, signed the active ED25519 host key, validated and installed the HostCertificate configuration, and reloaded an active sshd. It did not prove the required CA-trusting client connection or restart persistence. The evidence establishes a management-transport failure after reload, but is insufficient to determine whether it was caused by the changed SSH host presentation or by an unrelated Harbor failure.",
+  "evidence": [
+    {
+      "source": "Baseline commands",
+      "finding": "node1 ran RHEL 7.9/OpenSSH 7.4; sshd was active and enabled on port 22. The initial boot ID was 1a816f1f-858b-4487-af28-54070d4ce684."
+    },
+    {
+      "source": "CA creation and certificate inspection",
+      "finding": "A root-owned RSA CA was created with fingerprint SHA256:84+fAj7e59J2xMU5t14Lf+LwJPDnbYW+DKFWYP2oa6Q. It signed the active ED25519 host key for principals node1 and 10.100.255.10."
+    },
+    {
+      "source": "sshd validation and reload",
+      "finding": "Both candidate and installed configurations passed sshd validation. Immediately after reload, sshd reported active and its effective configuration contained HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub."
+    },
+    {
+      "source": "Client-verification command",
+      "finding": "The first verification call returned 255 with no remote output. Because the inner ssh failure was guarded by \u201c|| true\u201d and later output was expected, this strongly indicates the remote script never ran or its transport failed, rather than merely an authentication failure in the test."
+    },
+    {
+      "source": "Subsequent health probes",
+      "finding": "Even trivial commands, including \u201ctrue,\u201d returned 255 without output. This confirms loss of the executor control path but does not reveal the underlying SSH diagnostic."
+    },
+    {
+      "source": "Missing evidence",
+      "finding": "There is no wire-level proof that sshd presented the certificate, no successful connection using only an @cert-authority entry, no reboot, and no changed boot ID or post-restart validation."
+    }
+  ],
+  "likely_causes": [
+    {
+      "cause": "The Harbor management SSH transport became unable to establish new sessions after the reload.",
+      "confidence": "high"
+    },
+    {
+      "cause": "The management client may have rejected or otherwise been incompatible with the changed host-key/certificate presentation. The timing supports this hypothesis, but no client stderr or sshd journal evidence identifies it.",
+      "confidence": "medium"
+    },
+    {
+      "cause": "sshd stopped or rejected the installed configuration.",
+      "confidence": "low"
+    },
+    {
+      "cause": "The local client-test command itself simply returned 255 for authentication failure.",
+      "confidence": "low"
+    }
+  ],
+  "next_attempt_guidance": [
+    "On the fresh cluster, capture the baseline boot ID, sshd state, listener, effective host-key configuration, and exact management host-key behavior before changing anything.",
+    "Create the CA and sign an active host key with every name the test client will use as a certificate principal. Inspect the certificate and confirm its public-key fingerprint matches that host key.",
+    "Before touching the production listener, test the candidate configuration with a temporary sshd on an alternate loopback port. Use a client file containing only an @cert-authority entry, StrictHostKeyChecking=yes, an empty global known-hosts file, and HostKeyAlias=node1; require the remote command to succeed.",
+    "Validate the final configuration with /usr/sbin/sshd -t and retain a known-good backup plus a timed, one-shot rollback before reload.",
+    "Perform reload, service/listener checks, and the CA-only local connection test in the same remote execution call. This preserves diagnostic output if later management sessions cannot reconnect.",
+    "After successful trust verification, reboot node1 and prove recovery with a changed boot ID, active/enabled sshd, the effective HostCertificate directive, certificate inspection, and another CA-only connection.",
+    "If the control path fails again, report it as a transport failure and preserve any available client stderr or journal output; do not claim successful client trust or restart persistence without direct evidence."
+  ]
+}

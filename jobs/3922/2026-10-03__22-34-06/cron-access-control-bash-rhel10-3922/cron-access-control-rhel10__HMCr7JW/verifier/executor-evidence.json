@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 9,
+    "successful": 7,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Only root and opsadmin may schedule cron jobs",
+      "command_ids": [
+        "cmd-27e7871d1970412a",
+        "cmd-4508aa595ce3472b"
+      ],
+      "summary": "Shows the exact two-entry allow-list, secure permissions, successful opsadmin scheduling tests, authorized root probes, explicit daemon denial, and no leftover test crontabs before and after reboot."
+    },
+    {
+      "requirement": "Keep the installed operating-system release and kernel",
+      "command_ids": [
+        "cmd-a3ae66e3558d42d6",
+        "cmd-4508aa595ce3472b"
+      ],
+      "summary": "Both baseline and final evidence show RHEL 10.0 with kernel 6.12.0-55.9.1.el10_0.x86_64."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-27e7871d1970412a",
+        "cmd-73c282c41df74a63",
+        "cmd-9ffb4ed3f61049ea",
+        "cmd-4508aa595ce3472b"
+      ],
+      "summary": "Captures the healthy pre-restart cron state, reboot acknowledgement with old boot ID 636556ce-a308-49cc-b873-62cedb1c077d, changed boot ID 33fff7c5-e48b-47ad-ab65-b328a906c3bb, running system state, active/enabled crond, persisted configuration, and recovered access enforcement."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-a3ae66e3558d42d6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:00:29.128429+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 252,
+      "command": "set -eu\nprintf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'OS_RELEASE='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nprintf 'KERNEL='; uname -r\nprintf 'CROND_ACTIVE='; systemctl is-active crond\nprintf 'CROND_ENABLED='; systemctl is-enabled crond\nprintf '%s\\n' 'CRON_ALLOW_BEGIN'; if [ -e /etc/cron.allow ]; then stat -c 'mode=%a owner=%U group=%G size=%s' /etc/cron.allow; sed -n '1,40p' /etc/cron.allow; else printf 'ABSENT\\n'; fi; printf '%s\\n' 'CRON_ALLOW_END'\nprintf '%s\\n' 'CRON_DENY_BEGIN'; if [ -e /etc/cron.deny ]; then stat -c 'mode=%a owner=%U group=%G size=%s' /etc/cron.deny; sed -n '1,40p' /etc/cron.deny; else printf 'ABSENT\\n'; fi; printf '%s\\n' 'CRON_DENY_END'\nfor u in root opsadmin; do if id \"$u\" >/dev/null 2>&1; then printf 'USER_%s=present\\n' \"$u\"; id \"$u\"; else printf 'USER_%s=absent\\n' \"$u\"; fi; done\nrpm -q cronie 2>/dev/null || true",
+      "stdout": "BOOT_ID=636556ce-a308-49cc-b873-62cedb1c077d\nOS_RELEASE=rhel 10.0\nKERNEL=6.12.0-55.9.1.el10_0.x86_64\nCROND_ACTIVE=active\nCROND_ENABLED=enabled\nCRON_ALLOW_BEGIN\nABSENT\nCRON_ALLOW_END\nCRON_DENY_BEGIN\nmode=644 owner=root group=root size=0\nCRON_DENY_END\nUSER_root=present\nuid=0(root) gid=0(root) groups=0(root)\nUSER_opsadmin=absent\ncronie-1.7.0-9.el10.x86_64"
+    },
+    {
+      "command_id": "cmd-ccddc192140b4fd6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:00:40.107643+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 193,
+      "command": "set -eu\nif ! getent passwd opsadmin >/dev/null; then useradd --create-home --shell /bin/bash opsadmin; fi\ntmpfile=$(mktemp /etc/.cron.allow.XXXXXX)\nprintf '%s\\n' root opsadmin > \"$tmpfile\"\nchown root:root \"$tmpfile\"\nchmod 600 \"$tmpfile\"\nmv -f \"$tmpfile\" /etc/cron.allow\nrestorecon /etc/cron.allow >/dev/null 2>&1 || true\nprintf 'configured\\n'",
+      "stdout": "configured"
+    },
+    {
+      "command_id": "cmd-27e7871d1970412a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:01:00.770140+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 223,
+      "command": "set -eu\nprintf '%s\\n' 'CONFIG_BEGIN'\nstat -c 'mode=%a owner=%U group=%G type=%F' /etc/cron.allow\nnl -ba /etc/cron.allow\nprintf '%s\\n' 'CONFIG_END'\nprintf 'ALLOW_SHA256='; sha256sum /etc/cron.allow | awk '{print $1}'\nprintf 'OPSADMIN='; getent passwd opsadmin\nprintf 'CROND_ACTIVE='; systemctl is-active crond\nprintf 'CROND_ENABLED='; systemctl is-enabled crond\nprintf '%s\\n' 'OPSADMIN_INSTALL_TEST_BEGIN'\nprintf '17 3 31 2 * /usr/bin/true\\n' | runuser -u opsadmin -- crontab -\nrunuser -u opsadmin -- crontab -l\nrunuser -u opsadmin -- crontab -r\nif runuser -u opsadmin -- crontab -l >/tmp/opsadmin-post.out 2>&1; then printf 'unexpected_crontab_remains\\n'; cat /tmp/opsadmin-post.out; exit 1; else cat /tmp/opsadmin-post.out; fi\nrm -f /tmp/opsadmin-post.out\nprintf '%s\\n' 'OPSADMIN_INSTALL_TEST_END'\nprintf '%s\\n' 'DENIED_DAEMON_TEST_BEGIN'\nset +e\nprintf '18 3 31 2 * /usr/bin/true\\n' | runuser -u daemon -- crontab - >/tmp/daemon-test.out 2>&1\ndeny_rc=$?\nset -e\ncat /tmp/daemon-test.out\nrm -f /tmp/daemon-test.out\nprintf 'DENIED_DAEMON_RC=%s\\n' \"$deny_rc\"\n[ \"$deny_rc\" -ne 0 ]\n[ ! -e /var/spool/cron/daemon ]\nprintf '%s\\n' 'DENIED_DAEMON_TEST_END'\nprintf 'ROOT_ACCESS_PROBE='; if runuser -u root -- crontab -l >/tmp/root-probe.out 2>&1; then printf 'authorized_existing_crontab\\n'; else if grep -q 'not allowed' /tmp/root-probe.out; then cat /tmp/root-probe.out; rm -f /tmp/root-probe.out; exit 1; else printf 'authorized_no_crontab\\n'; fi; fi\nrm -f /tmp/root-probe.out",
+      "stdout": "CONFIG_BEGIN\nmode=600 owner=root group=root type=regular file\n     1\troot\n     2\topsadmin\nCONFIG_END\nALLOW_SHA256=bac44336382017bfe2ca8146ed4d821102782328b63daf3ebe53fafc73b1c0a2\nOPSADMIN=opsadmin:x:1000:1000::/home/opsadmin:/bin/bash\nCROND_ACTIVE=active\nCROND_ENABLED=enabled\nOPSADMIN_INSTALL_TEST_BEGIN\n17 3 31 2 * /usr/bin/true\n/home/opsadmin/.cache/crontab: mkdir: No such file or directory\nno crontab for opsadmin\nOPSADMIN_INSTALL_TEST_END\nDENIED_DAEMON_TEST_BEGIN\nYou (daemon) are not allowed to use this program (crontab)\nSee crontab(1) for more information\nDENIED_DAEMON_RC=1\nDENIED_DAEMON_TEST_END\nROOT_ACCESS_PROBE=authorized_no_crontab"
+    },
+    {
+      "command_id": "cmd-73c282c41df74a63",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:01:10.421517+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 160,
+      "command": "set -eu\nprintf 'PRE_REBOOT_BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nsync\nsystemd-run --unit=benchmark-reboot --on-active=3s /usr/bin/systemctl reboot\nprintf 'REBOOT_ACKNOWLEDGED=scheduled\\n'",
+      "stdout": "PRE_REBOOT_BOOT_ID=636556ce-a308-49cc-b873-62cedb1c077d\nRunning timer as unit: benchmark-reboot.timer\nWill run service as unit: benchmark-reboot.service\nREBOOT_ACKNOWLEDGED=scheduled"
+    },
+    {
+      "command_id": "cmd-4a35d34d66794b51",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:01:13.686441+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 120,
+      "command": "printf 'POLL_BOOT_ID='; cat /proc/sys/kernel/random/boot_id; systemctl is-system-running --wait 2>/dev/null || true",
+      "stdout": "POLL_BOOT_ID=636556ce-a308-49cc-b873-62cedb1c077d\nrunning"
+    },
+    {
+      "command_id": "cmd-84037e644e8f4c32",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:01:18.018858+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2134,
+      "command": "sleep 4\nprintf 'POLL_BOOT_ID='; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-8583206b89a447e4",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:01:22.254606+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2123,
+      "command": "printf 'POST_REBOOT_BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'SYSTEM_STATE='; systemctl is-system-running 2>/dev/null || true",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-9ffb4ed3f61049ea",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:01:26.514231+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 90,
+      "command": "printf 'POST_REBOOT_BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'SYSTEM_STATE='; systemctl is-system-running 2>/dev/null || true",
+      "stdout": "POST_REBOOT_BOOT_ID=33fff7c5-e48b-47ad-ab65-b328a906c3bb\nSYSTEM_STATE=running"
+    },
+    {
+      "command_id": "cmd-4508aa595ce3472b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T03:01:41.790977+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 187,
+      "command": "set -eu\nprintf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'OS_RELEASE='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nprintf 'KERNEL='; uname -r\nprintf 'SYSTEM_STATE='; systemctl is-system-running\nprintf 'CROND_ACTIVE='; systemctl is-active crond\nprintf 'CROND_ENABLED='; systemctl is-enabled crond\nprintf '%s\\n' 'PERSISTED_CONFIG_BEGIN'\nstat -c 'mode=%a owner=%U group=%G type=%F' /etc/cron.allow\nnl -ba /etc/cron.allow\nprintf '%s\\n' 'PERSISTED_CONFIG_END'\nprintf 'OPSADMIN='; getent passwd opsadmin\nprintf '%s\\n' 'POST_REBOOT_OPSADMIN_TEST_BEGIN'\nprintf '19 3 31 2 * /usr/bin/true\\n' | runuser -u opsadmin -- env HOME=/home/opsadmin crontab -\nrunuser -u opsadmin -- env HOME=/home/opsadmin crontab -l\nrunuser -u opsadmin -- env HOME=/home/opsadmin crontab -r\n[ ! -e /var/spool/cron/opsadmin ]\nprintf '%s\\n' 'POST_REBOOT_OPSADMIN_TEST_END'\nprintf '%s\\n' 'POST_REBOOT_DENIAL_TEST_BEGIN'\nset +e\nprintf '20 3 31 2 * /usr/bin/true\\n' | runuser -u daemon -- crontab - >/tmp/post-denial.out 2>&1\ndeny_rc=$?\nset -e\ncat /tmp/post-denial.out\nrm -f /tmp/post-denial.out\nprintf 'DENIED_DAEMON_RC=%s\\n' \"$deny_rc\"\n[ \"$deny_rc\" -ne 0 ]\n[ ! -e /var/spool/cron/daemon ]\nprintf '%s\\n' 'POST_REBOOT_DENIAL_TEST_END'\nprintf 'ROOT_ACCESS_PROBE='; if runuser -u root -- crontab -l >/tmp/root-post.out 2>&1; then printf 'authorized_existing_crontab\\n'; else if grep -q 'not allowed' /tmp/root-post.out; then cat /tmp/root-post.out; rm -f /tmp/root-post.out; exit 1; else printf 'authorized_no_crontab\\n'; fi; fi\nrm -f /tmp/root-post.out\nprintf 'CRON_SPOOL='; find /var/spool/cron -mindepth 1 -maxdepth 1 -type f -printf '%f\\n' | sort | tr '\\n' ','; printf '\\n'",
+      "stdout": "BOOT_ID=33fff7c5-e48b-47ad-ab65-b328a906c3bb\nOS_RELEASE=rhel 10.0\nKERNEL=6.12.0-55.9.1.el10_0.x86_64\nSYSTEM_STATE=running\nCROND_ACTIVE=active\nCROND_ENABLED=enabled\nPERSISTED_CONFIG_BEGIN\nmode=600 owner=root group=root type=regular file\n     1\troot\n     2\topsadmin\nPERSISTED_CONFIG_END\nOPSADMIN=opsadmin:x:1000:1000::/home/opsadmin:/bin/bash\nPOST_REBOOT_OPSADMIN_TEST_BEGIN\n19 3 31 2 * /usr/bin/true\n/home/opsadmin/.cache/crontab: mkdir: No such file or directory\nPOST_REBOOT_OPSADMIN_TEST_END\nPOST_REBOOT_DENIAL_TEST_BEGIN\nYou (daemon) are not allowed to use this program (crontab)\nSee crontab(1) for more information\nDENIED_DAEMON_RC=1\nPOST_REBOOT_DENIAL_TEST_END\nROOT_ACCESS_PROBE=authorized_no_crontab\nCRON_SPOOL="
+    }
+  ]
+}

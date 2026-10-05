@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "bridge-created",
+      "requirement": "Create a single L2 bridge/domain on node1 joining the two previously separate segments (eth1 facing node2, eth2 facing node3)",
+      "status": "satisfied",
+      "summary": "Baseline showed eth1/eth2 as unconfigured, separate link-local-only segments. Executor created bridge br1 on node1 with eth1 and eth2 as members, both reaching forwarding state, no IP assigned to br1 (pure L2 device).",
+      "evidence_ids": [
+        "cmd-37ab1de9ae844432",
+        "cmd-d1bfc1d44f604222"
+      ]
+    },
+    {
+      "id": "shared-subnet",
+      "requirement": "node2 and node3 configured to share one subnet",
+      "status": "satisfied",
+      "summary": "node2 eth1 configured 192.168.50.11/24 and node3 eth1 configured 192.168.50.12/24 via nmcli, persisted as ifcfg files with ONBOOT=yes, confirmed by reading the resulting ifcfg-eth1 files.",
+      "evidence_ids": [
+        "cmd-52c4f9b33a6c4dbe",
+        "cmd-a45c76a342c9492c",
+        "cmd-c217bc20709c470d",
+        "cmd-725f435270354163"
+      ]
+    },
+    {
+      "id": "direct-l2-forwarding",
+      "requirement": "node2 and node3 reach each other directly with node1 forwarding frames (bridging) rather than routing",
+      "status": "satisfied",
+      "summary": "Bidirectional pings between .11 and .12 succeeded with TTL=64 unchanged (no decrement from a routed hop), and node1's bridge FDB dynamically learned both peers' real (non-gateway) MAC addresses on their respective bridge ports \u2014 direct evidence of transparent L2 forwarding rather than L3 routing.",
+      "evidence_ids": [
+        "cmd-ae1ed79b43164793",
+        "cmd-7463b9196157473e",
+        "cmd-85bb9d5e8dbe48c1"
+      ]
+    },
+    {
+      "id": "bridge-restart-persistence",
+      "requirement": "Bridge configuration (and hence the joined L2 domain) survives a restart of node1",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline (bridge forwarding, boot_id e85bf011...) captured, node1 rebooted, new boot_id (76bd5dea...) confirmed, and post-restart state showed br1-setup.service active, both bridge ports back in forwarding state, and node2<->node3 ping still succeeding \u2014 a full bounded disruption-and-recovery transition was directly observed, not just static configuration.",
+      "evidence_ids": [
+        "cmd-7fae84e4bf1c49e3",
+        "cmd-5bba73e4adce4b5f",
+        "cmd-16da840cdb2c40a5",
+        "cmd-a6d6b47693b84194",
+        "cmd-e3c0ea734018402f"
+      ]
+    },
+    {
+      "id": "node2-node3-ip-persistence",
+      "requirement": "node2/node3 static IP configuration on the shared subnet survives their own restarts",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id/IP baselines captured for node2 and node3; both nodes rebooted with new boot_ids confirmed (1200c70a..., a6f54ccd...); post-restart the eth1 static IPs were intact and ping between the two succeeded, with node1's FDB re-learning both peer MACs, demonstrating a full recovery transition.",
+      "evidence_ids": [
+        "cmd-e201822812154450",
+        "cmd-3fa5259cc3fd4662",
+        "cmd-28c15d2425f14e6b",
+        "cmd-e1c18d2dae274354",
+        "cmd-be80f7b849f5442d",
+        "cmd-1f05cd58b2f3451b",
+        "cmd-fd306ba1b6fa44ef",
+        "cmd-aa86a8a60e7c411a",
+        "cmd-1db7e9e37b984e19"
+      ]
+    }
+  ],
+  "overall_summary": "The executor joined node2's and node3's separate segments into a single transparent L2 domain via a bridge (br1) on node1 spanning eth1/eth2, assigned node2 and node3 addresses on a shared 192.168.50.0/24 subnet, and directly demonstrated bridged (non-routed) forwarding through unchanged ping TTLs and FDB MAC learning on node1. All three nodes were then put through the mandated restart-evidence protocol with pre-restart baselines, boot-identity changes, and confirmed post-restart recovery of the bridge, IP configuration, and L2 connectivity \u2014 a genuine bounded-disruption-and-recovery transition was observed rather than static configuration alone. Minor hygiene note: a small /tmp/reboot.log artifact was left on node2 and node3 from the reboot-scheduling technique.",
+  "limitations": [
+    "Package-health checks timed out on node2/node3 both before and after, so native package-manager consistency could not be independently verified pre/post.",
+    "The persistence mechanism on SONiC (custom shell script + systemd oneshot unit) is a workaround rather than SONiC's native config_db-driven interface configuration; functionality was directly verified across one reboot but longer-term interaction with SONiC's own config-reload tooling was not tested."
+  ],
+  "command_stats": {
+    "total": 46,
+    "successful": 33,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewed all 46 executor commands in order. Legitimate state-changing actions: bridge/member creation on node1 (cmd-d1bfc1d44f604222), nmcli IP configuration on node2/node3 (cmd-52c4f9b33a6c4dbe, cmd-a45c76a342c9492c after earlier failed attempts due to missing sudo/invalid flags that made no state change), and the br1-setup.sh/systemd-unit persistence mechanism (cmd-1987514010974a74, cmd-971d0272355241a6) \u2014 all directly tied to satisfying the L2-bridging outcome or its restart-survival. The three reboot commands were bounded, necessary to fulfill the mandated restart-evidence protocol, and were followed by verification/recovery. Failed nmcli attempts (cmd-52490d521994438a, cmd-d6bf40ecd96841c8, cmd-51498e0efec246b7, cmd-9ba5ac57a5004649) did not mutate state and were corrected with sudo in the next call \u2014 not unnecessary mutations. Minor residue: reboot was scheduled via 'nohup sh -c sleep;reboot >/tmp/reboot.log', leaving /tmp/reboot.log on node2 and node3 in the after-executor snapshot (unremoved, low-risk, non-destructive) \u2014 a small, low-severity piece of leftover state rather than a substantive hygiene failure. No unrelated services were touched, no failed/conflicting units introduced, and no security controls were weakened.",
+    "evidence_ids": [
+      "cmd-52490d521994438a",
+      "cmd-d6bf40ecd96841c8",
+      "cmd-51498e0efec246b7",
+      "cmd-9ba5ac57a5004649",
+      "cmd-28c15d2425f14e6b",
+      "cmd-1f05cd58b2f3451b",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

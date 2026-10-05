@@ -1,0 +1,74 @@
+{
+  "status": "completed",
+  "summary": "Created the appworker account on node1 with session limits of 8192 open files and 256 processes, implemented via an Ansible playbook run from node2 (the node with ansible-core installed, acting as control node). Both node1 and node2 were then each safely restarted one at a time per the mandatory restart protocol, with boot-identity change and post-restart recovery verified.",
+  "actions_performed": [
+    "Inspected both nodes; found node2 has ansible-core 2.20.5 installed (control node) while node1 does not, so used node2 to orchestrate node1 via Ansible over SSH",
+    "Discovered sshd on node1 was inactive/failing (missing host keys and missing /run/sshd privsep dir); ran ssh-keygen -A, created /run/sshd, and enabled/started the ssh service",
+    "Wired passwordless SSH from node2 to node1 using the cluster-provided keypair (CLUSTER_SSH_PRIVKEY/CLUSTER_SSH_PUBKEY) via authorized_keys on node1's root account",
+    "Wrote an Ansible inventory (node1 target) and a playbook using ansible.builtin.user and ansible.builtin.copy that creates user appworker and writes /etc/security/limits.d/appworker.conf with soft/hard nofile=8192 and soft/hard nproc=256",
+    "Ran ansible-playbook from node2 against node1; verified successful execution (changed=2 first run)",
+    "Verified on node1 via id appworker and su - appworker -c 'ulimit -n; ulimit -u' that the account exists and sessions report nofile=8192 and nproc=256",
+    "Captured pre-restart baseline: boot_id, uptime -s, and appworker/limits state on node1; boot_id, uptime -s, and ansible/ssh state on node2",
+    "Restarted node1 via backgrounded systemctl reboot so the ack returned before disconnect, polled until reachable, confirmed boot_id changed (242af11e -> 595efd98) and uptime advanced, and re-verified appworker account, limits.conf content, live ulimit values, and ssh service active",
+    "Restarted node2 via the same safe reboot pattern, polled until reachable, confirmed boot_id changed (416c5cf5 -> f1190db0), then re-verified ansible install, SSH connectivity to node1, and re-ran the playbook idempotently (changed=0) confirming node1's appworker state persisted through both restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "appworker account created on node1 with limits nofile=8192, nproc=256, implemented via Ansible",
+      "command_ids": [
+        "cmd-f9e5f25f2fdf4e2c",
+        "cmd-402a6a3b11404252",
+        "cmd-72cbf8f3715d4eac",
+        "cmd-cc80147e3c644fc0"
+      ],
+      "summary": "Playbook (ansible.builtin.user + copy of limits.d/appworker.conf) executed from node2 against node1 via SSH, run reported changed=2, and direct verification on node1 (id, cat limits file, su - appworker ulimit -n/-u) shows account exists with nofile=8192 and nproc=256."
+    },
+    {
+      "requirement": "node1 baseline health before restart",
+      "command_ids": [
+        "cmd-c3b287a4e54a4344"
+      ],
+      "summary": "Captured boot_id 242af11e..., uptime since 22:57:39, and confirmed appworker account/limits/ulimit values healthy prior to restart."
+    },
+    {
+      "requirement": "node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-0207d1a1ebd34619",
+        "cmd-73820e5006e84579",
+        "cmd-311365a25c6740fd"
+      ],
+      "summary": "systemctl reboot was launched in background so the ack returned before disconnect; subsequent poll timed out (node down) then succeeded, showing the node cycled through unavailability."
+    },
+    {
+      "requirement": "node1 post-restart boot identity change and recovered state",
+      "command_ids": [
+        "cmd-0953ddbff411445e"
+      ],
+      "summary": "New boot_id 595efd98... (changed from 242af11e...) with new boot time 22:59:24; appworker account, limits.d file, live ulimit -n=8192/-u=256, and sshd active all confirmed healthy post-restart."
+    },
+    {
+      "requirement": "node2 (ansible control node) baseline health before restart",
+      "command_ids": [
+        "cmd-c739ec0f94f04d92"
+      ],
+      "summary": "Captured boot_id 416c5cf5..., uptime since 22:57:39, and confirmed ansible-core present prior to restart."
+    },
+    {
+      "requirement": "node2 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-08d2b782d4d74437",
+        "cmd-7f9be6d0215e471b",
+        "cmd-3f78a1e0612544f9",
+        "cmd-7472d1c70b2b4f56"
+      ],
+      "summary": "systemctl reboot launched in background with ack returned before disconnect; subsequent polls show connection timeout then reset then success, confirming the node cycled down and back up."
+    },
+    {
+      "requirement": "node2 post-restart boot identity change and recovered functional state",
+      "command_ids": [
+        "cmd-f5bd01428b3e440b"
+      ],
+      "summary": "New boot_id f1190db0... (changed from 416c5cf5...); re-verified ansible install, live SSH to node1, and a fresh ansible-playbook run against node1 returned changed=0, proving both the control node's tooling and node1's target state (appworker account/limits) survived both restarts intact."
+    }
+  ]
+}

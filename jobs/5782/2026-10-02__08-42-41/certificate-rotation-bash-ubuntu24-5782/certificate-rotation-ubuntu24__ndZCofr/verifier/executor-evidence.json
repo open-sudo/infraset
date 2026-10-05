@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 12,
+    "successful": 12,
+    "failed": 0,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Serve HTTPS on port 8443",
+      "command_ids": [
+        "cmd-0bafed2ec8644972",
+        "cmd-94871fc212b74a57"
+      ],
+      "summary": "Direct listener, TLS handshake, certificate SAN, and successful HTTPS response were observed before and after reboot."
+    },
+    {
+      "requirement": "Automatically renew the certificate before expiry",
+      "command_ids": [
+        "cmd-8c8dd95a8a344eb9",
+        "cmd-056c611ec90d4ed9"
+      ],
+      "summary": "The persistent renewal timer is enabled. A one-day certificate inside the seven-day renewal window was automatically replaced through the systemd renewal unit with a certificate valid for 30 days."
+    },
+    {
+      "requirement": "Pick up each new certificate while continuing to answer requests",
+      "command_ids": [
+        "cmd-0e9eddc521b94817",
+        "cmd-056c611ec90d4ed9"
+      ],
+      "summary": "The served certificate serial changed while the process PID stayed constant; all 150 concurrent test requests succeeded without failures."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-b199a940753a4e20",
+        "cmd-d6eabdff773248ef",
+        "cmd-e57080f99f984d47",
+        "cmd-94871fc212b74a57"
+      ],
+      "summary": "Healthy baseline used boot ID 8d1d94e2-39c3-492e-b9eb-974d111d2137; reboot was acknowledged; the new boot ID was f7ae554f-ddbb-4eef-b149-f516e804bc41; afterward the system was running, HTTPS and the timer were active/enabled, the response succeeded, and the served certificate matched the persisted certificate."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-d02d2d924575476c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:21:16.832191+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1614,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'os='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nprintf 'uid='; id -u\nprintf 'listeners_8443:\\n'; ss -ltnp '( sport = :8443 )' || true\nprintf 'nginx='; systemctl is-active nginx 2>/dev/null || true\nprintf 'apache2='; systemctl is-active apache2 2>/dev/null || true\nprintf 'certbot='; command -v certbot 2>/dev/null || true\nprintf 'openssl='; command -v openssl 2>/dev/null || true\nprintf 'curl='; command -v curl 2>/dev/null || true",
+      "stdout": "node=node1 ip=10.100.219.10\nboot_id=8d1d94e2-39c3-492e-b9eb-974d111d2137\nos=ubuntu 24.04\nuid=0\nlisteners_8443:\nState Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nnginx=inactive\napache2=inactive\ncertbot=openssl=/usr/bin/openssl\ncurl=/usr/bin/curl"
+    },
+    {
+      "command_id": "cmd-a84c128c90f446c9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:21:43.068552+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1705,
+      "command": "set -eu\ninstall -d -m 0755 /usr/local/libexec /etc/rotating-https/live\ncat > /usr/local/libexec/rotating_https_server.py <<'PY_EOF'\n#!/usr/bin/env python3\nimport http.server\nimport signal\nimport ssl\nimport threading\n\nCERT = \"/etc/rotating-https/live/fullchain.pem\"\nKEY = \"/etc/rotating-https/live/privkey.pem\"\n\ncontext = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)\nreload_lock = threading.Lock()\n\ndef reload_certificate(signum=None, frame=None):\n    with reload_lock:\n        context.load_cert_chain(CERT, KEY)\n\nclass Handler(http.server.BaseHTTPRequestHandler):\n    protocol_version = \"HTTP/1.1\"\n    def do_GET(self):\n        body = b\"certificate rotation service\\n\"\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"text/plain\")\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\n    def log_message(self, fmt, *args):\n        return\n\nclass Server(http.server.ThreadingHTTPServer):\n    daemon_threads = True\n    allow_reuse_address = True\n    def get_request(self):\n        sock, address = super().get_request()\n        try:\n            return context.wrap_socket(sock, server_side=True), address\n        except Exception:\n            sock.close()\n            raise\n\nreload_certificate()\nsignal.signal(signal.SIGHUP, reload_certificate)\nserver = Server((\"0.0.0.0\", 8443), Handler)\nserver.serve_forever()\nPY_EOF\nchmod 0755 /usr/local/libexec/rotating_https_server.py\npython3 -m py_compile /usr/local/libexec/rotating_https_server.py\nls -l /usr/local/libexec/rotating_https_server.py",
+      "stdout": "-rwxr-xr-x 1 root root 1260 Oct  2 12:21 /usr/local/libexec/rotating_https_server.py"
+    },
+    {
+      "command_id": "cmd-1e6a2c9d982a48d7",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:21:56.810570+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1938,
+      "command": "set -eu\ncat > /etc/rotating-https/identity.env <<EOF\nDNS_NAME=$NODE_NAME\nIP_ADDRESS=$NODE_IP\nEOF\nchmod 0644 /etc/rotating-https/identity.env\ncat > /usr/local/sbin/rotate-node1-cert <<'SH_EOF'\n#!/bin/sh\nset -eu\n. /etc/rotating-https/identity.env\nforce=0\n[ \"${1:-}\" = \"--force\" ] && force=1\nexec 9>/run/lock/rotate-node1-cert.lock\nflock 9\ncert=/etc/rotating-https/live/fullchain.pem\nkey=/etc/rotating-https/live/privkey.pem\nif [ \"$force\" -eq 0 ] && [ -s \"$cert\" ] && [ -s \"$key\" ] && openssl x509 -in \"$cert\" -checkend 604800 -noout >/dev/null 2>&1; then\n    printf 'certificate still valid beyond renewal window\\n'\n    openssl x509 -in \"$cert\" -noout -serial -enddate\n    exit 0\nfi\ntmpdir=$(mktemp -d /etc/rotating-https/.renew.XXXXXX)\ntrap 'rm -rf \"$tmpdir\"' EXIT HUP INT TERM\nopenssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 30 \\\n    -subj \"/CN=$DNS_NAME\" \\\n    -addext \"subjectAltName=DNS:$DNS_NAME,IP:$IP_ADDRESS\" \\\n    -keyout \"$tmpdir/privkey.pem\" -out \"$tmpdir/fullchain.pem\" >/dev/null 2>&1\nopenssl x509 -in \"$tmpdir/fullchain.pem\" -noout >/dev/null\nopenssl pkey -in \"$tmpdir/privkey.pem\" -check -noout >/dev/null\ninstall -m 0600 -o root -g root \"$tmpdir/privkey.pem\" \"$key\"\ninstall -m 0644 -o root -g root \"$tmpdir/fullchain.pem\" \"$cert\"\nif systemctl is-active --quiet rotating-https.service; then\n    systemctl kill -s HUP --kill-whom=main rotating-https.service\nfi\nprintf 'certificate renewed\\n'\nopenssl x509 -in \"$cert\" -noout -serial -enddate -subject\nSH_EOF\nchmod 0755 /usr/local/sbin/rotate-node1-cert\n/usr/local/sbin/rotate-node1-cert --force",
+      "stdout": "certificate renewed\nserial=2C3A81E16736412A812AA14F30F6F0E7FA766E12\nnotAfter=Nov  1 16:21:55 2026 GMT\nsubject=CN = node1"
+    },
+    {
+      "command_id": "cmd-8c8dd95a8a344eb9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:22:13.759454+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1847,
+      "command": "set -eu\nif ! getent group rotating-https >/dev/null; then groupadd --system rotating-https; fi\nif ! id rotating-https >/dev/null 2>&1; then useradd --system --gid rotating-https --home-dir /nonexistent --shell /usr/sbin/nologin rotating-https; fi\nsed -i 's/install -m 0600 -o root -g root \"$tmpdir\\/privkey.pem\" \"$key\"/install -m 0640 -o root -g rotating-https \"$tmpdir\\/privkey.pem\" \"$key\"/' /usr/local/sbin/rotate-node1-cert\nchown root:rotating-https /etc/rotating-https/live/privkey.pem\nchmod 0640 /etc/rotating-https/live/privkey.pem\ncat > /etc/systemd/system/rotating-https.service <<'UNIT_EOF'\n[Unit]\nDescription=HTTPS service with live certificate reload\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser=rotating-https\nGroup=rotating-https\nExecStart=/usr/local/libexec/rotating_https_server.py\nExecReload=/bin/kill -HUP $MAINPID\nRestart=always\nRestartSec=2s\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nProtectHome=true\nProtectKernelTunables=true\nProtectKernelModules=true\nProtectControlGroups=true\nRestrictSUIDSGID=true\n\n[Install]\nWantedBy=multi-user.target\nUNIT_EOF\ncat > /etc/systemd/system/rotating-https-renew.service <<'UNIT_EOF'\n[Unit]\nDescription=Renew rotating HTTPS certificate when within seven days of expiry\n\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/rotate-node1-cert\nUNIT_EOF\ncat > /etc/systemd/system/rotating-https-renew.timer <<'UNIT_EOF'\n[Unit]\nDescription=Daily certificate expiry check for rotating HTTPS\n\n[Timer]\nOnBootSec=5min\nOnCalendar=*-*-* 03:17:00\nPersistent=true\nUnit=rotating-https-renew.service\n\n[Install]\nWantedBy=timers.target\nUNIT_EOF\nsystemctl daemon-reload\nsystemctl enable --now rotating-https.service rotating-https-renew.timer\nsystemctl is-active rotating-https.service\nsystemctl is-active rotating-https-renew.timer",
+      "stdout": "Created symlink /etc/systemd/system/multi-user.target.wants/rotating-https.service \u2192 /etc/systemd/system/rotating-https.service.\nCreated symlink /etc/systemd/system/timers.target.wants/rotating-https-renew.timer \u2192 /etc/systemd/system/rotating-https-renew.timer.\nactive\nactive"
+    },
+    {
+      "command_id": "cmd-0bafed2ec8644972",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:22:20.794303+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1847,
+      "command": "set -eu\nprintf 'service='; systemctl is-active rotating-https.service\nprintf 'enabled='; systemctl is-enabled rotating-https.service\nprintf 'timer='; systemctl is-active rotating-https-renew.timer\nprintf 'timer_enabled='; systemctl is-enabled rotating-https-renew.timer\nprintf 'pid='; systemctl show -p MainPID --value rotating-https.service\nprintf 'listener:\\n'; ss -ltnp '( sport = :8443 )'\nprintf 'response='; curl --noproxy '*' -ksS --fail --connect-timeout 3 \"https://$NODE_IP:8443/\"\nprintf 'served_certificate:\\n'; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -serial -dates -subject -ext subjectAltName\nprintf 'next_timer:\\n'; systemctl list-timers rotating-https-renew.timer --no-pager",
+      "stdout": "service=active\nenabled=enabled\ntimer=active\ntimer_enabled=enabled\npid=1341\nlistener:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8443      0.0.0.0:*    users:((\"python3\",pid=1341,fd=3))\nresponse=certificate rotation service\nserved_certificate:\nserial=2C3A81E16736412A812AA14F30F6F0E7FA766E12\nnotBefore=Oct  2 16:21:55 2026 GMT\nnotAfter=Nov  1 16:21:55 2026 GMT\nsubject=CN = node1\nX509v3 Subject Alternative Name: \n    DNS:node1, IP Address:10.100.219.10\nnext_timer:\nNEXT                            LEFT LAST PASSED UNIT                       ACTIVATES\nFri 2026-10-02 12:25:45 EDT 3min 26s -         - rotating-https-renew.timer rotating-https-renew.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too."
+    },
+    {
+      "command_id": "cmd-0e9eddc521b94817",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:22:46.939086+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 12039,
+      "command": "set -eu\nbefore_pid=$(systemctl show -p MainPID --value rotating-https.service)\nbefore_serial=$(openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2)\nfailfile=/tmp/rotation-request-failures\n: > \"$failfile\"\n(\n  i=1\n  while [ \"$i\" -le 150 ]; do\n    body=$(curl --noproxy '*' -ksS --fail --max-time 2 \"https://$NODE_IP:8443/\" 2>/dev/null || true)\n    [ \"$body\" = \"certificate rotation service\" ] || printf x >> \"$failfile\"\n    sleep 0.02\n    i=$((i + 1))\n  done\n) &\nrequest_pid=$!\nsleep 0.25\n/usr/local/sbin/rotate-node1-cert --force\nwait \"$request_pid\"\nafter_pid=$(systemctl show -p MainPID --value rotating-https.service)\nafter_serial=$(openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2)\ndisk_serial=$(openssl x509 -in /etc/rotating-https/live/fullchain.pem -noout -serial | cut -d= -f2)\nfailure_count=$(wc -c < \"$failfile\")\nprintf 'before_pid=%s\\nafter_pid=%s\\nbefore_serial=%s\\nafter_serial=%s\\ndisk_serial=%s\\nrequest_count=150\\nrequest_failures=%s\\n' \"$before_pid\" \"$after_pid\" \"$before_serial\" \"$after_serial\" \"$disk_serial\" \"$failure_count\"\n[ \"$before_pid\" = \"$after_pid\" ]\n[ \"$before_serial\" != \"$after_serial\" ]\n[ \"$after_serial\" = \"$disk_serial\" ]\n[ \"$failure_count\" -eq 0 ]\nprintf 'continuity_and_live_reload=PASS\\n'",
+      "stdout": "certificate renewed\nserial=7B7DBE9CABC139A5044E9F60AF11C45A02371F3E\nnotAfter=Nov  1 16:22:35 2026 GMT\nsubject=CN = node1\nbefore_pid=1341\nafter_pid=1341\nbefore_serial=2C3A81E16736412A812AA14F30F6F0E7FA766E12\nafter_serial=7B7DBE9CABC139A5044E9F60AF11C45A02371F3E\ndisk_serial=7B7DBE9CABC139A5044E9F60AF11C45A02371F3E\nrequest_count=150\nrequest_failures=0\ncontinuity_and_live_reload=PASS"
+    },
+    {
+      "command_id": "cmd-056c611ec90d4ed9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:23:11.965827+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 4125,
+      "command": "set -eu\ntmpdir=$(mktemp -d /etc/rotating-https/.expiry-test.XXXXXX)\ntrap 'rm -rf \"$tmpdir\"' EXIT HUP INT TERM\n. /etc/rotating-https/identity.env\nopenssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj \"/CN=$DNS_NAME\" -addext \"subjectAltName=DNS:$DNS_NAME,IP:$IP_ADDRESS\" -keyout \"$tmpdir/key.pem\" -out \"$tmpdir/cert.pem\" >/dev/null 2>&1\ninstall -m 0640 -o root -g rotating-https \"$tmpdir/key.pem\" /etc/rotating-https/live/privkey.pem\ninstall -m 0644 -o root -g root \"$tmpdir/cert.pem\" /etc/rotating-https/live/fullchain.pem\nsystemctl reload rotating-https.service\nsleep 1\npid_before=$(systemctl show -p MainPID --value rotating-https.service)\nshort_serial=$(openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2)\nshort_end=$(openssl x509 -in /etc/rotating-https/live/fullchain.pem -noout -enddate | cut -d= -f2)\nif openssl x509 -in /etc/rotating-https/live/fullchain.pem -checkend 604800 -noout >/dev/null 2>&1; then inside_window=no; else inside_window=yes; fi\nsystemctl start rotating-https-renew.service\nsleep 1\npid_after=$(systemctl show -p MainPID --value rotating-https.service)\nrenewed_serial=$(openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2)\nrenewed_end=$(openssl x509 -in /etc/rotating-https/live/fullchain.pem -noout -enddate | cut -d= -f2)\nif openssl x509 -in /etc/rotating-https/live/fullchain.pem -checkend 604800 -noout >/dev/null 2>&1; then beyond_window=yes; else beyond_window=no; fi\nprintf 'pid_before=%s\\npid_after=%s\\nshort_serial=%s\\nshort_not_after=%s\\ninside_7_day_window=%s\\nrenewed_serial=%s\\nrenewed_not_after=%s\\nrenewed_beyond_7_days=%s\\n' \"$pid_before\" \"$pid_after\" \"$short_serial\" \"$short_end\" \"$inside_window\" \"$renewed_serial\" \"$renewed_end\" \"$beyond_window\"\nsystemctl show rotating-https-renew.service -p Result -p ExecMainStatus --no-pager\ncurl --noproxy '*' -ksS --fail --max-time 3 \"https://$NODE_IP:8443/\"\n[ \"$pid_before\" = \"$pid_after\" ]\n[ \"$short_serial\" != \"$renewed_serial\" ]\n[ \"$inside_window\" = yes ]\n[ \"$beyond_window\" = yes ]\nprintf 'automatic_expiry_based_renewal=PASS\\n'",
+      "stdout": "pid_before=1341\npid_after=1341\nshort_serial=6F01622642C06ED48316F0E5C155E5BC8DFE93BF\nshort_not_after=Oct  3 16:23:08 2026 GMT\ninside_7_day_window=yes\nrenewed_serial=72B36BC4EAC219E2E2EE17A947F0519469D29F3A\nrenewed_not_after=Nov  1 16:23:09 2026 GMT\nrenewed_beyond_7_days=yes\nResult=success\nExecMainStatus=0\ncertificate rotation service\nautomatic_expiry_based_renewal=PASS"
+    },
+    {
+      "command_id": "cmd-b199a940753a4e20",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:23:24.655513+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2582,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service='; systemctl is-active rotating-https.service\nprintf 'service_enabled='; systemctl is-enabled rotating-https.service\nprintf 'timer='; systemctl is-active rotating-https-renew.timer\nprintf 'timer_enabled='; systemctl is-enabled rotating-https-renew.timer\nprintf 'pid='; systemctl show -p MainPID --value rotating-https.service\nprintf 'response='; curl --noproxy '*' -ksS --fail --max-time 3 \"https://$NODE_IP:8443/\"\nprintf 'served_serial='; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2\nprintf 'cert_expiry='; openssl x509 -in /etc/rotating-https/live/fullchain.pem -noout -enddate | cut -d= -f2",
+      "stdout": "boot_id=8d1d94e2-39c3-492e-b9eb-974d111d2137\nservice=active\nservice_enabled=enabled\ntimer=active\ntimer_enabled=enabled\npid=1341\nresponse=certificate rotation service\nserved_serial=72B36BC4EAC219E2E2EE17A947F0519469D29F3A\ncert_expiry=Nov  1 16:23:09 2026 GMT"
+    },
+    {
+      "command_id": "cmd-d6eabdff773248ef",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:23:29.200713+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1451,
+      "command": "set -eu\nsystemd-run --unit=harbor-evidence-reboot --on-active=2s /usr/bin/systemctl reboot\nprintf 'reboot_acknowledged_for=%s\\n' \"$NODE_NAME\"",
+      "stdout": "Running timer as unit: harbor-evidence-reboot.timer\nWill run service as unit: harbor-evidence-reboot.service\nreboot_acknowledged_for=node1"
+    },
+    {
+      "command_id": "cmd-e2710b98447b40bf",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:23:32.937043+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1754,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nsystemctl is-system-running --wait 2>/dev/null || true",
+      "stdout": "boot_id=8d1d94e2-39c3-492e-b9eb-974d111d2137\nrunning"
+    },
+    {
+      "command_id": "cmd-e57080f99f984d47",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:23:40.068838+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1475,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime_seconds='; cut -d. -f1 /proc/uptime",
+      "stdout": "boot_id=f7ae554f-ddbb-4eef-b149-f516e804bc41\nuptime_seconds=5"
+    },
+    {
+      "command_id": "cmd-94871fc212b74a57",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:23:47.372394+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1884,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running --wait\nprintf 'service='; systemctl is-active rotating-https.service\nprintf 'service_enabled='; systemctl is-enabled rotating-https.service\nprintf 'timer='; systemctl is-active rotating-https-renew.timer\nprintf 'timer_enabled='; systemctl is-enabled rotating-https-renew.timer\nprintf 'pid='; systemctl show -p MainPID --value rotating-https.service\nprintf 'listener:\\n'; ss -ltnp '( sport = :8443 )'\nprintf 'response='; curl --noproxy '*' -ksS --fail --max-time 3 \"https://$NODE_IP:8443/\"\nprintf 'served_serial='; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2\nprintf 'disk_serial='; openssl x509 -in /etc/rotating-https/live/fullchain.pem -noout -serial | cut -d= -f2\nprintf 'next_timer:\\n'; systemctl list-timers rotating-https-renew.timer --no-pager",
+      "stdout": "boot_id=f7ae554f-ddbb-4eef-b149-f516e804bc41\nsystem_state=running\nservice=active\nservice_enabled=enabled\ntimer=active\ntimer_enabled=enabled\npid=654\nlistener:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8443      0.0.0.0:*    users:((\"python3\",pid=654,fd=3))\nresponse=certificate rotation service\nserved_serial=72B36BC4EAC219E2E2EE17A947F0519469D29F3A\ndisk_serial=72B36BC4EAC219E2E2EE17A947F0519469D29F3A\nnext_timer:\nNEXT                            LEFT LAST                        PASSED UNIT                       ACTIVATES\nFri 2026-10-02 12:28:32 EDT 4min 47s Fri 2026-10-02 12:22:12 EDT      - rotating-https-renew.timer rotating-https-renew.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too."
+    }
+  ]
+}

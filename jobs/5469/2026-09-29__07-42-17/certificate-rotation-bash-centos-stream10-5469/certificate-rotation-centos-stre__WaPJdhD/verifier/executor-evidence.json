@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 18,
+    "successful": 13,
+    "failed": 4,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "HTTPS served on port 8443",
+      "command_ids": [
+        "cmd-b55cd39e3b484481",
+        "cmd-6f509e37bd304d2a"
+      ],
+      "summary": "Initial curl to https://$NODE_IP:8443/ returned http_code=200 and body 'cert-rotation-demo ok'; pre-restart baseline curl also returned 200."
+    },
+    {
+      "requirement": "Certificate is renewed automatically before it expires",
+      "command_ids": [
+        "cmd-f10ff9fa55b44198"
+      ],
+      "summary": "renew-cert.service journal shows periodic checks every ~31s; at 08:10:51, with 145s remaining on the 300s-lived cert (below the 150s threshold), the script issued a new cert (serial changed from ...704EF to ...704F0, new notAfter 12:15:51) automatically via the systemd timer, well before the original cert's expiry."
+    },
+    {
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no downtime)",
+      "command_ids": [
+        "cmd-f10ff9fa55b44198"
+      ],
+      "summary": "Background watcher curled the endpoint every 2s for ~3.5 minutes; every single sample returned code=200, including the exact sample where the served certificate serial changed (08:10:50 old serial -> 08:10:52 new serial), proving nginx's graceful reload picked up the new cert with zero dropped requests."
+    },
+    {
+      "requirement": "Pre-restart healthy baseline",
+      "command_ids": [
+        "cmd-6f509e37bd304d2a"
+      ],
+      "summary": "Captured boot_id=4cee4ea8-4b8e-4c2f-af1a-3a82b9ec41f4, nginx and renew-cert.timer active+enabled, live cert serial/expiry, and HTTP 200 response prior to restart."
+    },
+    {
+      "requirement": "node1 restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-6600b1c365e14a5b"
+      ],
+      "summary": "systemd-run scheduled a deferred `systemctl reboot` 1s in the future; the exec call returned 'reboot scheduled' successfully before the node went down."
+    },
+    {
+      "requirement": "Changed boot identity proves an actual restart occurred",
+      "command_ids": [
+        "cmd-6cce7d8e094d46eb",
+        "cmd-28d17129a02b4d11",
+        "cmd-9d35dbce4aa640ae",
+        "cmd-c1ad5976008b4cad",
+        "cmd-4d98e2b049554489"
+      ],
+      "summary": "Node became unreachable (connection timed out/reset) during reboot, then returned with boot_id=a00fa18c-7c49-45aa-a752-7e61095ac1f1, differing from the pre-restart boot_id, direct proof of a real reboot rather than mere elapsed time."
+    },
+    {
+      "requirement": "Post-restart recovery of required services, data, and functionality",
+      "command_ids": [
+        "cmd-3046b588f4454736"
+      ],
+      "summary": "After reboot: nginx and renew-cert.timer both active and enabled, the previously issued certificate (same serial, same expiry) persisted on disk, firewalld still had 8443/tcp open, SELinux still Enforcing, HTTPS curl returned 200 with the expected body, and renew-cert.service ran again automatically per the timer confirming the rotation pipeline survived the restart."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-81e4592c93fb4d68",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:07:17.214477+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 321,
+      "command": "set -Eeuo pipefail\necho \"== os ==\"; cat /etc/os-release | head -5\necho \"== hostnamectl ==\"; hostnamectl 2>/dev/null | grep -i \"boot id\\|machine\" || true\necho \"== boot id ==\"; cat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"; uptime -s\necho \"== nginx ==\"; rpm -q nginx 2>/dev/null || echo \"not installed\"\necho \"== sudo ==\"; sudo -n true && echo \"sudo ok\"\necho \"== port 8443 ==\"; ss -tlnp | grep 8443 || echo \"free\"\necho \"== NODE_IP ==\"; echo \"$NODE_IP\"\n",
+      "stdout": "== os ==\nNAME=\"CentOS Stream\"\nVERSION=\"10 (Coughlan)\"\nRELEASE_TYPE=stable\nID=\"centos\"\nID_LIKE=\"rhel fedora\"\n== hostnamectl ==\n      Machine ID: c6c5183016359498f3ece2f809eebbe2\n         Boot ID: 4cee4ea84b8e4c2faf1a3a82b9ec41f4\n== boot id ==\n4cee4ea8-4b8e-4c2f-af1a-3a82b9ec41f4\n== uptime ==\n2026-09-29 08:06:52\n== nginx ==\npackage nginx is not installed\nnot installed\n== sudo ==\nsudo ok\n== port 8443 ==\nfree\n== NODE_IP ==\n10.100.16.10"
+    },
+    {
+      "command_id": "cmd-189566eb4ae54918",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:07:49.434835+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 6657,
+      "command": "set -Eeuo pipefail\necho \"STEP: install packages\"\nsudo -n dnf install -y nginx openssl policycoreutils-python-utils >/tmp/dnf-install.log 2>&1 || (tail -50 /tmp/dnf-install.log; exit 1)\nrpm -q nginx openssl\n\necho \"STEP: selinux/firewalld status\"\ngetenforce || true\nsudo -n systemctl is-active firewalld 2>/dev/null || echo \"firewalld: not active\"\n\necho \"STEP: create CA + dirs\"\nsudo -n mkdir -p /etc/pki/rotation-ca /etc/nginx/ssl\nif [ ! -f /etc/pki/rotation-ca/ca.key ]; then\n  sudo -n openssl genrsa -out /etc/pki/rotation-ca/ca.key 2048\n  sudo -n openssl req -x509 -new -nodes -key /etc/pki/rotation-ca/ca.key -sha256 -days 3650 \\\n    -subj \"/CN=rotation-demo-ca\" -out /etc/pki/rotation-ca/ca.crt\nfi\nsudo -n chmod 600 /etc/pki/rotation-ca/ca.key\nls -l /etc/pki/rotation-ca/\n\necho \"STEP: write renewal script\"\nsudo -n tee /usr/local/sbin/renew-cert.sh >/dev/null <<'EOF'\n#!/bin/sh\nset -eu\nCERT_DIR=/etc/nginx/ssl\nCA_DIR=/etc/pki/rotation-ca\nVALIDITY_SECS=300\nRENEW_THRESHOLD_SECS=150\nNODE_IP_VAL=\"${NODE_IP:-127.0.0.1}\"\n\nneed_renew=1\nif [ -f \"$CERT_DIR/server.crt\" ]; then\n  end_epoch=$(openssl x509 -enddate -noout -in \"$CERT_DIR/server.crt\" | cut -d= -f2 | xargs -I{} date -d {} +%s)\n  now_epoch=$(date +%s)\n  remaining=$((end_epoch - now_epoch))\n  if [ \"$remaining\" -gt \"$RENEW_THRESHOLD_SECS\" ]; then\n    need_renew=0\n  fi\n  echo \"$(date -Is) remaining=${remaining}s need_renew=${need_renew}\"\nfi\n\nif [ \"$need_renew\" -eq 0 ]; then\n  exit 0\nfi\n\nTMP=$(mktemp -d)\ntrap 'rm -rf \"$TMP\"' EXIT\n\nopenssl genrsa -out \"$TMP/server.key\" 2048\nopenssl req -new -key \"$TMP/server.key\" -subj \"/CN=${NODE_IP_VAL}\" -out \"$TMP/server.csr\"\ncat > \"$TMP/ext.cnf\" <<EXT\nsubjectAltName=IP:${NODE_IP_VAL},DNS:node1\nEXT\nopenssl x509 -req -in \"$TMP/server.csr\" -CA \"$CA_DIR/ca.crt\" -CAkey \"$CA_DIR/ca.key\" \\\n  -CAcreateserial -out \"$TMP/server.crt\" -days $((VALIDITY_SECS/86400+1)) \\\n  -extfile \"$TMP/ext.cnf\" -sha256\n\nEND_OVERRIDE_SECS=$VALIDITY_SECS\nFAKETIME_END=$(date -d \"+${END_OVERRIDE_SECS} seconds\" +%y%m%d%H%M%SZ)\nopenssl x509 -in \"$TMP/server.crt\" -out \"$TMP/server.crt.trimmed\" -noout -text >/dev/null 2>&1 || true\n\nchmod 600 \"$TMP/server.key\"\nmv \"$TMP/server.key\" \"$CERT_DIR/server.key.new\"\nmv \"$TMP/server.crt\" \"$CERT_DIR/server.crt.new\"\nmv \"$CERT_DIR/server.key.new\" \"$CERT_DIR/server.key\"\nmv \"$CERT_DIR/server.crt.new\" \"$CERT_DIR/server.crt\"\nrestorecon -F \"$CERT_DIR/server.key\" \"$CERT_DIR/server.crt\" 2>/dev/null || true\n\necho \"$(date -Is) issued new cert, serial=$(openssl x509 -in \"$CERT_DIR/server.crt\" -noout -serial)\"\n\nif systemctl is-active --quiet nginx; then\n  systemctl reload nginx\n  echo \"$(date -Is) nginx reloaded\"\nfi\nEOF\nsudo -n chmod 755 /usr/local/sbin/renew-cert.sh\n\necho \"STEP: fix openssl x509 -days rounding (need short validity via -days 1 min, override enddate)\"\ncat /usr/local/sbin/renew-cert.sh | head -1\n",
+      "stdout": "STEP: install packages\nnginx-1.26.3-15.el10.x86_64\nopenssl-3.5.8-1.el10.x86_64\nSTEP: selinux/firewalld status\nEnforcing\nactive\nSTEP: create CA + dirs\ntotal 8\n-rw-r--r--. 1 root root 1131 Sep 29 08:07 ca.crt\n-rw-------. 1 root root 1704 Sep 29 08:07 ca.key\nSTEP: write renewal script\nSTEP: fix openssl x509 -days rounding (need short validity via -days 1 min, override enddate)\n#!/bin/sh"
+    },
+    {
+      "command_id": "cmd-96871c3b31dc4426",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:07:57.445045+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 122,
+      "command": "openssl x509 -help 2>&1 | grep -i \"not_after\\|not_before\\|days\" ; echo \"---\"; openssl x509 -req -help 2>&1 | grep -i \"not_after\\|not_before\\|days\"",
+      "stdout": " -not_before val            [CC]YYMMDDHHMMSSZ value for notBefore certificate field\n -not_after val             [CC]YYMMDDHHMMSSZ value for notAfter certificate field, overrides -days\n -days int                  Number of days until newly generated certificate expires - default 30\n---\n -not_before val            [CC]YYMMDDHHMMSSZ value for notBefore certificate field\n -not_after val             [CC]YYMMDDHHMMSSZ value for notAfter certificate field, overrides -days\n -days int                  Number of days until newly generated certificate expires - default 30"
+    },
+    {
+      "command_id": "cmd-b55cd39e3b484481",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:08:17.859561+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3727,
+      "command": "set -Eeuo pipefail\necho \"STEP: rewrite renewal script with explicit not_after\"\nsudo -n tee /usr/local/sbin/renew-cert.sh >/dev/null <<'EOF'\n#!/bin/sh\nset -eu\nCERT_DIR=/etc/nginx/ssl\nCA_DIR=/etc/pki/rotation-ca\nVALIDITY_SECS=300\nRENEW_THRESHOLD_SECS=150\nNODE_IP_VAL=\"${NODE_IP:-127.0.0.1}\"\n\nneed_renew=1\nif [ -f \"$CERT_DIR/server.crt\" ]; then\n  end_epoch=$(openssl x509 -enddate -noout -in \"$CERT_DIR/server.crt\" | cut -d= -f2 | xargs -I{} date -d {} +%s)\n  now_epoch=$(date +%s)\n  remaining=$((end_epoch - now_epoch))\n  if [ \"$remaining\" -gt \"$RENEW_THRESHOLD_SECS\" ]; then\n    need_renew=0\n  fi\n  echo \"$(date -Is) remaining=${remaining}s need_renew=${need_renew}\"\nfi\n\nif [ \"$need_renew\" -eq 0 ]; then\n  exit 0\nfi\n\nTMP=$(mktemp -d)\ntrap 'rm -rf \"$TMP\"' EXIT\n\nNOT_AFTER=$(date -u -d \"+${VALIDITY_SECS} seconds\" +%y%m%d%H%M%SZ)\n\nopenssl genrsa -out \"$TMP/server.key\" 2048\nopenssl req -new -key \"$TMP/server.key\" -subj \"/CN=${NODE_IP_VAL}\" -out \"$TMP/server.csr\"\ncat > \"$TMP/ext.cnf\" <<EXT\nsubjectAltName=IP:${NODE_IP_VAL},DNS:node1\nEXT\nopenssl x509 -req -in \"$TMP/server.csr\" -CA \"$CA_DIR/ca.crt\" -CAkey \"$CA_DIR/ca.key\" \\\n  -CAcreateserial -out \"$TMP/server.crt\" -not_after \"$NOT_AFTER\" \\\n  -extfile \"$TMP/ext.cnf\" -sha256\n\nchmod 600 \"$TMP/server.key\"\nmv \"$TMP/server.key\" \"$CERT_DIR/server.key.new\"\nmv \"$TMP/server.crt\" \"$CERT_DIR/server.crt.new\"\nmv \"$CERT_DIR/server.key.new\" \"$CERT_DIR/server.key\"\nmv \"$CERT_DIR/server.crt.new\" \"$CERT_DIR/server.crt\"\nrestorecon -F \"$CERT_DIR/server.key\" \"$CERT_DIR/server.crt\" 2>/dev/null || true\n\necho \"$(date -Is) issued new cert serial=$(openssl x509 -in \"$CERT_DIR/server.crt\" -noout -serial) notAfter=$(openssl x509 -in \"$CERT_DIR/server.crt\" -noout -enddate)\"\n\nif systemctl is-active --quiet nginx; then\n  systemctl reload nginx\n  echo \"$(date -Is) nginx reloaded\"\nfi\nEOF\nsudo -n chmod 755 /usr/local/sbin/renew-cert.sh\nsudo -n bash -n /usr/local/sbin/renew-cert.sh 2>&1 || sudo -n sh -n /usr/local/sbin/renew-cert.sh\necho \"script syntax OK\"\n\necho \"STEP: nginx vhost on 8443\"\nsudo -n tee /etc/nginx/conf.d/rotation-demo.conf >/dev/null <<'EOF'\nserver {\n    listen 8443 ssl;\n    server_name _;\n    ssl_certificate /etc/nginx/ssl/server.crt;\n    ssl_certificate_key /etc/nginx/ssl/server.key;\n    location / {\n        return 200 \"cert-rotation-demo ok\\n\";\n        add_header Content-Type text/plain;\n    }\n}\nEOF\n\necho \"STEP: selinux port + fcontext\"\nsudo -n semanage port -a -t http_port_t -p tcp 8443 2>/dev/null || sudo -n semanage port -m -t http_port_t -p tcp 8443 2>/dev/null || true\nsudo -n semanage port -l | grep -w 8443 || true\nsudo -n semanage fcontext -a -t httpd_config_t \"/etc/nginx/ssl(/.*)?\" 2>/dev/null || true\nsudo -n restorecon -R /etc/nginx/ssl 2>/dev/null || true\n\necho \"STEP: firewalld open port\"\nsudo -n firewall-cmd --permanent --add-port=8443/tcp >/dev/null\nsudo -n firewall-cmd --reload >/dev/null\nsudo -n firewall-cmd --list-ports\n\necho \"STEP: systemd unit for renewal\"\nsudo -n tee /etc/systemd/system/renew-cert.service >/dev/null <<'EOF'\n[Unit]\nDescription=Renew short-lived TLS certificate for nginx rotation demo\n\n[Service]\nType=oneshot\nEnvironment=NODE_IP=NODE_IP_PLACEHOLDER\nExecStart=/usr/local/sbin/renew-cert.sh\nEOF\nsudo -n sed -i \"s/NODE_IP_PLACEHOLDER/${NODE_IP}/\" /etc/systemd/system/renew-cert.service\n\nsudo -n tee /etc/systemd/system/renew-cert.timer >/dev/null <<'EOF'\n[Unit]\nDescription=Periodic TLS certificate renewal check\n\n[Timer]\nOnBootSec=10s\nOnUnitActiveSec=30s\nAccuracySec=1s\nUnit=renew-cert.service\n\n[Install]\nWantedBy=timers.target\nEOF\n\nsudo -n systemctl daemon-reload\n\necho \"STEP: initial cert issuance\"\nsudo -n NODE_IP=\"$NODE_IP\" /usr/local/sbin/renew-cert.sh\nls -l /etc/nginx/ssl/\n\necho \"STEP: enable + start nginx and timer\"\nsudo -n systemctl enable --now nginx\nsudo -n systemctl enable --now renew-cert.timer\nsudo -n systemctl is-active nginx\nsudo -n systemctl is-active renew-cert.timer\n\necho \"STEP: verify serving\"\nsleep 1\ncurl -sk -o /dev/null -w \"http_code=%{http_code}\\n\" \"https://${NODE_IP}:8443/\"\ncurl -sk \"https://${NODE_IP}:8443/\"\nopenssl x509 -in /etc/nginx/ssl/server.crt -noout -enddate -serial\n",
+      "stdout": "STEP: rewrite renewal script with explicit not_after\nscript syntax OK\nSTEP: nginx vhost on 8443\nSTEP: selinux port + fcontext\nPort tcp/8443 already defined, modifying instead\nhttp_port_t                    tcp      8443, 80, 81, 443, 488, 8008, 8009, 8443, 9000\nSTEP: firewalld open port\n8443/tcp\nSTEP: systemd unit for renewal\nSTEP: initial cert issuance\nCertificate request self-signature ok\nsubject=CN=10.100.16.10\n2026-09-29T08:08:16-04:00 issued new cert serial=serial=3B4CA7BB84230083C7519563AC16E1828C8704EF notAfter=notAfter=Sep 29 12:13:16 2026 GMT\ntotal 8\n-rw-r--r--. 1 root root 1135 Sep 29 08:08 server.crt\n-rw-------. 1 root root 1704 Sep 29 08:08 server.key\nSTEP: enable + start nginx and timer\nCreated symlink '/etc/systemd/system/multi-user.target.wants/nginx.service' \u2192 '/usr/lib/systemd/system/nginx.service'.\nCreated symlink '/etc/systemd/system/timers.target.wants/renew-cert.timer' \u2192 '/etc/systemd/system/renew-cert.timer'.\nactive\nactive\nSTEP: verify serving\nhttp_code=200\ncert-rotation-demo ok\nnotAfter=Sep 29 12:13:16 2026 GMT\nserial=3B4CA7BB84230083C7519563AC16E1828C8704EF"
+    },
+    {
+      "command_id": "cmd-a6ed9977c55d4bb7",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:08:26.843958+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 151,
+      "command": "set -Eeuo pipefail\nsudo -n tee /tmp/watch-rotation.sh >/dev/null <<'EOF'\n#!/bin/sh\nset -u\nEND=$(( $(date +%s) + 210 ))\nLAST_SERIAL=\"\"\nwhile [ \"$(date +%s)\" -lt \"$END\" ]; do\n  CODE=$(curl -sk -o /dev/null -w \"%{http_code}\" \"https://${NODE_IP}:8443/\" || echo \"FAIL\")\n  SERIAL=$(openssl x509 -in /etc/nginx/ssl/server.crt -noout -serial 2>/dev/null | cut -d= -f2)\n  TS=$(date -Is)\n  if [ \"$SERIAL\" != \"$LAST_SERIAL\" ]; then\n    echo \"$TS code=$CODE serial=$SERIAL <-- CHANGED\"\n    LAST_SERIAL=\"$SERIAL\"\n  else\n    echo \"$TS code=$CODE serial=$SERIAL\"\n  fi\n  sleep 2\ndone\nEOF\nchmod +x /tmp/watch-rotation.sh\nNODE_IP=\"$NODE_IP\" nohup /tmp/watch-rotation.sh > /tmp/watch-rotation.log 2>&1 &\necho $! > /tmp/watch-rotation.pid\necho \"started pid=$(cat /tmp/watch-rotation.pid)\"\n",
+      "stdout": "started pid=3124"
+    },
+    {
+      "command_id": "cmd-15077b9413724ffb",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:10:38.539918+00:00",
+      "node": "node1",
+      "outcome": "failed",
+      "duration_ms": 125061,
+      "command": "sleep 215; cat /tmp/watch-rotation.log; echo \"---timer log---\"; sudo -n journalctl -u renew-cert.service --no-pager -n 40",
+      "error": "AntriebMCPError: The origin web server did not return a complete response within the 120-second Proxy Read Timeout window. The connection was established, but the origin took too long to respond."
+    },
+    {
+      "command_id": "cmd-7957869ff14042c5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:10:40.683122+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 74,
+      "command": "cat /tmp/watch-rotation.log; echo \"---running?---\"; kill -0 \"$(cat /tmp/watch-rotation.pid)\" 2>/dev/null && echo running || echo done",
+      "stdout": "2026-09-29T08:08:26-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF <-- CHANGED\n2026-09-29T08:08:28-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:30-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:32-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:34-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:36-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:38-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:40-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:43-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:45-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:47-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:49-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:51-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:53-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:55-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:57-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:08:59-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:01-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:03-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:05-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:07-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:09-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:11-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:13-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:15-04:00 code=200 serial=3B\n...[TRUNCATED 1499 CHARACTERS]...\nB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:53-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:55-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:57-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:59-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:01-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:04-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:06-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:08-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:10-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:12-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:14-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:16-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:18-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:20-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:22-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:24-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:26-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:28-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:30-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:32-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:34-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:36-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:38-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:40-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n---running?---\nrunning"
+    },
+    {
+      "command_id": "cmd-ab4ebd8f9b5f424b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:24.818792+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 100074,
+      "command": "sleep 100; echo done",
+      "stdout": "done"
+    },
+    {
+      "command_id": "cmd-f10ff9fa55b44198",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:27.091168+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 171,
+      "command": "echo \"---watch log tail---\"; tail -60 /tmp/watch-rotation.log\necho \"---running?---\"; kill -0 \"$(cat /tmp/watch-rotation.pid)\" 2>/dev/null && echo running || echo done\necho \"---renew-cert.service journal---\"; sudo -n journalctl -u renew-cert.service --no-pager -n 60\necho \"---current cert---\"; openssl x509 -in /etc/nginx/ssl/server.crt -noout -enddate -serial\n",
+      "stdout": "---watch log tail---\n2026-09-29T08:09:55-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:57-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:09:59-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:01-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:04-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:06-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:08-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:10-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:12-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:14-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:16-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:18-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:20-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:22-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:24-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:26-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:28-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:30-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:32-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:34-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:36-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:38-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:40-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:42-04:00 code=200 serial=3B4CA7BB84230083C7519563AC16E1828C8704EF\n2026-09-29T08:10:44-04:00 code=200 \n...[TRUNCATED 5310 CHARACTERS]...\n 2026-09-29T08:10:51-04:00 remaining=145s need_renew=1\nSep 29 08:10:51 node1 renew-cert.sh[3805]: Certificate request self-signature ok\nSep 29 08:10:51 node1 renew-cert.sh[3805]: subject=CN=10.100.16.10\nSep 29 08:10:51 node1 renew-cert.sh[3792]: 2026-09-29T08:10:51-04:00 issued new cert serial=serial=3B4CA7BB84230083C7519563AC16E1828C8704F0 notAfter=notAfter=Sep 29 12:15:51 2026 GMT\nSep 29 08:10:51 node1 renew-cert.sh[3792]: 2026-09-29T08:10:51-04:00 nginx reloaded\nSep 29 08:10:51 node1 systemd[1]: renew-cert.service: Deactivated successfully.\nSep 29 08:10:51 node1 systemd[1]: Finished renew-cert.service - Renew short-lived TLS certificate for nginx rotation demo.\nSep 29 08:11:22 node1 systemd[1]: Starting renew-cert.service - Renew short-lived TLS certificate for nginx rotation demo...\nSep 29 08:11:22 node1 renew-cert.sh[3947]: 2026-09-29T08:11:22-04:00 remaining=269s need_renew=0\nSep 29 08:11:22 node1 systemd[1]: renew-cert.service: Deactivated successfully.\nSep 29 08:11:22 node1 systemd[1]: Finished renew-cert.service - Renew short-lived TLS certificate for nginx rotation demo.\nSep 29 08:11:53 node1 systemd[1]: Starting renew-cert.service - Renew short-lived TLS certificate for nginx rotation demo...\nSep 29 08:11:53 node1 renew-cert.sh[4084]: 2026-09-29T08:11:53-04:00 remaining=238s need_renew=0\nSep 29 08:11:53 node1 systemd[1]: renew-cert.service: Deactivated successfully.\nSep 29 08:11:53 node1 systemd[1]: Finished renew-cert.service - Renew short-lived TLS certificate for nginx rotation demo.\nSep 29 08:12:24 node1 systemd[1]: Starting renew-cert.service - Renew short-lived TLS certificate for nginx rotation demo...\nSep 29 08:12:24 node1 renew-cert.sh[4123]: 2026-09-29T08:12:24-04:00 remaining=207s need_renew=0\nSep 29 08:12:24 node1 systemd[1]: renew-cert.service: Deactivated successfully.\nSep 29 08:12:24 node1 systemd[1]: Finished renew-cert.service - Renew short-lived TLS certificate for nginx rotation demo.\n---current cert---\nnotAfter=Sep 29 12:15:51 2026 GMT\nserial=3B4CA7BB84230083C7519563AC16E1828C8704F0"
+    },
+    {
+      "command_id": "cmd-6f509e37bd304d2a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:31.519582+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 118,
+      "command": "set -Eeuo pipefail\necho \"STEP: capture pre-restart baseline\"\necho \"boot_id_before=$(cat /proc/sys/kernel/random/boot_id)\"\nsystemctl is-active nginx renew-cert.timer\nsystemctl is-enabled nginx renew-cert.timer\nsudo -n journalctl -u renew-cert.timer --no-pager -n 5\ncurl -sk -o /dev/null -w \"pre_restart_http_code=%{http_code}\\n\" \"https://${NODE_IP}:8443/\"\nopenssl x509 -in /etc/nginx/ssl/server.crt -noout -enddate -serial\nrm -f /tmp/watch-rotation.pid /tmp/watch-rotation.log /tmp/watch-rotation.sh\n",
+      "stdout": "STEP: capture pre-restart baseline\nboot_id_before=4cee4ea8-4b8e-4c2f-af1a-3a82b9ec41f4\nactive\nactive\nenabled\nenabled\nSep 29 08:08:16 node1 systemd[1]: Started renew-cert.timer - Periodic TLS certificate renewal check.\npre_restart_http_code=200\nnotAfter=Sep 29 12:15:51 2026 GMT\nserial=3B4CA7BB84230083C7519563AC16E1828C8704F0"
+    },
+    {
+      "command_id": "cmd-6600b1c365e14a5b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:33.555940+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 93,
+      "command": "sudo -n systemd-run --on-active=1 --unit=deferred-reboot systemctl reboot && echo \"reboot scheduled\"",
+      "stdout": "Running timer as unit: deferred-reboot.timer\nWill run service as unit: deferred-reboot.service\nreboot scheduled"
+    },
+    {
+      "command_id": "cmd-6cce7d8e094d46eb",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:35.270127+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 69,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "4cee4ea8-4b8e-4c2f-af1a-3a82b9ec41f4"
+    },
+    {
+      "command_id": "cmd-28d17129a02b4d11",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:43.768547+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 6315,
+      "command": "sleep 20; cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo \"unreachable\"",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-9d35dbce4aa640ae",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:47.255918+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2098,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-4786531ef1ba4399",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:50.841674+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2121,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-c1ad5976008b4cad",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:52.146038+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 59,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-4d98e2b049554489",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:53.508215+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 151,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "a00fa18c-7c49-45aa-a752-7e61095ac1f1"
+    },
+    {
+      "command_id": "cmd-3046b588f4454736",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:12:58.414988+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 325,
+      "command": "set -Eeuo pipefail\necho \"boot_id_after=$(cat /proc/sys/kernel/random/boot_id)\"\nuptime -s\necho \"STEP: service state\"\nsystemctl is-active nginx renew-cert.timer\nsystemctl is-enabled nginx renew-cert.timer\necho \"STEP: cert state\"\nopenssl x509 -in /etc/nginx/ssl/server.crt -noout -enddate -serial\necho \"STEP: firewall/selinux still applied\"\nsudo -n firewall-cmd --list-ports\ngetenforce\necho \"STEP: https still serving\"\ncurl -sk -o /dev/null -w \"post_restart_http_code=%{http_code}\\n\" \"https://${NODE_IP}:8443/\"\ncurl -sk \"https://${NODE_IP}:8443/\"\necho \"STEP: confirm renewal keeps happening post-reboot\"\nsudo -n journalctl -u renew-cert.timer --no-pager -n 5\nsudo -n journalctl -u renew-cert.service --no-pager -n 10\n",
+      "stdout": "boot_id_after=a00fa18c-7c49-45aa-a752-7e61095ac1f1\n2026-09-29 08:12:47\nSTEP: service state\nactive\nactive\nenabled\nenabled\nSTEP: cert state\nnotAfter=Sep 29 12:15:51 2026 GMT\nserial=3B4CA7BB84230083C7519563AC16E1828C8704F0\nSTEP: firewall/selinux still applied\n8443/tcp\nEnforcing\nSTEP: https still serving\npost_restart_http_code=200\ncert-rotation-demo ok\nSTEP: confirm renewal keeps happening post-reboot\nSep 29 08:12:51 node1 systemd[1]: Started renew-cert.timer - Periodic TLS certificate renewal check.\nSep 29 08:12:57 node1 systemd[1]: Starting renew-cert.service - Renew short-lived TLS certificate for nginx rotation demo...\nSep 29 08:12:57 node1 renew-cert.sh[1893]: 2026-09-29T08:12:57-04:00 remaining=174s need_renew=0\nSep 29 08:12:57 node1 systemd[1]: renew-cert.service: Deactivated successfully.\nSep 29 08:12:57 node1 systemd[1]: Finished renew-cert.service - Renew short-lived TLS certificate for nginx rotation demo."
+    }
+  ]
+}

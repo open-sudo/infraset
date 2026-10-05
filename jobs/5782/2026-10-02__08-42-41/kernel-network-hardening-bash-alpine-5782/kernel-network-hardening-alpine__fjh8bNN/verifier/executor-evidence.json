@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 13,
+    "successful": 7,
+    "failed": 6,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Persistently disable IPv4 ICMP redirect acceptance",
+      "command_ids": [
+        "cmd-15ca5198bd8f4823",
+        "cmd-64675042fbc14525",
+        "cmd-593a5faa4f4f409a"
+      ],
+      "summary": "Persistent policy was applied; all/default/eth0/lo reported `accept_redirects=0` before and after reboot."
+    },
+    {
+      "requirement": "Persistently disable IPv4 source-routed packet acceptance",
+      "command_ids": [
+        "cmd-15ca5198bd8f4823",
+        "cmd-64675042fbc14525",
+        "cmd-593a5faa4f4f409a"
+      ],
+      "summary": "Persistent policy was applied; all/default/eth0/lo reported `accept_source_route=0` before and after reboot."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-64675042fbc14525",
+        "cmd-e2a0e0321ed64a7b",
+        "cmd-d9be594893594503",
+        "cmd-593a5faa4f4f409a"
+      ],
+      "summary": "Healthy pre-restart state used boot ID `178dea95-a93a-4bb1-8347-f5c06aad791d`; reboot was acknowledged; post-restart boot ID changed to `d851df90-6d23-44e0-8ddf-16b2794a3aa9`; sysctl service, hardened values, eth0, routes, and connectivity recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-4ced723d6a9a42aa",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:49:13.217009+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2033,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\ncat /etc/os-release\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime='; cat /proc/uptime\nfor key in net.ipv4.conf.all.accept_redirects net.ipv4.conf.default.accept_redirects net.ipv4.conf.all.accept_source_route net.ipv4.conf.default.accept_source_route; do sysctl \"$key\"; done\nprintf '%s\\n' 'interfaces:'\nfor d in /proc/sys/net/ipv4/conf/*; do n=${d##*/}; printf '%s redirects=%s source_route=%s\\n' \"$n\" \"$(cat \"$d/accept_redirects\")\" \"$(cat \"$d/accept_source_route\")\"; done\nprintf '%s\\n' 'persistent sysctl files:'\nfind /etc -maxdepth 3 -type f \\( -path '/etc/sysctl.conf' -o -path '/etc/sysctl.d/*' \\) -print 2>/dev/null\nrc-service sysctl status 2>&1 || true",
+      "stdout": "node=node1 ip=10.100.164.10\nNAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.23.3\nPRETTY_NAME=\"Alpine Linux v3.23\"\nHOME_URL=\"https://alpinelinux.org/\"\nBUG_REPORT_URL=\"https://gitlab.alpinelinux.org/alpine/aports/-/issues\"\nboot_id=178dea95-a93a-4bb1-8347-f5c06aad791d\nuptime=43.40 170.70\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 1\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 1\ninterfaces:\nall redirects=0 source_route=0\ndefault redirects=1 source_route=1\neth0 redirects=1 source_route=1\nlo redirects=1 source_route=1\npersistent sysctl files:\n/etc/sysctl.d/README\n/etc/sysctl.conf\n * status: started"
+    },
+    {
+      "command_id": "cmd-8c5a2f9764354062",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:49:23.161061+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 5067,
+      "command": "set -eu\nprintf '%s\\n' '--- /etc/sysctl.conf ---'\nsed -n '1,240p' /etc/sysctl.conf\nprintf '%s\\n' '--- /etc/sysctl.d/README ---'\nsed -n '1,200p' /etc/sysctl.d/README\nprintf '%s\\n' '--- sysctl init script ---'\nsed -n '1,220p' /etc/init.d/sysctl",
+      "stdout": "--- /etc/sysctl.conf ---\n# content of this file will override /etc/sysctl.d/*\n--- /etc/sysctl.d/README ---\nKernel system variables configuration files\n\nFiles found under the /etc/sysctl.d directory that end with .conf are\nparsed within sysctl(8) at boot time.  If you want to set kernel variables\nyou can either edit /etc/sysctl.conf or make a new file.\n\nThe filename isn't important, but don't make it a package name as it may clash\nwith something the package builder needs later. The file name must end\nwith .conf, or it will not be read.\n\nThe recommended location for local system settings is /etc/sysctl.d/local.conf\nbut as long as you follow the rules for the name of the file, anything will\nwork. see the sysctl.conf(5) man page for details of the format. This manpage\ncan be found in the `procps-doc` package.\n--- sysctl init script ---\n#!/sbin/openrc-run\n\ndepend()\n{\n\tafter clock\n\tbefore bootmisc logger\n\tkeyword -prefix -systemd-nspawn -vserver\n}\n\nstart()\n{\n\tlocal quiet retval=0 status\n\tebegin \"Configuring kernel parameters\"\n\n\tyesno $rc_verbose || quiet=-q\n\n\teindent\n\n\tfor f in /lib/sysctl.d/*.conf \\\n\t\t/usr/lib/sysctl.d/*.conf; do\n\n\t\tif  [ -f /etc/sysctl.d/\"${f##*/}\" ]; then\n\t\t\tveinfo \"Ignoring $f due to /etc/sysctl.d/${f##*/}\"\n\t\t\tcontinue\n\t\tfi\n\n\t\tif [ -f /run/sysctl.d/\"${f##*/}\" ]; then\n\t\t\tveinfo \"Ignoring $f due to /run/sysctl.d/${f##*/}\"\n\t\t\tcontinue\n\t\tfi\n\t\n\t\tif [ -f \"$f\" ]; then\n\t\t\tvebegin \"applying $f\"\n\t\t\tsysctl $quiet -p \"$f\"\n\t\t\tstatus=$?\n\t\t\tif [ $status -gt 0 ]; then\n\t\t\t\t# Don't change retval= since we expect some package/distro provided\n\t\t\t\t# sysctl configurations to break, so just warn when the user wants\n\t\t\t\t# verbose messages\n\t\t\t\tvewarn \"Unable to configure kernel parameters from $f\"\n\t\t\tfi\n\t\tfi\n\tdone\n\n\tfor f in /etc/sysctl.d/*.conf; do\n\n\t\tif [ -f /run/sysctl.d/\"${f##*/}\" ]; then\n\t\t\tveinfo \"Ignoring $f due to /run/sysctl.d/${f##*/}\"\n\t\t\tcontinue\n\t\tfi\n\n\t\tif [ -f \"$f\" ]; then\n\t\t\tvebegin \"applying $f\"\n\t\t\tsysctl $quiet -p \"$f\"\n\t\t\tstatus=$?\n\t\t\tif [ $status -gt 0 ]; then\n\t\t\t\tretval=$(( $retval + $status ))\n\t\t\t\teerror \"Unable to configure kernel parameters from $f\"\n\t\t\tfi\n\t\tfi\n\tdone\n\n\tif [ -f /etc/sysctl.conf ]; then\n\t\tvebegin \"applying /etc/sysctl.conf\"\n\t\tsysctl $quiet -p /etc/sysctl.conf\n\t\tstatus=$?\n\t\tif [ $status -gt 0 ]; then\n\t\t\tretval=$(( $retval + $status ))\n\t\t\teerror \"Unable to configure kernel parameters from /etc/sysctl.conf\"\n\t\tfi\n\tfi\n\n\tfor f in /run/sysctl.d/*.conf; do\n\t\tif [ -f \"$f\" ]; then\n\t\t\tvebegin \"applying $f\"\n\t\t\tsysctl $quiet -p \"$f\"\n\t\t\tstatus=$?\n\t\t\tif [ $status -gt 0 ]; then\n\t\t\t\tretval=$(( $retval + $status ))\n\t\t\t\teerror \"Unable to configure kernel parameters from $f\"\n\t\t\tfi\n\t\tfi\n\tdone\n\teoutdent\n\n\teend $retval\n}"
+    },
+    {
+      "command_id": "cmd-15ca5198bd8f4823",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:49:44.032046+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1444,
+      "command": "set -eu\numask 022\ncat > /etc/sysctl.d/local.conf <<'ANTRIEB_EOF'\n# Disable IPv4 ICMP redirect acceptance and source-routed packets.\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\nnet.ipv4.conf.eth0.accept_redirects = 0\nnet.ipv4.conf.eth0.accept_source_route = 0\nnet.ipv4.conf.lo.accept_redirects = 0\nnet.ipv4.conf.lo.accept_source_route = 0\nANTRIEB_EOF\nsysctl -p /etc/sysctl.d/local.conf",
+      "stdout": "net.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\nnet.ipv4.conf.eth0.accept_redirects = 0\nnet.ipv4.conf.eth0.accept_source_route = 0\nnet.ipv4.conf.lo.accept_redirects = 0\nnet.ipv4.conf.lo.accept_source_route = 0"
+    },
+    {
+      "command_id": "cmd-64675042fbc14525",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:49:56.624915+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2880,
+      "command": "set -eu\nrc-service sysctl restart\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf '%s\\n' '--- persistent policy ---'\ncat /etc/sysctl.d/local.conf\nprintf '%s\\n' '--- live per-interface policy ---'\nfor d in /proc/sys/net/ipv4/conf/*; do n=${d##*/}; printf '%s redirects=%s source_route=%s\\n' \"$n\" \"$(cat \"$d/accept_redirects\")\" \"$(cat \"$d/accept_source_route\")\"; done\nprintf '%s\\n' '--- service/network health ---'\nrc-service sysctl status\nip -4 addr show scope global\nip -4 route show",
+      "stdout": " * WARNING: you are stopping a boot service\n * Configuring kernel parameters ... [ ok ]\nboot_id=178dea95-a93a-4bb1-8347-f5c06aad791d\n--- persistent policy ---\n# Disable IPv4 ICMP redirect acceptance and source-routed packets.\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\nnet.ipv4.conf.eth0.accept_redirects = 0\nnet.ipv4.conf.eth0.accept_source_route = 0\nnet.ipv4.conf.lo.accept_redirects = 0\nnet.ipv4.conf.lo.accept_source_route = 0\n--- live per-interface policy ---\nall redirects=0 source_route=0\ndefault redirects=0 source_route=0\neth0 redirects=0 source_route=0\nlo redirects=0 source_route=0\n--- service/network health ---\n * status: started\n4: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000\n    inet 10.100.164.10/24 brd 10.100.164.255 scope global dynamic noprefixroute eth0\n       valid_lft 3548sec preferred_lft 3098sec\ndefault via 10.100.164.1 dev eth0  src 10.100.164.10  metric 1004 \n10.100.164.0/24 dev eth0 scope link  src 10.100.164.10  metric 1004 "
+    },
+    {
+      "command_id": "cmd-e2a0e0321ed64a7b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:50:04.459967+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1652,
+      "command": "set -eu\nsync\nnohup sh -c 'sleep 2; /sbin/reboot' >/dev/null 2>&1 &\nprintf 'reboot_scheduled node=%s pre_boot_id=' \"$NODE_NAME\"\ncat /proc/sys/kernel/random/boot_id",
+      "stdout": "reboot_scheduled node=node1 pre_boot_id=178dea95-a93a-4bb1-8347-f5c06aad791d"
+    },
+    {
+      "command_id": "cmd-820a7f98633f4d79",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:50:10.205727+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2437,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime='; cat /proc/uptime",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-2bf38201278b4bf3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:50:19.240873+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2414,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime='; cat /proc/uptime\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-cc02ba74c1864485",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:50:22.227903+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 440,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime='; cat /proc/uptime\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-dafdbc8d1f7a43e4",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:50:26.260117+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 411,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime='; cat /proc/uptime\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-e4067230f65e49db",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:50:28.963726+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 499,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime='; cat /proc/uptime\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-86bf3997e14441b6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:50:32.081710+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 425,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime='; cat /proc/uptime\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-d9be594893594503",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:50:35.881068+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1513,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime='; cat /proc/uptime\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"",
+      "stdout": "boot_id=d851df90-6d23-44e0-8ddf-16b2794a3aa9\nuptime=16.10 62.69\nnode=node1 ip=10.100.164.10"
+    },
+    {
+      "command_id": "cmd-593a5faa4f4f409a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T14:50:45.931053+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2664,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime='; cat /proc/uptime\nprintf '%s\\n' '--- persistent policy ---'\nstat -c 'mode=%a owner=%U:%G path=%n' /etc/sysctl.d/local.conf\ncat /etc/sysctl.d/local.conf\nprintf '%s\\n' '--- live IPv4 policy after reboot ---'\nfor d in /proc/sys/net/ipv4/conf/*; do n=${d##*/}; r=$(cat \"$d/accept_redirects\"); s=$(cat \"$d/accept_source_route\"); printf '%s redirects=%s source_route=%s\\n' \"$n\" \"$r\" \"$s\"; [ \"$r\" = 0 ] && [ \"$s\" = 0 ]; done\nprintf '%s\\n' '--- recovered service/network state ---'\nrc-service sysctl status\nrc-update show boot | grep -E '(^|[[:space:]])sysctl([[:space:]]|$)'\nip -4 addr show dev eth0\nip -4 route show\nping -c 1 -W 2 \"$NODE_IP\"",
+      "stdout": "boot_id=d851df90-6d23-44e0-8ddf-16b2794a3aa9\nuptime=25.00 98.27\n--- persistent policy ---\nmode=644 owner=root:root path=/etc/sysctl.d/local.conf\n# Disable IPv4 ICMP redirect acceptance and source-routed packets.\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.default.accept_redirects = 0\nnet.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.default.accept_source_route = 0\nnet.ipv4.conf.eth0.accept_redirects = 0\nnet.ipv4.conf.eth0.accept_source_route = 0\nnet.ipv4.conf.lo.accept_redirects = 0\nnet.ipv4.conf.lo.accept_source_route = 0\n--- live IPv4 policy after reboot ---\nall redirects=0 source_route=0\ndefault redirects=0 source_route=0\neth0 redirects=0 source_route=0\nlo redirects=0 source_route=0\n--- recovered service/network state ---\n * status: started\n               sysctl | boot\n2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000\n    inet 10.100.164.10/24 brd 10.100.164.255 scope global dynamic noprefixroute eth0\n       valid_lft 3584sec preferred_lft 3134sec\ndefault via 10.100.164.1 dev eth0  src 10.100.164.10  metric 1002 \n10.100.164.0/24 dev eth0 scope link  src 10.100.164.10  metric 1002 \nPING 10.100.164.10 (10.100.164.10): 56 data bytes\n64 bytes from 10.100.164.10: seq=0 ttl=64 time=0.029 ms\n\n--- 10.100.164.10 ping statistics ---\n1 packets transmitted, 1 packets received, 0% packet loss\nround-trip min/avg/max = 0.029/0.029/0.029 ms"
+    }
+  ]
+}

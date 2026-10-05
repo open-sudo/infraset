@@ -1,0 +1,84 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) as a router between lan-a (node2) and lan-b (node3) using an Ansible playbook run from the control_node (node4), then executed the mandatory one-at-a-time restart/recovery protocol on all four managed nodes.",
+  "actions_performed": [
+    "Surveyed topology: node1 has eth0(mgmt)/eth1(lan-a)/eth2(lan-b), node2 has ens2(mgmt)/ens7(lan-a), node3 has ens2(mgmt)/ens7(lan-b); confirmed via environment.toml that control_node=node4 (ansible-controller)",
+    "Bootstrapped SSH access by adding CLUSTER_SSH_PUBKEY to the VyOS 'vyos' user via VyOS's own `set system login user vyos authentication public-keys` (committed/saved), since VyOS's sshd disables root login; node2/node3 already trusted the cluster key for user 'antrieb'",
+    "Discovered node2/node3 run systemd-networkd with a wildcard DHCP=yes match on en*/eth* that would reconcile away raw `ip addr` static config, so used higher-priority per-host .network files instead",
+    "Wrote an Ansible project on node4 (/root/ansible/lan-routing/{inventory.ini,playbook.yml,templates/}) with two plays",
+    "Play 1 (host: node1/router): rendered and ran a VyOS configure script setting eth1=10.10.1.254/24, eth2=10.10.2.254/24, and firewall ipv4 forward filter default-action accept (no NAT, so source addresses are preserved), committed and saved",
+    "Play 2 (hosts: node2,node3/lan_hosts): used ansible.builtin.raw (Ubuntu 16.04's Python 3.5 is incompatible with ansible-core 2.20 modules) to write per-node systemd-networkd files assigning ens7=10.10.1.10/24 (node2) / 10.10.2.10/24 (node3) plus a static route to the peer LAN via node1, then restarted systemd-networkd",
+    "Verified end-to-end: ping node2->10.10.2.10 succeeded; a TCP payload sent node2->node3:5201 arrived intact; a tcpdump capture on node3's ens7 showed source IP 10.10.1.10 unmodified (no NAT), confirming original source addresses are preserved on any port/protocol",
+    "Captured pre-restart boot_id baseline on all four nodes, then restarted node1, node2, node3, and node4 one at a time via native reboot, polling each until exec access returned and confirming a changed boot_id",
+    "After each restart, verified VyOS config persistence (save) and systemd-networkd config persistence, and re-confirmed node2<->node3 connectivity; re-ran the full Ansible playbook after all reboots to confirm idempotent success"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 configured to route between lan-a and lan-b with original source addresses preserved, on any port",
+      "command_ids": [
+        "cmd-9e1f4888ff4c4d5e",
+        "cmd-e774d83d6f9f4b28",
+        "cmd-b4f939abd1b74252",
+        "cmd-10133b66d64d4682",
+        "cmd-71c7e8d164b24288"
+      ],
+      "summary": "VyOS eth1/eth2 addressed and forward filter set to accept (no NAT); ping and TCP nc test between node2 and node3 succeeded; tcpdump capture on node3's ens7 shows source IP still 10.10.1.10 (node2's real address), proving no NAT/source rewrite"
+    },
+    {
+      "requirement": "Implementation done via Ansible from the configured control_node",
+      "command_ids": [
+        "cmd-4a9d5d4701a44c28",
+        "cmd-e774d83d6f9f4b28",
+        "cmd-b3a2927e60d34e85"
+      ],
+      "summary": "environment.toml confirms control_node=node4; ansible-playbook run from node4 (ansible-controller image) applied the router config on node1 and the LAN addressing/routes on node2 and node3, and re-ran successfully after all reboots"
+    },
+    {
+      "requirement": "node1 restart evidence: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-d24bf807d31c433c",
+        "cmd-dedd184346214a8d",
+        "cmd-bb8c4b79c8ca4801",
+        "cmd-ef89d732073443f4",
+        "cmd-5635f10c527944b1",
+        "cmd-b4f939abd1b74252"
+      ],
+      "summary": "Baseline boot_id 9028a473...; reboot triggered and node1 became unreachable; boot_id changed to f2d3512e... on return; eth1/eth2 addresses and forward-filter accept rule persisted (VyOS save), and node2->node3 ping succeeded post-restart"
+    },
+    {
+      "requirement": "node2 restart evidence: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-18b9e19d43724aff",
+        "cmd-1eddecf11c6d44cf",
+        "cmd-614d3a531eb14103",
+        "cmd-4bfca6130e2440fb",
+        "cmd-67eb62c8f0654618"
+      ],
+      "summary": "Baseline boot_id e4e401d2...; reboot triggered (SSH connection refused mid-boot); new boot_id f4198708... on return; systemd-networkd file and static route intact, ping to node3 succeeded"
+    },
+    {
+      "requirement": "node3 restart evidence: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-be9a844a05ba4973",
+        "cmd-5379bf908f8b45a1",
+        "cmd-6c7820fc0c5546c9",
+        "cmd-364821deb24b4082",
+        "cmd-7c87a28bb0aa4965",
+        "cmd-09ce1ccabb2b4970"
+      ],
+      "summary": "Baseline boot_id fa1e87e6...; reboot triggered; new boot_id 5424ec17... on return; ens7 address/route file intact, node2->node3 ping succeeded"
+    },
+    {
+      "requirement": "node4 (control_node) restart evidence: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-2c51e2d67b794a3c",
+        "cmd-49d86a238135454b",
+        "cmd-41db376741f643f3",
+        "cmd-9c55499a6b274c37",
+        "cmd-181275cb040f4e06",
+        "cmd-b3a2927e60d34e85"
+      ],
+      "summary": "Baseline boot_id a6937a34...; reboot triggered; new boot_id 7df4172c... on return; Ansible project and cluster SSH key persisted on disk, and a fresh ansible-playbook run against all nodes completed successfully"
+    }
+  ]
+}

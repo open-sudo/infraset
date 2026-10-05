@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node2's HTTP service (port 8080) remains on the private network shared with node1 and is not directly reachable from node3 or via node1's management address's own IP",
+      "status": "satisfied",
+      "summary": "node2-http.service was created bound explicitly to 192.168.50.2:8080 (private link IP only), confirmed via ss listing only that address. Direct curl from node3 to node2's management IP on port 8080 returned HTTP_CODE=000 (connection failed) both before and after node2's restart, confirming the service is not exposed on the shared management network.",
+      "evidence_ids": [
+        "cmd-24574c6b8a084cf8",
+        "cmd-9032eb57118b46ce",
+        "cmd-403c6f85af3043f2"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "A private network link exists between node1 and node2 that node3 cannot directly reach",
+      "status": "satisfied",
+      "summary": "node1 eth1 (192.168.50.1/24) and node2 enp8s0 (192.168.50.2/24) were configured as a private segment; ping between node1 and node2 succeeded, while node3's ping to 192.168.50.2 showed 100% loss with no direct route (only reachable via its unrelated default gateway).",
+      "evidence_ids": [
+        "cmd-fceb67015bfa414d",
+        "cmd-4773e34a1b21474f",
+        "cmd-b2cefb0ca9b04b23",
+        "cmd-c310fb7143194916"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node3 can reach node2's HTTP service via TCP port 80 on node1's management address",
+      "status": "satisfied",
+      "summary": "An OpenWrt DNAT redirect (lan zone src_dport 80 -> priv zone 192.168.50.2:8080, with masquerade to correct return routing) was added and reloaded on node1. curl from node3 to http://10.100.57.10:80/index.html returned HTTP 200 with node2's content, both immediately after configuration and again after all three nodes were restarted.",
+      "evidence_ids": [
+        "cmd-31d2a9d913484c78",
+        "cmd-dfa29605db7546dc",
+        "cmd-d1f2931261844ddd",
+        "cmd-a3d7e4ad46794f5d",
+        "cmd-403c6f85af3043f2"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly identified the pre-wired private-link NICs (node1 eth1 / node2 enp8s0), configured static addressing, moved node2's HTTP service to bind only to that private address, and published it through a DNAT redirect on node1 so that node3 can reach it via node1's management IP on port 80 \u2014 all verified end-to-end with curl from node3, plus a negative test confirming node2's service is unreachable directly. The executor additionally performed the mandatory sequential restart of all three nodes, capturing pre-restart boot identity and healthy state, a restart acknowledgement, a changed post-restart boot identity, and full re-verification of interface, firewall, service, and end-to-end publish-path state for each node; these boot ids are corroborated by the fixed after-executor lifecycle snapshot. All three material task outcomes are satisfied with direct, coherent evidence.",
+  "limitations": [
+    "The executor's own labels for interfaces/network ('priv') do not map to the authored environment's declared network name ('lan'), but the underlying NIC pairing and isolation properties match the intended topology, so this is a naming difference rather than a functional gap.",
+    "One node1 reboot attempt (cmd-b43c4b66ba0547bf) appears to have had no effect based on unchanged boot_id/uptime in following checks; this is treated as an unsuccessful command rather than a state change, per evaluation guidance, but is noted for completeness.",
+    "firewalld on node2 opened port 8080/tcp on the 'public' zone, which includes both the management and private interfaces, rather than restricting the opening to only the private interface; actual exposure is prevented by the service binding to the private IP only, so this is a minor scoping choice rather than a security gap."
+  ],
+  "command_stats": {
+    "total": 49,
+    "successful": 37,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.88,
+    "summary": "Executor commands were generally well-scoped: NIC/firewall configuration on node1, NIC/systemd/firewalld configuration on node2, and read-only verification on node3 all map directly to the task or to the mandated restart-evidence protocol. One anomaly: cmd-b43c4b66ba0547bf issued a backgrounded 'reboot' on node1 ahead of the formal restart step; subsequent boot-id/uptime checks (cmd-2749baf7693b4c69, cmd-a5020c61e7ba46c2, cmd-313e96303a7347a9, cmd-2217e068115c44de) show the boot id never changed and no reboot process was found, so this command had no observed effect on system state and is not counted as a harmful mutation, only an inefficient, unsuccessful attempt. Minor residue: curl response bodies (/tmp/resp.txt through resp4.txt) were left on node3, and node2's firewalld port 8080/tcp was opened on the 'public' zone covering both the management and private interfaces rather than being scoped narrowly to the private interface only; since the service binds solely to the private IP, this does not create actual exposure but is broader than strictly necessary. No destructive actions, no abandoned/failed services, and package-health/failed-services checks show no post-executor regressions.",
+    "evidence_ids": [
+      "cmd-b43c4b66ba0547bf",
+      "cmd-2749baf7693b4c69",
+      "cmd-a5020c61e7ba46c2",
+      "cmd-313e96303a7347a9",
+      "cmd-2217e068115c44de",
+      "cmd-bc71665285354369",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node2:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

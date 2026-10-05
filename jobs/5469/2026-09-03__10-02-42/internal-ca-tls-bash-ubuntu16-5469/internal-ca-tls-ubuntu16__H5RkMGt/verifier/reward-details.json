@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-created",
+      "requirement": "Create a certificate authority named 'Fleet Internal CA' on node1",
+      "status": "satisfied",
+      "summary": "CA private key (4096-bit RSA) and self-signed x509 CA certificate generated on node1 with subject=CN=Fleet Internal CA,O=Fleet Internal CA, 10-year validity (2026-2036). Confirmed via direct openssl x509 -text inspection.",
+      "evidence_ids": [
+        "cmd-74ec67f109da44d4",
+        "cmd-e70b5c87a05845d7",
+        "cmd-72dbba5f66e44fe0"
+      ]
+    },
+    {
+      "id": "cert-issued",
+      "requirement": "Issue node2 a TLS certificate signed by the CA",
+      "status": "satisfied",
+      "summary": "Node2 key/CSR generated with CN=node2 and SAN (DNS:node2, IP:10.100.160.11); signed by the CA producing certs/node2.cert.pem with 'Signature ok' and openssl verify 'OK'. Final cert inspection confirms issuer=CN=Fleet Internal CA,O=Fleet Internal CA and correct SAN.",
+      "evidence_ids": [
+        "cmd-ed11bccee5fc4a69",
+        "cmd-51984333b214498b",
+        "cmd-2181bb77422046d3"
+      ]
+    },
+    {
+      "id": "https-8443",
+      "requirement": "Configure node2 to serve HTTPS on port 8443 using the issued certificate",
+      "status": "satisfied",
+      "summary": "nginx installed and configured on node2 with a vhost listening on 8443 using the deployed cert+key; confirmed listening via ss and validated end-to-end via curl (chain-verified TLS handshake, subject=CN=node2, issuer=Fleet Internal CA, HTTP/1.1 200 OK) from both node1 and node2.",
+      "evidence_ids": [
+        "cmd-05f0b3c9913149d5",
+        "cmd-e895ec24e93d4bdd",
+        "cmd-84414657f229489c",
+        "cmd-a7b65febbcc44d28",
+        "cmd-8abfd23aead6456f",
+        "cmd-621d94a363934000"
+      ]
+    },
+    {
+      "id": "ca-trusted",
+      "requirement": "Install the CA as a trusted system certificate authority on both node1 and node2",
+      "status": "satisfied",
+      "summary": "CA cert copied to /usr/local/share/ca-certificates and update-ca-certificates run on both nodes ('1 added, 0 removed'). Trust verified directly: curl to https://10.100.160.11:8443 succeeds using only the system trust store (no --cacert flag) from both node1 and node2.",
+      "evidence_ids": [
+        "cmd-539e11be41c04353",
+        "cmd-d43815d227a847b6",
+        "cmd-8707e2791cbf4993",
+        "cmd-fec8759587b849ef",
+        "cmd-2aa1b4c441b44046"
+      ]
+    },
+    {
+      "id": "node1-restart",
+      "requirement": "Provider-wide restart protocol: node1 healthy baseline, restart, changed boot identity, recovery",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 1f0657c2 captured pre-restart; reboot triggered and acknowledged; node briefly unreachable (connection refused); new boot_id af5065b3 confirmed, matching the fixed after-executor snapshot. Post-restart recovery directly verified: CA key/cert files intact, SSH restored, and TLS validation of node2's HTTPS endpoint still functional from node1.",
+      "evidence_ids": [
+        "cmd-af6469de0f134c96",
+        "cmd-536a2765dc4f46af",
+        "cmd-0ee4a21b19974889",
+        "cmd-e5e6bda0f32e4728",
+        "cmd-f78007be91994118",
+        "cmd-15043bff74834e89",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "node2-restart",
+      "requirement": "Provider-wide restart protocol: node2 healthy baseline, restart, changed boot identity, recovery",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 8336c3a1 captured with nginx active and HTTPS returning 200; reboot triggered; node briefly unreachable; new boot_id 85564489 confirmed, matching the fixed after-executor snapshot. Post-restart recovery directly verified: nginx auto-started, port 8443 listening, CA trust file present, and TLS handshake/chain validation fully functional.",
+      "evidence_ids": [
+        "cmd-390e8b0e81bf4e44",
+        "cmd-c2fa00c4abc14674",
+        "cmd-428f707248cf4181",
+        "cmd-f858202a64194b60",
+        "cmd-2315be0141cb4030",
+        "global:after_executor:node2:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All four material task outcomes are directly satisfied with concrete evidence: a 'Fleet Internal CA' self-signed CA was created on node1, a chain-verified TLS certificate for node2 (CN=node2, correct SAN) was issued by that CA, node2 serves HTTPS on port 8443 with the issued cert (nginx listening and returning verified 200 responses), and the CA is installed as a trusted system CA on both nodes (confirmed by successful TLS validation using only the system trust store, no --cacert). The independent provider-wide restart protocol was also fully and coherently demonstrated for both nodes: pre-restart baseline, restart acknowledgement, changed boot identity matching the fixed after-executor snapshot, and full post-restart recovery of certificate files, SSH, nginx, and TLS/CA trust. Operational hygiene is strong; a handful of openssl command-line syntax failures due to the older openssl version on Ubuntu 16.04 were quickly self-corrected without leaving conflicting or damaged state.",
+  "limitations": [
+    "Node2's package-health and listening-socket global observations in the fixed snapshots return generic/empty output, so cross-verification of nginx package state relies on the executor's own dpkg/ss commands rather than the fixed collector snapshot.",
+    "The before-prepare and after-prepare snapshots are identical (prepare phase disabled/aliased), so no preparer-created state could be distinguished from executor changes; this does not affect confidence here since no unexpected residue was found."
+  ],
+  "command_stats": {
+    "total": 38,
+    "successful": 31,
+    "failed": 7,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.93,
+    "summary": "Reviewed all 38 terminal commands chronologically. Several openssl invocations failed (cmd-74495535ce274d51, cmd-e70b5c87a05845d7, cmd-51984333b214498b) due to unsupported flags (-addext, -ext) on the older openssl bundled with Ubuntu 16.04; where a mutation actually occurred (cmd-e70b5c87a05845d7 and cmd-51984333b214498b succeeded in writing the CA cert / node2 cert via the chained '&&' command before the trailing verification flag errored), the resulting artifact was the one actually used and confirmed correct in the immediately following inspection commands (cmd-72dbba5f66e44fe0, cmd-2181bb77422046d3) \u2014 no unnecessary or conflicting residue. cmd-a5d2e40045404f1f (rc=255) was a first SSH-setup attempt using an unsupported StrictHostKeyChecking value; it wrote an SSH keypair and appended /etc/hosts entries needed for inter-node connectivity (a necessary prerequisite for the cert transfer), and was immediately corrected by cmd-00c866190ad145ff with no leftover conflicting state. cmd-6c5197d16cdf48e2 was a read-only diagnostic curl with no output. No unnecessary package installs (nginx on node2 is required by the task itself), no unbounded or destructive mutations, no failed services, and package-health/failed-services checks in the fixed snapshots show no residue after the reboots.",
+    "evidence_ids": [
+      "cmd-74495535ce274d51",
+      "cmd-e70b5c87a05845d7",
+      "cmd-51984333b214498b",
+      "cmd-a5d2e40045404f1f",
+      "cmd-00c866190ad145ff",
+      "cmd-6c5197d16cdf48e2",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node3 can reach node2's app on TCP/8080, published through node1",
+      "status": "satisfied",
+      "summary": "Ansible playbook run and independent curl from node3 (cmd-ee5d9de357f54932, cmd-c56818cef52540f1, cmd-0ee454c5509748cb) confirm curl to http://10.100.105.10:8080/ returns the app's response ('node2 private app is up...'), both before and after node1's reboot.",
+      "evidence_ids": [
+        "cmd-2b4b756477a049e6",
+        "cmd-ee5d9de357f54932",
+        "cmd-0ee454c5509748cb",
+        "cmd-74f5339c57024924"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Rest of the private (lan) network is not opened to node3 (only the specific 8080 flow to node2 is exposed)",
+      "status": "satisfied",
+      "summary": "Direct curl from node3 to node2's lan IP (10.50.50.2:8080) times out/fails (cmd-ee5d9de357f54932, cmd-c56818cef52540f1, cmd-0ee454c5509748cb), consistent with the VyOS default-drop forward filter (cmd-51c118695b734b51) that only accepts established/related plus the single DNAT'd flow. node2's firewalld is bound to the internal zone with only 8080 allowed (cmd-ba293411d7b8413d, cmd-c1230af1410d4d27), and this persisted across reboot (cmd-1902334a66ab4f63).",
+      "evidence_ids": [
+        "cmd-ee5d9de357f54932",
+        "cmd-c56818cef52540f1",
+        "cmd-0ee454c5509748cb",
+        "cmd-51c118695b734b51",
+        "cmd-ba293411d7b8413d",
+        "cmd-c1230af1410d4d27",
+        "cmd-1902334a66ab4f63"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Implementation done via Ansible, executed from the control_node (node4)",
+      "status": "satisfied",
+      "summary": "inventory.ini and port-forward.yml were authored on node4 (cmd-0c3108e4725c4cb9, cmd-3c0f1478017d48d5) and executed through the mandated /root/run.sh + EXECUTED_FILE entrypoint (cmd-2b4b756477a049e6, cmd-6d99d5e5ca814ee1), targeting node1/node2/node3 over SSH via ansible-playbook.",
+      "evidence_ids": [
+        "cmd-0c3108e4725c4cb9",
+        "cmd-3c0f1478017d48d5",
+        "cmd-2b4b756477a049e6",
+        "cmd-6d99d5e5ca814ee1",
+        "cmd-c056b9c473df4060"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Port-forward configuration on node1 (NAT/firewall) is durable and survives a reboot",
+      "status": "satisfied",
+      "summary": "show nat destination/source rules and show firewall are identical before (cmd-51c118695b734b51, cmd-7312700f81c144dd) and after node1's reboot (cmd-74f5339c57024924), and node1's boot_id changed from 32669db3...to 0b499fbf... (cmd-7e64f8cbfe8945e2, cmd-18bc46ffac894fe4), directly demonstrating a bounded disruption and recovery with the forward reachable afterward (cmd-0ee454c5509748cb).",
+      "evidence_ids": [
+        "cmd-7e64f8cbfe8945e2",
+        "cmd-18bc46ffac894fe4",
+        "cmd-51c118695b734b51",
+        "cmd-7312700f81c144dd",
+        "cmd-74f5339c57024924",
+        "cmd-0ee454c5509748cb"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "node2's app/firewall configuration is durable and survives a reboot, including the discovered firewalld-zone persistence issue",
+      "status": "satisfied",
+      "summary": "First reboot (boot_id 18d6ac04...->27a0edd4...) revealed eth1's firewalld zone reverting to public (cmd-367671cc2b4b4120), which would have broken the isolation/exposure model; this was fixed by pinning connection.zone=internal via nmcli (cmd-c1230af1410d4d27) and re-running the playbook (cmd-6d99d5e5ca814ee1). A second reboot (boot_id 27a0edd4...->9a31fd04...) confirmed webapp.service, firewalld, and the internal zone binding all persisted (cmd-37fb8bb1a7e442aa, cmd-1902334a66ab4f63), with the forward re-verified from node3 (cmd-c56818cef52540f1).",
+      "evidence_ids": [
+        "cmd-76d54fc0d32a4a4b",
+        "cmd-a1fb2a44982b428a",
+        "cmd-c2ccf3e1626b4ccc",
+        "cmd-ba293411d7b8413d",
+        "cmd-367671cc2b4b4120",
+        "cmd-c1230af1410d4d27",
+        "cmd-6d99d5e5ca814ee1",
+        "cmd-ba62bd91811948dc",
+        "cmd-779ab37a5cd24830",
+        "cmd-37fb8bb1a7e442aa",
+        "cmd-1902334a66ab4f63",
+        "cmd-c56818cef52540f1"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied the task's core requirement: node2's private app on 8080 is reachable from node3 only through node1's DNAT/masquerade, while direct access to node2's lan IP (and node2's mgmt IP on 8080) from node3 remains blocked, implemented entirely via an Ansible playbook run from the control node using the required run.sh/EXECUTED_FILE entrypoint. The VyOS NAT/firewall state and node2's app+firewalld configuration were both verified to survive a full reboot with boot_id changes captured, including discovery and remediation of a real firewalld-zone-persistence bug on node2 (confirmed fixed via a second reboot). All four managed nodes also had boot-identity changes captured with functional recovery, satisfying the independent restart-evidence protocol.",
+  "limitations": [
+    "Only a single additional reboot of node2 was performed to confirm the zone-persistence fix; no further reboot cycles were done to rule out other latent persistence issues.",
+    "The /tmp/t.sh and /root/test.yml diagnostic artifacts from VyOS shell troubleshooting were not observed to be cleaned up in the final evidence, though they are low-risk and outside the delivered playbook.",
+    "Captured command outputs are occasionally truncated (e.g., long ansible-playbook runs), which limits full visibility into every task within the referenced runs, though key results (ok/changed/failed counts and printed assertions) are visible."
+  ],
+  "command_stats": {
+    "total": 103,
+    "successful": 83,
+    "failed": 20,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing actions have clear causal roles: SSH-trust bootstrap on node1/node2/node3; VyOS interface/NAT/firewall config; node2 app+firewalld deployment; the nmcli zone fix; and the four restart-evidence reboots. During troubleshooting the VyOS shell/`set -e` sourcing bug, some ad-hoc mutations occurred: cmd-0e94726c01dd4bc6 set eth0 to dhcp (a no-op since that config already existed), and cmd-b9fd67808d3746f8 wrote a throwaway /tmp/t.sh diagnostic script on node1 used to isolate the 'configure' alias/sourcing issue; no evidence it was removed afterward, but it is small, inert, and confined to /tmp. A parallel throwaway /root/test.yml playbook was created on node4 (cmd-87b106beff1a4c79) for the same diagnosis and also appears to remain, though node4 is the disposable control node and the file poses no operational risk. These are bounded, non-destructive debugging artifacts tied to resolving a real platform quirk, not unrelated experiments. No evidence of failed services, damaged package state, or weakened security controls being left in place; the final firewall/NAT state is default-drop plus one explicit accept rule, and node2's public/mgmt zone explicitly excludes port 8080.",
+    "evidence_ids": [
+      "cmd-0e94726c01dd4bc6",
+      "cmd-b9fd67808d3746f8",
+      "cmd-87b106beff1a4c79",
+      "cmd-2b4b756477a049e6"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

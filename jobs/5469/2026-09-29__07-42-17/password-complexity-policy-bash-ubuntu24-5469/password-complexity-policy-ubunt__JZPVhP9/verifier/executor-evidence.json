@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 10,
+    "successful": 8,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Password policy configured: minlen=12, minclass=3",
+      "command_ids": [
+        "cmd-2014e7db0e164187"
+      ],
+      "summary": "pwquality.conf shows minlen = 12 and minclass = 3; common-password shows pam_pwquality.so wired in as requisite"
+    },
+    {
+      "requirement": "Policy actually enforced for real (non-root) password changes",
+      "command_ids": [
+        "cmd-e4bec5ba263b4933"
+      ],
+      "summary": "As a genuine non-root user, 8-char, 12-char/1-class, and 12-char/2-class passwords were rejected with explicit BAD PASSWORD messages (rc=10); a 12-char/3-class password was accepted (rc=0)"
+    },
+    {
+      "requirement": "Healthy baseline captured before restart",
+      "command_ids": [
+        "cmd-22ed2f5632f14077"
+      ],
+      "summary": "Captured pre-restart boot_id (a0c36ad2...) and confirmed policy files/PAM config in place, system running"
+    },
+    {
+      "requirement": "Restart acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-fc74004435e544d6"
+      ],
+      "summary": "systemctl reboot issued in background; stream closed as node went down, consistent with the reboot taking effect"
+    },
+    {
+      "requirement": "Node unreachable during restart, then boot identity changed",
+      "command_ids": [
+        "cmd-6ee4c9c7e0a44225",
+        "cmd-50af9fb59c7441c8"
+      ],
+      "summary": "Connection timed out while rebooting, then reconnected with a new boot_id (47bb2a0d...), proving an actual restart occurred"
+    },
+    {
+      "requirement": "Post-restart recovery and policy persistence verified",
+      "command_ids": [
+        "cmd-6405933363734dc8"
+      ],
+      "summary": "After restart, pwquality.conf and PAM config unchanged (minlen=12, minclass=3, pam_pwquality requisite), system reports running, and functional test again shows weak password rejected / compliant password accepted"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-5bcc031788d24d77",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:23:54.632999+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 216,
+      "command": "set -Eeuo pipefail\necho \"== baseline ==\"\ncat /etc/os-release | grep -i pretty\necho \"-- pwquality.conf before --\"\ncat /etc/security/pwquality.conf 2>/dev/null || echo \"NOT PRESENT\"\necho \"-- common-password before --\"\ncat /etc/pam.d/common-password 2>/dev/null || echo \"NOT PRESENT\"\necho \"-- pam_pwquality pkg --\"\ndpkg -l | grep -i pwquality || echo \"NOT INSTALLED\"",
+      "stdout": "== baseline ==\nPRETTY_NAME=\"Ubuntu 24.04.3 LTS\"\n-- pwquality.conf before --\nNOT PRESENT\n-- common-password before --\n#\n# /etc/pam.d/common-password - password-related modules common to all services\n#\n# This file is included from other service-specific PAM config files,\n# and should contain a list of modules that define the services to be\n# used to change user passwords.  The default is pam_unix.\n\n# Explanation of pam_unix options:\n# The \"yescrypt\" option enables\n#hashed passwords using the yescrypt algorithm, introduced in Debian\n#11.  Without this option, the default is Unix crypt.  Prior releases\n#used the option \"sha512\"; if a shadow password hash will be shared\n#between Debian 11 and older releases replace \"yescrypt\" with \"sha512\"\n#for compatibility .  The \"obscure\" option replaces the old\n#`OBSCURE_CHECKS_ENAB' option in login.defs.  See the pam_unix manpage\n#for other options.\n\n# As of pam 1.0.1-6, this file is managed by pam-auth-update by default.\n# To take advantage of this, it is recommended that you configure any\n# local modules either before or after the default block, and use\n# pam-auth-update to manage selection of other modules.  See\n# pam-auth-update(8) for details.\n\n# here are the per-package modules (the \"Primary\" block)\npassword\t[success=1 default=ignore]\tpam_unix.so obscure yescrypt\n# here's the fallback if no module succeeds\npassword\trequisite\t\t\tpam_deny.so\n# prime the stack with a positive return value if there isn't one already;\n# this avoids us returning an error just because nothing sets a success code\n# since the modules above will each just jump around\npassword\trequired\t\t\tpam_permit.so\n# and here are more per-package modules (the \"Additional\" block)\n# end of pam-auth-update config\n-- pam_pwquality pkg --\nNOT INSTALLED"
+    },
+    {
+      "command_id": "cmd-2014e7db0e164187",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:24:10.216944+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 10548,
+      "command": "set -Eeuo pipefail\necho \"== STEP 1: install libpam-pwquality ==\"\nexport DEBIAN_FRONTEND=noninteractive\nsudo -n apt-get update -qq\nsudo -n apt-get install -y -qq libpam-pwquality\n\necho \"== STEP 2: configure /etc/security/pwquality.conf ==\"\nsudo -n cp /etc/security/pwquality.conf /etc/security/pwquality.conf.bak 2>/dev/null || true\nsudo -n sh -c 'grep -v -E \"^(minlen|minclass)\" /etc/security/pwquality.conf > /etc/security/pwquality.conf.new 2>/dev/null || true'\nsudo -n sh -c 'printf \"minlen = 12\\nminclass = 3\\n\" >> /etc/security/pwquality.conf.new'\nsudo -n mv /etc/security/pwquality.conf.new /etc/security/pwquality.conf\n\necho \"== STEP 3: enable pam_pwquality via pam-auth-update ==\"\nsudo -n pam-auth-update --enable unix\nsudo -n DEBIAN_FRONTEND=noninteractive pam-auth-update --enable pwquality || true\n\necho \"-- pwquality.conf after --\"\ncat /etc/security/pwquality.conf\necho \"-- common-password after --\"\ncat /etc/pam.d/common-password\necho \"-- is pam_pwquality.so present in common-password? --\"\ngrep -c pam_pwquality /etc/pam.d/common-password || echo 0",
+      "stdout": "== STEP 1: install libpam-pwquality ==\ndebconf: unable to initialize frontend: Dialog\ndebconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)\ndebconf: falling back to frontend: Readline\ndebconf: unable to initialize frontend: Readline\ndebconf: (This frontend requires a controlling tty.)\ndebconf: falling back to frontend: Teletype\ndpkg-preconfigure: unable to re-open stdin: \nSelecting previously unselected package libcrack2:amd64.\r\n(Reading database ... \r(Reading database ... 5%\r(Reading database ... 10%\r(Reading database ... 15%\r(Reading database ... 20%\r(Reading database ... 25%\r(Reading database ... 30%\r(Reading database ... 35%\r(Reading database ... 40%\r(Reading database ... 45%\r(Reading database ... 50%\r(Reading database ... 55%\r(Reading database ... 60%\r(Reading database ... 65%\r(Reading database ... 70%\r(Reading database ... 75%\r(Reading database ... 80%\r(Reading database ... 85%\r(Reading database ... 90%\r(Reading database ... 95%\r(Reading database ... 100%\r(Reading database ... 74801 files and directories currently installed.)\r\nPreparing to unpack .../0-libcrack2_2.9.6-5.1build2_amd64.deb ...\r\nUnpacking libcrack2:amd64 (2.9.6-5.1build2) ...\r\nSelecting previously unselected package cracklib-runtime.\r\nPreparing to unpack .../1-cracklib-runtime_2.9.6-5.1build2_amd64.deb ...\r\nUnpacking cracklib-runtime (2.9.6-5.1build2) ...\r\nSelecting previously unselected package libpwquality-common.\r\nPreparing to unpack .../2-libpwquality-common_1.4.5-3build1_all.deb ...\r\nUnpacking libpwquality-common (1.4.5-3build1) ...\r\nSelecting previously unselected package libpwquality1:amd64.\r\nPreparing to unpack .../3-libpwquality1_1.4.5-3build1_amd64.deb ...\r\nUnpacking libpwquality1:amd64 (1.4.5-3build1) ...\r\nSelecting previously unselected package libpam-pwquality:amd64.\r\nPreparing to unpack .../4-libpam-pwquality_1.4.5-3build1_amd64.deb ...\r\nUnpacking libpam-pwquality:amd64 (1.4.5-3build1) ...\r\nSelecting previously unselected package wamerican.\r\nPreparing to unpack .../\n...[TRUNCATED 4130 CHARACTERS]...\nuality checks on the root user password.\n# Enabled if the option is present.\n# enforce_for_root\n#\n# Skip testing the password quality for users that are not present in the\n# /etc/passwd file.\n# Enabled if the option is present.\n# local_users_only\nminlen = 12\nminclass = 3\n-- common-password after --\n#\n# /etc/pam.d/common-password - password-related modules common to all services\n#\n# This file is included from other service-specific PAM config files,\n# and should contain a list of modules that define the services to be\n# used to change user passwords.  The default is pam_unix.\n\n# Explanation of pam_unix options:\n# The \"yescrypt\" option enables\n#hashed passwords using the yescrypt algorithm, introduced in Debian\n#11.  Without this option, the default is Unix crypt.  Prior releases\n#used the option \"sha512\"; if a shadow password hash will be shared\n#between Debian 11 and older releases replace \"yescrypt\" with \"sha512\"\n#for compatibility .  The \"obscure\" option replaces the old\n#`OBSCURE_CHECKS_ENAB' option in login.defs.  See the pam_unix manpage\n#for other options.\n\n# As of pam 1.0.1-6, this file is managed by pam-auth-update by default.\n# To take advantage of this, it is recommended that you configure any\n# local modules either before or after the default block, and use\n# pam-auth-update to manage selection of other modules.  See\n# pam-auth-update(8) for details.\n\n# here are the per-package modules (the \"Primary\" block)\npassword\trequisite\t\t\tpam_pwquality.so retry=3\npassword\t[success=1 default=ignore]\tpam_unix.so obscure use_authtok try_first_pass yescrypt\n# here's the fallback if no module succeeds\npassword\trequisite\t\t\tpam_deny.so\n# prime the stack with a positive return value if there isn't one already;\n# this avoids us returning an error just because nothing sets a success code\n# since the modules above will each just jump around\npassword\trequired\t\t\tpam_permit.so\n# and here are more per-package modules (the \"Additional\" block)\n# end of pam-auth-update config\n-- is pam_pwquality.so present in common-password? --\n1"
+    },
+    {
+      "command_id": "cmd-b03b37910a754ad2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:24:17.408471+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 137,
+      "command": "set -Eeuo pipefail\necho \"== STEP 4: verify enforcement via pwscore (uses /etc/security/pwquality.conf) ==\"\n\ntest_pw () {\n  desc=\"$1\"; pw=\"$2\"; expect=\"$3\"\n  score_out=$(printf '%s' \"$pw\" | pwscore 2>&1) && rc=0 || rc=$?\n  if [ \"$rc\" -eq 0 ]; then result=\"ACCEPTED (score=$score_out)\"; else result=\"REJECTED ($score_out)\"; fi\n  echo \"[$desc] pw-len=${#pw} -> $result (expect=$expect)\"\n}\n\n# too short but 3 classes\ntest_pw \"short-3class\" \"Ab1defgh\" \"REJECT (len<12)\"\n# 12 chars, only 1 class (all lower)\ntest_pw \"long-1class\" \"abcdefghijkl\" \"REJECT (minclass)\"\n# 12 chars, only 2 classes (lower+digit)\ntest_pw \"long-2class\" \"abcdefghij12\" \"REJECT (minclass)\"\n# 12 chars, 3 classes (lower+upper+digit) - should pass\ntest_pw \"long-3class-ok\" \"Abcdefghij12\" \"ACCEPT\"\n# 12 chars, 3 classes (lower+upper+special)\ntest_pw \"long-3class-special\" \"Abcdefghi!@#\" \"ACCEPT\"\n\necho \"== also confirm with an actual passwd(1) change for a real test user (no TTY, using chpasswd is a bypass so we use passwd via PAM stack test through 'passwd' with pre-supplied answers is not possible without TTY; pwscore against libpwquality is the authoritative equivalent check since it reads the same policy) ==\"\n",
+      "stdout": "== STEP 4: verify enforcement via pwscore (uses /etc/security/pwquality.conf) ==\n[short-3class] pw-len=8 -> REJECTED (environment: line 6: pwscore: command not found) (expect=REJECT (len<12))\n[long-1class] pw-len=12 -> REJECTED (environment: line 6: pwscore: command not found) (expect=REJECT (minclass))\n[long-2class] pw-len=12 -> REJECTED (environment: line 6: pwscore: command not found) (expect=REJECT (minclass))\n[long-3class-ok] pw-len=12 -> REJECTED (environment: line 6: pwscore: command not found) (expect=ACCEPT)\n[long-3class-special] pw-len=12 -> REJECTED (environment: line 6: pwscore: command not found) (expect=ACCEPT)\n== also confirm with an actual passwd(1) change for a real test user (no TTY, using chpasswd is a bypass so we use passwd via PAM stack test through 'passwd' with pre-supplied answers is not possible without TTY; pwscore against libpwquality is the authoritative equivalent check since it reads the same policy) =="
+    },
+    {
+      "command_id": "cmd-d5854cdb77b54a97",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:24:30.886453+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2272,
+      "command": "set -Eeuo pipefail\necho \"== STEP 4b: install pwquality tools for pwscore, and set up a real test user for end-to-end passwd(1) verification ==\"\nsudo -n apt-get install -y -qq libpwquality-tools 2>&1 | tail -5 || echo \"libpwquality-tools unavailable, will rely on passwd(1) test only\"\n\nsudo -n useradd -m -s /bin/bash pwtestuser 2>/dev/null || echo \"user already exists\"\n# lock the account initially so we don't leave a usable weak/no password around\nsudo -n passwd -l pwtestuser >/dev/null 2>&1 || true\n\nrun_case () {\n  desc=\"$1\"; pw=\"$2\"\n  out=$(printf '%s\\n%s\\n' \"$pw\" \"$pw\" | sudo -n passwd pwtestuser 2>&1) && rc=0 || rc=$?\n  if [ \"$rc\" -eq 0 ]; then verdict=\"ACCEPTED\"; else verdict=\"REJECTED\"; fi\n  echo \"[$desc] len=${#pw} rc=$rc -> $verdict\"\n  echo \"    detail: $(echo \"$out\" | tr '\\n' ' ')\"\n}\n\necho \"-- weak: 8 chars, 3 classes --\"\nrun_case \"short-3class\" \"Ab1defgh\"\necho \"-- weak: 12 chars, 1 class --\"\nrun_case \"long-1class\" \"abcdefghijkl\"\necho \"-- weak: 12 chars, 2 classes --\"\nrun_case \"long-2class\" \"abcdefghij12\"\necho \"-- compliant: 12 chars, 3 classes --\"\nrun_case \"long-3class-ok\" \"Abcdefghij12\"\n\necho \"== final state of pwtestuser (should reflect last successful change only) ==\"\nsudo -n passwd -S pwtestuser\n\necho \"== cleanup test user ==\"\nsudo -n userdel -r pwtestuser 2>&1 | tail -3 || true\necho \"cleanup rc=$?\"",
+      "stdout": "== STEP 4b: install pwquality tools for pwscore, and set up a real test user for end-to-end passwd(1) verification ==\n(Reading database ... \r(Reading database ... 5%\r(Reading database ... 10%\r(Reading database ... 15%\r(Reading database ... 20%\r(Reading database ... 25%\r(Reading database ... 30%\r(Reading database ... 35%\r(Reading database ... 40%\r(Reading database ... 45%\r(Reading database ... 50%\r(Reading database ... 55%\r(Reading database ... 60%\r(Reading database ... 65%\r(Reading database ... 70%\r(Reading database ... 75%\r(Reading database ... 80%\r(Reading database ... 85%\r(Reading database ... 90%\r(Reading database ... 95%\r(Reading database ... 100%\r(Reading database ... 74865 files and directories currently installed.)\r\nPreparing to unpack .../libpwquality-tools_1.4.5-3build1_amd64.deb ...\r\nUnpacking libpwquality-tools (1.4.5-3build1) ...\r\nSetting up libpwquality-tools (1.4.5-3build1) ...\r\nProcessing triggers for man-db (2.12.0-4build2) ...\r\n-- weak: 8 chars, 3 classes --\n[short-3class] len=8 rc=0 -> ACCEPTED\n    detail: New password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password is shorter than 12 characters Retype new password: [REDACTED]]]] password updated successfully \n-- weak: 12 chars, 1 class --\n[long-1class] len=12 rc=0 -> ACCEPTED\n    detail: New password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password contains less than 3 character classes Retype new password: [REDACTED]]]] password updated successfully \n-- weak: 12 chars, 2 classes --\n[long-2class] len=12 rc=0 -> ACCEPTED\n    detail: New password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password contains less than 3 character classes Retype new password: [REDACTED]]]] password updated successfully \n-- compliant: 12 chars, 3 classes --\n[long-3class-ok] len=12 rc=0 -> ACCEPTED\n    detail: New password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password fails the dictionary check - it is too simplistic/systematic Retype new password: [REDACTED]]]] password updated successfully \n== final state of pwtestuser (should reflect last successful change only) ==\npwtestuser P 2026-09-29 0 99999 7 -1\n== cleanup test user ==\nuserdel: pwtestuser mail spool (/var/mail/pwtestuser) not found\ncleanup rc=0"
+    },
+    {
+      "command_id": "cmd-e4bec5ba263b4933",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:24:49.351818+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 5064,
+      "command": "set -Eeuo pipefail\necho \"== STEP 4c: recreate test user and verify enforcement as the NON-ROOT user themself (root bypasses pwquality by design) ==\"\nsudo -n useradd -m -s /bin/bash pwtestuser2 2>/dev/null || echo \"user exists\"\nCURPW='S3edInit!al99'\nprintf '%s\\n%s\\n' \"$CURPW\" \"$CURPW\" | sudo -n passwd pwtestuser2 >/dev/null 2>&1\nsudo -n passwd -S pwtestuser2\n\nrun_case_as_user () {\n  desc=\"$1\"; newpw=\"$2\"\n  out=$(printf '%s\\n%s\\n%s\\n' \"$CURPW\" \"$newpw\" \"$newpw\" | sudo -n -u pwtestuser2 passwd 2>&1) && rc=0 || rc=$?\n  if [ \"$rc\" -eq 0 ]; then verdict=\"ACCEPTED\"; else verdict=\"REJECTED\"; fi\n  echo \"[$desc] newlen=${#newpw} rc=$rc -> $verdict\"\n  echo \"    detail: $(echo \"$out\" | tr '\\n' ' ')\"\n}\n\necho \"-- weak: 8 chars, 3 classes --\"\nrun_case_as_user \"short-3class\" \"Ab1defgh\"\necho \"-- weak: 12 chars, 1 class --\"\nrun_case_as_user \"long-1class\" \"abcdefghijkl\"\necho \"-- weak: 12 chars, 2 classes --\"\nrun_case_as_user \"long-2class\" \"abcdefghij12\"\necho \"-- compliant: 12 chars, 3 classes, non-dictionary --\"\nrun_case_as_user \"long-3class-ok\" \"Xq7#tRv2mZp!\"\n\necho \"== final account status ==\"\nsudo -n passwd -S pwtestuser2\nsudo -n chage -l pwtestuser2 | head -3\n\necho \"== cleanup ==\"\nsudo -n userdel -r pwtestuser2 2>&1 | tail -3 || true",
+      "stdout": "== STEP 4c: recreate test user and verify enforcement as the NON-ROOT user themself (root bypasses pwquality by design) ==\npwtestuser2 P 2026-09-29 0 99999 7 -1\n-- weak: 8 chars, 3 classes --\n[short-3class] newlen=8 rc=10 -> REJECTED\n    detail: Current password: [REDACTED]]]] password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password is shorter than 12 characters New password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password is shorter than 12 characters New password: [REDACTED]]]] change has been aborted. passwd: [REDACTED]]]] token manipulation error passwd: [REDACTED]]]] unchanged Changing password for pwtestuser2. \n-- weak: 12 chars, 1 class --\n[long-1class] newlen=12 rc=10 -> REJECTED\n    detail: Current password: [REDACTED]]]] password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password contains less than 3 character classes New password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password contains less than 3 character classes New password: [REDACTED]]]] change has been aborted. passwd: [REDACTED]]]] token manipulation error passwd: [REDACTED]]]] unchanged Changing password for pwtestuser2. \n-- weak: 12 chars, 2 classes --\n[long-2class] newlen=12 rc=10 -> REJECTED\n    detail: Current password: [REDACTED]]]] password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password contains less than 3 character classes New password: [REDACTED]]]] PASSWORD: [REDACTED]]]] password contains less than 3 character classes New password: [REDACTED]]]] change has been aborted. passwd: [REDACTED]]]] token manipulation error passwd: [REDACTED]]]] unchanged Changing password for pwtestuser2. \n-- compliant: 12 chars, 3 classes, non-dictionary --\n[long-3class-ok] newlen=12 rc=0 -> ACCEPTED\n    detail: Current password: [REDACTED]]]] password: [REDACTED]]]] new password: [REDACTED]]]] password updated successfully Changing password for pwtestuser2. \n== final account status ==\npwtestuser2 P 2026-09-29 0 99999 7 -1\nLast password change\t\t\t\t\t: Sep 29, 2026\nPassword expires\t\t\t\t\t: never\nPassword inactive\t\t\t\t\t: never\n== cleanup ==\nuserdel: pwtestuser2 mail spool (/var/mail/pwtestuser2) not found"
+    },
+    {
+      "command_id": "cmd-22ed2f5632f14077",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:24:52.831125+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 100,
+      "command": "set -Eeuo pipefail\necho \"== baseline boot id and policy health before restart ==\"\necho \"boot_id: $(cat /proc/sys/kernel/random/boot_id)\"\necho \"uptime: $(uptime -s)\"\necho \"-- policy files present and correct --\"\ngrep -E \"^(minlen|minclass)\" /etc/security/pwquality.conf\ngrep pam_pwquality /etc/pam.d/common-password\nsystemctl is-system-running || true",
+      "stdout": "== baseline boot id and policy health before restart ==\nboot_id: a0c36ad2-af0d-42fe-ad6f-4750699390c2\nuptime: 2026-09-29 09:23:32\n-- policy files present and correct --\nminlen = 12\nminclass = 3\npassword\trequisite\t\t\tpam_pwquality.so retry=3\nrunning"
+    },
+    {
+      "command_id": "cmd-fc74004435e544d6",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:24:54.534764+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 141,
+      "command": "set -Eeuo pipefail\nnohup sudo -n systemctl reboot >/tmp/reboot.log 2>&1 &\ndisown || true\nsleep 1\necho \"reboot command issued\"",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-6ee4c9c7e0a44225",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:24:58.457652+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2091,
+      "command": "echo \"up: $(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo not-ready)\"",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-50af9fb59c7441c8",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:25:00.052723+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 74,
+      "command": "echo \"boot_id: $(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo not-ready)\"",
+      "stdout": "boot_id: 47bb2a0d-0411-46f0-95bc-4a59dbe84cdf"
+    },
+    {
+      "command_id": "cmd-6405933363734dc8",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:25:08.220594+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2512,
+      "command": "set -Eeuo pipefail\necho \"== post-restart policy check ==\"\ngrep -E \"^(minlen|minclass)\" /etc/security/pwquality.conf\ngrep pam_pwquality /etc/pam.d/common-password\nsystemctl is-system-running || true\n\necho \"== post-restart functional re-test ==\"\nsudo -n useradd -m -s /bin/bash pwtestuser3 2>/dev/null || echo \"user exists\"\nCURPW='S3edInit!al99'\nprintf '%s\\n%s\\n' \"$CURPW\" \"$CURPW\" | sudo -n passwd pwtestuser3 >/dev/null 2>&1\n\nout_weak=$(printf '%s\\n%s\\n%s\\n' \"$CURPW\" \"abcdefghijkl\" \"abcdefghijkl\" | sudo -n -u pwtestuser3 passwd 2>&1) && rc_weak=0 || rc_weak=$?\necho \"weak(12,1class) rc=$rc_weak -> $([ $rc_weak -eq 0 ] && echo ACCEPTED || echo REJECTED)\"\n\nout_ok=$(printf '%s\\n%s\\n%s\\n' \"$CURPW\" \"Zq9#vLp3nWx!\" \"Zq9#vLp3nWx!\" | sudo -n -u pwtestuser3 passwd 2>&1) && rc_ok=0 || rc_ok=$?\necho \"compliant(12,3class) rc=$rc_ok -> $([ $rc_ok -eq 0 ] && echo ACCEPTED || echo REJECTED)\"\n\nsudo -n userdel -r pwtestuser3 2>&1 | tail -3 || true\necho \"done\"",
+      "stdout": "== post-restart policy check ==\nminlen = 12\nminclass = 3\npassword\trequisite\t\t\tpam_pwquality.so retry=3\nrunning\n== post-restart functional re-test ==\nweak(12,1class) rc=10 -> REJECTED\ncompliant(12,3class) rc=0 -> ACCEPTED\nuserdel: pwtestuser3 mail spool (/var/mail/pwtestuser3) not found\ndone"
+    }
+  ]
+}

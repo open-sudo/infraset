@@ -1,0 +1,74 @@
+{
+  "status": "completed",
+  "summary": "On node1 (Alpine Linux 3.23), AppArmor was enabled as the mandatory access control system (kernel didn't have it active initially \u2014 enabled via lsm= boot parameter and update-extlinux, requiring the mandatory node restart), and a custom inventory application (Python HTTP server returning host inventory JSON) was created, put under an enforce-mode AppArmor profile, and set to serve on TCP port 8181 via an OpenRC service. Both apparmor (boot runlevel) and inventory-app (default runlevel) are enabled to persist across reboots. AppArmor remained/returned to enforce mode and the app remained reachable after the restart.",
+  "actions_performed": [
+    "Surveyed node1: Alpine 3.23, no SELinux/AppArmor active, no pre-existing 'inventory' application found anywhere on disk",
+    "Installed apparmor, apparmor-utils, apparmor-openrc, apparmor-profiles, python3 via apk",
+    "Edited /etc/update-extlinux.conf to add 'apparmor=1 security=apparmor lsm=landlock,lockdown,yama,apparmor,bpf' to kernel boot options and ran update-extlinux to regenerate /boot/extlinux.conf",
+    "Enabled apparmor service in the 'boot' OpenRC runlevel",
+    "Created /opt/inventory/inventory_app.py: a Python http.server-based app serving JSON host inventory on 0.0.0.0:8181",
+    "Created OpenRC service /etc/init.d/inventory-app (invokes the script directly, via its shebang, so AppArmor attachment matches) and enabled it in the 'default' runlevel",
+    "Created and iteratively refined an AppArmor profile /etc/apparmor.d/opt.inventory.inventory_app in enforce mode, adding directory-read, zoneinfo-read, and signal-receive rules to reach a fully working confined process",
+    "Captured pre-restart boot_id and AppArmor-disabled baseline, then performed a single non-destructive reboot of node1 via `sh -c 'sleep 1; reboot'` backgrounded so the ack returned before disconnect",
+    "Polled node1 until exec access returned and confirmed boot_id changed (f78cf4fb... -> acd2ce66...), proving an actual restart occurred",
+    "Verified post-restart: /sys/kernel/security/lsm includes 'apparmor', apparmor module enabled=Y, apparmor service started, inventory-app service started, process confined in '(enforce)' mode per /proc/<pid>/attr/current and aa-status, port 8181 listening, and curl to http://$NODE_IP:8181/ returns the inventory JSON"
+  ],
+  "evidence": [
+    {
+      "requirement": "Pre-restart healthy baseline (AppArmor state, boot identity) before disruption",
+      "command_ids": [
+        "cmd-aa910775c36c462d",
+        "cmd-b2e8922a5fa74372",
+        "cmd-3e307ba3362d49eb",
+        "cmd-37b9196e294c4c4c",
+        "cmd-2b27caf3e1c04442"
+      ],
+      "summary": "Confirmed node1 is Alpine 3.23 with no MAC active (getenforce/aa-status absent, apparmor module enabled=N, LSM list lacked apparmor), no pre-existing inventory app, and captured pre-restart boot_id f78cf4fb-598b-4b74-be49-c709fd887d28 plus installed packages/config needed for AppArmor and the inventory app."
+    },
+    {
+      "requirement": "Node restart acknowledgement returns before disconnect; exactly one node restarted",
+      "command_ids": [
+        "cmd-705ccbe4c56c4a24"
+      ],
+      "summary": "Issued backgrounded 'sleep 1; reboot' on node1 only; command acknowledged with 'reboot-scheduled' before the connection dropped."
+    },
+    {
+      "requirement": "Proof of changed boot identity (not just elapsed time/service state)",
+      "command_ids": [
+        "cmd-cb096f05ab65433f",
+        "cmd-b6b88abca9724c99",
+        "cmd-b55c896a0eb342e6",
+        "cmd-02aa403d6580495a",
+        "cmd-5d7c65b36cc844aa",
+        "cmd-46e190627d1f44bf"
+      ],
+      "summary": "Node connection was refused/reset/timed out during reboot, then exec access returned with a new boot_id acd2ce66-bc87-47ff-a1f7-5d1bbe8f1a13, differing from the pre-restart f78cf4fb-598b-4b74-be49-c709fd887d28, proving an actual kernel restart."
+    },
+    {
+      "requirement": "Mandatory access control (AppArmor) is enabled and in enforcing mode post-restart",
+      "command_ids": [
+        "cmd-81cfaee4f2f54c18"
+      ],
+      "summary": "Post-restart: /proc/cmdline shows the new lsm= parameter took effect, /sys/kernel/security/lsm includes 'apparmor', /sys/module/apparmor/parameters/enabled=Y, apparmor service status=started, and aa-status reports 162 profiles loaded with 79 in enforce mode including the inventory app profile."
+    },
+    {
+      "requirement": "Inventory application confined by an enforce-mode profile and serving on TCP 8181",
+      "command_ids": [
+        "cmd-a85316b6f41544f5",
+        "cmd-64c1a492b5ca4783",
+        "cmd-c5f4431e41354e1a",
+        "cmd-72690b6704794514",
+        "cmd-1f0116d6ba3c4ad7"
+      ],
+      "summary": "Iteratively fixed profile (dir/zoneinfo read, signal receive) confirmed via dmesg AppArmor DENIED/enforcement audit entries; final state shows process pid 3712 labeled '/opt/inventory/inventory_app.py (enforce)' in /proc/<pid>/attr/current and aa-status, listening on port 8181 (0x1FF5) in /proc/net/tcp."
+    },
+    {
+      "requirement": "Functional verification: inventory app reachable and returns data over port 8181 while MAC enforcing",
+      "command_ids": [
+        "cmd-1f0116d6ba3c4ad7",
+        "cmd-796ef79cf9e94261"
+      ],
+      "summary": "curl http://$NODE_IP:8181/ returned the inventory JSON payload while AppArmor module enabled=Y and the inventory_app.py profile was in enforce mode; both apparmor (boot) and inventory-app (default) services confirmed enabled via rc-update for persistence across future restarts."
+    }
+  ]
+}

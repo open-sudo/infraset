@@ -1,0 +1,99 @@
+{
+  "status": "completed",
+  "summary": "Deployed the app on node2 and published it through node1 (a VyOS gateway) to node3 using Ansible run from node4 (the control_node), while keeping the rest of the node1/node2 private network closed off to node3. Verified functionality and persistence across a one-at-a-time restart of all four managed nodes.",
+  "actions_performed": [
+    "Surveyed topology: node1=VyOS gateway (10.100.61.10), node2=app host (10.100.61.11, Ubuntu), node3=external client (10.100.61.12), node4=Ansible control_node (10.100.61.13); all four sit on one flat /24 with node2's default route pointing to the platform gateway, not node1.",
+    "Bootstrapped SSH management access: created an antrieb sudo user + authorized_keys on node2/node3, and used VyOS's native 'set system login user antrieb ...' config on node1 so it persists reboots; fixed missing SSH host keys on node2/node3.",
+    "Wrote /root/publish-app.yml (Ansible playbook, 3 plays): (1) install nginx on node2 serving the app on :8080, lock down with ufw so only node1 may reach :8080 and node3 is denied everything except via node1; (2) configure VyOS on node1 with destination NAT (8080->node2:8080) + hairpin source NAT (masquerade, required because node2's default gateway isn't node1) + default-drop forward filter permitting only the published flow; (3) verification play from node3 confirming reachability via node1 and refusal directly via node2.",
+    "Ran the playbook via node4's run.sh (EXECUTED_FILE mechanism) against an inventory.ini I created; worked around a bash alias-expansion pitfall in the VyOS configure block by writing a real script file instead of `bash -c '...'`.",
+    "Found and fixed a stale broad allow-22-from-anywhere ufw rule left by an earlier partial run by adding an explicit delete task; verified idempotent re-run cleaned it up.",
+    "Captured healthy baselines (boot_id, live VyOS NAT/firewall show output, nginx/ufw active state, app response) on all four nodes.",
+    "Restarted node1, node2, node3, node4 one at a time via native reboot, polling each until exec access returned, proving a changed boot_id each time, and re-verifying NAT/firewall config, app reachability, and access restrictions after each restart.",
+    "After node1's restart, discovered VyOS resets non-VyOS-managed Linux users on boot (the raw useradd antrieb account vanished); fixed by re-adding the user through VyOS's own config system, which persisted through a later re-run.",
+    "Re-ran the playbook from node4 after all four restarts to confirm full idempotent recovery end-to-end, and did a final manual verification from node3."
+  ],
+  "evidence": [
+    {
+      "requirement": "App published through node1 on port 8080, reachable from node3",
+      "command_ids": [
+        "cmd-704df33241434bfa",
+        "cmd-f89fddfb31ea4033",
+        "cmd-2dd687c75ff849a2"
+      ],
+      "summary": "Ansible verification play and direct curl from node3 to http://10.100.61.10:8080/ return 'app on node2 (via node1 gateway)'"
+    },
+    {
+      "requirement": "Rest of the private network NOT opened to node3 (no direct app or SSH access to node2)",
+      "command_ids": [
+        "cmd-f89fddfb31ea4033",
+        "cmd-15967b3aa8cf418f",
+        "cmd-cbaf4750a7a5495f",
+        "cmd-4f7266c256174c20",
+        "cmd-29221686d6754226",
+        "cmd-0f70d244a3e640f0"
+      ],
+      "summary": "Direct curl from node3 to node2:8080 times out (connection dropped by ufw+VyOS default-drop forward filter); direct SSH (22) from node3 to node2 also times out after the ufw hardening task, both before and after all four node restarts"
+    },
+    {
+      "requirement": "Implemented using Ansible, run from the configured control_node (node4)",
+      "command_ids": [
+        "cmd-8046462d6c7942f2",
+        "cmd-3f836f03dd774059",
+        "cmd-0e2322961a3a4711"
+      ],
+      "summary": "/root/publish-app.yml executed via node4's run.sh (ansible-playbook -i inventory.ini) against node1/node2/node3, using only ansible-core + community.general modules already present on node4"
+    },
+    {
+      "requirement": "VyOS NAT/firewall configuration correctly published and default-drop for everything else",
+      "command_ids": [
+        "cmd-704df33241434bfa",
+        "cmd-f4d2e6ad19824ac1",
+        "cmd-2dd687c75ff849a2"
+      ],
+      "summary": "show nat destination/source rules and show firewall confirm DNAT 8080->10.100.61.11:8080, hairpin masquerade SNAT, and forward filter default-action drop with only the 8080 flow (plus established/related) accepted"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-6fc4f306808d4f26",
+        "cmd-f4d2e6ad19824ac1",
+        "cmd-c26fbfc8b9d34885",
+        "cmd-ec4711369d2046ec",
+        "cmd-2dd687c75ff849a2",
+        "cmd-b5e979f2074d44a5"
+      ],
+      "summary": "Baseline boot_id 01735c83...; reboot acknowledged; post-restart boot_id 76086c9d... (uptime 23.6s); NAT/firewall config intact and app reachable via node1 again"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-256db393d0be42bc",
+        "cmd-f0640a7168f54ea1",
+        "cmd-0a24cb2048dd40be",
+        "cmd-57fc56b00a8540a3",
+        "cmd-4f7266c256174c20"
+      ],
+      "summary": "Baseline boot_id 1e0cb179...; reboot issued; post-restart boot_id 590f2fd6... (uptime 3.76s); nginx active, ufw rules intact, app serving locally and via node1, still blocked directly from node3"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-c3d6e1d12b694242",
+        "cmd-2bfb6d112fea4c93",
+        "cmd-d001c06c41714ffc",
+        "cmd-29221686d6754226"
+      ],
+      "summary": "Baseline boot_id 901ef286...; reboot issued; post-restart boot_id 5b4ff0b9... (uptime 4.06s); node3 can still reach the app via node1 and is still blocked from node2 directly"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-680f61b9cee947f3",
+        "cmd-247773e4c71145a1",
+        "cmd-94606cc74a8c4883",
+        "cmd-3f836f03dd774059"
+      ],
+      "summary": "Baseline boot_id d5f5239f...; reboot issued; post-restart boot_id c2161638... (uptime 3.87s); ansible-playbook tooling and inventory/playbook files intact, full playbook re-run against node1/node2/node3 succeeded"
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node1 (VyOS) configured to provide NAT/masquerade egress for the 10.50.50.0/24 private subnet, implemented via an Ansible playbook",
+      "status": "satisfied",
+      "summary": "An Ansible playbook (site.yml, run from control node node4) templates a VyOS configuration script and applies it via ansible.builtin.command with become, setting eth1=10.50.50.254/24 and a source-NAT masquerade rule for 10.50.50.0/24 out eth0, then commits/saves. A later idempotent re-run of the same playbook (cmd-6e59e59fff8545e5) confirms the config is fully described and reproducible by Ansible ('already exists' for the address/NAT lines). The nft ruleset on node1 (cmd-e253f5e052524a6d) shows the live masquerade rule with nonzero packet/byte counters, and ip_forward=1 is enabled. Note: the exact CLI syntax was first discovered via manual SSH/bash troubleshooting after the vyos.vyos.vyos_config module failed against this VyOS build's interactive CLI; that discovered script was then folded into the final Ansible playbook that manages it idempotently going forward.",
+      "evidence_ids": [
+        "cmd-544c14d83b814bbd",
+        "cmd-c069a129d7d14bd8",
+        "cmd-6e59e59fff8545e5",
+        "cmd-e253f5e052524a6d",
+        "cmd-448766b2eb6746fc",
+        "cmd-9b49a9fe9c3942e0"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "node2 and node3 configured (via Ansible) with a route to the internet through node1's private-network address",
+      "status": "satisfied",
+      "summary": "The same Ansible playbook uses community.general.nmcli to give node2/node3 static IPs (10.50.50.11/.12) on enp8s0 with node1 (10.50.50.254) as a lower-priority default gateway (metric 200), plus ansible.posix.sysctl to disable rp_filter on that NIC (persisted to /etc/sysctl.d, confirmed by cmd-7548e8a43e414d6e / cmd-e376b8d4a3b34f60). Playbook run cmd-c069a129d7d14bd8/cmd-6e59e59fff8545e5 show changed=true for these tasks with no failures.",
+      "evidence_ids": [
+        "cmd-544c14d83b814bbd",
+        "cmd-c069a129d7d14bd8",
+        "cmd-6e59e59fff8545e5",
+        "cmd-7548e8a43e414d6e"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "End-to-end internet egress from node2 and node3 through node1's NAT is functionally demonstrated",
+      "status": "satisfied",
+      "summary": "After the rp_filter root cause was diagnosed and fixed via the Ansible sysctl task, ping (0% loss) and HTTPS curl (HTTP 301) from both node2 and node3 succeeded via enp8s0/private gateway; tcpdump on node1 eth0 and eth1 plus conntrack show the outbound packets translated and matched via the masquerade rule, corroborating the client-observed success rather than relying on the client claim alone.",
+      "evidence_ids": [
+        "cmd-c6ffc5c528f7499e",
+        "cmd-9803092a401447d9",
+        "cmd-e376b8d4a3b34f60",
+        "cmd-eb81f74e6d484743"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart boot identity/health, restart, changed post-restart boot identity, and recovered service/data/cluster state for all managed nodes",
+      "status": "satisfied",
+      "summary": "For all four nodes, boot_id was captured before restart, a reboot was triggered, connectivity loss/timeout was observed during the transition, and a differing boot_id was captured after recovery. Post-restart, node1's NAT rule/eth1 address/ip_forward were re-verified, node2/node3's static IP, rp_filter=0 persistence, and live ping/HTTPS through NAT were re-verified (confirming persisted sysctl config survived reboot), and node4 (control node) had ansible-core intact with successful ansible ping to all three other nodes. The fixed after-executor lifecycle boot-identity snapshots for all four nodes match the command-level boot_id values, cross-confirming the transition.",
+      "evidence_ids": [
+        "cmd-95c699d30b014fc3",
+        "cmd-bfc408c3730346d2",
+        "cmd-8c057257621b4921",
+        "cmd-864061436c8e4e02",
+        "cmd-8f6724e6e04d4030",
+        "cmd-729b93e173cb40a3",
+        "cmd-cd6d9382df834911",
+        "cmd-b0c844136b52453a",
+        "cmd-bc78619e04d3417b",
+        "cmd-ab7f8ef7ae1448c8",
+        "cmd-2f93969dff114c3a",
+        "cmd-2120c95dc7e74cf8",
+        "cmd-c18ce130e3a74b34",
+        "cmd-dbf260831f5b4591",
+        "cmd-cd9e91b0d2214162",
+        "cmd-12acc8c7fb764d73",
+        "cmd-13ff96df73194d03",
+        "cmd-aab81c26c8494faf"
+      ]
+    }
+  ],
+  "overall_summary": "The executor implemented NAT egress for node2/node3 through node1 as an Ansible playbook (site.yml on the control node4), with the VyOS interface address and source-NAT masquerade rule, and RHEL client static IPs plus rp_filter fixes, all managed as idempotent Ansible tasks confirmed by a clean final playbook run. End-to-end egress (ping 0% loss, HTTPS 301) was directly verified from both node2 and node3, corroborated by nft counters, tcpdump, and conntrack on node1, with the rp_filter root cause correctly diagnosed and fixed. The mandatory node-restart protocol was completed for all four nodes with boot_id before/after evidence and full functional recovery, including persistence of the NAT and sysctl configuration across node1's reboot. Minor, bounded VyOS CLI troubleshooting mutations occurred during diagnosis of a broken Ansible module path; one was fully reverted and one was a no-op, and temporary artifacts were cleaned up.",
+  "limitations": [
+    "The eth1 address and NAT masquerade rule were first applied to node1 via manual SSH/bash script execution while diagnosing a vyos.vyos.vyos_config module incompatibility with this VyOS build's CLI, before being encoded into the final Ansible playbook; the playbook's idempotent 'already exists' confirmation demonstrates it now fully describes and can reproduce this state, but the very first application was not itself performed by Ansible.",
+    "Command outputs are bounded/truncated in places (e.g., long nmcli attribute dumps), so some deep configuration detail beyond what's quoted could not be independently reviewed."
+  ],
+  "command_stats": {
+    "total": 127,
+    "successful": 98,
+    "failed": 29,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Most state-changing commands were clearly tied to the goal: SSH key provisioning for Ansible connectivity, collection installs, the final idempotent Ansible playbook runs, and diagnostic rp_filter toggles that were folded into a persistent Ansible task. Two bounded troubleshooting mutations on node1's VyOS config were not directly load-bearing for the final solution: (1) cmd-8172f6d20cf949b1 set 'system host-name node1' via an ad-hoc vyos_config test to probe module behavior \u2014 value was unchanged from the existing hostname so it left no meaningful residue; (2) cmd-0f0d79e820e54299 set an eth1 'description sudo-test-ok' via a manual sudo script to diagnose why config sessions failed over plain SSH \u2014 this was fully reverted by cmd-f015d88aae44430c (delete description, commit, save), confirmed removed by a subsequent showCfg. Several other VyOS CLI experiments (description 'testme', address 10.50.50.1/24, interactive configure attempts) failed outright ('Set failed'/'Invalid command') and made no state change. Temporary debug/apply scripts on node1 (/tmp/vyos_test.sh, vyos_debug.sh, vyos_debug2.sh, vyos_apply.sh, vyos_cleanup.sh) and tcpdump/conntrack log files were explicitly removed at the end (cmd-f015d88aae44430c, cmd-a0ff618f0e134453). The after-executor lifecycle snapshot shows no abandoned files, failed services, or package-health issues beyond expected session-scoped systemd-private directories tied to the new boot IDs.",
+    "evidence_ids": [
+      "cmd-8172f6d20cf949b1",
+      "cmd-0f0d79e820e54299",
+      "cmd-f015d88aae44430c",
+      "cmd-a0ff618f0e134453",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "node1 (VyOS) performs the first source NAT translation as node3's traffic enters the transit network toward node2",
+      "status": "satisfied",
+      "summary": "node1 has a masquerade source NAT rule (rule 10, source 10.10.1.0/24, outbound-interface eth1) confirmed active via 'show nat source rules' (cmd-5df3d9b8cceb4f8a, reconfirmed post-restart in cmd-d735f345da514f81). Live conntrack on node1 during the end-to-end test shows the actual translation occurring: src=10.10.1.10 (node3) translated to src=10.10.2.1 (node1's transit IP) toward dst=10.10.3.10 (node4) (cmd-86dd0fa642c046fc).",
+      "evidence_ids": [
+        "cmd-5df3d9b8cceb4f8a",
+        "cmd-86dd0fa642c046fc",
+        "cmd-d735f345da514f81"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "node2 (OPNsense) performs the second source NAT translation as traffic enters lan-b toward node4",
+      "status": "satisfied",
+      "summary": "node2's outbound NAT is set to hybrid mode with a manual SNAT rule masquerading 10.10.2.0/24 traffic out opt2 (vtnet2/lan-b), confirmed via pfctl -s nat (cmd-c3c2521fdc2d4157, reconfirmed post-restart cmd-5ef6666297dc48b2). Live pf state during the test shows the second hop translation: 10.10.2.1 (node1) rewritten to 10.10.3.254 (node2's lan-b IP) before reaching node4 (cmd-683ffd3947a64862).",
+      "evidence_ids": [
+        "cmd-c3c2521fdc2d4157",
+        "cmd-683ffd3947a64862",
+        "cmd-5ef6666297dc48b2"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "node4 records the incoming HTTP connection as arriving from node2's lan-b address, not node3's or node1's address",
+      "status": "satisfied",
+      "summary": "node3 successfully fetched http://10.10.3.10:8080 and received 'hello-from-node4' (cmd-f9e888b2f3eb4696, reconfirmed post-restart cmd-b3889449f3cc4034, cmd-7150ac18078c449a, cmd-14906d1a4cf84797). tcpdump captured on node4's eth1 shows the SYN/GET arriving from source 10.10.3.254 (node2's lan-b IP), not 10.10.1.10 (node3) or 10.10.2.1 (node1) (cmd-9ad3fd85f6cd44dc, cmd-53032d1aa1884837 post-restart). node4's own socket table (netstat) corroborates the same source (cmd-c6f24c3ed0c041a2).",
+      "evidence_ids": [
+        "cmd-f9e888b2f3eb4696",
+        "cmd-9ad3fd85f6cd44dc",
+        "cmd-c6f24c3ed0c041a2",
+        "cmd-53032d1aa1884837",
+        "cmd-b3889449f3cc4034"
+      ]
+    }
+  ],
+  "overall_summary": "The captured evidence directly demonstrates the required double-NAT path: node1 masquerades node3's traffic into the transit network (conntrack shows 10.10.1.10 -> 10.10.2.1), node2 masquerades transit traffic into lan-b (pf state shows 10.10.2.1 -> 10.10.3.254), and node4's own tcpdump/netstat captures confirm the HTTP connection arrives sourced from node2's lan-b address (10.10.3.254), not node3 or node1. All three material outcomes of the task are satisfied with direct, corroborating evidence from multiple independent vantage points (node1 conntrack, node2 pf states, node4 tcpdump/netstat, and successful application-layer fetches). The executor additionally ran the provider-wide restart protocol on all four nodes, each showing a healthy pre-restart baseline, a restart acknowledgement, a changed boot identity, and full recovery of configuration, service, and the end-to-end double-NAT path \u2014 this is not part of the public contract but adds strong confidence that the solution is persistent and not just a one-off manual state.",
+  "limitations": [
+    "Restart/reboot behavior was not part of the stated task contract, so it is treated as supplemental confidence-building evidence rather than a scored requirement, per instructions.",
+    "Minor uncollected diagnostic residue (tcpdump/http log and pid files, /tmp/www) remains on node4 after the session; low risk and does not affect functional correctness but was not tidied up.",
+    "TCP source-port NAT translation was confirmed via tcpdump/netstat/pf-state/conntrack snapshots rather than a single packet-level trace across all three hops simultaneously, though the combination of independent per-hop evidence is coherent and mutually consistent."
+  ],
+  "command_stats": {
+    "total": 146,
+    "successful": 103,
+    "failed": 43,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Topology-discovery mutations (test IP addresses 172.16.x.x on eth1/eth2/vtnet1/vtnet2 across nodes 1-4, plus aliases on node2's vtnet1/vtnet2) were bounded, low-risk, and explicitly flushed/removed afterward (cmd-8faae105bb6a4dc6, cmd-ff63d26936664e13, cmd-4e88f37a8b72462d, cmd-73e1914fcb584655, cmd-30e188dba38a4a61, cmd-1c80df223a5a40bc) before final addressing was applied, so they left no residue. A config.xml backup was made before editing on node2 (cmd-e64f43d303ea4f03), a good practice. One command-syntax exploration on node2 (configctl interface reload, cmd-55095b7384954f63) failed harmlessly with no state change and was immediately corrected using the right per-interface command. On node4, diagnostic artifacts (tcpdump.log, tcpdump2.log, tcpdump.pid, http.log, http.pid) plus the working directory /tmp/www were left in place after use; these are low-risk, non-conflicting residue tied to legitimate evidence-collection and the (intentionally persistent) httpd service, but were not cleaned up at the end. No destructive, broad, or security-weakening mutations were observed; package installs (busybox-extras, tcpdump on node4) were required to serve/verify the HTTP service and are retained appropriately since the httpd service depends on busybox-extras.",
+    "evidence_ids": [
+      "cmd-8faae105bb6a4dc6",
+      "cmd-ff63d26936664e13",
+      "cmd-4e88f37a8b72462d",
+      "cmd-73e1914fcb584655",
+      "cmd-55095b7384954f63",
+      "cmd-e64f43d303ea4f03"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

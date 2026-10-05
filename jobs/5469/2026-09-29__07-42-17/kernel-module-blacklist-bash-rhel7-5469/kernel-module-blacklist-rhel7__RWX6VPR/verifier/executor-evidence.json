@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 7,
+    "successful": 6,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "usb-storage blocked from loading now (pre-reboot)",
+      "command_ids": [
+        "cmd-5a876233793745f3",
+        "cmd-8c9f7bafe11d4c26"
+      ],
+      "summary": "Blacklist config written and installed as install-true trap; modprobe -n -v shows resolution to /bin/true; lsmod confirms module absent; lsinitrd confirms the config is embedded in the regenerated initramfs for the running kernel"
+    },
+    {
+      "requirement": "usb-storage blocked from loading after reboot (persistence)",
+      "command_ids": [
+        "cmd-cc3d22420f96407c"
+      ],
+      "summary": "After the node restart, blacklist file is intact, modprobe -n -v still resolves to /bin/true, and an explicit modprobe usb-storage call exits 0 without the module appearing in lsmod"
+    },
+    {
+      "requirement": "Mandatory restart evidence: healthy baseline before restart",
+      "command_ids": [
+        "cmd-6a711f0fe557498f"
+      ],
+      "summary": "Captured pre-restart boot_id (325732f1...), sshd active, and blacklist file present"
+    },
+    {
+      "requirement": "Mandatory restart evidence: restart acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-94400213fab84e54"
+      ],
+      "summary": "Backgrounded `shutdown -r now` returned 'reboot acknowledged and issued' before the node dropped"
+    },
+    {
+      "requirement": "Mandatory restart evidence: node unreachable during restart, then changed boot identity confirmed",
+      "command_ids": [
+        "cmd-eb37813c21da4d73",
+        "cmd-2dbe7274f88745b1"
+      ],
+      "summary": "SSH timed out mid-restart; subsequent poll succeeded with a new boot_id (a143cc2b...) and fresh uptime timestamp, proving an actual reboot occurred"
+    },
+    {
+      "requirement": "Mandatory restart evidence: post-restart service/data recovery",
+      "command_ids": [
+        "cmd-cc3d22420f96407c"
+      ],
+      "summary": "sshd active and usb-storage blacklist verified functioning identically after the restart"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-5a876233793745f3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:37:39.222691+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 10989,
+      "command": "set -Eeuo pipefail\necho \"== boot id baseline ==\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s || true\n\necho \"== module status before ==\"\nlsmod | grep -i usb_storage || echo \"not loaded\"\n\necho \"== write modprobe blacklist ==\"\nsudo -n tee /etc/modprobe.d/blacklist-usb-storage.conf > /dev/null <<'EOF'\nblacklist usb-storage\ninstall usb-storage /bin/true\nEOF\ncat /etc/modprobe.d/blacklist-usb-storage.conf\n\necho \"== rebuild initramfs so blacklist applies at boot ==\"\nif command -v dracut >/dev/null 2>&1; then\n  sudo -n dracut -f\nelif command -v update-initramfs >/dev/null 2>&1; then\n  sudo -n update-initramfs -u\nelse\n  echo \"no initramfs tool found\" >&2\nfi\n\necho \"== attempt to remove module now if loaded ==\"\nif lsmod | grep -q '^usb_storage'; then\n  sudo -n modprobe -r usb-storage || sudo -n rmmod usb_storage || echo \"could not remove module now (may be in use)\" >&2\nelse\n  echo \"usb_storage already not loaded\"\nfi\n\necho \"== verify modprobe refuses to load it ==\"\nsudo -n modprobe usb-storage -n -v || true\nsudo -n modprobe usb-storage || echo \"modprobe load returned nonzero (expected due to blacklist install true)\"\n\necho \"== final lsmod check ==\"\nlsmod | grep -i usb_storage || echo \"confirmed: usb_storage not loaded\"\n",
+      "stdout": "== boot id baseline ==\n325732f1-bc39-4512-b05e-397f42060246\n2026-08-26 10:35:28\n== module status before ==\nnot loaded\n== write modprobe blacklist ==\nblacklist usb-storage\ninstall usb-storage /bin/true\n== rebuild initramfs so blacklist applies at boot ==\n== attempt to remove module now if loaded ==\nusb_storage already not loaded\n== verify modprobe refuses to load it ==\ninstall /bin/true \n== final lsmod check ==\nconfirmed: usb_storage not loaded\n",
+      "stderr": "bash: line 6: lsmod: command not found\nbash: line 25: lsmod: command not found\nbash: line 36: lsmod: command not found\n"
+    },
+    {
+      "command_id": "cmd-8c9f7bafe11d4c26",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:37:45.089882+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 731,
+      "command": "set -Eeuo pipefail\nexport PATH=/sbin:/usr/sbin:$PATH\necho \"== lsmod check ==\"\nlsmod | grep -i usb_storage || echo \"confirmed: usb_storage not loaded\"\necho \"== initramfs image freshness ==\"\nls -la /boot/initramfs-*.img 2>/dev/null | tail -5\nuname -r\necho \"== confirm blacklist baked into initramfs ==\"\nsudo -n lsinitrd \"/boot/initramfs-$(uname -r).img\" 2>/dev/null | grep -i \"blacklist-usb-storage\" || echo \"not found via lsinitrd (checking alt method)\"\nsudo -n bash -c 'lsinitrd \"/boot/initramfs-$(uname -r).img\" -f /etc/modprobe.d/blacklist-usb-storage.conf' 2>/dev/null || true\n",
+      "stdout": "== lsmod check ==\nconfirmed: usb_storage not loaded\n== initramfs image freshness ==\n-rw-------. 1 root root 58260408 Aug 26 10:13 /boot/initramfs-0-rescue-3e33d6bc18724dc3b347b7728e177adc.img\n-rw-------. 1 root root 38247936 Aug 26 10:37 /boot/initramfs-3.10.0-1160.el7.x86_64.img\n3.10.0-1160.el7.x86_64\n== confirm blacklist baked into initramfs ==\n-rw-r--r--   1 root     root           52 Aug 26 10:37 etc/modprobe.d/blacklist-usb-storage.conf\nblacklist usb-storage\ninstall usb-storage /bin/true\n"
+    },
+    {
+      "command_id": "cmd-6a711f0fe557498f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:37:49.292299+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 346,
+      "command": "set -Eeuo pipefail\necho \"== boot_id baseline ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== healthy service baseline (sshd) ==\"\nsudo -n systemctl is-active sshd\necho \"== usb-storage blacklist still present ==\"\ncat /etc/modprobe.d/blacklist-usb-storage.conf\n",
+      "stdout": "== boot_id baseline ==\n325732f1-bc39-4512-b05e-397f42060246\n== healthy service baseline (sshd) ==\nactive\n== usb-storage blacklist still present ==\nblacklist usb-storage\ninstall usb-storage /bin/true\n"
+    },
+    {
+      "command_id": "cmd-94400213fab84e54",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:37:51.653920+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 354,
+      "command": "sudo -n sh -c 'nohup shutdown -r now >/tmp/reboot.log 2>&1 &'; echo \"reboot acknowledged and issued\"",
+      "stdout": "reboot acknowledged and issued\n"
+    },
+    {
+      "command_id": "cmd-eb37813c21da4d73",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:38:02.815222+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5120,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "ssh: connect to host 10.100.101.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-2dbe7274f88745b1",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:38:28.276446+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 390,
+      "command": "cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stdout": "a143cc2b-8291-4df7-b3be-5a6a00c2f2b7\n2026-09-29 08:37:58\n"
+    },
+    {
+      "command_id": "cmd-cc3d22420f96407c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:38:33.200572+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 374,
+      "command": "set -Eeuo pipefail\nexport PATH=/sbin:/usr/sbin:$PATH\necho \"== sshd health ==\"\nsudo -n systemctl is-active sshd\necho \"== usb_storage not loaded after reboot ==\"\nlsmod | grep -i usb_storage || echo \"confirmed: usb_storage not loaded\"\necho \"== blacklist file persisted ==\"\ncat /etc/modprobe.d/blacklist-usb-storage.conf\necho \"== modprobe still refuses to load it ==\"\nsudo -n modprobe usb-storage -n -v\necho \"== module not autoloadable via modprobe (post-reboot) ==\"\nsudo -n modprobe usb-storage; echo \"modprobe exit code: $?\"\nlsmod | grep -i usb_storage || echo \"confirmed still not loaded after modprobe attempt\"\n",
+      "stdout": "== sshd health ==\nactive\n== usb_storage not loaded after reboot ==\nconfirmed: usb_storage not loaded\n== blacklist file persisted ==\nblacklist usb-storage\ninstall usb-storage /bin/true\n== modprobe still refuses to load it ==\ninstall /bin/true \n== module not autoloadable via modprobe (post-reboot) ==\nmodprobe exit code: 0\nconfirmed still not loaded after modprobe attempt\n"
+    }
+  ]
+}

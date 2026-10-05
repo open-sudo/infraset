@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "Implemented cross-LAN firewall via Ansible from control node4: node1 (VyOS) routes lan-a (10.50.1.0/24, node2) and lan-b (10.50.2.0/24, node3), with a forward-filter policy that allows only node2->node3 TCP/5432 (plus established/related) and drops all other cross-LAN traffic. Verified end-to-end (ICMP blocked, TCP/22 blocked, TCP/5432 succeeds) both before and after restarting all four managed nodes one at a time, with saved VyOS config and NetworkManager/firewalld state confirmed to persist across reboot.",
+  "actions_performed": [
+    "Mapped topology via temporary IP/ping tests: node1 eth1<->node2 eth1 (lan-a), node1 eth2<->node3 eth1 (lan-b)",
+    "Wired passwordless cluster SSH key onto node4 (control node) and into VyOS's own persistent public-keys config on node1, plus authorized_keys on node2/node3",
+    "Diagnosed a VyOS non-interactive SSH config-session bug (missing /etc/default/vyatta env vars and root:root-owned active-config subdirectories blocking the vyos user) and worked around it using sudo-elevated bash + script-template",
+    "Wrote an Ansible project (~/ansible-lan-fw on node4): inventory.ini and playbook.yml configuring VyOS interface addresses, a forward-filter policy (default-drop, established/related allow, node2->node3 tcp/5432 allow), static LAN IPs + cross-LAN static routes on node2/node3 via nmcli, and a firewalld port opening on node3",
+    "Fixed incorrect VyOS firewall syntax ('state established enable' -> 'state established') found by inspecting the live nft ruleset, which showed the original rule was an unconditional accept instead of a state match",
+    "Verified firewall behavior with a real TCP/5432 listener on node3: ping blocked, TCP/22 blocked, TCP/5432 succeeds, in both directions",
+    "Captured a pre-restart baseline (boot_id, addressing, firewall/nft state) on all 4 nodes, then restarted each one at a time via native reboot, polled until exec returned, and confirmed a changed boot_id plus full recovery of VyOS saved config/firewall, NetworkManager static IP/routes, firewalld port, and Ansible tooling",
+    "Found and fixed a persistence gap where node1's live-boot overlay regenerates authorized_keys from VyOS config on boot, discarding a manually-appended key; re-added the SSH key through 'set system login user vyos authentication public-keys' so it survives reboot, then re-ran the playbook and re-verified end-to-end connectivity"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 can reach node3 on TCP/5432, all other cross-LAN traffic rejected",
+      "command_ids": [
+        "cmd-19fa2d8642864746",
+        "cmd-c526d8bcf6dc48b8",
+        "cmd-386835cc8fec4886",
+        "cmd-da3feabb65bd4235",
+        "cmd-5b8225803e744989"
+      ],
+      "summary": "nft ruleset and live tests from node2 show ICMP and TCP/22 blocked while TCP/5432 to node3 succeeds with a real HTTP response; node3->node2 traffic also blocked"
+    },
+    {
+      "requirement": "Implementation done via Ansible",
+      "command_ids": [
+        "cmd-9b826ed005b642f3",
+        "cmd-8713b10fcb9f416a",
+        "cmd-c0088bdfc852462a",
+        "cmd-342a5ccab2404ba3"
+      ],
+      "summary": "ansible-playbook run from node4 (control node) against inventory covering node1 (VyOS), node2, node3, applying interface/firewall config and LAN host addressing/routes/firewalld"
+    },
+    {
+      "requirement": "node1 restart baseline, ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-7d5f958ee2aa4e39",
+        "cmd-aee53e0ea5514d91",
+        "cmd-c2915586633d40e2",
+        "cmd-02564e6d5c384d5c"
+      ],
+      "summary": "Captured boot_id/nft/addressing baseline, issued shutdown -r now, polled until exec returned with a new boot_id, and confirmed eth1/eth2 addressing and forward-filter rules persisted from saved config"
+    },
+    {
+      "requirement": "node2 restart baseline, ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-c89e7c5a0a544b60",
+        "cmd-dd1caa4026254091",
+        "cmd-f59ceaa8da594b7a",
+        "cmd-17ae1900b7164505"
+      ],
+      "summary": "Captured boot_id/addressing baseline, issued reboot, polled until exec returned with a new boot_id, confirmed eth1 static IP and static route to lan-b persisted"
+    },
+    {
+      "requirement": "node3 restart baseline, ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-a055274581304526",
+        "cmd-583ea6c565e64865",
+        "cmd-9c9a2fa6f8c242c9",
+        "cmd-43eae474a87641b0"
+      ],
+      "summary": "Captured boot_id/addressing/firewalld baseline, issued reboot, polled until exec returned with a new boot_id, confirmed eth1 static IP, static route to lan-a, and firewalld port 5432 persisted"
+    },
+    {
+      "requirement": "node4 restart baseline, ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-2897a813f5ca4a7b",
+        "cmd-afce47bc01b64519",
+        "cmd-98aae307081e4ba7",
+        "cmd-e0e596a05fc54aa0",
+        "cmd-ba679b5e9cd94143",
+        "cmd-7569fa35b0624dd9"
+      ],
+      "summary": "Captured boot_id/workspace baseline on control node, issued reboot, polled until exec returned with a new boot_id, confirmed ansible-lan-fw workspace and ansible-playbook tooling intact; discovered node1 lost the manually-added SSH key on its own reboot, fixed it via persistent VyOS config, and successfully re-ran the playbook end-to-end"
+    },
+    {
+      "requirement": "End-to-end connectivity re-verified after full restart cycle",
+      "command_ids": [
+        "cmd-caa65cc5f1494848",
+        "cmd-be70bd22e0c94847",
+        "cmd-28fcc770a52f4bda",
+        "cmd-fc98947be9cc4ad4"
+      ],
+      "summary": "Post-reboot re-test: TCP/5432 from node2 to node3 returns HTTP 200, ICMP and TCP/22 blocked; test listener cleaned up and no stale VyOS config sessions remain"
+    }
+  ]
+}

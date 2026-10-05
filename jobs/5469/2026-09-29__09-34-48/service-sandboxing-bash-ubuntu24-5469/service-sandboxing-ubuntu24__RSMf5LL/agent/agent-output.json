@@ -1,0 +1,70 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-worker as a hardened systemd service on node1: runs as dedicated unprivileged system user inventory-worker, loops writing a counter and log line every 10s, confined to /var/lib/inventory via ProtectSystem=strict + ReadWritePaths=/var/lib/inventory + ProtectHome, with NoNewPrivileges=yes and a broad set of additional systemd sandboxing directives (PrivateTmp, PrivateDevices, RestrictNamespaces, MemoryDenyWriteExecute, CapabilityBoundingSet=, etc). Verified confinement by falsification (same-profile write to /var/lib/inventory succeeds; writes to /root and /etc fail). Completed mandatory single-node restart protocol: captured pre-reboot boot_id and service/data state, issued systemctl reboot, polled until reachable, confirmed boot_id changed, and verified the service re-enabled/re-started automatically with data (count, log) intact and continuing to grow.",
+  "actions_performed": [
+    "Inspected node1 OS/init (Ubuntu 24.04, systemd 255)",
+    "Created system user inventory-worker with nologin shell, no home dir creation",
+    "Created /var/lib/inventory owned by inventory-worker, mode 750",
+    "Wrote worker script /usr/local/lib/inventory-worker/worker.sh (loop writing count+log to /var/lib/inventory every 10s)",
+    "Created /etc/systemd/system/inventory-worker.service with NoNewPrivileges=yes, ProtectSystem=strict, ReadWritePaths=/var/lib/inventory, ProtectHome, PrivateTmp/Devices, RestrictNamespaces, MemoryDenyWriteExecute, CapabilityBoundingSet=, SystemCallFilter=@system-service, etc.",
+    "Ran systemd-analyze verify on the unit (clean)",
+    "systemctl daemon-reload; enable --now inventory-worker.service; confirmed active/running with correct uid=999 and NoNewPrivs=1",
+    "Verified worker.log/count updating inside /var/lib/inventory only",
+    "Falsification test via systemd-run with same security properties: write to /var/lib/inventory succeeds, /root permission denied, /etc read-only filesystem",
+    "Removed probe test file",
+    "Captured baseline boot_id and service/data state pre-restart",
+    "Issued backgrounded systemctl reboot so acknowledgement returned before disconnect",
+    "Polled node1 until exec succeeded again",
+    "Confirmed boot_id changed (96c08b66... -> 9939bbff...)",
+    "Verified inventory-worker.service enabled+active post-reboot and count/log continued from prior persisted state"
+  ],
+  "evidence": [
+    {
+      "requirement": "Service installed and running, confined to /var/lib/inventory, NoNewPrivileges",
+      "command_ids": [
+        "cmd-df6acd195e2f412c",
+        "cmd-befabce42d654b60",
+        "cmd-70c1356663a748fc",
+        "cmd-7f166b83653a4726"
+      ],
+      "summary": "Unit created, verified clean by systemd-analyze, started successfully; runtime proc status shows uid=999 (unprivileged) and NoNewPrivs=1; data files written only under /var/lib/inventory"
+    },
+    {
+      "requirement": "Confinement falsification (writes outside /var/lib/inventory denied)",
+      "command_ids": [
+        "cmd-c6b49c8463814e44"
+      ],
+      "summary": "Same-profile process: write to /var/lib/inventory succeeds (exit 0), write to /root denied (Permission denied), write to /etc denied (Read-only file system)"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline",
+      "command_ids": [
+        "cmd-f285f61723244712"
+      ],
+      "summary": "Captured boot_id 96c08b66-5aa4-4e9a-b76f-04e2c6e34ced, service enabled+active, count=3, log entries present"
+    },
+    {
+      "requirement": "Restart acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-7c799f824cca4ac3"
+      ],
+      "summary": "Backgrounded systemctl reboot command returned 'reboot_issued' before node disconnected"
+    },
+    {
+      "requirement": "Changed boot identity proving actual restart",
+      "command_ids": [
+        "cmd-8f4953e312164e2f",
+        "cmd-8ffeb96b90624315",
+        "cmd-49f8ce3a008d4f96"
+      ],
+      "summary": "Node unreachable during reboot (connection reset/timeout), then reachable again with new boot_id 9939bbff-1f14-4e1f-b25c-f0b5ea9b2cbc, differing from pre-restart baseline"
+    },
+    {
+      "requirement": "Post-restart service and data recovery",
+      "command_ids": [
+        "cmd-22b0fcc5b0744c6a"
+      ],
+      "summary": "inventory-worker.service enabled and active (auto-started post-boot), count advanced 3->4, worker.log preserved and appended, confirming both service persistence and data durability in /var/lib/inventory across restart"
+    }
+  ]
+}

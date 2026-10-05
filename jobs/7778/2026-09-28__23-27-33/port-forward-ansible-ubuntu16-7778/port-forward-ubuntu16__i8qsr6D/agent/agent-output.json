@@ -1,0 +1,146 @@
+{
+  "status": "completed",
+  "summary": "Implemented an Ansible playbook (run from node4, the designated control node) that publishes node2's private port-8080 app through node1 (VyOS router) so node3 can reach it, without exposing the rest of the node1<->node2 private network to node3. The private link (node1 eth1 <-> node2 ens7, previously unaddressed) was given static IPs 10.50.50.1/24 and 10.50.50.2/24; node2 got a minimal HTTP app bound only to its private IP; node1 got destination NAT (eth0:8080 -> 10.50.50.2:8080) plus hairpin source NAT (masquerade on eth1) so replies route back through the router, and a default-drop forward firewall with one narrow allow rule so no other port/host on the private network is reachable from node3. Verified node3 can reach the app via node1:8080 but gets 'No route to host' hitting node2's private IP directly. Diagnosed and worked around two real defects in this environment: the vyos.vyos collection's network_cli connection silently failed to persist VyOS commits, and vyos's default vbash login shell drops VyOS config-session state when SSH runs a nested plain bash -c. Fixed by using Ansible's raw module with 'sudo bash -c' (vyos has NOPASSWD ALL sudo) to run the native configure/set/commit/save sequence directly as root, verified via new commit revisions and config.boot content. Completed the mandatory restart protocol: captured boot_id and functional baselines on all four nodes, restarted them one at a time via systemctl reboot, polled until exec was available again, confirmed each node's boot_id changed, and verified full recovery (NAT/firewall config, private IPs, app service, and the node3->node1->node2 path) after every restart.",
+  "actions_performed": [
+    "Surveyed topology on all 4 nodes: node1=VyOS (eth0 mgmt/10.100.201.10, eth1 private unaddressed), node2=Ubuntu16.04 (ens2 mgmt/10.100.201.11, ens7 private unaddressed), node3=Ubuntu16.04 client (10.100.201.12), node4=Ubuntu24.04 Ansible control node (10.100.201.13)",
+    "Bootstrapped Ansible SSH access: added node4's id_rsa.pub to node2/node3 antrieb user and node1 vyos user authorized_keys",
+    "Installed vyos.vyos Ansible collection on node4",
+    "Wrote /root/pf-ansible/site.yml (3 plays: configure node2's private IP+app via raw module for legacy Python 3.5 target, configure node1 NAT/firewall via VyOS raw configure/commit/save, verify from node3) and inventory.ini",
+    "Diagnosed vyos_config module commit-not-persisting bug (kernel nftables applied but config tree/config.boot unchanged) by comparing manual CLI runs vs ansible runs",
+    "Diagnosed vbash-vs-bash config-session loss when SSH'ing as vyos user directly; fixed by adding 'sudo' before 'bash -c' in the raw tasks",
+    "Ran the full playbook end-to-end successfully: node2 got static 10.50.50.2/24 on ens7 + private-app.service on 8080; node1 got 10.50.50.1/24 on eth1 + DNAT + hairpin SNAT + default-drop forward firewall with narrow allow",
+    "Verified functionality: node3 curl to node1:8080 returns app content; node3 curl to node2's private IP fails with No route to host",
+    "Captured pre-restart baselines (boot_id, service state, NAT rules, IPs) on all 4 nodes",
+    "Restarted node1 via systemctl reboot, polled until exec available, confirmed new boot_id and full config/NAT/app recovery",
+    "Restarted node2, confirmed new boot_id, private-app.service active, ens7 IP restored, end-to-end curl works",
+    "Restarted node3, confirmed new boot_id, end-to-end curl via node1 works and direct private-IP access still blocked",
+    "Restarted node4, confirmed new boot_id, ansible tooling and SSH access intact",
+    "Cleaned up temporary root SSH key added to node1 during diagnosis and leftover test files on node4"
+  ],
+  "evidence": [
+    {
+      "requirement": "node3 can reach node2's app via node1 on port 8080",
+      "command_ids": [
+        "cmd-014a7bce67c74870",
+        "cmd-05d5572a0c77446c"
+      ],
+      "summary": "Ansible playbook run and final post-restart check both show node3 curling http://10.100.201.10:8080/ and receiving 'served-by-node2-private-network'"
+    },
+    {
+      "requirement": "Rest of the private network is not opened to node3",
+      "command_ids": [
+        "cmd-9473643e243c45ab",
+        "cmd-5ee577e4633d4c82",
+        "cmd-05d5572a0c77446c"
+      ],
+      "summary": "node3 curl directly to node2's private IP 10.50.50.2:8080 fails with 'No route to host', both before and after node restarts, confirming only the published port is reachable"
+    },
+    {
+      "requirement": "Implementation done via Ansible",
+      "command_ids": [
+        "cmd-014a7bce67c74870"
+      ],
+      "summary": "Full ansible-playbook run from node4 control node applying node2 app/IP config and node1 NAT/firewall config, all tasks reporting changed/ok with no failures"
+    },
+    {
+      "requirement": "VyOS NAT/firewall config genuinely persisted (not just transient kernel state)",
+      "command_ids": [
+        "cmd-84135ad38fec47f3"
+      ],
+      "summary": "Post-run check shows new commit revision 'by vyos via cli' and config.boot containing 3 occurrences of 'rule 10' (nat destination, nat source, firewall), proving real persistence after fixing the sudo bash -c approach"
+    },
+    {
+      "requirement": "node1 (VyOS router) healthy baseline before restart",
+      "command_ids": [
+        "cmd-5a3180ec96204fdd"
+      ],
+      "summary": "Captured boot_id 9d3cb897..., live nftables DNAT/SNAT/firewall rules, and eth1 10.50.50.1/24 before reboot"
+    },
+    {
+      "requirement": "node1 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-3b04ec305bf14186",
+        "cmd-0c795d0de0b64b03",
+        "cmd-5908eeaccdce4502"
+      ],
+      "summary": "systemctl reboot acknowledged and returned before disconnect; exec then times out (node down); subsequent poll succeeds with new boot_id 5ccf4ae7..., proving a real restart"
+    },
+    {
+      "requirement": "node1 recovered state after restart",
+      "command_ids": [
+        "cmd-e588494023f0468a"
+      ],
+      "summary": "Post-restart check shows NAT/firewall config commands present, live nftables rules re-applied, eth1 address restored to 10.50.50.1/24"
+    },
+    {
+      "requirement": "node2 healthy baseline before restart",
+      "command_ids": [
+        "cmd-b7eb36758fc646c9"
+      ],
+      "summary": "Captured boot_id 35c87ec9..., private-app.service active, listening on 10.50.50.2:8080, ens7 addressed"
+    },
+    {
+      "requirement": "node2 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-c60a6c87e59643c1",
+        "cmd-a73da1874d394c45",
+        "cmd-204be9628d064a81"
+      ],
+      "summary": "systemctl reboot acknowledged; exec then refused (node down); subsequent poll succeeds with new boot_id 2cedd588..., proving a real restart"
+    },
+    {
+      "requirement": "node2 recovered state after restart",
+      "command_ids": [
+        "cmd-f14a967c99d34a43",
+        "cmd-4f456463314a4d00"
+      ],
+      "summary": "private-app.service active again, ens7 IP restored, and node3 curl through node1 succeeds post-reboot"
+    },
+    {
+      "requirement": "node3 healthy baseline before restart",
+      "command_ids": [
+        "cmd-64a77e8900274093"
+      ],
+      "summary": "Captured boot_id 2f708738... and confirmed app reachable via node1 before reboot"
+    },
+    {
+      "requirement": "node3 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-ef1690d032ae47f9",
+        "cmd-b5fc51258e8540b7",
+        "cmd-994d8d23ae024621"
+      ],
+      "summary": "systemctl reboot acknowledged; exec then refused (node down); subsequent poll succeeds with new boot_id 064b0aaf..., proving a real restart"
+    },
+    {
+      "requirement": "node3 recovered state after restart",
+      "command_ids": [
+        "cmd-5ee577e4633d4c82"
+      ],
+      "summary": "Post-restart node3 successfully curls the app via node1 and is still blocked from the private IP directly"
+    },
+    {
+      "requirement": "node4 healthy baseline before restart",
+      "command_ids": [
+        "cmd-316febb1a5894be3"
+      ],
+      "summary": "Captured boot_id eefaca89... and confirmed ansible-playbook present before reboot"
+    },
+    {
+      "requirement": "node4 restart acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-4ef5e2cfd7424370",
+        "cmd-9bc367da1d4640c9",
+        "cmd-1f856f36e9f34c37"
+      ],
+      "summary": "systemctl reboot acknowledged; exec then reset (node down); subsequent poll succeeds with new boot_id 4c0f416e..., proving a real restart"
+    },
+    {
+      "requirement": "node4 recovered state after restart",
+      "command_ids": [
+        "cmd-34608ddeaa254a7c"
+      ],
+      "summary": "ansible-playbook binary present, pf-ansible directory intact, and SSH from node4 to node2 (antrieb user) succeeds post-reboot"
+    }
+  ]
+}

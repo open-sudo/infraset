@@ -1,0 +1,214 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 15,
+    "successful": 14,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Serve HTTPS on port 8443",
+      "command_ids": [
+        "cmd-1ee1175d62b44581",
+        "cmd-b45fd93b3f6843d8"
+      ],
+      "summary": "Shows the active/enabled service, 8443 listener, firewall rules, successful HTTPS response, and live certificate before and after restart."
+    },
+    {
+      "requirement": "Renew the certificate automatically before expiry",
+      "command_ids": [
+        "cmd-1ee1175d62b44581",
+        "cmd-3e6259099ba540de"
+      ],
+      "summary": "Shows the enabled daily persistent timer and a successful timer-target renewal from a certificate expiring in one day to one valid for 30 days."
+    },
+    {
+      "requirement": "Pick up renewed certificates while continuing to answer requests",
+      "command_ids": [
+        "cmd-887120c7506e487d",
+        "cmd-3e6259099ba540de"
+      ],
+      "summary": "Both rotation tests show changed live certificate fingerprints, unchanged service PIDs, and 140/140 total HTTPS requests returning HTTP 200 during renewal."
+    },
+    {
+      "requirement": "Mandatory node1 restart and recovery",
+      "command_ids": [
+        "cmd-f93a88c9fd554c55",
+        "cmd-94a83baa92d14782",
+        "cmd-b45fd93b3f6843d8"
+      ],
+      "summary": "Captures the healthy pre-restart boot identity and reboot acknowledgement, the changed boot identity, and recovered HTTPS service, certificate, timer, firewall state, listener, and response with zero failed units."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-470ec85304014679",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:01:00.206182+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1970,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'os='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nprintf 'packages\\n'; rpm -q nginx openssl certbot 2>/dev/null || true\nprintf 'listeners\\n'; ss -tlnp\nprintf 'failed_units\\n'; systemctl --failed --no-pager || true",
+      "stdout": "boot_id=4d842549-003e-4f78-bb26-12732f129e58\nos=centos 10\npackages\npackage nginx is not installed\nopenssl-3.5.5-1.el10.x86_64\npackage certbot is not installed\nlisteners\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                         \nLISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:((\"sshd\",pid=939,fd=7))  \nLISTEN 0      4096               *:9090            *:*    users:((\"systemd\",pid=1,fd=68))\nLISTEN 0      128             [::]:22           [::]:*    users:((\"sshd\",pid=939,fd=8))  \nfailed_units\n  UNIT LOAD ACTIVE SUB DESCRIPTION\n\n0 loaded units listed."
+    },
+    {
+      "command_id": "cmd-81fb2e3633734234",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:01:09.917030+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1997,
+      "command": "set -eu\ncommand -v python3 || true\npython3 --version 2>/dev/null || true\nrpm -q httpd haproxy lighttpd 2>/dev/null || true\nsystemctl list-unit-files --no-pager | grep -E '^(httpd|nginx|haproxy)\\.' || true\nopenssl version",
+      "stdout": "/usr/bin/python3\nPython 3.12.12\npackage httpd is not installed\npackage haproxy is not installed\npackage lighttpd is not installed\nOpenSSL 3.5.5 27 Jan 2026 (Library: OpenSSL 3.5.5 27 Jan 2026)"
+    },
+    {
+      "command_id": "cmd-233ae330f60c4dbc",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:01:30.312876+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2749,
+      "command": "set -eu\nprintf 'selinux='; getenforce 2>/dev/null || true\nprintf 'firewalld='; systemctl is-active firewalld 2>/dev/null || true\nfirewall-cmd --get-active-zones 2>/dev/null || true\nfirewall-cmd --list-ports 2>/dev/null || true\nhostname -s\nhostname -I",
+      "stdout": "selinux=Enforcing\nfirewalld=active\npublic (default)\n  interfaces: enp1s0\n\nnode1\n10.100.123.10 "
+    },
+    {
+      "command_id": "cmd-a159dc8fa74d44de",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:01:57.860741+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 2077,
+      "command": "set -eu\ninstall -d -m 0700 /etc/https-8443\ninstall -d -m 0755 /opt/https-8443\ncat > /usr/local/sbin/renew-https-8443-cert <<'ANTRIEB_RENEW'\n#!/bin/sh\nset -eu\numask 077\ncert_dir=/etc/https-8443\nbundle=\"$cert_dir/tls.pem\"\nforce=0\nif [ \"${1:-}\" = \"--force\" ]; then force=1; fi\nif [ \"$force\" -eq 0 ] && [ -s \"$bundle\" ] && openssl x509 -in \"$bundle\" -checkend 604800 -noout >/dev/null 2>&1; then\n  exit 0\nfi\nexec 9>\"$cert_dir/.renew.lock\"\nflock -x 9\nif [ \"$force\" -eq 0 ] && [ -s \"$bundle\" ] && openssl x509 -in \"$bundle\" -checkend 604800 -noout >/dev/null 2>&1; then\n  exit 0\nfi\ntmpdir=$(mktemp -d \"$cert_dir/.renew.XXXXXX\")\ntrap 'rm -rf \"$tmpdir\"' EXIT HUP INT TERM\nhost=$(hostname -s)\nip=$(hostname -I | awk '{print $1}')\nopenssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 30 \\\n  -subj \"/CN=$host\" -addext \"subjectAltName=DNS:$host,IP:$ip\" \\\n  -keyout \"$tmpdir/key.pem\" -out \"$tmpdir/cert.pem\" >/dev/null 2>&1\ncat \"$tmpdir/key.pem\" \"$tmpdir/cert.pem\" > \"$tmpdir/tls.pem\"\nchmod 0600 \"$tmpdir/tls.pem\"\nmv -f \"$tmpdir/tls.pem\" \"$bundle\"\nANTRIEB_RENEW\nchmod 0755 /usr/local/sbin/renew-https-8443-cert\ncat > /opt/https-8443/server.py <<'ANTRIEB_PY'\n#!/usr/bin/python3\nimport ssl\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nCERT = \"/etc/https-8443/tls.pem\"\n\nclass Handler(BaseHTTPRequestHandler):\n    protocol_version = \"HTTP/1.1\"\n    def do_GET(self):\n        body = b\"HTTPS service on node1 is healthy\\n\"\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"text/plain\")\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\n    def log_message(self, fmt, *args):\n        pass\n\nclass ReloadingTLSHTTPServer(ThreadingHTTPServer):\n    daemon_threads = True\n    allow_reuse_address = True\n    def get_request(self):\n        sock, addr = super().get_request()\n        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)\n        ctx.minimum_version = ssl.TLSVersion.TLSv1_2\n        ctx.load_cert_chain(CERT)\n        try:\n            return ctx.wrap_socket(sock, server_side=True), addr\n        except Exception:\n            sock.close()\n            raise\n\nReloadingTLSHTTPServer((\"0.0.0.0\", 8443), Handler).serve_forever()\nANTRIEB_PY\nchmod 0755 /opt/https-8443/server.py\ncat > /etc/systemd/system/https-8443.service <<'ANTRIEB_SERVICE'\n[Unit]\nDescription=Certificate-reloading HTTPS service on port 8443\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStartPre=/usr/local/sbin/renew-https-8443-cert\nExecStart=/usr/bin/python3 /opt/https-8443/server.py\nRestart=on-failure\nRestartSec=2\nNoNewPrivileges=yes\nPrivateTmp=yes\nProtectSystem=strict\nProtectHome=yes\nReadOnlyPaths=/etc/https-8443\n\n[Install]\nWantedBy=multi-user.target\nANTRIEB_SERVICE\ncat > /etc/systemd/system/https-8443-renew.service <<'ANTRIEB_RENEW_SERVICE'\n[Unit]\nDescription=Renew HTTPS certificate when fewer than 7 days remain\n\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/renew-https-8443-cert\nANTRIEB_RENEW_SERVICE\ncat > /etc/systemd/system/https-8443-renew.timer <<'ANTRIEB_TIMER'\n[Unit]\nDescription=Daily HTTPS certificate renewal check\n\n[Timer]\nOnCalendar=daily\nRandomizedDelaySec=1h\nPersistent=true\nUnit=https-8443-renew.service\n\n[Install]\nWantedBy=timers.target\nANTRIEB_TIMER\nsystemctl daemon-reload\nsystemctl enable --now https-8443.service https-8443-renew.timer\nfirewall-cmd --permanent --add-port=8443/tcp\nfirewall-cmd --add-port=8443/tcp",
+      "stdout": "Created symlink '/etc/systemd/system/multi-user.target.wants/https-8443.service' \u2192 '/etc/systemd/system/https-8443.service'.\nCreated symlink '/etc/systemd/system/timers.target.wants/https-8443-renew.timer' \u2192 '/etc/systemd/system/https-8443-renew.timer'.\nJob for https-8443.service failed because the control process exited with error code.\nSee \"systemctl status https-8443.service\" and \"journalctl -xeu https-8443.service\" for details."
+    },
+    {
+      "command_id": "cmd-0f5e6202d60b4059",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:02:10.195301+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 4250,
+      "command": "systemctl status https-8443.service --no-pager -l || true\njournalctl -u https-8443.service -n 30 --no-pager || true\nls -laZ /etc/https-8443 /usr/local/sbin/renew-https-8443-cert",
+      "stdout": "\u25cf https-8443.service - Certificate-reloading HTTPS service on port 8443\n     Loaded: loaded (/etc/systemd/system/https-8443.service; enabled; preset: disabled)\n     Active: activating (auto-restart) (Result: exit-code) since Fri 2026-10-02 11:02:05 EDT; 1s ago\n Invocation: 7f89adb8c363420e845ccaa0b05a3b6b\n    Process: 2484 ExecStartPre=/usr/local/sbin/renew-https-8443-cert (code=exited, status=1/FAILURE)\n   Mem peak: 2.7M\n        CPU: 5ms\nOct 02 11:01:56 node1 systemd[1]: Starting https-8443.service - Certificate-reloading HTTPS service on port 8443...\nOct 02 11:01:56 node1 renew-https-8443-cert[2468]: /usr/local/sbin/renew-https-8443-cert: line 11: /etc/https-8443/.renew.lock: Read-only file system\nOct 02 11:01:56 node1 systemd[1]: https-8443.service: Control process exited, code=exited, status=1/FAILURE\nOct 02 11:01:56 node1 systemd[1]: https-8443.service: Failed with result 'exit-code'.\nOct 02 11:01:56 node1 systemd[1]: Failed to start https-8443.service - Certificate-reloading HTTPS service on port 8443.\nOct 02 11:01:58 node1 systemd[1]: https-8443.service: Scheduled restart job, restart counter is at 1.\nOct 02 11:01:58 node1 systemd[1]: Starting https-8443.service - Certificate-reloading HTTPS service on port 8443...\nOct 02 11:01:58 node1 renew-https-8443-cert[2472]: /usr/local/sbin/renew-https-8443-cert: line 11: /etc/https-8443/.renew.lock: Read-only file system\nOct 02 11:01:58 node1 systemd[1]: https-8443.service: Control process exited, code=exited, status=1/FAILURE\nOct 02 11:01:58 node1 systemd[1]: https-8443.service: Failed with result 'exit-code'.\nOct 02 11:01:58 node1 systemd[1]: Failed to start https-8443.service - Certificate-reloading HTTPS service on port 8443.\nOct 02 11:02:00 node1 systemd[1]: https-8443.service: Scheduled restart job, restart counter is at 2.\nOct 02 11:02:00 node1 systemd[1]: Starting https-8443.service - Certificate-reloading HTTPS service on port 8443...\nOct 02 11:02:00 node1 renew-https-8443-cert[2476]: /usr/local/sbin/renew-https-8443-cert: line 11: /etc/https-8443/.renew.lock: Read-only file system\nOct 02 11:02:00 node1 systemd[1]: https-8443.service: Control process exited, code=exited, status=1/FAILURE\nOct 02 11:02:00 node1 systemd[1]: https-8443.service: Failed with result 'exit-code'.\nOct 02 11:02:00 node1 systemd[1]: Failed to start https-8443.service - Certificate-reloading HTTPS service on port 8443.\nOct 02 11:02:02 node1 systemd[1]: https-8443.service: Scheduled restart job, restart counter is at 3.\nOct 02 11:02:02 node1 systemd[1]: Starting https-8443.service - Certificate-reloading HTTPS service on port 8443...\nOct 02 11:02:02 node1 renew-https-8443-cert[2480]: /usr/local/sbin/renew-https-8443-cert: line 11: /etc/https-8443/.renew.lock: Read-only file system\nOct 02 11:02:02 node1 systemd[1]: https-8443.service: Control process exited, code=exited, status=1/FAILURE\nOct 02 11:02:02 node1 systemd[1]: https-8443.service: Failed with result 'exit-code'.\nOct 02 11:02:02 node1 systemd[1]: Failed to start https-8443.service - Certificate-reloading HTTPS service on port 8443.\nOct 02 11:02:05 node1 systemd[1]: https-8443.service: Scheduled restart job, restart counter is at 4.\nOct 02 11:02:05 node1 systemd[1]: Starting https-8443.service - Certificate-reloading HTTPS service on port 8443...\nOct 02 11:02:05 node1 renew-https-8443-cert[2484]: /usr/local/sbin/renew-https-8443-cert: line 11: /etc/https-8443/.renew.lock: Read-only file system\nOct 02 11:02:05 node1 systemd[1]: https-8443.service: Control process exited, code=exited, status=1/FAILURE\nOct 02 11:02:05 node1 systemd[1]: https-8443.service: Failed with result 'exit-code'.\nOct 02 11:02:05 node1 systemd[1]: Failed to start https-8443.service - Certificate-reloading HTTPS service on port 8443.\n-rwxr-xr-x. 1 root root system_u:object_r:bin_t:s0 898 Oct  2 11:01 /usr/local/sbin/renew-https-8443-cert\n\n/etc/https-8443:\ntotal 12\ndrwx------.  2 root root system_u:object_r:etc_t:s0    6 Oct  2 11:01 .\ndrwxr-xr-x. 95 root root system_u:object_r:etc_t:s0 8192 Oct  2 11:01 .."
+    },
+    {
+      "command_id": "cmd-1ccb8397173b4fd9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:02:17.666818+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1994,
+      "command": "set -eu\nsystemctl stop https-8443.service || true\n/usr/local/sbin/renew-https-8443-cert\nsed -i '\\|^ExecStartPre=|d' /etc/systemd/system/https-8443.service\nsystemctl daemon-reload\nsystemctl restart https-8443.service\nsystemctl start https-8443-renew.timer\nfirewall-cmd --permanent --add-port=8443/tcp\nfirewall-cmd --add-port=8443/tcp\nsystemctl is-active https-8443.service\nsystemctl is-active https-8443-renew.timer",
+      "stdout": "success\nsuccess\nactive\nactive"
+    },
+    {
+      "command_id": "cmd-1ee1175d62b44581",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:02:34.713751+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2179,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service='; systemctl is-active https-8443.service\nprintf 'enabled='; systemctl is-enabled https-8443.service\nprintf 'timer='; systemctl is-active https-8443-renew.timer\nprintf 'timer_enabled='; systemctl is-enabled https-8443-renew.timer\nsystemctl list-timers https-8443-renew.timer --no-pager\nprintf 'listener\\n'; ss -tlnp | grep ':8443'\nprintf 'firewall_runtime='; firewall-cmd --query-port=8443/tcp\nprintf 'firewall_permanent='; firewall-cmd --permanent --query-port=8443/tcp\nprintf 'response='; curl --silent --show-error --insecure --max-time 5 \"https://$NODE_IP:8443/\"\nprintf 'peer_cert\\n'; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -subject -dates -fingerprint -sha256",
+      "stdout": "boot_id=4d842549-003e-4f78-bb26-12732f129e58\nservice=active\nenabled=enabled\ntimer=active\ntimer_enabled=enabled\nNEXT                        LEFT LAST PASSED UNIT                   ACTIVATES\nSat 2026-10-03 00:19:45 EDT  13h -         - https-8443-renew.timer https-8443-renew.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too.\nlistener\nLISTEN 0      5            0.0.0.0:8443      0.0.0.0:*    users:((\"python3\",pid=2597,fd=3))\nfirewall_runtime=yes\nfirewall_permanent=yes\nresponse=HTTPS service on node1 is healthy\npeer_cert\nsubject=CN=node1\nnotBefore=Oct  2 15:02:15 2026 GMT\nnotAfter=Nov  1 15:02:15 2026 GMT\nsha256 Fingerprint=70:8C:06:48:9A:55:1F:40:CC:69:78:FD:06:E4:89:3F:F2:26:47:28:92:D9:26:DA:AB:A9:7C:57:A4:10:84:4C"
+    },
+    {
+      "command_id": "cmd-887120c7506e487d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:02:54.683258+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 8101,
+      "command": "set -eu\nbefore_pid=$(systemctl show -p MainPID --value https-8443.service)\nbefore_fp=$(openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256)\n: > /tmp/https-rotation-codes\n(\n  i=1\n  while [ \"$i\" -le 80 ]; do\n    curl --silent --show-error --insecure --max-time 3 -o /dev/null -w '%{http_code}\\n' \"https://$NODE_IP:8443/\" >> /tmp/https-rotation-codes || printf 'curl_failed\\n' >> /tmp/https-rotation-codes\n    sleep 0.03\n    i=$((i + 1))\n  done\n) &\nload_pid=$!\nsleep 0.3\n/usr/local/sbin/renew-https-8443-cert --force\nwait \"$load_pid\"\nafter_pid=$(systemctl show -p MainPID --value https-8443.service)\nafter_fp=$(openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256)\nprintf 'before_pid=%s\\nafter_pid=%s\\n' \"$before_pid\" \"$after_pid\"\nprintf 'before_%s\\nafter_%s\\n' \"$before_fp\" \"$after_fp\"\nprintf 'request_results\\n'; sort /tmp/https-rotation-codes | uniq -c\nprintf 'service='; systemctl is-active https-8443.service\nprintf 'response='; curl --silent --show-error --insecure --max-time 5 \"https://$NODE_IP:8443/\"\nprintf 'bundle_'; openssl x509 -in /etc/https-8443/tls.pem -noout -fingerprint -sha256\nprintf 'peer_'; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256",
+      "stdout": "before_pid=2597\nafter_pid=2597\nbefore_sha256 Fingerprint=70:8C:06:48:9A:55:1F:40:CC:69:78:FD:06:E4:89:3F:F2:26:47:28:92:D9:26:DA:AB:A9:7C:57:A4:10:84:4C\nafter_sha256 Fingerprint=4B:4A:44:46:EA:C9:46:B4:A9:27:5F:19:F8:00:7F:E2:35:63:3F:2C:9F:69:E7:4D:A9:2B:12:FD:40:D1:AF:C1\nrequest_results\n     80 200\nservice=active\nresponse=HTTPS service on node1 is healthy\nbundle_sha256 Fingerprint=4B:4A:44:46:EA:C9:46:B4:A9:27:5F:19:F8:00:7F:E2:35:63:3F:2C:9F:69:E7:4D:A9:2B:12:FD:40:D1:AF:C1\npeer_sha256 Fingerprint=4B:4A:44:46:EA:C9:46:B4:A9:27:5F:19:F8:00:7F:E2:35:63:3F:2C:9F:69:E7:4D:A9:2B:12:FD:40:D1:AF:C1"
+    },
+    {
+      "command_id": "cmd-f93a88c9fd554c55",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:03:09.516225+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2009,
+      "command": "set -eu\nprintf 'pre_reboot_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'pre_reboot_service='; systemctl is-active https-8443.service\nprintf 'pre_reboot_response='; curl --silent --show-error --insecure --max-time 5 \"https://$NODE_IP:8443/\"\nprintf 'pre_reboot_cert='; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256\nsystemd-run --unit=benchmark-reboot --on-active=3s /usr/bin/systemctl reboot",
+      "stdout": "pre_reboot_boot_id=4d842549-003e-4f78-bb26-12732f129e58\npre_reboot_service=active\npre_reboot_response=HTTPS service on node1 is healthy\npre_reboot_cert=sha256 Fingerprint=4B:4A:44:46:EA:C9:46:B4:A9:27:5F:19:F8:00:7F:E2:35:63:3F:2C:9F:69:E7:4D:A9:2B:12:FD:40:D1:AF:C1\nRunning timer as unit: benchmark-reboot.timer\nWill run service as unit: benchmark-reboot.service"
+    },
+    {
+      "command_id": "cmd-195e1c579e0f44f6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:03:16.803799+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1424,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "4d842549-003e-4f78-bb26-12732f129e58"
+    },
+    {
+      "command_id": "cmd-1cabc5f2d3f1496f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:03:31.013113+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 6472,
+      "command": "sleep 5\ncat /proc/sys/kernel/random/boot_id\nuptime -s",
+      "stdout": "4d842549-003e-4f78-bb26-12732f129e58\n2026-10-02 11:00:25"
+    },
+    {
+      "command_id": "cmd-b8c39ce4a6df4b75",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:03:36.267451+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2133,
+      "command": "systemctl status benchmark-reboot.timer benchmark-reboot.service --no-pager -l || true\njournalctl -u benchmark-reboot.service -n 20 --no-pager || true",
+      "stdout": "\u25cf benchmark-reboot.timer - [systemd-run] /usr/bin/systemctl reboot\n     Loaded: loaded (/run/systemd/transient/benchmark-reboot.timer; transient)\n  Transient: yes\n     Active: active (running) since Fri 2026-10-02 11:03:07 EDT; 26s ago\n Invocation: 1580f5ca7f9d4b3ba8ab0ed78540ce77\n    Trigger: n/a\n   Triggers: \u25cf benchmark-reboot.service\n\nOct 02 11:03:07 node1 systemd[1]: Started benchmark-reboot.timer - [systemd-run] /usr/bin/systemctl reboot.\n\n\u25cf benchmark-reboot.service - [systemd-run] /usr/bin/systemctl reboot\n     Loaded: loaded (/run/systemd/transient/benchmark-reboot.service; transient)\n  Transient: yes\n     Active: active (running) since Fri 2026-10-02 11:03:34 EDT; 2ms ago\n Invocation: 13534f33174547caa49e590c58bdca53\nTriggeredBy: \u25cf benchmark-reboot.timer\n   Main PID: 2990 ((ystemctl))\n      Tasks: 1 (limit: 9416)\n     Memory: 1012K (peak: 1.2M)\n        CPU: 1ms\n     CGroup: /system.slice/benchmark-reboot.service\n             \u2514\u25002990 \"(ystemctl)\"\n\nOct 02 11:03:34 node1 systemd[1]: Started benchmark-reboot.service - [systemd-run] /usr/bin/systemctl reboot.\nOct 02 11:03:34 node1 systemd[1]: Started benchmark-reboot.service - [systemd-run] /usr/bin/systemctl reboot."
+    },
+    {
+      "command_id": "cmd-94a83baa92d14782",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:03:44.958278+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1526,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "75ab0437-3619-4f13-a6b5-bfae637c0494"
+    },
+    {
+      "command_id": "cmd-b45fd93b3f6843d8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:03:53.357866+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2275,
+      "command": "set -eu\nprintf 'post_reboot_boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'uptime_since='; uptime -s\nprintf 'service='; systemctl is-active https-8443.service\nprintf 'service_enabled='; systemctl is-enabled https-8443.service\nprintf 'timer='; systemctl is-active https-8443-renew.timer\nprintf 'timer_enabled='; systemctl is-enabled https-8443-renew.timer\nprintf 'listener\\n'; ss -tlnp | grep ':8443'\nprintf 'firewall_runtime='; firewall-cmd --query-port=8443/tcp\nprintf 'firewall_permanent='; firewall-cmd --permanent --query-port=8443/tcp\nprintf 'response='; curl --silent --show-error --insecure --max-time 5 \"https://$NODE_IP:8443/\"\nprintf 'bundle_'; openssl x509 -in /etc/https-8443/tls.pem -noout -dates -fingerprint -sha256\nprintf 'peer_'; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -dates -fingerprint -sha256\nsystemctl list-timers https-8443-renew.timer --no-pager\nsystemctl --failed --no-pager",
+      "stdout": "post_reboot_boot_id=75ab0437-3619-4f13-a6b5-bfae637c0494\nuptime_since=2026-10-02 11:03:38\nservice=active\nservice_enabled=enabled\ntimer=active\ntimer_enabled=enabled\nlistener\nLISTEN 0      5            0.0.0.0:8443      0.0.0.0:*    users:((\"python3\",pid=960,fd=3))\nfirewall_runtime=yes\nfirewall_permanent=yes\nresponse=HTTPS service on node1 is healthy\nbundle_notBefore=Oct  2 15:02:47 2026 GMT\nnotAfter=Nov  1 15:02:47 2026 GMT\nsha256 Fingerprint=4B:4A:44:46:EA:C9:46:B4:A9:27:5F:19:F8:00:7F:E2:35:63:3F:2C:9F:69:E7:4D:A9:2B:12:FD:40:D1:AF:C1\npeer_notBefore=Oct  2 15:02:47 2026 GMT\nnotAfter=Nov  1 15:02:47 2026 GMT\nsha256 Fingerprint=4B:4A:44:46:EA:C9:46:B4:A9:27:5F:19:F8:00:7F:E2:35:63:3F:2C:9F:69:E7:4D:A9:2B:12:FD:40:D1:AF:C1\nNEXT                        LEFT LAST                        PASSED UNIT                   ACTIVATES\nSat 2026-10-03 00:50:36 EDT  13h Fri 2026-10-02 11:01:56 EDT      - https-8443-renew.timer https-8443-renew.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too.\n  UNIT LOAD ACTIVE SUB DESCRIPTION\n\n0 loaded units listed."
+    },
+    {
+      "command_id": "cmd-3e6259099ba540de",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:04:19.424104+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 7658,
+      "command": "set -eu\ntmpdir=$(mktemp -d /etc/https-8443/.expiry-test.XXXXXX)\ntrap 'rm -rf \"$tmpdir\"' EXIT HUP INT TERM\nopenssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=node1' -addext \"subjectAltName=DNS:node1,IP:$NODE_IP\" -keyout \"$tmpdir/key.pem\" -out \"$tmpdir/cert.pem\" >/dev/null 2>&1\ncat \"$tmpdir/key.pem\" \"$tmpdir/cert.pem\" > \"$tmpdir/tls.pem\"\nchmod 0600 \"$tmpdir/tls.pem\"\nmv -f \"$tmpdir/tls.pem\" /etc/https-8443/tls.pem\nbefore_pid=$(systemctl show -p MainPID --value https-8443.service)\nprintf 'near_expiry_peer\\n'; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -dates -fingerprint -sha256\nif openssl x509 -in /etc/https-8443/tls.pem -checkend 604800 -noout >/dev/null 2>&1; then printf 'needs_renewal=no\\n'; else printf 'needs_renewal=yes\\n'; fi\n: > /tmp/https-auto-renew-codes\n(\n  i=1\n  while [ \"$i\" -le 60 ]; do\n    curl --silent --show-error --insecure --max-time 3 -o /dev/null -w '%{http_code}\\n' \"https://$NODE_IP:8443/\" >> /tmp/https-auto-renew-codes || printf 'curl_failed\\n' >> /tmp/https-auto-renew-codes\n    sleep 0.03\n    i=$((i + 1))\n  done\n) &\nload_pid=$!\nsystemctl start https-8443-renew.service\nwait \"$load_pid\"\nafter_pid=$(systemctl show -p MainPID --value https-8443.service)\nprintf 'before_pid=%s\\nafter_pid=%s\\n' \"$before_pid\" \"$after_pid\"\nprintf 'renew_unit_result='; systemctl show -p Result --value https-8443-renew.service\nprintf 'request_results\\n'; sort /tmp/https-auto-renew-codes | uniq -c\nprintf 'renewed_peer\\n'; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -dates -fingerprint -sha256\nif openssl x509 -in /etc/https-8443/tls.pem -checkend 604800 -noout >/dev/null 2>&1; then printf 'valid_beyond_7_days=yes\\n'; else printf 'valid_beyond_7_days=no\\n'; fi\nprintf 'response='; curl --silent --show-error --insecure --max-time 5 \"https://$NODE_IP:8443/\"",
+      "stdout": "near_expiry_peer\nnotBefore=Oct  2 15:04:12 2026 GMT\nnotAfter=Oct  3 15:04:12 2026 GMT\nsha256 Fingerprint=04:80:0E:2D:D4:0A:B2:55:8D:96:C3:81:C1:ED:36:2A:08:6D:48:FB:B5:6A:76:9B:F3:75:9C:B9:29:42:4E:B1\nneeds_renewal=yes\nbefore_pid=960\nafter_pid=960\nrenew_unit_result=success\nrequest_results\n     60 200\nrenewed_peer\nnotBefore=Oct  2 15:04:12 2026 GMT\nnotAfter=Nov  1 15:04:12 2026 GMT\nsha256 Fingerprint=48:BC:CB:4B:82:5F:0B:53:32:8B:9E:74:7B:F3:8C:C7:9B:2C:BD:D0:4A:6A:34:3E:FD:63:C1:5D:44:57:AA:1C\nvalid_beyond_7_days=yes\nresponse=HTTPS service on node1 is healthy"
+    }
+  ]
+}

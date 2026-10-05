@@ -1,0 +1,586 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 45,
+    "successful": 32,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "SSH allowed from any address on node1",
+      "command_ids": [
+        "cmd-a302f44f81fb423b",
+        "cmd-c21ac205b5904d61",
+        "cmd-4a235d755d8e4cf4",
+        "cmd-86cf54e288464ba3"
+      ],
+      "summary": "public zone has ssh service enabled with no source restriction; verified reachable from both node2 and node3"
+    },
+    {
+      "requirement": "TCP/9000 allowed only from node2",
+      "command_ids": [
+        "cmd-3904c42c867d4caf",
+        "cmd-4a235d755d8e4cf4",
+        "cmd-c64dda0f01964776"
+      ],
+      "summary": "dedicated zone 'node2-9000' scoped to source 10.100.190.11/32 opens port 9000/tcp; curl from node2 to node1:9000 returns http_code=200 both before and after all node restarts"
+    },
+    {
+      "requirement": "TCP/9000 rejected from node3 and everywhere else",
+      "command_ids": [
+        "cmd-3904c42c867d4caf",
+        "cmd-86cf54e288464ba3",
+        "cmd-5352864cad384398"
+      ],
+      "summary": "public zone rich-rule rejects tcp/9000 for all non-node2-9000-zone sources; curl from node3 to node1:9000 fails with connection refused (rc=7) both before and after all node restarts"
+    },
+    {
+      "requirement": "Firewall rules are persistent (survive reboot)",
+      "command_ids": [
+        "cmd-55bbd4c65f114ba3",
+        "cmd-1bc8f014ab75442e"
+      ],
+      "summary": "permanent XML files in /etc/firewalld/zones/ hold the config; after node1's own reboot, firewalld came back active with the same zones, ports, services, and rich rules"
+    },
+    {
+      "requirement": "node1 restart evidence (baseline, restart ack, changed boot id, recovered state)",
+      "command_ids": [
+        "cmd-f77cea6270154a4e",
+        "cmd-c7ccc147e45049b7",
+        "cmd-a12553d5531d45da",
+        "cmd-1bc8f014ab75442e"
+      ],
+      "summary": "baseline boot_id 738d0aac...; reboot command acknowledged via dropped connection; post-reboot probe succeeded; boot_id changed to d5df004c... with firewalld active and rules intact"
+    },
+    {
+      "requirement": "node2 restart evidence",
+      "command_ids": [
+        "cmd-fff6c282b1234792",
+        "cmd-a81172358923453f",
+        "cmd-b2f9e4ab00184c2d",
+        "cmd-82e368eba6ee46bf",
+        "cmd-185240576a6b4baa"
+      ],
+      "summary": "baseline boot_id fe422859...; reboot acknowledged; probe succeeded after downtime; boot_id changed to 76d13a34... with sshd active and cross-node SSH to node1 confirmed"
+    },
+    {
+      "requirement": "node3 restart evidence",
+      "command_ids": [
+        "cmd-1cb6f9d125344816",
+        "cmd-d52da429a8294308",
+        "cmd-a7a19625dacf4c9b",
+        "cmd-b8f51b782e34486e"
+      ],
+      "summary": "baseline boot_id 2fc81aed...; reboot acknowledged; probe succeeded after downtime; boot_id changed to 5f2e6b13... with sshd active and SSH to node1 confirmed reachable"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-a302f44f81fb423b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:07:31.447659+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 581,
+      "command": "set -Eeuo pipefail; echo \"NODE_NAME=$NODE_NAME NODE_IP=$NODE_IP\"; cat /etc/os-release | head -5; which firewall-cmd iptables nft 2>/dev/null || true; systemctl is-active firewalld 2>/dev/null || true; echo \"CLUSTER_HOSTS:\"; echo \"$CLUSTER_HOSTS\"",
+      "stdout": "NODE_NAME=node1 NODE_IP=10.100.190.10\nNAME=\"Red Hat Enterprise Linux Server\"\nVERSION=\"7.9 (Maipo)\"\nID=\"rhel\"\nID_LIKE=\"fedora\"\nVARIANT=\"Server\"\n/usr/bin/firewall-cmd\nactive\nCLUSTER_HOSTS:\n10.100.190.10 node1\n10.100.190.11 node2\n10.100.190.12 node3\n"
+    },
+    {
+      "command_id": "cmd-c21ac205b5904d61",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:07:40.956694+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3657,
+      "command": "set -Eeuo pipefail\necho \"=== STEP: baseline firewalld state ===\"\nsudo -n firewall-cmd --state\nsudo -n firewall-cmd --list-all\n\necho \"=== STEP: ensure ssh service allowed (default zone, any source) ===\"\nsudo -n firewall-cmd --permanent --add-service=ssh\n\necho \"=== STEP: remove any blanket port 9000 open rule if present ===\"\nsudo -n firewall-cmd --permanent --remove-port=9000/tcp 2>/dev/null || true\n\necho \"=== STEP: rich rule - allow 9000/tcp only from node2 ===\"\nsudo -n firewall-cmd --permanent --add-rich-rule='rule family=\"ipv4\" source address=\"10.100.190.11/32\" port port=\"9000\" protocol=\"tcp\" accept'\n\necho \"=== STEP: rich rule - reject 9000/tcp from everywhere else (including node3) ===\"\nsudo -n firewall-cmd --permanent --add-rich-rule='rule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject'\n\necho \"=== STEP: reload to apply persistently ===\"\nsudo -n firewall-cmd --reload\n\necho \"=== VERIFY: runtime config ===\"\nsudo -n firewall-cmd --list-all\n\necho \"=== VERIFY: permanent config matches runtime ===\"\nsudo -n firewall-cmd --permanent --list-all\n",
+      "stdout": "=== STEP: baseline firewalld state ===\nrunning\npublic (active)\n  target: default\n  icmp-block-inversion: no\n  interfaces: eth0\n  sources: \n  services: dhcpv6-client ssh\n  ports: \n  protocols: \n  masquerade: no\n  forward-ports: \n  source-ports: \n  icmp-blocks: \n  rich rules: \n\t\n=== STEP: ensure ssh service allowed (default zone, any source) ===\nsuccess\n=== STEP: remove any blanket port 9000 open rule if present ===\nsuccess\n=== STEP: rich rule - allow 9000/tcp only from node2 ===\nsuccess\n=== STEP: rich rule - reject 9000/tcp from everywhere else (including node3) ===\nsuccess\n=== STEP: reload to apply persistently ===\nsuccess\n=== VERIFY: runtime config ===\npublic (active)\n  target: default\n  icmp-block-inversion: no\n  interfaces: eth0\n  sources: \n  services: dhcpv6-client ssh\n  ports: \n  protocols: \n  masquerade: no\n  forward-ports: \n  source-ports: \n  icmp-blocks: \n  rich rules: \n\trule family=\"ipv4\" source address=\"10.100.190.11/32\" port port=\"9000\" protocol=\"tcp\" accept\n\trule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject\n=== VERIFY: permanent config matches runtime ===\npublic\n  target: default\n  icmp-block-inversion: no\n  interfaces: \n  sources: \n  services: dhcpv6-client ssh\n  ports: \n  protocols: \n  masquerade: no\n  forward-ports: \n  source-ports: \n  icmp-blocks: \n  rich rules: \n\trule family=\"ipv4\" source address=\"10.100.190.11/32\" port port=\"9000\" protocol=\"tcp\" accept\n\trule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject\n",
+      "stderr": "Warning: ALREADY_ENABLED: ssh\n"
+    },
+    {
+      "command_id": "cmd-a5d50127be194edc",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:07:46.176233+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1471,
+      "command": "set -Eeuo pipefail\necho \"=== STEP: start temp listener on 9000 for verification ===\"\nwhich nc python3 2>/dev/null || true\n(python3 -m http.server 9000 --bind 0.0.0.0 > /tmp/listener9000.log 2>&1 &) \nsleep 1\nss -tlnp | grep 9000 || true\n",
+      "stdout": "=== STEP: start temp listener on 9000 for verification ===\n",
+      "stderr": "bash: line 5: ss: command not found\n"
+    },
+    {
+      "command_id": "cmd-39047807e3d848f9",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:07:49.810486+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 459,
+      "command": "set -Eeuo pipefail\nnetstat -tlnp 2>/dev/null | grep 9000 || cat /tmp/listener9000.log || true\ncurl -s -o /dev/null -w \"local curl to self via NODE_IP: %{http_code}\\n\" http://$NODE_IP:9000/ --max-time 3 || echo \"local curl failed\"\n",
+      "stdout": "bash: line 3: python3: command not found\nlocal curl to self via NODE_IP: 000\nlocal curl failed\n"
+    },
+    {
+      "command_id": "cmd-f3003cdf8e634a1b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:07:52.825439+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 395,
+      "command": "set -Eeuo pipefail\nwhich python python2 nc ncat socat 2>/dev/null || true\n",
+      "stdout": "/usr/bin/python\n/usr/bin/python2\n"
+    },
+    {
+      "command_id": "cmd-b1064944f5754bcc",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:07:56.996088+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1448,
+      "command": "set -Eeuo pipefail\necho \"=== STEP: start python2 SimpleHTTPServer on 9000 ===\"\nnohup python2 -m SimpleHTTPServer 9000 > /tmp/listener9000.log 2>&1 &\nsleep 1\nnetstat -tlnp 2>/dev/null | grep 9000 || cat /tmp/listener9000.log\n",
+      "stdout": "=== STEP: start python2 SimpleHTTPServer on 9000 ===\ntcp        0      0 0.0.0.0:9000            0.0.0.0:*               LISTEN      1964/python2        \n"
+    },
+    {
+      "command_id": "cmd-d4a4d4c757fb4915",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:01.298716+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 463,
+      "command": "set -Eeuo pipefail\necho \"=== node2 -> node1:9000 (expect success) ===\"\ncurl -s -o /dev/null -w \"http_code=%{http_code}\\n\" --max-time 4 http://10.100.190.10:9000/ || echo \"curl_failed_rc=$?\"\necho \"=== node2 -> node1:22 (expect connect ok) ===\"\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_port_reachable\" || echo \"ssh_port_unreachable\"\n",
+      "stdout": "=== node2 -> node1:9000 (expect success) ===\nhttp_code=000\ncurl_failed_rc=7\n=== node2 -> node1:22 (expect connect ok) ===\nssh_port_reachable\n"
+    },
+    {
+      "command_id": "cmd-cdcd04bf27384baa",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:02.953527+00:00",
+      "node": "node3",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 480,
+      "command": "set -Eeuo pipefail\necho \"=== node3 -> node1:9000 (expect rejection/refused) ===\"\ncurl -s -o /dev/null -w \"http_code=%{http_code}\\n\" --max-time 4 http://10.100.190.10:9000/ || echo \"curl_failed_rc=$?\"\necho \"=== node3 -> node1:22 (expect connect ok, ssh allowed from anywhere) ===\"\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_port_reachable\" || echo \"ssh_port_unreachable\"\n",
+      "stdout": "=== node3 -> node1:9000 (expect rejection/refused) ===\nhttp_code=000\ncurl_failed_rc=7\n=== node3 -> node1:22 (expect connect ok, ssh allowed from anywhere) ===\nssh_port_reachable\n"
+    },
+    {
+      "command_id": "cmd-83d30796c8214833",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:09.437569+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 922,
+      "command": "set -Eeuo pipefail\necho \"=== listener check ===\"\nnetstat -tlnp 2>/dev/null | grep 9000 || echo \"NOT LISTENING\"\ncat /tmp/listener9000.log\necho \"=== firewalld state ===\"\nsudo -n firewall-cmd --list-all\n",
+      "stdout": "=== listener check ===\ntcp        0      0 0.0.0.0:9000            0.0.0.0:*               LISTEN      1964/python2        \n=== firewalld state ===\npublic (active)\n  target: default\n  icmp-block-inversion: no\n  interfaces: eth0\n  sources: \n  services: dhcpv6-client ssh\n  ports: \n  protocols: \n  masquerade: no\n  forward-ports: \n  source-ports: \n  icmp-blocks: \n  rich rules: \n\trule family=\"ipv4\" source address=\"10.100.190.11/32\" port port=\"9000\" protocol=\"tcp\" accept\n\trule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject\n"
+    },
+    {
+      "command_id": "cmd-e36f1205112c4aad",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:13.520934+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 7,
+      "duration_ms": 464,
+      "command": "set -Eeuo pipefail\necho \"NODE_IP=$NODE_IP\"\ncurl -v --max-time 4 http://10.100.190.10:9000/ 2>&1 | head -20\n",
+      "stdout": "NODE_IP=10.100.190.11\n* About to connect() to 10.100.190.10 port 9000 (#0)\n*   Trying 10.100.190.10...\n  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n                                 Dload  Upload   Total   Spent    Left  Speed\n\r  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Connection refused\n* Failed connect to 10.100.190.10:9000; Connection refused\n* Closing connection 0\ncurl: (7) Failed connect to 10.100.190.10:9000; Connection refused\n"
+    },
+    {
+      "command_id": "cmd-7b796a27bc4b437e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:21.508492+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 490,
+      "command": "set -Eeuo pipefail\necho \"=== iptables rules for port 9000 ===\"\nsudo -n iptables -S | grep -i 9000 || sudo -n iptables-save | grep -i 9000\n",
+      "stdout": "=== iptables rules for port 9000 ===\n-A IN_public_allow -s 10.100.190.11/32 -p tcp -m tcp --dport 9000 -m conntrack --ctstate NEW,UNTRACKED -j ACCEPT\n-A IN_public_deny -p tcp -m tcp --dport 9000 -m conntrack --ctstate NEW,UNTRACKED -j REJECT --reject-with icmp-port-unreachable\n"
+    },
+    {
+      "command_id": "cmd-bfdd758791a84878",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:24.718184+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 414,
+      "command": "set -Eeuo pipefail\nsudo -n iptables -S IN_public\n",
+      "stdout": "-N IN_public\n-A IN_public -j IN_public_log\n-A IN_public -j IN_public_deny\n-A IN_public -j IN_public_allow\n-A IN_public -p icmp -j ACCEPT\n"
+    },
+    {
+      "command_id": "cmd-967714846bcc42c3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:33.599034+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 122,
+      "duration_ms": 1830,
+      "command": "set -Eeuo pipefail\necho \"=== STEP: remove old unprioritized rich rules ===\"\nsudo -n firewall-cmd --permanent --remove-rich-rule='rule family=\"ipv4\" source address=\"10.100.190.11/32\" port port=\"9000\" protocol=\"tcp\" accept'\nsudo -n firewall-cmd --permanent --remove-rich-rule='rule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject'\n\necho \"=== STEP: add prioritized rich rules (accept evaluated before reject) ===\"\nsudo -n firewall-cmd --permanent --add-rich-rule='rule family=\"ipv4\" priority=\"-1\" source address=\"10.100.190.11/32\" port port=\"9000\" protocol=\"tcp\" accept'\nsudo -n firewall-cmd --permanent --add-rich-rule='rule family=\"ipv4\" priority=\"1\" port port=\"9000\" protocol=\"tcp\" reject'\n\necho \"=== STEP: reload ===\"\nsudo -n firewall-cmd --reload\n\necho \"=== VERIFY: list-all ===\"\nsudo -n firewall-cmd --list-all\n\necho \"=== VERIFY: iptables chain order ===\"\nsudo -n iptables -S | grep -i 9000\n",
+      "stdout": "=== STEP: remove old unprioritized rich rules ===\nsuccess\nsuccess\n=== STEP: add prioritized rich rules (accept evaluated before reject) ===\n",
+      "stderr": "Error: INVALID_RULE: bad attribute 'priority'\n"
+    },
+    {
+      "command_id": "cmd-3904c42c867d4caf",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:52.508935+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 4203,
+      "command": "set -Eeuo pipefail\necho \"=== STEP: clean up prior rich rules on public zone ===\"\nsudo -n firewall-cmd --permanent --remove-rich-rule='rule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject' 2>/dev/null || true\n\necho \"=== STEP: create dedicated zone for node2 (source-based) ===\"\nsudo -n firewall-cmd --permanent --new-zone=node2-9000 2>/dev/null || echo \"zone already exists\"\nsudo -n firewall-cmd --permanent --zone=node2-9000 --add-source=10.100.190.11/32\nsudo -n firewall-cmd --permanent --zone=node2-9000 --add-port=9000/tcp\nsudo -n firewall-cmd --permanent --zone=node2-9000 --add-service=ssh\n\necho \"=== STEP: ensure default/public zone rejects 9000 for everyone else, ssh stays open ===\"\nsudo -n firewall-cmd --permanent --zone=public --add-service=ssh\nsudo -n firewall-cmd --permanent --zone=public --add-rich-rule='rule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject'\n\necho \"=== STEP: reload ===\"\nsudo -n firewall-cmd --reload\n\necho \"=== VERIFY: zones ===\"\nsudo -n firewall-cmd --get-active-zones\necho \"--- node2-9000 zone ---\"\nsudo -n firewall-cmd --zone=node2-9000 --list-all\necho \"--- public zone ---\"\nsudo -n firewall-cmd --zone=public --list-all\n\necho \"=== VERIFY: iptables ordering ===\"\nsudo -n iptables -S | grep -i 9000\n",
+      "stdout": "=== STEP: clean up prior rich rules on public zone ===\nsuccess\n=== STEP: create dedicated zone for node2 (source-based) ===\nsuccess\nsuccess\nsuccess\nsuccess\n=== STEP: ensure default/public zone rejects 9000 for everyone else, ssh stays open ===\nsuccess\nsuccess\n=== STEP: reload ===\nsuccess\n=== VERIFY: zones ===\npublic\n  interfaces: eth0\nnode2-9000\n  sources: 10.100.190.11/32\n--- node2-9000 zone ---\nnode2-9000 (active)\n  target: default\n  icmp-block-inversion: no\n  interfaces: \n  sources: 10.100.190.11/32\n  services: ssh\n  ports: 9000/tcp\n  protocols: \n  masquerade: no\n  forward-ports: \n  source-ports: \n  icmp-blocks: \n  rich rules: \n\t\n--- public zone ---\npublic (active)\n  target: default\n  icmp-block-inversion: no\n  interfaces: eth0\n  sources: \n  services: dhcpv6-client ssh\n  ports: \n  protocols: \n  masquerade: no\n  forward-ports: \n  source-ports: \n  icmp-blocks: \n  rich rules: \n\trule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject\n=== VERIFY: iptables ordering ===\n-N FWDI_node2-9000\n-N FWDI_node2-9000_allow\n-N FWDI_node2-9000_deny\n-N FWDI_node2-9000_log\n-N FWDO_node2-9000\n-N FWDO_node2-9000_allow\n-N FWDO_node2-9000_deny\n-N FWDO_node2-9000_log\n-N IN_node2-9000\n-N IN_node2-9000_allow\n-N IN_node2-9000_deny\n-N IN_node2-9000_log\n-A FORWARD_IN_ZONES_SOURCE -s 10.100.190.11/32 -g FWDI_node2-9000\n-A FORWARD_OUT_ZONES_SOURCE -d 10.100.190.11/32 -g FWDO_node2-9000\n-A FWDI_node2-9000 -j FWDI_node2-9000_log\n-A FWDI_node2-9000 -j FWDI_node2-9000_deny\n-A FWDI_node2-9000 -j FWDI_node2-9000_allow\n-A FWDI_node2-9000 -p icmp -j ACCEPT\n-A FWDO_node2-9000 -j FWDO_node2-9000_log\n-A FWDO_node2-9000 -j FWDO_node2-9000_deny\n-A FWDO_node2-9000 -j FWDO_node2-9000_allow\n-A INPUT_ZONES_SOURCE -s 10.100.190.11/32 -g IN_node2-9000\n-A IN_node2-9000 -j IN_node2-9000_log\n-A IN_node2-9000 -j IN_node2-9000_deny\n-A IN_node2-9000 -j IN_node2-9000_allow\n-A IN_node2-9000 -p icmp -j ACCEPT\n-A IN_node2-9000_allow -p tcp -m tcp --dport 22 -m conntrack --ctstate NEW,UNTRACKED -j ACCEPT\n-A IN_node2-9000_allow -p tcp -m tcp --dport 9000 -m conntrack --ctstate NEW,UNTRACKED -j ACCEPT\n-A IN_public_deny -p tcp -m tcp --dport 9000 -m conntrack --ctstate NEW,UNTRACKED -j REJECT --reject-with icmp-port-unreachable\n",
+      "stderr": "Warning: ALREADY_ENABLED: ssh\n"
+    },
+    {
+      "command_id": "cmd-4a235d755d8e4cf4",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:56.872201+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 481,
+      "command": "set -Eeuo pipefail\necho \"=== node2 -> node1:9000 (expect success) ===\"\ncurl -s -o /dev/null -w \"http_code=%{http_code}\\n\" --max-time 4 http://10.100.190.10:9000/ && echo OK || echo \"FAIL rc=$?\"\necho \"=== node2 -> node1:22 (expect reachable) ===\"\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_port_reachable\" || echo \"ssh_port_unreachable\"\n",
+      "stdout": "=== node2 -> node1:9000 (expect success) ===\nhttp_code=200\nOK\n=== node2 -> node1:22 (expect reachable) ===\nssh_port_reachable\n"
+    },
+    {
+      "command_id": "cmd-86cf54e288464ba3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:08:58.487077+00:00",
+      "node": "node3",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 449,
+      "command": "set -Eeuo pipefail\necho \"=== node3 -> node1:9000 (expect connection refused / rejected) ===\"\ncurl -s -o /dev/null -w \"http_code=%{http_code}\\n\" --max-time 4 http://10.100.190.10:9000/ && echo OK || echo \"FAIL rc=$?\"\necho \"=== node3 -> node1:22 (expect reachable, ssh allowed from anywhere) ===\"\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_port_reachable\" || echo \"ssh_port_unreachable\"\n",
+      "stdout": "=== node3 -> node1:9000 (expect connection refused / rejected) ===\nhttp_code=000\nFAIL rc=7\n=== node3 -> node1:22 (expect reachable, ssh allowed from anywhere) ===\nssh_port_reachable\n"
+    },
+    {
+      "command_id": "cmd-63355ee1bb204ce5",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:03.327418+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 143,
+      "duration_ms": 460,
+      "command": "set -Eeuo pipefail\necho \"=== STEP: stop temp listener ===\"\nkill $(cat /tmp/listener9000.log > /dev/null 2>&1; pgrep -f SimpleHTTPServer) 2>/dev/null || true\nsleep 1\nnetstat -tlnp 2>/dev/null | grep 9000 || echo \"listener stopped\"\n\necho \"=== VERIFY: permanent config files persisted on disk ===\"\nsudo -n cat /etc/firewalld/zones/node2-9000.xml\necho \"---\"\nsudo -n cat /etc/firewalld/zones/public.xml\n",
+      "stdout": "=== STEP: stop temp listener ===\n",
+      "stderr": "/bin/sh: line 21:  2197 Terminated              /bin/sh -c 'if command -v bash >/dev/null 2>&1; then exec bash -c '\"'\"'set -Eeuo pipefail\necho \"=== STEP: stop temp listener ===\"\nkill $(cat /tmp/listener9000.log > /dev/null 2>&1; pgrep -f SimpleHTTPServer) 2>/dev/null || true\nsleep 1\nnetstat -tlnp 2>/dev/null | grep 9000 || echo \"listener stopped\"\n\necho \"=== VERIFY: permanent config files persisted on disk ===\"\nsudo -n cat /etc/firewalld/zones/node2-9000.xml\necho \"---\"\nsudo -n cat /etc/firewalld/zones/public.xml\n'\"'\"'; else exec /bin/sh -c '\"'\"'set -Eeuo pipefail\necho \"=== STEP: stop temp listener ===\"\nkill $(cat /tmp/listener9000.log > /dev/null 2>&1; pgrep -f SimpleHTTPServer) 2>/dev/null || true\nsleep 1\nnetstat -tlnp 2>/dev/null | grep 9000 || echo \"listener stopped\"\n\necho \"=== VERIFY: permanent config files persisted on disk ===\"\nsudo -n cat /etc/firewalld/zones/node2-9000.xml\necho \"---\"\nsudo -n cat /etc/firewalld/zones/public.xml\n'\"'\"'; fi'\n"
+    },
+    {
+      "command_id": "cmd-55bbd4c65f114ba3",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:09.948042+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1531,
+      "command": "set -Eeuo pipefail\nPID=$(netstat -tlnp 2>/dev/null | awk '/:9000 /{print $7}' | cut -d/ -f1)\nif [ -n \"${PID:-}\" ]; then kill \"$PID\" 2>/dev/null || true; fi\nsleep 1\nnetstat -tlnp 2>/dev/null | grep 9000 || echo \"listener stopped\"\n\necho \"=== VERIFY: permanent config files persisted on disk ===\"\nsudo -n cat /etc/firewalld/zones/node2-9000.xml\necho \"---\"\nsudo -n cat /etc/firewalld/zones/public.xml\n",
+      "stdout": "listener stopped\n=== VERIFY: permanent config files persisted on disk ===\n<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<zone>\n  <source address=\"10.100.190.11/32\"/>\n  <service name=\"ssh\"/>\n  <port protocol=\"tcp\" port=\"9000\"/>\n</zone>\n---\n<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<zone>\n  <short>Public</short>\n  <description>For use in public areas. You do not trust the other computers on networks to not harm your computer. Only selected incoming connections are accepted.</description>\n  <service name=\"ssh\"/>\n  <service name=\"dhcpv6-client\"/>\n  <rule family=\"ipv4\">\n    <port protocol=\"tcp\" port=\"9000\"/>\n    <reject/>\n  </rule>\n</zone>\n"
+    },
+    {
+      "command_id": "cmd-f77cea6270154a4e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:15.529808+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1733,
+      "command": "set -Eeuo pipefail\necho \"=== BASELINE boot id / uptime ===\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\nsystemctl is-enabled firewalld\nsystemctl is-active firewalld\necho \"=== BASELINE firewall rules still healthy ===\"\nsudo -n firewall-cmd --get-active-zones\nsudo -n firewall-cmd --zone=node2-9000 --list-ports\nsudo -n firewall-cmd --zone=public --list-rich-rules\n",
+      "stdout": "=== BASELINE boot id / uptime ===\n738d0aac-71a1-4191-8a37-bf00edfeff5d\n2026-08-26 10:33:30\nenabled\nactive\n=== BASELINE firewall rules still healthy ===\npublic\n  interfaces: eth0\nnode2-9000\n  sources: 10.100.190.11/32\n9000/tcp\nrule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject\n"
+    },
+    {
+      "command_id": "cmd-fff6c282b1234792",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:16.044762+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 509,
+      "command": "set -Eeuo pipefail\necho \"=== BASELINE boot id / uptime node2 ===\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\n",
+      "stdout": "=== BASELINE boot id / uptime node2 ===\nfe422859-bfe7-4eb4-819b-e09864f3ca60\n2026-08-26 10:36:06\n"
+    },
+    {
+      "command_id": "cmd-1cb6f9d125344816",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:16.530972+00:00",
+      "node": "node3",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 481,
+      "command": "set -Eeuo pipefail\necho \"=== BASELINE boot id / uptime node3 ===\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\n",
+      "stdout": "=== BASELINE boot id / uptime node3 ===\n2fc81aed-3ce8-4a35-8f4c-b73206afa45f\n2026-08-26 10:32:51\n"
+    },
+    {
+      "command_id": "cmd-c7ccc147e45049b7",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:19.447621+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 512,
+      "command": "set -Eeuo pipefail\necho \"=== issuing reboot ===\"\nnohup sudo -n reboot >/tmp/reboot.log 2>&1 & disown\nsleep 1\necho \"reboot command issued\"\n",
+      "stdout": "=== issuing reboot ===\n",
+      "stderr": "Connection to 10.100.190.10 closed by remote host.\r\n"
+    },
+    {
+      "command_id": "cmd-a8d402519dd8475a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:26.960588+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5077,
+      "command": "echo probe",
+      "stderr": "ssh: connect to host 10.100.190.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-79e93b1e592141ba",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:33.671096+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5081,
+      "command": "echo probe",
+      "stderr": "ssh: connect to host 10.100.190.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-a12553d5531d45da",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:38.684778+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 447,
+      "command": "echo probe",
+      "stdout": "probe\n"
+    },
+    {
+      "command_id": "cmd-1bc8f014ab75442e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:42.723049+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1114,
+      "command": "set -Eeuo pipefail\necho \"=== POST-REBOOT boot id / uptime ===\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\necho \"=== firewalld active + rules recovered ===\"\nsystemctl is-active firewalld\nsudo -n firewall-cmd --get-active-zones\nsudo -n firewall-cmd --zone=node2-9000 --list-all\nsudo -n firewall-cmd --zone=public --list-all\n",
+      "stdout": "=== POST-REBOOT boot id / uptime ===\nd5df004c-6550-4f52-bc21-b4e9ee05ee70\n2026-09-29 18:09:27\n=== firewalld active + rules recovered ===\nactive\npublic\n  interfaces: eth0\nnode2-9000\n  sources: 10.100.190.11/32\nnode2-9000 (active)\n  target: default\n  icmp-block-inversion: no\n  interfaces: \n  sources: 10.100.190.11/32\n  services: ssh\n  ports: 9000/tcp\n  protocols: \n  masquerade: no\n  forward-ports: \n  source-ports: \n  icmp-blocks: \n  rich rules: \n\t\npublic (active)\n  target: default\n  icmp-block-inversion: no\n  interfaces: eth0\n  sources: \n  services: dhcpv6-client ssh\n  ports: \n  protocols: \n  masquerade: no\n  forward-ports: \n  source-ports: \n  icmp-blocks: \n  rich rules: \n\trule family=\"ipv4\" port port=\"9000\" protocol=\"tcp\" reject\n"
+    },
+    {
+      "command_id": "cmd-32a447cdc8a44088",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:46.482206+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 413,
+      "command": "set -Eeuo pipefail\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_reachable_post_reboot\" || echo \"ssh_unreachable\"\n",
+      "stdout": "ssh_reachable_post_reboot\n"
+    },
+    {
+      "command_id": "cmd-21ec64d234754537",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:47.197195+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 369,
+      "command": "set -Eeuo pipefail\necho \"=== BASELINE recheck node2 (unchanged) ===\"\ncat /proc/sys/kernel/random/boot_id\n",
+      "stdout": "=== BASELINE recheck node2 (unchanged) ===\nfe422859-bfe7-4eb4-819b-e09864f3ca60\n"
+    },
+    {
+      "command_id": "cmd-a81172358923453f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:50.398896+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 439,
+      "command": "set -Eeuo pipefail\necho \"=== node2 baseline health (basic svc check) ===\"\nsystemctl is-active sshd || true\necho \"=== issuing reboot ===\"\nnohup sudo -n reboot >/tmp/reboot.log 2>&1 & disown\nsleep 1\necho \"reboot command issued\"\n",
+      "stdout": "=== node2 baseline health (basic svc check) ===\nactive\n=== issuing reboot ===\n",
+      "stderr": "Connection to 10.100.190.11 closed by remote host.\r\n"
+    },
+    {
+      "command_id": "cmd-4bac479f2db64de7",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:09:57.341102+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5072,
+      "command": "echo probe",
+      "stderr": "ssh: connect to host 10.100.190.11 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-362600a0a39d4c1f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:04.140670+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5079,
+      "command": "echo probe",
+      "stderr": "ssh: connect to host 10.100.190.11 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-b2f9e4ab00184c2d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:07.632220+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 457,
+      "command": "echo probe",
+      "stdout": "probe\n"
+    },
+    {
+      "command_id": "cmd-82e368eba6ee46bf",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:11.460154+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 478,
+      "command": "set -Eeuo pipefail\necho \"=== POST-REBOOT boot id / uptime node2 ===\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\nsystemctl is-active sshd\n",
+      "stdout": "=== POST-REBOOT boot id / uptime node2 ===\n76d13a34-b7eb-4331-98e5-d95cc3f4cf5b\n2026-09-29 18:09:57\nactive\n"
+    },
+    {
+      "command_id": "cmd-e34f2e81143d4388",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:12.427658+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 401,
+      "command": "set -Eeuo pipefail\necho \"=== cross-check: node2 -> node1:9000 still allowed post node2 reboot ===\"\nnohup python2 -m SimpleHTTPServer 9000 >/tmp/x.log 2>&1 &\necho done\n",
+      "stdout": "=== cross-check: node2 -> node1:9000 still allowed post node2 reboot ===\ndone\n"
+    },
+    {
+      "command_id": "cmd-bdda1b8b0d3f4fa4",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:16.404271+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 143,
+      "duration_ms": 426,
+      "command": "set -Eeuo pipefail\npkill -f SimpleHTTPServer 2>/dev/null || true\ncurl -s -o /dev/null -w \"node2->node1:9000 http_code=%{http_code}\\n\" --max-time 4 http://10.100.190.10:9000/ || true\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_reachable\" || echo \"ssh_unreachable\"\n",
+      "stderr": "/bin/sh: line 9:  1075 Terminated              /bin/sh -c 'if command -v bash >/dev/null 2>&1; then exec bash -c '\"'\"'set -Eeuo pipefail\npkill -f SimpleHTTPServer 2>/dev/null || true\ncurl -s -o /dev/null -w \"node2->node1:9000 http_code=%{http_code}\\n\" --max-time 4 http://10.100.190.10:9000/ || true\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_reachable\" || echo \"ssh_unreachable\"\n'\"'\"'; else exec /bin/sh -c '\"'\"'set -Eeuo pipefail\npkill -f SimpleHTTPServer 2>/dev/null || true\ncurl -s -o /dev/null -w \"node2->node1:9000 http_code=%{http_code}\\n\" --max-time 4 http://10.100.190.10:9000/ || true\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_reachable\" || echo \"ssh_unreachable\"\n'\"'\"'; fi'\n"
+    },
+    {
+      "command_id": "cmd-185240576a6b4baa",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:20.883734+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 413,
+      "command": "set -Eeuo pipefail\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_reachable\" || echo \"ssh_unreachable\"\n",
+      "stdout": "ssh_reachable\n"
+    },
+    {
+      "command_id": "cmd-d52da429a8294308",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:24.497427+00:00",
+      "node": "node3",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 508,
+      "command": "set -Eeuo pipefail\necho \"=== node3 baseline health ===\"\nsystemctl is-active sshd || true\necho \"=== issuing reboot ===\"\nnohup sudo -n reboot >/tmp/reboot.log 2>&1 & disown\nsleep 1\necho \"reboot command issued\"\n",
+      "stdout": "=== node3 baseline health ===\nactive\n=== issuing reboot ===\n",
+      "stderr": "Connection to 10.100.190.12 closed by remote host.\r\n"
+    },
+    {
+      "command_id": "cmd-1f516b9b20df44bf",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:31.429098+00:00",
+      "node": "node3",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5075,
+      "command": "echo probe",
+      "stderr": "ssh: connect to host 10.100.190.12 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-29954647d67c4ca0",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:38.822692+00:00",
+      "node": "node3",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5108,
+      "command": "echo probe",
+      "stderr": "ssh: connect to host 10.100.190.12 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-a7a19625dacf4c9b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:41.085657+00:00",
+      "node": "node3",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 448,
+      "command": "echo probe",
+      "stdout": "probe\n"
+    },
+    {
+      "command_id": "cmd-b8f51b782e34486e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:44.226800+00:00",
+      "node": "node3",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 405,
+      "command": "set -Eeuo pipefail\necho \"=== POST-REBOOT boot id / uptime node3 ===\"\ncat /proc/sys/kernel/random/boot_id\nuptime -s\nsystemctl is-active sshd\ntimeout 4 bash -c \"cat < /dev/null > /dev/tcp/10.100.190.10/22\" && echo \"ssh_to_node1_reachable\" || echo \"unreachable\"\n",
+      "stdout": "=== POST-REBOOT boot id / uptime node3 ===\n5f2e6b13-8d90-49a0-a065-1f28b64cef22\n2026-09-29 18:10:31\nactive\nssh_to_node1_reachable\n"
+    },
+    {
+      "command_id": "cmd-60f2c0d365cf4461",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:51.059547+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1472,
+      "command": "set -Eeuo pipefail\nnohup python2 -m SimpleHTTPServer 9000 >/tmp/final9000.log 2>&1 &\nsleep 1\nnetstat -tlnp 2>/dev/null | grep 9000\n",
+      "stdout": "tcp        0      0 0.0.0.0:9000            0.0.0.0:*               LISTEN      1070/python2        \n"
+    },
+    {
+      "command_id": "cmd-c64dda0f01964776",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:54.162898+00:00",
+      "node": "node2",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 455,
+      "command": "set -Eeuo pipefail\ncurl -s -o /dev/null -w \"FINAL node2->node1:9000 http_code=%{http_code}\\n\" --max-time 4 http://10.100.190.10:9000/ || echo \"FAIL\"\n",
+      "stdout": "FINAL node2->node1:9000 http_code=200\n"
+    },
+    {
+      "command_id": "cmd-5352864cad384398",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:10:55.052979+00:00",
+      "node": "node3",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 398,
+      "command": "set -Eeuo pipefail\ncurl -s -o /dev/null -w \"FINAL node3->node1:9000 http_code=%{http_code}\\n\" --max-time 4 http://10.100.190.10:9000/ && echo unexpected_success || echo \"FINAL expected: connection refused/rejected\"\n",
+      "stdout": "FINAL node3->node1:9000 http_code=000\nFINAL expected: connection refused/rejected\n"
+    },
+    {
+      "command_id": "cmd-8af69bfb18334c94",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T22:11:00.022577+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1396,
+      "command": "set -Eeuo pipefail\nPID=$(netstat -tlnp 2>/dev/null | awk '/:9000 /{print $7}' | cut -d/ -f1)\nif [ -n \"${PID:-}\" ]; then kill \"$PID\" 2>/dev/null || true; fi\nsleep 1\nnetstat -tlnp 2>/dev/null | grep 9000 || echo \"cleaned up\"\n",
+      "stdout": "cleaned up\n"
+    }
+  ]
+}

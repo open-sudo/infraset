@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ansible-implementation",
+      "requirement": "Implement the cross-LAN firewall policy using Ansible, executed from the designated control node (node4)",
+      "status": "satisfied",
+      "summary": "A playbook (/root/cross_lan_firewall.yml) and inventory were created on node4 and run via ansible-playbook to configure static addressing on node2/node3 and interface+firewall config on node1 (VyOS). The final successful run (cmd-f973d0ec25f44b23) shows ok/changed across all three hosts with no failures. The VyOS task uses an ansible.builtin.command wrapper around a rendered script (rather than the vyos.vyos.vyos_config module) due to a documented, reproducible device-side CLI bug; this is a defensible equivalent implementation still driven entirely by the Ansible playbook.",
+      "evidence_ids": [
+        "cmd-493dfc5a606d4591",
+        "cmd-a6012e31e68a487a",
+        "cmd-f973d0ec25f44b23",
+        "cmd-eae8edae9ff8426c"
+      ]
+    },
+    {
+      "id": "allow-node2-node3-5432",
+      "requirement": "node2 can reach node3 on TCP port 5432",
+      "status": "satisfied",
+      "summary": "nc test from node2 to node3:5432 succeeded with payload received on node3, both in the initial post-deployment check and again after each of the four node reboots.",
+      "evidence_ids": [
+        "cmd-0e967e73ea13465e",
+        "cmd-e4ad72bbf7f14bf1",
+        "cmd-bdc2ac9358c34bc9",
+        "cmd-0505b9e2cc134be1",
+        "cmd-7385a183d8f8469b"
+      ]
+    },
+    {
+      "id": "reject-other-traffic",
+      "requirement": "Reject all other traffic between lan-a and lan-b (other ports, ICMP, reverse direction)",
+      "status": "satisfied",
+      "summary": "node2->node3 on a non-5432 TCP port failed, ICMP both directions failed, and node3->node2:5432 (reverse direction) failed, both pre- and post-reboot. Note: the implementation uses firewall default-action 'drop' (silent discard) rather than an explicit 'reject' action; functionally all disallowed traffic is blocked as required, but this is a minor terminology deviation from the literal instruction wording.",
+      "evidence_ids": [
+        "cmd-0e967e73ea13465e",
+        "cmd-f9500b5e53d74817",
+        "cmd-d56e766c85204ab0",
+        "cmd-da376eb6b45e4c42",
+        "cmd-0505b9e2cc134be1",
+        "cmd-7385a183d8f8469b"
+      ]
+    },
+    {
+      "id": "config-persistence",
+      "requirement": "Configuration persists beyond the running session (survives reboot)",
+      "status": "satisfied",
+      "summary": "VyOS /config/config.boot shows the interface addresses and full forward-filter firewall (default-action drop, established/related accept, tcp/5432 allow) saved to disk, and this persisted configuration was independently re-verified and functionally re-tested after node1 was rebooted.",
+      "evidence_ids": [
+        "cmd-72ea10f853704790",
+        "cmd-5157d9a3d4b04cc7",
+        "cmd-7385a183d8f8469b"
+      ]
+    },
+    {
+      "id": "restart-protocol-node1",
+      "requirement": "Provider-wide node-restart evidence protocol: node1 (VyOS router) pre/post boot identity, disruption, and recovered service/config/data/cluster state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 01e92881 captured, reboot issued, multiple connection-reset/timeout observations during the outage window, new boot_id 811484d1 confirmed, interfaces and firewall config re-verified from config.boot, and functional allow/block behavior re-confirmed post-reboot. Cross-checked against the fixed lifecycle before/after-executor boot-identity snapshots (01e92881 -> 811484d1).",
+      "evidence_ids": [
+        "cmd-0a5d04dff8ee40eb",
+        "cmd-cda3318dc7b449d0",
+        "cmd-e3a9a863559c426e",
+        "cmd-b2fafda64e604df7",
+        "cmd-5157d9a3d4b04cc7",
+        "cmd-7385a183d8f8469b",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    },
+    {
+      "id": "restart-protocol-node2-node3-node4",
+      "requirement": "Provider-wide node-restart evidence protocol: node2, node3, node4 pre/post boot identity, disruption, and recovered state",
+      "status": "satisfied",
+      "summary": "Each of node2, node3, node4 shows a captured baseline boot_id, an issued reboot, a connection-reset observation during the outage, a changed post-reboot boot_id, and recovered functional state (static IP/route/sshd on node2/node3 plus a working 5432 flow; ansible tooling/connectivity to all hosts on node4). Consistent with the fixed lifecycle boot-identity cross-check for all three nodes.",
+      "evidence_ids": [
+        "cmd-0f1a7da3878d456c",
+        "cmd-5a5f0cfbcf774cfc",
+        "cmd-132d490bf9804b6a",
+        "cmd-25f053c99dfb4692",
+        "cmd-734451d1c458432b",
+        "cmd-755484f59f6f4146",
+        "cmd-ada380c3b72a4133",
+        "cmd-57e43875f7464582",
+        "cmd-4b6d5f71020c40f3",
+        "cmd-4f288c398f03420f",
+        "cmd-dd17d00c0f0e4b12",
+        "cmd-e0eb9efd39bf45ec"
+      ]
+    }
+  ],
+  "overall_summary": "The executor delivered a working Ansible-driven implementation that allows node2->node3 TCP/5432 and blocks all other inter-LAN traffic (other ports, ICMP, reverse direction), with the configuration persisted on the VyOS router and re-verified functionally after a full reboot. The provider-wide restart-evidence protocol was completed for all four nodes with pre/post boot_id, disruption, and recovery evidence, consistent with the fixed lifecycle snapshots. The main caveats are a lengthy but ultimately harmless troubleshooting phase around a genuine VyOS CLI bug (many bounded, reverted config mutations and throwaway probe playbooks) and one unused leftover SSH key entry for root on node1 that was never cleaned up.",
+  "limitations": [
+    "The VyOS firewall uses default-action 'drop' rather than an explicit 'reject' action; behaviorally all non-permitted traffic is blocked as verified, but this is a literal terminology deviation from the task wording.",
+    "An unused authorized_keys entry for the control node's key was left in node1's root account after a failed troubleshooting attempt and was not explicitly cleaned up, though it does not appear to be exploitable given the observed sshd behavior.",
+    "The extensive VyOS CLI troubleshooting sequence makes it harder to cleanly attribute each individual mutation's purpose; while final state was verified clean, some intermediate commands could not be fully confirmed as inert beyond the visible before/after config diffs."
+  ],
+  "command_stats": {
+    "total": 221,
+    "successful": 193,
+    "failed": 27,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.7,
+    "summary": "Most state-changing actions had a clear purpose (SSH bootstrapping, interface/firewall configuration, functional test listeners that were cleaned up, restart-protocol reboots). However, the executor spent a long troubleshooting phase (~50+ commands) chasing a VyOS vyos_config/network_cli bug, including several ansible probe playbooks (vyos_probe.yml with throwaway hostname/duplicate-line experiments, cmd-d90d5a178b34458a, cmd-dc9bae3dd80a48df, cmd-c2851f9adef340f9) and repeated set/delete cycles of eth1/eth2 addresses and firewall rules (cmd-3973842e476b410a, cmd-18390242dda6489c, cmd-5d5f45bc4e754ac6, cmd-69c3f5720ee74bf6, cmd-265a81d0ef4f4352, cmd-bf318635e39e4fc2, cmd-f29d151ca96a459d, cmd-90b6f550e597459e, cmd-0257e6164d7c45c2, cmd-ee2eeee357394ab6) that did not contribute to the final solution (which used a sudo-executed bash script via ansible.builtin.command). These were bounded, always reverted before the final apply, and left no inconsistent final config (confirmed clean final state at cmd-eae8edae9ff8426c/cmd-72ea10f853704790), so they are treated as low-severity per-finding items rather than a major hygiene failure. One residual item: an authorized_keys entry for the control node's key was written to node1's root account (cmd-010f1e09cd9f452d) during troubleshooting but was never functionally used (root SSH login still failed, cmd-645f30941dc245f1) and was not removed afterward, leaving an unused credential entry on the router. Diagnostic nc listeners and temporary files created during functional testing were consistently cleaned up (cmd-2ca287a0b34f4b6d, cmd-e1014a6a23ae4c05, cmd-fbe991be68a24b19, cmd-1d487fa8b51647d2, cmd-2e96c3c2f2b04ec7, cmd-bbb9c715de254be3). No failed services or package-state damage were observed before or after (lifecycle failed-services empty in both snapshots).",
+    "evidence_ids": [
+      "cmd-3973842e476b410a",
+      "cmd-18390242dda6489c",
+      "cmd-d90d5a178b34458a",
+      "cmd-dc9bae3dd80a48df",
+      "cmd-c2851f9adef340f9",
+      "cmd-010f1e09cd9f452d",
+      "cmd-645f30941dc245f1",
+      "cmd-2ca287a0b34f4b6d",
+      "cmd-2e96c3c2f2b04ec7",
+      "cmd-bbb9c715de254be3",
+      "global:before_prepare:node1:failed-services",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

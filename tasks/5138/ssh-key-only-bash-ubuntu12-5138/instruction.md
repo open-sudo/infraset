@@ -1,0 +1,3 @@
+On `node1`, configure `opsadmin` for SSH access with the public key `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDHEKV5QaAhr48r+Hjscl8NDVk4P91taqKbDgxTflW3Q4pP8V0cLKq5ABik8uvtqm5JwHdX0nPtw4nVWrG7AmxV900IlgzOLrBXmddq2zZF0l+q+eA3nQCjwS38sPbZm6idGR5iiwp+SUT1VLszP7R/8bsqUoZ039e7hu7OYbO3+G4e2XSzpG41R+zIoeQKPV4npGqbOU4s0SE5XDpR2Yzwx2I+1JRicGzxVuQKcgxJF6B0hU6tktcnRKdTltX0ojUsFL6JupHep/3J7nuPQgfNjFmjxPDS/KSiDLIzgY5cBki+ZPEj5aDiZZqXAxrR80iCo7KRC5fySLKS6aUabrbv legacy-ops@example.invalid`, and require key-based SSH authentication.
+
+Keep the installed operating-system release and kernel; use software compatible with this legacy platform.

@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 8,
+    "successful": 5,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "/srv/drop exists as shared writable directory with sticky bit (mode 1777, root:root)",
+      "command_ids": [
+        "cmd-b4a1091990fd486a"
+      ],
+      "summary": "stat shows '1777 root:root /srv/drop' and ls -ld shows drwxrwxrwt after mkdir/chown/chmod"
+    },
+    {
+      "requirement": "Users cannot remove files owned by other users (sticky bit enforcement)",
+      "command_ids": [
+        "cmd-b4a1091990fd486a"
+      ],
+      "summary": "testuser1 created file_from_user1.txt; testuser2's rm attempt failed with 'Operation not permitted'; file still present afterward"
+    },
+    {
+      "requirement": "Directory remains usable: any user can create files, owners can delete their own files",
+      "command_ids": [
+        "cmd-b4a1091990fd486a"
+      ],
+      "summary": "testuser2 created file_from_user2.txt successfully; testuser1 deleted its own file_from_user1.txt successfully"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline captured for node1",
+      "command_ids": [
+        "cmd-f41e42f751194db1"
+      ],
+      "summary": "Captured boot_id d9f8550d-5cb3-4929-9e62-a388df86bcf6 and /srv/drop state (1777 perms, file_from_user2.txt present) before restart"
+    },
+    {
+      "requirement": "Restart acknowledgement returned before disconnection",
+      "command_ids": [
+        "cmd-1727a557e506455e"
+      ],
+      "summary": "sudo reboot issued via backgrounded nohup; command returned 'reboot acknowledged' with exit_code 0 before the node dropped"
+    },
+    {
+      "requirement": "Node polled until exec available again after restart",
+      "command_ids": [
+        "cmd-a50765ec39b0476a",
+        "cmd-dd7803ec2eb54d3a",
+        "cmd-d572a2b08dc1495d",
+        "cmd-c40ece0108ba48c4"
+      ],
+      "summary": "Two connection-timeout failures, then connection-reset, then successful exec confirms outage and recovery of node1's exec path"
+    },
+    {
+      "requirement": "Proof that boot identity changed (actual restart, not just elapsed time)",
+      "command_ids": [
+        "cmd-c40ece0108ba48c4",
+        "cmd-09845b27f9274172"
+      ],
+      "summary": "boot_id changed from d9f8550d-5cb3-4929-9e62-a388df86bcf6 to b356d23e-2f8b-4164-922b-c2075ef80dee, proving a real reboot occurred"
+    },
+    {
+      "requirement": "Post-restart recovery of required configuration, data, and behavior",
+      "command_ids": [
+        "cmd-09845b27f9274172"
+      ],
+      "summary": "After reboot, /srv/drop still 1777 root:root, prior file_from_user2.txt persisted, and sticky-bit delete-denial re-verified end-to-end with fresh test files"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-b4a1091990fd486a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:29:16.377174+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 695,
+      "command": "set -Eeuo pipefail\n\necho \"== BASELINE: boot id ==\"\ncat /proc/sys/kernel/random/boot_id\n\necho \"== Create /srv/drop ==\"\nsudo -n mkdir -p /srv/drop\n\necho \"== Set ownership and permissions (sticky bit + world writable) ==\"\nsudo -n chown root:root /srv/drop\nsudo -n chmod 1777 /srv/drop\n\necho \"== Verify permissions ==\"\nstat -c '%a %U:%G %n' /srv/drop\nls -ld /srv/drop\n\necho \"== Create test users if not exist ==\"\nsudo -n id testuser1 >/dev/null 2>&1 || sudo -n useradd -m testuser1\nsudo -n id testuser2 >/dev/null 2>&1 || sudo -n useradd -m testuser2\n\necho \"== testuser1 creates a file ==\"\nsudo -n -u testuser1 touch /srv/drop/file_from_user1.txt\nsudo -n -u testuser1 sh -c 'echo hello > /srv/drop/file_from_user1.txt'\nls -l /srv/drop/file_from_user1.txt\n\necho \"== testuser2 attempts to delete testuser1's file (should fail) ==\"\nif sudo -n -u testuser2 rm -f /srv/drop/file_from_user1.txt 2>/tmp/rm_err.txt; then\n  echo \"UNEXPECTED: delete succeeded\"\nelse\n  echo \"EXPECTED: delete failed\"\n  cat /tmp/rm_err.txt\nfi\n\necho \"== Confirm file still exists ==\"\nls -l /srv/drop/file_from_user1.txt\n\necho \"== testuser2 can create its own file ==\"\nsudo -n -u testuser2 sh -c 'echo world > /srv/drop/file_from_user2.txt'\nls -l /srv/drop/file_from_user2.txt\n\necho \"== testuser1 can delete its own file (should succeed) ==\"\nsudo -n -u testuser1 rm -f /srv/drop/file_from_user1.txt\nls -l /srv/drop/ || true\n\necho \"== Final directory listing and perms ==\"\nstat -c '%a %U:%G %n' /srv/drop\nls -la /srv/drop\n",
+      "stdout": "== BASELINE: boot id ==\nd9f8550d-5cb3-4929-9e62-a388df86bcf6\n== Create /srv/drop ==\n== Set ownership and permissions (sticky bit + world writable) ==\n== Verify permissions ==\n1777 root:root /srv/drop\ndrwxrwxrwt. 2 root root 6 Sep 29 08:29 /srv/drop\n== Create test users if not exist ==\n== testuser1 creates a file ==\n-rw-r--r--. 1 testuser1 testuser1 6 Sep 29 08:29 /srv/drop/file_from_user1.txt\n== testuser2 attempts to delete testuser1's file (should fail) ==\nEXPECTED: delete failed\nrm: cannot remove '/srv/drop/file_from_user1.txt': Operation not permitted\n== Confirm file still exists ==\n-rw-r--r--. 1 testuser1 testuser1 6 Sep 29 08:29 /srv/drop/file_from_user1.txt\n== testuser2 can create its own file ==\n-rw-r--r--. 1 testuser2 testuser2 6 Sep 29 08:29 /srv/drop/file_from_user2.txt\n== testuser1 can delete its own file (should succeed) ==\ntotal 4\n-rw-r--r--. 1 testuser2 testuser2 6 Sep 29 08:29 file_from_user2.txt\n== Final directory listing and perms ==\n1777 root:root /srv/drop\ntotal 4\ndrwxrwxrwt. 2 root      root      33 Sep 29 08:29 .\ndrwxr-xr-x. 3 root      root      18 Sep 29 08:29 ..\n-rw-r--r--. 1 testuser2 testuser2  6 Sep 29 08:29 file_from_user2.txt"
+    },
+    {
+      "command_id": "cmd-f41e42f751194db1",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:29:19.436935+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 68,
+      "command": "set -Eeuo pipefail\necho \"== pre-restart baseline ==\"\ncat /proc/sys/kernel/random/boot_id\nstat -c '%a %U:%G %n' /srv/drop\nls -la /srv/drop\n",
+      "stdout": "== pre-restart baseline ==\nd9f8550d-5cb3-4929-9e62-a388df86bcf6\n1777 root:root /srv/drop\ntotal 4\ndrwxrwxrwt. 2 root      root      33 Sep 29 08:29 .\ndrwxr-xr-x. 3 root      root      18 Sep 29 08:29 ..\n-rw-r--r--. 1 testuser2 testuser2  6 Sep 29 08:29 file_from_user2.txt"
+    },
+    {
+      "command_id": "cmd-1727a557e506455e",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:29:21.354619+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 88,
+      "command": "sudo -n sh -c 'nohup reboot >/dev/null 2>&1 &' ; echo \"reboot acknowledged\"",
+      "stdout": "reboot acknowledged"
+    },
+    {
+      "command_id": "cmd-a50765ec39b0476a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:29:25.115021+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2100,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-dd7803ec2eb54d3a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:29:28.507610+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2082,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-d572a2b08dc1495d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:29:30.788729+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 925,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-c40ece0108ba48c4",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:29:32.305799+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 76,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "b356d23e-2f8b-4164-922b-c2075ef80dee"
+    },
+    {
+      "command_id": "cmd-09845b27f9274172",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:29:37.273314+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 319,
+      "command": "set -Eeuo pipefail\necho \"== post-restart: boot id ==\"\ncat /proc/sys/kernel/random/boot_id\n\necho \"== post-restart: /srv/drop perms and contents ==\"\nstat -c '%a %U:%G %n' /srv/drop\nls -la /srv/drop\n\necho \"== post-restart: re-verify sticky bit behavior ==\"\nsudo -n -u testuser1 sh -c 'echo again > /srv/drop/file_from_user1_v2.txt'\nls -l /srv/drop/file_from_user1_v2.txt\n\nif sudo -n -u testuser2 rm -f /srv/drop/file_from_user1_v2.txt 2>/tmp/rm_err2.txt; then\n  echo \"UNEXPECTED: delete succeeded\"\nelse\n  echo \"EXPECTED: delete failed\"\n  cat /tmp/rm_err2.txt\nfi\n\nls -l /srv/drop/file_from_user1_v2.txt\necho \"== data persisted from before reboot ==\"\nls -l /srv/drop/file_from_user2.txt\n",
+      "stdout": "== post-restart: boot id ==\nb356d23e-2f8b-4164-922b-c2075ef80dee\n== post-restart: /srv/drop perms and contents ==\n1777 root:root /srv/drop\ntotal 4\ndrwxrwxrwt. 2 root      root      33 Sep 29 08:29 .\ndrwxr-xr-x. 3 root      root      18 Sep 29 08:29 ..\n-rw-r--r--. 1 testuser2 testuser2  6 Sep 29 08:29 file_from_user2.txt\n== post-restart: re-verify sticky bit behavior ==\n-rw-r--r--. 1 testuser1 testuser1 6 Sep 29 08:29 /srv/drop/file_from_user1_v2.txt\nEXPECTED: delete failed\nrm: cannot remove '/srv/drop/file_from_user1_v2.txt': Operation not permitted\n-rw-r--r--. 1 testuser1 testuser1 6 Sep 29 08:29 /srv/drop/file_from_user1_v2.txt\n== data persisted from before reboot ==\n-rw-r--r--. 1 testuser2 testuser2 6 Sep 29 08:29 /srv/drop/file_from_user2.txt"
+    }
+  ]
+}

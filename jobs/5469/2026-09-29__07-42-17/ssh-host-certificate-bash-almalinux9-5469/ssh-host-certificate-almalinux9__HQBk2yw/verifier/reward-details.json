@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Create an SSH certificate authority on node1",
+      "status": "satisfied",
+      "summary": "An ed25519 CA keypair was generated at /etc/ssh/ca/ssh_ca on node1 with appropriate permissions (600 private, 644 public).",
+      "evidence_ids": [
+        "cmd-c529a913d0da46ec"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Host presents a certificate signed by the CA (sshd configured with a CA-signed host certificate)",
+      "status": "satisfied",
+      "summary": "The host's ed25519 host key was signed by the CA into a 10-year certificate, sshd was configured with HostCertificate/HostKey directives, validated with sshd -t, and after fixing an SELinux mislabeling of the cert file (tmp_t -> correct context), ssh -vv debug output confirms the server offers ssh-ed25519-cert-v01@openssh.com signed by the CA. This was reconfirmed intact after the mandatory reboot.",
+      "evidence_ids": [
+        "cmd-c529a913d0da46ec",
+        "cmd-17faa2ae00054854",
+        "cmd-f3984e6548b64f22",
+        "cmd-ecdb5806a797422d"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "A client that trusts only the CA (no pinned host key) connects successfully",
+      "status": "satisfied",
+      "summary": "A client known_hosts file containing only a @cert-authority line (no host key) was used; ssh -vv output shows 'Host ... is known and matches the ED25519-CERT host certificate', and a full authenticated connection (with a separate keypair for auth) succeeded end-to-end both before and after the node reboot.",
+      "evidence_ids": [
+        "cmd-f3984e6548b64f22",
+        "cmd-a78e7571de4049c1",
+        "cmd-ecdb5806a797422d"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Mandatory provider-wide node-restart evidence protocol on node1",
+      "status": "satisfied",
+      "summary": "Pre-restart healthy baseline (boot_id dfdea52d..., sshd active, cert valid) was captured, systemctl reboot was acknowledged, a poll during the disruption timed out (node down), and a subsequent poll returned a new boot_id (4d100cc9...). Post-restart checks confirm sshd active, HostCertificate/HostKey config intact, correct SELinux context, and a fresh CA-trust-only client connection succeeding. This is cross-confirmed by the fixed after-prepare/after-executor lifecycle snapshots showing the same boot-identity transition.",
+      "evidence_ids": [
+        "cmd-62fa3b9d65be49bc",
+        "cmd-e6a2cc1719954fe4",
+        "cmd-13f04eaa7e4149dc",
+        "cmd-3729cf5539ca4f6b",
+        "cmd-ecdb5806a797422d",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor created an SSH CA on node1, signed the host's ed25519 key, configured and (after correcting an SELinux mislabeling) successfully got sshd to present the CA-signed certificate, and directly demonstrated a client connecting while trusting only the CA (no pinned host key), including a full authenticated session. The mandatory single-node restart was executed and evidenced with a clean pre-restart baseline, acknowledgement, boot-identity change, and full post-restart recovery of sshd, certificate configuration, and CA-trust connectivity, corroborated by the fixed lifecycle snapshots. All material task outcomes are satisfied with direct evidence. The main deduction is operational hygiene: a private key and other test artifacts were left in /tmp, and the cluster's public key was appended (and duplicated) into root's authorized_keys, none of which were cleaned up afterward.",
+  "limitations": [
+    "No evidence was captured of the CA private key's storage permissions/context after the SELinux relabeling pass (only the cert file's context was rechecked), though this does not affect the demonstrated functional outcome.",
+    "Left-behind /tmp/sshtest/id_cluster private key copy and authorized_keys additions were not reverted, and no cleanup command was observed in the timeline."
+  ],
+  "command_stats": {
+    "total": 14,
+    "successful": 10,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "Several unnecessary mutations were left in place rather than cleaned up after evidence collection. (1) cmd-c529a913d0da46ec copied the host's public key to /tmp/ssh_host_ed25519_key.pub and created /tmp/sshtest/known_hosts \u2014 both confirmed still present in the after-executor temp-file snapshot, i.e. never removed. (2) cmd-b06dc50651964979 and cmd-ecdb5806a797422d wrote a private key (CLUSTER_SSH_PRIVKEY) to /tmp/sshtest/id_cluster to run an end-to-end authenticated SSH test; this file also persists in the after-executor snapshot \u2014 leaving unencrypted private key material in /tmp is a low-but-real residual exposure that was never cleaned up. (3) Both of those commands also appended the cluster's public key to root's ~/.ssh/authorized_keys, producing a persistent (and duplicated) authorized_keys change that was not required to prove CA-trust connectivity (the cert-trust check itself already succeeded without authentication, per the earlier ssh -vv 'Permission denied' step) and was not reverted. These are bounded, non-destructive, and do not compromise the host certificate/CA setup itself, but they are retained, unnecessary residue from testing rather than the minimal footprint the task called for.",
+    "evidence_ids": [
+      "cmd-c529a913d0da46ec",
+      "cmd-b06dc50651964979",
+      "cmd-ecdb5806a797422d",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

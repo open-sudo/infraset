@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 8,
+    "successful": 6,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Baseline healthy state before restart (data present, mounts active)",
+      "command_ids": [
+        "cmd-e1ea9fce8b5d4117",
+        "cmd-bf366bf93b8048ee"
+      ],
+      "summary": "Populated /srv/data, confirmed Btrfs mounts and subvolume layout, and captured pre-restart boot_id 8336c3a1-91fc-4135-b26a-5d2863cb2594"
+    },
+    {
+      "requirement": "Snapshot captures baseline content exactly",
+      "command_ids": [
+        "cmd-e1ea9fce8b5d4117"
+      ],
+      "summary": "Read-only snapshot 'baseline' created; checksum diff against live /srv/data showed 'SNAPSHOT MATCHES BASELINE: OK'"
+    },
+    {
+      "requirement": "Directory modified after snapshot (divergence)",
+      "command_ids": [
+        "cmd-e1ea9fce8b5d4117"
+      ],
+      "summary": "Deleted, corrupted, and added files in /srv/data; checksum diff confirmed 'CONFIRMED DIVERGENCE FROM BASELINE'"
+    },
+    {
+      "requirement": "Exact restore of snapshot content into /srv/data",
+      "command_ids": [
+        "cmd-e1ea9fce8b5d4117"
+      ],
+      "summary": "Deleted live subvolume, recreated it as a snapshot of 'baseline', remounted; checksum diff printed 'RESTORE VERIFIED: CONTENT MATCHES BASELINE EXACTLY'"
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-9687af50d4814800"
+      ],
+      "summary": "Backgrounded 'shutdown -r now' via sudo -n; command returned 'reboot acknowledged and issued' immediately"
+    },
+    {
+      "requirement": "Node restart actually occurred (changed boot identity)",
+      "command_ids": [
+        "cmd-2a198119b2fc4cc2",
+        "cmd-ba2269812a3a4bff"
+      ],
+      "summary": "Poll first showed SSH connection refused (node down), then succeeded with a new boot_id 8e2dff81-45c3-49e8-8d29-600a699333f8, differing from the pre-restart boot_id"
+    },
+    {
+      "requirement": "Post-restart recovery of mounts, subvolumes, and data (with quorum n/a, single node)",
+      "command_ids": [
+        "cmd-1dc6f488222f405c",
+        "cmd-2dfb9f7edcf94a0f"
+      ],
+      "summary": "Confirmed Btrfs loop and bind mounts auto-restored via fstab, subvolume list intact, and /srv/data file checksums matched the original baseline exactly post-reboot"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-9e1ba016b9154b6f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:48.602403+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 413,
+      "command": "set -Eeuo pipefail\necho \"== df -hT /srv ==\"\ndf -hT /srv 2>&1 || true\necho \"== mount / ==\"\nmount | grep -E ' / | /srv' || true\necho \"== lsblk ==\"\nlsblk -f 2>&1 || true\necho \"== pvs/vgs/lvs ==\"\nwhich pvs vgs lvs 2>&1 || true\nsudo -n pvs 2>&1 || true\nsudo -n vgs 2>&1 || true\nsudo -n lvs 2>&1 || true\necho \"== btrfs ==\"\nwhich btrfs 2>&1 || true\necho \"== zfs ==\"\nwhich zfs zpool 2>&1 || true\necho \"== os release ==\"\ncat /etc/os-release 2>&1 | head -5\necho \"== srv contents ==\"\nls -la /srv 2>&1 || true\n",
+      "stdout": "== df -hT /srv ==\nFilesystem     Type  Size  Used Avail Use% Mounted on\n/dev/vda1      ext4   20G  929M   19G   5% /\n== mount / ==\n/dev/vda1 on / type ext4 (rw,relatime,data=ordered)\n== lsblk ==\nNAME   FSTYPE LABEL           UUID                                 MOUNTPOINT\nvda                                                                \n`-vda1 ext4   cloudimg-rootfs cd5d0b53-3c5f-4aac-b536-c270d1e6f1d3 /\n== pvs/vgs/lvs ==\n/sbin/pvs\n/sbin/vgs\n/sbin/lvs\n== btrfs ==\n/bin/btrfs\n== zfs ==\n== os release ==\nNAME=\"Ubuntu\"\nVERSION=\"16.04.7 LTS (Xenial Xerus)\"\nID=ubuntu\nID_LIKE=debian\nPRETTY_NAME=\"Ubuntu 16.04.7 LTS\"\n== srv contents ==\ntotal 8\ndrwxr-xr-x  2 root root 4096 Aug  4  2021 .\ndrwxr-xr-x 23 root root 4096 Jun 15 00:27 ..\n"
+    },
+    {
+      "command_id": "cmd-e1ea9fce8b5d4117",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:08:35.914874+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 468,
+      "command": "set -Eeuo pipefail\n\necho \"STEP 1: create backing image and btrfs filesystem\"\nsudo -n mkdir -p /var/lib/antrieb-btrfs\nif [ ! -f /var/lib/antrieb-btrfs/srv-data.img ]; then\n  sudo -n fallocate -l 2G /var/lib/antrieb-btrfs/srv-data.img || sudo -n dd if=/dev/zero of=/var/lib/antrieb-btrfs/srv-data.img bs=1M count=2048\n  sudo -n mkfs.btrfs -q -L srvdata /var/lib/antrieb-btrfs/srv-data.img\nfi\n\necho \"STEP 2: mount btrfs top-level volume\"\nsudo -n mkdir -p /mnt/srv-btrfs\nif ! mountpoint -q /mnt/srv-btrfs; then\n  sudo -n mount -o loop /var/lib/antrieb-btrfs/srv-data.img /mnt/srv-btrfs\nfi\n\necho \"STEP 3: create data subvolume and snapshots dir if absent\"\nif [ ! -d /mnt/srv-btrfs/data ]; then\n  sudo -n btrfs subvolume create /mnt/srv-btrfs/data\nfi\nsudo -n mkdir -p /mnt/srv-btrfs/snapshots\n\necho \"STEP 4: mount data subvolume at /srv/data\"\nsudo -n mkdir -p /srv/data\nif ! mountpoint -q /srv/data; then\n  sudo -n mount --bind /mnt/srv-btrfs/data /srv/data\nfi\n\necho \"STEP 5: persist mounts via fstab (idempotent)\"\nIMG=/var/lib/antrieb-btrfs/srv-data.img\ngrep -q \"$IMG /mnt/srv-btrfs\" /etc/fstab || echo \"$IMG /mnt/srv-btrfs btrfs loop,defaults 0 0\" | sudo -n tee -a /etc/fstab\ngrep -q \"/mnt/srv-btrfs/data /srv/data\" /etc/fstab || echo \"/mnt/srv-btrfs/data /srv/data none bind 0 0\" | sudo -n tee -a /etc/fstab\n\necho \"STEP 6: populate baseline application data\"\nsudo -n rm -rf /srv/data/*\nsudo -n sh -c 'cat > /srv/data/app.conf <<EOF\nservice=antrieb-app\nmode=production\nversion=1.0\nEOF'\nsudo -n sh -c 'echo \"record-1,record-2,record-3\" > /srv/data/records.csv'\nsudo -n mkdir -p /srv/data/logs\nsudo -n sh -c 'echo \"baseline log entry\" > /srv/data/logs/app.log'\n\necho \"STEP 7: checksum baseline\"\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\;' | sort > /tmp/baseline.sha256\ncat /tmp/baseline.sha256\n\necho \"STEP 8: take read-only snapshot 'baseline'\"\nsudo -n rm -rf /mnt/srv-btrfs/snapshots/baseline\nsudo -n btrfs subvolume snapshot -r /srv/data /mnt/srv-btrfs/snapshots/baseline\n\necho \"STEP 9: verify snapshot content matches baseline\"\nsudo -n sh -c 'cd /mnt/srv-btrfs/snapshots/baseline && find . -type f -exec sha256sum {} \\;' | sort > /tmp/snapshot.sha256\ndiff /tmp/baseline.sha256 /tmp/snapshot.sha256 && echo \"SNAPSHOT MATCHES BASELINE: OK\"\n\necho \"STEP 10: modify /srv/data (simulate change/corruption)\"\nsudo -n rm -f /srv/data/records.csv\nsudo -n sh -c 'echo \"CORRUPTED\" > /srv/data/app.conf'\nsudo -n sh -c 'echo \"unexpected file\" > /srv/data/intruder.txt'\nsudo -n sh -c 'echo \"tampered\" >> /srv/data/logs/app.log'\necho \"post-modification listing:\"\nsudo -n find /srv/data -type f | sort\n\necho \"STEP 11: checksum of modified state (expected to differ)\"\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\;' | sort > /tmp/modified.sha256\ndiff /tmp/baseline.sha256 /tmp/modified.sha256 && echo \"UNEXPECTED: no diff\" || echo \"CONFIRMED DIVERGENCE FROM BASELINE\"\n\necho \"STEP 12: restore /srv/data from baseline snapshot\"\nsudo -n umount /srv/data\nsudo -n btrfs subvolume delete /mnt/srv-btrfs/data\nsudo -n btrfs subvolume snapshot /mnt/srv-btrfs/snapshots/baseline /mnt/srv-btrfs/data\nsudo -n mount --bind /mnt/srv-btrfs/data /srv/data\n\necho \"STEP 13: verify restored content matches original baseline exactly\"\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\;' | sort > /tmp/restored.sha256\ndiff /tmp/baseline.sha256 /tmp/restored.sha256 && echo \"RESTORE VERIFIED: CONTENT MATCHES BASELINE EXACTLY\"\necho \"restored listing:\"\nsudo -n find /srv/data -type f | sort\n",
+      "stdout": "STEP 1: create backing image and btrfs filesystem\nSTEP 2: mount btrfs top-level volume\nSTEP 3: create data subvolume and snapshots dir if absent\nCreate subvolume '/mnt/srv-btrfs/data'\nSTEP 4: mount data subvolume at /srv/data\nSTEP 5: persist mounts via fstab (idempotent)\n/var/lib/antrieb-btrfs/srv-data.img /mnt/srv-btrfs btrfs loop,defaults 0 0\n/mnt/srv-btrfs/data /srv/data none bind 0 0\nSTEP 6: populate baseline application data\nSTEP 7: checksum baseline\n4bab062e57b1f3b898547cdd17741760898ade9b5ca6c1dc690ba8ab373042f3  ./app.conf\nb3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./logs/app.log\nc995cf24fb0ece16afed898464d1753a6a36ddce1c7f9ba4e7106db3c1bf206b  ./records.csv\nSTEP 8: take read-only snapshot 'baseline'\nCreate a readonly snapshot of '/srv/data' in '/mnt/srv-btrfs/snapshots/baseline'\nSTEP 9: verify snapshot content matches baseline\nSNAPSHOT MATCHES BASELINE: OK\nSTEP 10: modify /srv/data (simulate change/corruption)\npost-modification listing:\n/srv/data/app.conf\n/srv/data/intruder.txt\n/srv/data/logs/app.log\nSTEP 11: checksum of modified state (expected to differ)\n1,3c1,3\n< 4bab062e57b1f3b898547cdd17741760898ade9b5ca6c1dc690ba8ab373042f3  ./app.conf\n< b3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./logs/app.log\n< c995cf24fb0ece16afed898464d1753a6a36ddce1c7f9ba4e7106db3c1bf206b  ./records.csv\n---\n> 3398b5c2a9131cb63d2d21240a5d21e63e3e54c5fce3bf88625778c1ddd347b8  ./app.conf\n> da1ca99c98c1c1584f5db23914e556bf40853a264c26cf2f0dcf2e938b2c9a4a  ./logs/app.log\n> ec7e640599407075d482b67ac5f895b34b47e6cc3486684f4f6ab4ab14a9dae8  ./intruder.txt\nCONFIRMED DIVERGENCE FROM BASELINE\nSTEP 12: restore /srv/data from baseline snapshot\nDelete subvolume (no-commit): '/mnt/srv-btrfs/data'\nCreate a snapshot of '/mnt/srv-btrfs/snapshots/baseline' in '/mnt/srv-btrfs/data'\nSTEP 13: verify restored content matches original baseline exactly\nRESTORE VERIFIED: CONTENT MATCHES BASELINE EXACTLY\nrestored listing:\n/srv/data/app.conf\n/srv/data/logs/app.log\n/srv/data/records.csv\n"
+    },
+    {
+      "command_id": "cmd-bf366bf93b8048ee",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:08:39.587614+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 291,
+      "command": "set -Eeuo pipefail\necho \"== baseline proof snapshot listing ==\"\nsudo -n btrfs subvolume list /mnt/srv-btrfs\necho \"== fstab entries ==\"\ngrep antrieb-btrfs /etc/fstab\ngrep '/srv/data' /etc/fstab\necho \"== mounts ==\"\nmount | grep -E 'srv-btrfs|srv/data'\necho \"== boot id (pre-restart) ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"\nuptime -s || uptime\n",
+      "stdout": "== baseline proof snapshot listing ==\nID 258 gen 9 top level 5 path snapshots/baseline\nID 259 gen 9 top level 5 path data\n== fstab entries ==\n/var/lib/antrieb-btrfs/srv-data.img /mnt/srv-btrfs btrfs loop,defaults 0 0\n/mnt/srv-btrfs/data /srv/data none bind 0 0\n== mounts ==\n/var/lib/antrieb-btrfs/srv-data.img on /mnt/srv-btrfs type btrfs (rw,relatime,space_cache,subvolid=5,subvol=/)\n/var/lib/antrieb-btrfs/srv-data.img on /srv/data type btrfs (rw,relatime,space_cache,subvolid=259,subvol=/data)\n== boot id (pre-restart) ==\n8336c3a1-91fc-4135-b26a-5d2863cb2594\n== uptime ==\n2026-09-29 09:07:17\n"
+    },
+    {
+      "command_id": "cmd-9687af50d4814800",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:08:44.134435+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 271,
+      "command": "set -Eeuo pipefail\nsudo -n sh -c 'nohup shutdown -r now >/tmp/reboot.log 2>&1 &' \necho \"reboot acknowledged and issued\"",
+      "stdout": "reboot acknowledged and issued\n"
+    },
+    {
+      "command_id": "cmd-2a198119b2fc4cc2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:08:47.932688+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 2126,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>&1 || echo \"not up yet\"",
+      "stderr": "ssh: connect to host 10.100.204.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-ba2269812a3a4bff",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:08:49.819659+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 284,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>&1 || echo \"not up yet\"",
+      "stdout": "8e2dff81-45c3-49e8-8d29-600a699333f8\n"
+    },
+    {
+      "command_id": "cmd-1dc6f488222f405c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:08:53.842510+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 2,
+      "duration_ms": 238,
+      "command": "set -Eeuo pipefail\necho \"== mounts post-restart ==\"\nmount | grep -E 'srv-btrfs|srv/data'\necho \"== subvolumes ==\"\nsudo -n btrfs subvolume list /mnt/srv-btrfs\necho \"== data listing ==\"\nsudo -n find /srv/data -type f | sort\necho \"== checksum comparison against original baseline ==\"\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\;' | sort > /tmp/postboot.sha256\ndiff /tmp/baseline.sha256 /tmp/postboot.sha256 && echo \"POST-RESTART DATA MATCHES BASELINE EXACTLY\"\n",
+      "stdout": "== mounts post-restart ==\n/var/lib/antrieb-btrfs/srv-data.img on /mnt/srv-btrfs type btrfs (rw,relatime,space_cache,subvolid=5,subvol=/)\n/var/lib/antrieb-btrfs/srv-data.img on /srv/data type btrfs (rw,relatime,space_cache,subvolid=259,subvol=/data)\n== subvolumes ==\nID 258 gen 9 top level 5 path snapshots/baseline\nID 259 gen 9 top level 5 path data\n== data listing ==\n/srv/data/app.conf\n/srv/data/logs/app.log\n/srv/data/records.csv\n== checksum comparison against original baseline ==\n",
+      "stderr": "diff: /tmp/baseline.sha256: No such file or directory\n"
+    },
+    {
+      "command_id": "cmd-2dfb9f7edcf94a0f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:08:59.538670+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 370,
+      "command": "set -Eeuo pipefail\nsudo -n sh -c 'cd /srv/data && find . -type f -exec sha256sum {} \\;' | sort > /tmp/postboot.sha256\ncat > /tmp/expected.sha256 <<'EOF'\n4bab062e57b1f3b898547cdd17741760898ade9b5ca6c1dc690ba8ab373042f3  ./app.conf\nb3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./logs/app.log\nc995cf24fb0ece16afed898464d1753a6a36ddce1c7f9ba4e7106db3c1bf206b  ./records.csv\nEOF\ndiff /tmp/expected.sha256 /tmp/postboot.sha256 && echo \"POST-RESTART DATA MATCHES ORIGINAL BASELINE EXACTLY\"\necho \"== snapshot still intact ==\"\nsudo -n sh -c 'cd /mnt/srv-btrfs/snapshots/baseline && find . -type f -exec sha256sum {} \\;' | sort\n",
+      "stdout": "POST-RESTART DATA MATCHES ORIGINAL BASELINE EXACTLY\n== snapshot still intact ==\n4bab062e57b1f3b898547cdd17741760898ade9b5ca6c1dc690ba8ab373042f3  ./app.conf\nb3e34f4039501beb05ffcfe5fda55dbe53b5ed92d0a40831aafdd4b6c45d3aa0  ./logs/app.log\nc995cf24fb0ece16afed898464d1753a6a36ddce1c7f9ba4e7106db3c1bf206b  ./records.csv\n"
+    }
+  ]
+}

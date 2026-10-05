@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Establish an integrity baseline for /etc on node1",
+      "status": "satisfied",
+      "summary": "AIDE and aide-common were installed, /etc/aide/aide.conf was configured with a scoped, full-attribute+hash rule applied recursively to /etc, and the database was initialized (1950 entries) and installed at /var/lib/aide/aide.db. An immediate --check against the freshly-initialized database reported 'AIDE found NO differences between database and filesystem. Looks okay!!', directly confirming the baseline was correctly captured.",
+      "evidence_ids": [
+        "cmd-a8695808546b4126"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Baseline must allow later changes to /etc to be identified/reported",
+      "status": "satisfied",
+      "summary": "The executor added canary files under /etc and ran aide --check, which correctly reported 3 added entries in a Summary/Added-entries block, directly demonstrating change detection. After removing the canaries, a further check still correctly flagged the resulting /etc directory mtime/ctime change, showing the mechanism is sensitive to residual drift. The database was then cleanly re-initialized and a final --check before the restart reported no differences, leaving a working, reporting-capable baseline in place.",
+      "evidence_ids": [
+        "cmd-c7ebae942ee043e6",
+        "cmd-4a32556443d146f6",
+        "cmd-304fb6c66c80402a",
+        "cmd-9516a16fb8db4ac2"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "(Independent protocol) Provider-wide node-restart evidence: pre-restart healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Pre-restart snapshot captured boot_id a0c36ad2..., btime 1790687964, and a clean AIDE check with db SHA256 d536d0b5... (cmd-9516a16fb8db4ac2). shutdown -r now was issued with an 'issuing reboot' acknowledgement returned before the exec stream closed (cmd-33e1ac5c7deb4e8c), consistent with the fixed boot-identity observation before the change (a0c36ad2...). A subsequent probe failed with connection reset, confirming the node went down (cmd-b8622aa956ef4fe5), and a later probe succeeded with a new boot_id fc0eb3ab..., advanced btime 1790688074, and ~6.5s uptime (cmd-a51a1c3203534bf1), matching the fixed after-executor boot-identity observation (fc0eb3ab...). Post-restart, the AIDE database file was confirmed present with an identical SHA256 (d536d0b5...) and a fresh --check reported clean with the same 1950 entries (cmd-8944d5ace86c4e1a), directly demonstrating recovery of the integrity baseline across the reboot.",
+      "evidence_ids": [
+        "cmd-9516a16fb8db4ac2",
+        "cmd-33e1ac5c7deb4e8c",
+        "cmd-b8622aa956ef4fe5",
+        "cmd-a51a1c3203534bf1",
+        "cmd-8944d5ace86c4e1a",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor satisfied the core task: a scoped AIDE-based integrity baseline for /etc was established on node1, verified to correctly detect and would report both additions and residual metadata drift, and left in a clean, reproducible state. The independently-required node-restart evidence protocol was executed with a complete and coherent before/during/after transition (healthy pre-restart baseline, acknowledged shutdown, connection loss, new boot identity, and confirmed post-restart recovery of the AIDE database and clean check), consistent with the fixed lifecycle boot-identity snapshots. The one notable gap is an unreviewed new network listener (postfix on port 25) introduced as an apt dependency side-effect, which was not identified or mitigated by the executor.",
+  "limitations": [
+    "No direct evidence that the executor reviewed or intentionally decided on the newly-appearing postfix/SMTP listener; it may be an unavoidable aide-common dependency default rather than an executor choice, but this could not be confirmed from the trace.",
+    "Exit codes 4 from aide --check and -1 from the reboot-related commands are expected behavior (differences found / connection dropped during reboot) rather than genuine command failures, and were treated as such."
+  ],
+  "command_stats": {
+    "total": 11,
+    "successful": 7,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "The canary-file creation/deletion under /etc (cmd-c7ebae942ee043e6) was a bounded, low-risk mutation directly serving the material requirement to prove change detection, and it was fully reverted with the baseline re-initialized afterward (cmd-304fb6c66c80402a) \u2014 this is not penalized. However, the fixed lifecycle comparison shows a new network listener (postfix master process on 0.0.0.0:25 and [::]:25) present after the executor's actions that was absent beforehand, almost certainly pulled in as a dependency/recommendation of aide-common (which wires AIDE cron reports through a local MTA). This is an unaddressed, network-facing exposure change with no evidence the executor reviewed, restricted (e.g., to localhost), or disabled it, and it was not called out in the final report. No failed services, no orphaned temp files beyond the routine per-boot systemd-private directories, and dpkg/package health remained clean in both snapshots.",
+    "evidence_ids": [
+      "cmd-c7ebae942ee043e6",
+      "cmd-304fb6c66c80402a",
+      "global:before_prepare:node1:listening-sockets",
+      "global:after_executor:node1:listening-sockets",
+      "global:before_prepare:node1:failed-services",
+      "global:after_executor:node1:failed-services",
+      "global:before_prepare:node1:package-health",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

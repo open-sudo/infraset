@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "ca-created",
+      "requirement": "Create a certificate authority named 'Fleet Internal CA' on node1",
+      "status": "satisfied",
+      "summary": "cmd-0a6ef5f8a6644b8e shows a self-signed x509 CA generated on node1 with subject/issuer CN=Fleet Internal CA, O=Fleet Internal CA, basicConstraints CA:true, validity 2026-2036.",
+      "evidence_ids": [
+        "cmd-0a6ef5f8a6644b8e"
+      ]
+    },
+    {
+      "id": "cert-issued-node2",
+      "requirement": "Issue node2 a TLS certificate signed by the CA",
+      "status": "satisfied",
+      "summary": "cmd-68b4af524b0547d7 shows a CSR for node2 (CN=node2, SAN DNS:node2/IP:10.100.105.11, EKU serverAuth) signed by the CA key; cmd-0a4d3158aa184c25 and cmd-2d3840cd5a9442d7 confirm openssl verify OK against the system trust store on both nodes.",
+      "evidence_ids": [
+        "cmd-68b4af524b0547d7",
+        "cmd-0a4d3158aa184c25",
+        "cmd-2d3840cd5a9442d7"
+      ]
+    },
+    {
+      "id": "node2-https-8443",
+      "requirement": "Configure node2 to serve HTTPS on port 8443 using the issued certificate",
+      "status": "satisfied",
+      "summary": "nginx site 'fleet-tls' on node2 (cmd-26b7cf72ced644aa) configures listen 8443 ssl with the issued cert/key; nginx reported active; cmd-c4b697e01a0b488a and cmd-46024a2aa4ed4a53 show curl against https://10.100.105.11:8443 and https://node2:8443 returning HTTP 200 and presenting CN=node2 issued by Fleet Internal CA. The after_executor lifecycle snapshot independently confirms nginx listening on 0.0.0.0:8443 and [::]:8443 on node2, corroborating the config took effect outside the executor's own narrative.",
+      "evidence_ids": [
+        "cmd-26b7cf72ced644aa",
+        "cmd-c4b697e01a0b488a",
+        "cmd-46024a2aa4ed4a53",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    },
+    {
+      "id": "ca-trust-node1",
+      "requirement": "Install the CA as a trusted system CA on node1",
+      "status": "satisfied",
+      "summary": "cmd-0a4d3158aa184c25 shows the CA cert copied to /usr/local/share/ca-certificates and update-ca-certificates run ('1 added, 0 removed'), with openssl verify against /etc/ssl/certs/ca-certificates.crt returning OK on node1.",
+      "evidence_ids": [
+        "cmd-0a4d3158aa184c25"
+      ]
+    },
+    {
+      "id": "ca-trust-node2",
+      "requirement": "Install the CA as a trusted system CA on node2",
+      "status": "satisfied",
+      "summary": "cmd-2d3840cd5a9442d7 shows the same CA install process performed on node2, with openssl verify against the system trust store returning OK; subsequent curl invocations without -k (cmd-46024a2aa4ed4a53, cmd-bd7fd09f46b342d5) confirm the system trust store, not an ad hoc CA file, is what validates the chain.",
+      "evidence_ids": [
+        "cmd-2d3840cd5a9442d7",
+        "cmd-46024a2aa4ed4a53",
+        "cmd-bd7fd09f46b342d5"
+      ]
+    },
+    {
+      "id": "restart-recovery",
+      "requirement": "(Independent protocol) Provider-wide node-restart evidence: pre-restart baseline, restart, changed boot identity, and recovered service/data/trust state on both nodes",
+      "status": "satisfied",
+      "summary": "Both nodes show a full bounded transition: pre-restart baseline with boot_id and healthy trust/service state (cmd-6f25ae667eba4196, cmd-cd60b406cb5a47f2), an acknowledged background reboot (cmd-f0bba40495504c31, cmd-da5af50e7e6d443e), an intermediate connection timeout during the reboot window (cmd-c531dec9e97c4a62, cmd-ab68d741daf94b2d), a new boot_id after reconnection (cmd-c3b6ff6c454b4a27, cmd-5e5394a4bec44a84), and recovered state \u2014 CA trust and cross-node HTTPS on node1 (cmd-63b336d536a74498), nginx active plus HTTPS verify-ok on node2 (cmd-5b7416b0fcc04c2b), and a final cross-node HTTPS check (cmd-7e9914ee351f4e6c). The fixed after_executor lifecycle snapshot independently corroborates the final boot IDs and shows nginx listening on 8443/80 with no failed services or package-health issues.",
+      "evidence_ids": [
+        "cmd-6f25ae667eba4196",
+        "cmd-cd60b406cb5a47f2",
+        "cmd-f0bba40495504c31",
+        "cmd-da5af50e7e6d443e",
+        "cmd-c531dec9e97c4a62",
+        "cmd-ab68d741daf94b2d",
+        "cmd-c3b6ff6c454b4a27",
+        "cmd-5e5394a4bec44a84",
+        "cmd-63b336d536a74498",
+        "cmd-5b7416b0fcc04c2b",
+        "cmd-7e9914ee351f4e6c",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node1:failed-services",
+        "global:after_executor:node2:failed-services",
+        "global:after_executor:node2:listening-sockets"
+      ]
+    }
+  ],
+  "overall_summary": "All five material outcomes of the task contract \u2014 CA creation on node1, cert issuance for node2, node2 serving HTTPS on 8443 with that cert, and CA trust installation on both nodes \u2014 are directly and consistently satisfied by captured command output and cross-checked by the fixed lifecycle snapshots. The independent node-restart protocol is also fully and coherently demonstrated on both nodes with matching pre/post boot identities and recovered service/trust state. The only notable gap is minor hygiene residue: an abandoned SSH key/known_hosts artifact left on node1 after a failed transfer attempt, and non-idempotent /etc/hosts appends, neither of which affects task functionality or security posture.",
+  "limitations": [
+    "No independent verification that the SSH private key file left at ~/.ssh/id_ed25519 on node1 was ever removed; its presence is inferred from the absence of any cleanup command in the timeline.",
+    "The connection-timeout entries during each reboot window (cmd-c531dec9e97c4a62, cmd-ab68d741daf94b2d) are read as evidence of an actual reboot in progress rather than an unrelated transient network issue; reasonable given the surrounding boot_id change but not itself direct proof of reboot causation.",
+    "Only nginx's own HTTP (non-8443) listener and dpkg package-health were checked in the fixed snapshots; no deeper content/data-integrity check (e.g., of the nginx document root) was requested or needed by this task."
+  ],
+  "command_stats": {
+    "total": 33,
+    "successful": 30,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most executor commands were either directly purposeful (CA/cert generation, nginx config, CA trust install) or bounded and fully reverted (the temporary python3 http.server used to transfer cert material, started at cmd-a5311f5fe69141fc and killed at cmd-eed02e00a7154646/cmd-9dcaac6b011545fc). However, an abandoned SSH-based transfer attempt (cmd-90d8d0468d284950) wrote a private key to ~/.ssh/id_ed25519 and populated known_hosts on node1; when that path failed (node2 had no sshd, confirmed by cmd-031794140c6a4537 and the connection-refused in cmd-35b85f6c7bcc4d71), the executor pivoted to the HTTP-server transfer but never removed the now-unused key material \u2014 residue from a troubleshooting experiment that did not contribute to the final solution. The /etc/hosts edits (cmd-35b85f6c7bcc4d71, cmd-7275a7d35e23414b, cmd-63b336d536a74498, cmd-5b7416b0fcc04c2b) were necessary for cross-node name resolution but were appended repeatedly without consistent idempotency checks, risking duplicate lines; low severity since it is low-risk and content-only. No failed services, no damaged package state, and no weakened security controls were observed in the after_executor snapshot.",
+    "evidence_ids": [
+      "cmd-90d8d0468d284950",
+      "cmd-031794140c6a4537",
+      "cmd-35b85f6c7bcc4d71",
+      "cmd-a5311f5fe69141fc",
+      "cmd-eed02e00a7154646",
+      "cmd-9dcaac6b011545fc",
+      "cmd-7275a7d35e23414b",
+      "cmd-63b336d536a74498",
+      "cmd-5b7416b0fcc04c2b",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

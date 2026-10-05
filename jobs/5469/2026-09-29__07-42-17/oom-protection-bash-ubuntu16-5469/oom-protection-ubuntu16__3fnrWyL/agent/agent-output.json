@@ -1,0 +1,63 @@
+{
+  "status": "blocked",
+  "summary": "Configured inventory-api as an OOM-protected systemd service on node1 (OOMScoreAdjust=-1000, verified applied and serving), then launched an unprotected memory-hog process (default oom_score_adj=0) to drive the node out of memory. The node became unresponsive to further exec calls almost immediately after the hog was launched (sshd cannot fork a new session \u2014 \"exec request failed on channel 0\") and has not recovered after ~36 minutes of retries. Because the exec tool is the only interface available and it is itself blocked, I cannot confirm whether the kernel OOM-killer actually reaped the hog while inventory-api kept serving, cannot capture post-event proof, and cannot carry out the mandatory per-node restart/recovery evidence protocol.",
+  "actions_performed": [
+    "Inspected node1: Ubuntu 16.04.7, systemd 229, 999M RAM, 0 swap, python3 3.5.2",
+    "Wrote /opt/inventory-api/app.py, a stdlib http.server exposing GET / and GET /health on :8080",
+    "Created /etc/systemd/system/inventory-api.service with Restart=always and OOMScoreAdjust=-1000, enabled and started it",
+    "Verified the running inventory-api PID had /proc/<pid>/oom_score_adj == -1000 and responded 200 OK on /health",
+    "Captured a pre-disruption baseline: free -h (670M free, 0 swap) and a successful /health curl",
+    "Wrote /opt/memory-hog.py (unprotected, default oom_score_adj=0) that grows RSS in 10MB steps until MemoryError, then idles",
+    "Launched the hog in the background, confirmed its PID existed with oom_score_adj=0",
+    "Polled exec against node1 repeatedly over ~36 minutes (echo/true commands) \u2014 all failed with 'exec request failed on channel 0', i.e. sshd cannot fork a session, indicating the node is still memory-starved and has not recovered",
+    "Did not reach the mandatory restart-evidence protocol because exec itself is non-functional on node1"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-api deployed as a managed (systemd) service",
+      "command_ids": [
+        "cmd-90d10fd71688430d",
+        "cmd-829bb2e9d48644b6"
+      ],
+      "summary": "systemd unit created/enabled/started; systemctl is-active reports 'active'"
+    },
+    {
+      "requirement": "inventory-api configured with OOM protection so kernel prefers to kill other processes first",
+      "command_ids": [
+        "cmd-829bb2e9d48644b6"
+      ],
+      "summary": "OOMScoreAdjust=-1000 set in unit file and confirmed live via /proc/<PID>/oom_score_adj == -1000"
+    },
+    {
+      "requirement": "service verified healthy/serving before disruption (baseline)",
+      "command_ids": [
+        "cmd-829bb2e9d48644b6",
+        "cmd-42d806b883034dcb"
+      ],
+      "summary": "curl http://$NODE_IP:8080/health returned {\"status\": \"ok\", ...} both right after service start and again right before launching the memory hog; free -h showed 670M free, 0 swap"
+    },
+    {
+      "requirement": "memory-hog process launched as the intended OOM-killer target (unprotected, default score)",
+      "command_ids": [
+        "cmd-42d806b883034dcb"
+      ],
+      "summary": "/opt/memory-hog.py started in background; PID's oom_score_adj confirmed as 0 (unprotected) versus inventory-api's -1000"
+    },
+    {
+      "requirement": "demonstrate kernel OOM-killer targets the hog while inventory-api keeps serving",
+      "command_ids": [
+        "cmd-7645fcf06bba41d2",
+        "cmd-999ecc0d776e4d2d",
+        "cmd-e8c81327f4804a9c"
+      ],
+      "summary": "NOT achieved: every exec attempt after launching the hog failed at the SSH channel level (fork failure), so no dmesg/oom evidence, no post-event /health check, and no confirmation that inventory-api survived could be captured; node1 remained unresponsive to exec for over 35 minutes"
+    },
+    {
+      "requirement": "mandatory per-node restart/recovery evidence protocol",
+      "command_ids": [
+        "cmd-e8c81327f4804a9c"
+      ],
+      "summary": "Not performed \u2014 node1 has been unreachable via the only permitted tool (exec) since the hog was launched, so a boot-identity baseline, restart acknowledgement, changed boot identity, and post-restart health/quorum proof could not be captured for node1"
+    }
+  ]
+}

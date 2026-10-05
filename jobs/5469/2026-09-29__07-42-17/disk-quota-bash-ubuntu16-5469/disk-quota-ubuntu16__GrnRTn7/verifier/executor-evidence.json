@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 11,
+    "successful": 8,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Filesystem-enforced 100MB quota for datauser on /srv/data configured",
+      "command_ids": [
+        "cmd-0149efd32f92485a"
+      ],
+      "summary": "xfs_quota limit command set bsoft=100m,bhard=100m for datauser; report confirms 100M soft/hard limits on /srv/data"
+    },
+    {
+      "requirement": "Quota enforcement demonstrated at the filesystem level",
+      "command_ids": [
+        "cmd-6ceb67ddc5a549d1"
+      ],
+      "summary": "datauser wrote 60MB successfully, then a second 60MB write failed with 'Disk quota exceeded' after reaching exactly 100M used, confirmed via xfs_quota report and df"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline on node1",
+      "command_ids": [
+        "cmd-63f162a969c54e34"
+      ],
+      "summary": "Captured boot_id 6ab98831-2739-47d3-b99c-0784ebb8b49e, quota reset to 0/100M, and confirmed srv-data.mount active"
+    },
+    {
+      "requirement": "Node1 restart acknowledged and executed",
+      "command_ids": [
+        "cmd-30b2e56db47e4928"
+      ],
+      "summary": "sudo reboot issued in background; SSH connection closed by remote host confirming reboot command executed"
+    },
+    {
+      "requirement": "Node1 boot identity changed proving actual restart",
+      "command_ids": [
+        "cmd-31268296f2ed45cb",
+        "cmd-5feb6843901c4d11"
+      ],
+      "summary": "Immediately after reboot, SSH connection refused (node down); subsequent poll succeeded with new boot_id 10f9f6da-4eeb-4e52-b624-e33085c73ac7, differing from pre-restart value, and new uptime -s timestamp"
+    },
+    {
+      "requirement": "Post-restart recovery of quota-enforced /srv/data verified",
+      "command_ids": [
+        "cmd-2ec71ab42d964cc0"
+      ],
+      "summary": "After restart, /srv/data automounted via srv-data.mount, xfs_quota report still shows 100M limit for datauser, datauser account intact, and write-enforcement test repeated successfully (60MB ok, next write hit Disk quota exceeded at 100M), then cleaned up leaving quota at 0 used"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-d2e48e0e0c844e5c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:05.055470+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 427,
+      "command": "set -Eeuo pipefail\necho \"== os ==\"; cat /etc/os-release\necho \"== df / ==\"; df -hT /\necho \"== srv/data exists ==\"; ls -la /srv/ 2>/dev/null || true\necho \"== mounts ==\"; mount | grep -E ' / | /srv'\necho \"== lsblk ==\"; lsblk -f\necho \"== quota tools ==\"; which quota quotacheck quotaon repquota edquota xfs_quota 2>&1 || true\necho \"== id datauser ==\"; id datauser 2>&1 || true\n",
+      "stdout": "== os ==\nNAME=\"Ubuntu\"\nVERSION=\"16.04.7 LTS (Xenial Xerus)\"\nID=ubuntu\nID_LIKE=debian\nPRETTY_NAME=\"Ubuntu 16.04.7 LTS\"\nVERSION_ID=\"16.04\"\nHOME_URL=\"http://www.ubuntu.com/\"\nSUPPORT_URL=\"http://help.ubuntu.com/\"\nBUG_REPORT_URL=\"http://bugs.launchpad.net/ubuntu/\"\nVERSION_CODENAME=xenial\nUBUNTU_CODENAME=xenial\n== df / ==\nFilesystem     Type  Size  Used Avail Use% Mounted on\n/dev/vda1      ext4   20G  929M   19G   5% /\n== srv/data exists ==\ntotal 8\ndrwxr-xr-x  2 root root 4096 Aug  4  2021 .\ndrwxr-xr-x 23 root root 4096 Jun 15 00:26 ..\n== mounts ==\n/dev/vda1 on / type ext4 (rw,relatime,data=ordered)\n== lsblk ==\nNAME   FSTYPE LABEL           UUID                                 MOUNTPOINT\nvda                                                                \n`-vda1 ext4   cloudimg-rootfs cd5d0b53-3c5f-4aac-b536-c270d1e6f1d3 /\n== quota tools ==\n/usr/sbin/xfs_quota\n== id datauser ==\nid: 'datauser': no such user\n"
+    },
+    {
+      "command_id": "cmd-345531f7052244b7",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:27.944579+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 8877,
+      "command": "set -Eeuo pipefail\necho \"== step: install quota tools ==\"\nexport DEBIAN_FRONTEND=noninteractive\nsudo -n apt-get update -qq\nsudo -n apt-get install -y -qq quota quotatool >/tmp/apt-install.log 2>&1 || { cat /tmp/apt-install.log; exit 1; }\ndpkg -l | grep -E '^ii\\s+quota' || true\n\necho \"== step: create backing image for /srv/data ==\"\nsudo -n mkdir -p /srv/data\nsudo -n fallocate -l 512M /var/lib/srvdata.img || sudo -n dd if=/dev/zero of=/var/lib/srvdata.img bs=1M count=512\nsudo -n mkfs.ext4 -q -F /var/lib/srvdata.img\nIMG_UUID=$(sudo -n blkid -s UUID -o value /var/lib/srvdata.img)\necho \"img uuid: $IMG_UUID\"\n\necho \"== step: fstab entry ==\"\nsudo -n cp /etc/fstab /etc/fstab.bak.disk-quota\nif ! grep -q '/srv/data' /etc/fstab; then\n  echo \"/var/lib/srvdata.img /srv/data ext4 loop,rw,usrquota,relatime 0 0\" | sudo -n tee -a /etc/fstab >/dev/null\nfi\ncat /etc/fstab | grep srv\n\necho \"== step: mount ==\"\nsudo -n mount /srv/data\nmount | grep '/srv/data'\n\necho \"== step: create datauser ==\"\nsudo -n useradd -M -s /usr/sbin/nologin datauser || true\nid datauser\n\necho \"== step: enable quota on filesystem ==\"\nsudo -n quotacheck -cmug /srv/data || true\nsudo -n quotaon /srv/data\nquotaon -p /srv/data || true\n\necho \"== step: set 100MB quota for datauser ==\"\nsudo -n setquota -u datauser 102400 102400 0 0 /srv/data\nsudo -n repquota -u /srv/data | grep -E 'datauser|Block'\n\necho \"== step: fix ownership so datauser can write ==\"\nsudo -n chown root:root /srv/data\nsudo -n chmod 1777 /srv/data\nls -ld /srv/data\n",
+      "stdout": "== step: install quota tools ==\nii  quota                            4.03-2                                     i386         disk quota management tools\nii  quotatool                        1:1.4.12-2                                 i386         tool to edit disk quotas from the command line\n== step: create backing image for /srv/data ==\nimg uuid: ce0f24e7-c223-41e9-ade6-360aba816ba8\n== step: fstab entry ==\n/var/lib/srvdata.img /srv/data ext4 loop,rw,usrquota,relatime 0 0\n== step: mount ==\n/var/lib/srvdata.img on /srv/data type ext4 (rw,relatime,quota,usrquota,data=ordered)\n== step: create datauser ==\nuid=1001(datauser) gid=1001(datauser) groups=1001(datauser)\n== step: enable quota on filesystem ==\n",
+      "stderr": "quotaon: using /srv/data/aquota.user on /dev/loop0 [/srv/data]: No such process\nquotaon: Quota format not supported in kernel.\n"
+    },
+    {
+      "command_id": "cmd-d378566858dc42df",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:31.017354+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 266,
+      "command": "set -Eeuo pipefail\nuname -r\necho \"== modules ==\"\nsudo -n modprobe quota_v2 2>&1 || true\nsudo -n modprobe quota_v1 2>&1 || true\nlsmod | grep -i quota || true\necho \"== available modules on disk ==\"\nfind /lib/modules/$(uname -r) -iname '*quota*' 2>/dev/null || true\necho \"== kernel config ==\"\nif [ -f /boot/config-$(uname -r) ]; then grep -i quota /boot/config-$(uname -r); else echo \"no config file\"; fi\n",
+      "stdout": "4.4.0-210-generic\n== modules ==\nmodprobe: FATAL: Module quota_v2 not found in directory /lib/modules/4.4.0-210-generic\nmodprobe: FATAL: Module quota_v1 not found in directory /lib/modules/4.4.0-210-generic\n== available modules on disk ==\n/lib/modules/4.4.0-210-generic/kernel/net/netfilter/xt_quota.ko\n== kernel config ==\nCONFIG_NETFILTER_XT_MATCH_QUOTA=m\nCONFIG_XFS_QUOTA=y\nCONFIG_QUOTA=y\nCONFIG_QUOTA_NETLINK_INTERFACE=y\n# CONFIG_PRINT_QUOTA_WARNING is not set\n# CONFIG_QUOTA_DEBUG is not set\nCONFIG_QUOTA_TREE=m\nCONFIG_QUOTACTL=y\n"
+    },
+    {
+      "command_id": "cmd-0149efd32f92485a",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:39.803426+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 478,
+      "command": "set -Eeuo pipefail\nwhich mkfs.xfs || sudo -n apt-get install -y -qq xfsprogs\necho \"== step: unmount old ext4 attempt ==\"\nsudo -n umount /srv/data 2>/dev/null || true\n\necho \"== step: reformat backing image as XFS ==\"\nsudo -n mkfs.xfs -f -q /var/lib/srvdata.img\n\necho \"== step: update fstab to xfs with quota opts ==\"\nsudo -n sed -i '\\|/srv/data|d' /etc/fstab\necho \"/var/lib/srvdata.img /srv/data xfs loop,rw,uquota,relatime 0 0\" | sudo -n tee -a /etc/fstab >/dev/null\ngrep srv /etc/fstab\n\necho \"== step: mount ==\"\nsudo -n mount /srv/data\nmount | grep '/srv/data'\n\necho \"== step: set 100MB quota for datauser via xfs_quota ==\"\nsudo -n xfs_quota -x -c 'limit bsoft=100m bhard=100m datauser' /srv/data\nsudo -n xfs_quota -x -c 'report -u -h' /srv/data\n\necho \"== step: perms ==\"\nsudo -n chown root:root /srv/data\nsudo -n chmod 1777 /srv/data\nls -ld /srv/data\n",
+      "stdout": "/sbin/mkfs.xfs\n== step: unmount old ext4 attempt ==\n== step: reformat backing image as XFS ==\n== step: update fstab to xfs with quota opts ==\n/var/lib/srvdata.img /srv/data xfs loop,rw,uquota,relatime 0 0\n== step: mount ==\n/var/lib/srvdata.img on /srv/data type xfs (rw,relatime,attr2,inode64,usrquota)\n== step: set 100MB quota for datauser via xfs_quota ==\nUser quota on /srv/data (/dev/loop0)\n                        Blocks              \nUser ID      Used   Soft   Hard Warn/Grace   \n---------- --------------------------------- \nroot            0      0      0  00 [------]\ndatauser        0   100M   100M  00 [------]\n\n== step: perms ==\ndrwxrwxrwt 2 root root 6 Sep 29 09:07 /srv/data\n"
+    },
+    {
+      "command_id": "cmd-6ceb67ddc5a549d1",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:44.088231+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 330,
+      "command": "set -Eeuo pipefail\necho \"== write 60MB as datauser (should succeed) ==\"\nsudo -n -u datauser dd if=/dev/zero of=/srv/data/file1 bs=1M count=60 2>&1 | tail -5\necho \"== write another 60MB (should fail, total would be 120MB > 100MB limit) ==\"\nset +e\nsudo -n -u datauser dd if=/dev/zero of=/srv/data/file2 bs=1M count=60 2>&1 | tail -5\nRC=$?\nset -e\necho \"dd exit code: $RC\"\nls -la /srv/data\necho \"== quota report ==\"\nsudo -n xfs_quota -x -c 'report -u -h' /srv/data\ndf -h /srv/data\n",
+      "stdout": "== write 60MB as datauser (should succeed) ==\n60+0 records in\n60+0 records out\n62914560 bytes (63 MB, 60 MiB) copied, 0.0328692 s, 1.9 GB/s\n== write another 60MB (should fail, total would be 120MB > 100MB limit) ==\ndd: error writing '/srv/data/file2': Disk quota exceeded\n41+0 records in\n40+0 records out\n41943040 bytes (42 MB, 40 MiB) copied, 0.0156739 s, 2.7 GB/s\ndd exit code: 1\ntotal 102404\ndrwxrwxrwt 2 root     root           32 Sep 29 09:07 .\ndrwxr-xr-x 3 root     root         4096 Sep 29 09:07 ..\n-rw-r--r-- 1 datauser datauser 62914560 Sep 29 09:07 file1\n-rw-r--r-- 1 datauser datauser 41943040 Sep 29 09:07 file2\n== quota report ==\nUser quota on /srv/data (/dev/loop0)\n                        Blocks              \nUser ID      Used   Soft   Hard Warn/Grace   \n---------- --------------------------------- \nroot            0      0      0  00 [------]\ndatauser     100M   100M   100M  00 [------]\n\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/loop0      509M  126M  383M  25% /srv/data\n"
+    },
+    {
+      "command_id": "cmd-63f162a969c54e34",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:48.076299+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 274,
+      "command": "set -Eeuo pipefail\nsudo -n rm -f /srv/data/file1 /srv/data/file2\nsudo -n xfs_quota -x -c 'report -u -h' /srv/data\necho \"== baseline boot id ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== systemd machine boot id (btmp/journal) ==\"\nsudo -n cat /sys/class/dmi/id/product_uuid 2>/dev/null || true\nuptime -s\necho \"== srv-data.mount presence check via systemctl ==\"\nsystemctl list-units -t mount 2>/dev/null | grep srv || true\n",
+      "stdout": "User quota on /srv/data (/dev/loop0)\n                        Blocks              \nUser ID      Used   Soft   Hard Warn/Grace   \n---------- --------------------------------- \nroot            0      0      0  00 [------]\ndatauser        0   100M   100M  00 [------]\n\n== baseline boot id ==\n6ab98831-2739-47d3-b99c-0784ebb8b49e\n== systemd machine boot id (btmp/journal) ==\n35CADE80-97ED-4C86-9309-29D15F3E4CDF\n2026-09-29 09:06:33\n== srv-data.mount presence check via systemctl ==\nsrv-data.mount                loaded active mounted /srv/data\n"
+    },
+    {
+      "command_id": "cmd-30b2e56db47e4928",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:50.385523+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 222,
+      "command": "nohup sudo -n reboot >/tmp/reboot.log 2>&1 & sleep 1; echo \"reboot acknowledged, pid $!\"",
+      "stderr": "Connection to 10.100.40.10 closed by remote host.\r\n"
+    },
+    {
+      "command_id": "cmd-31268296f2ed45cb",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:54.103924+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 2125,
+      "command": "echo ok; cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stderr": "ssh: connect to host 10.100.40.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-5feb6843901c4d11",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:07:56.196944+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 269,
+      "command": "echo ok; cat /proc/sys/kernel/random/boot_id; uptime -s",
+      "stdout": "ok\n10f9f6da-4eeb-4e52-b624-e33085c73ac7\n2026-09-29 09:07:51\n"
+    },
+    {
+      "command_id": "cmd-2ec71ab42d964cc0",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:08:00.834730+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 336,
+      "command": "set -Eeuo pipefail\necho \"== mount recovered ==\"\nmount | grep '/srv/data'\nsystemctl status srv-data.mount --no-pager | head -10\necho \"== quota state ==\"\nsudo -n xfs_quota -x -c 'report -u -h' /srv/data\necho \"== datauser exists ==\"\nid datauser\necho \"== re-verify enforcement post-restart ==\"\nsudo -n -u datauser dd if=/dev/zero of=/srv/data/verify1 bs=1M count=60 2>&1 | tail -3\nset +e\nsudo -n -u datauser dd if=/dev/zero of=/srv/data/verify2 bs=1M count=60 2>&1 | tail -3\necho \"exit: $?\"\nset -e\nsudo -n xfs_quota -x -c 'report -u -h' /srv/data\nsudo -n rm -f /srv/data/verify1 /srv/data/verify2\nsudo -n xfs_quota -x -c 'report -u -h' /srv/data\n",
+      "stdout": "== mount recovered ==\n/var/lib/srvdata.img on /srv/data type xfs (rw,relatime,attr2,inode64,usrquota)\n\u25cf srv-data.mount - /srv/data\n   Loaded: loaded (/etc/fstab; bad; vendor preset: enabled)\n   Active: active (mounted) since Tue 2026-09-29 09:07:54 EDT; 6s ago\n    Where: /srv/data\n     What: /dev/loop0\n     Docs: man:fstab(5)\n           man:systemd-fstab-generator(8)\n  Process: 562 ExecMount=/bin/mount /var/lib/srvdata.img /srv/data -t xfs -o loop,rw,uquota,relatime (code=exited, status=0/SUCCESS)\n    Tasks: 0\n   Memory: 0B\n== quota state ==\nUser quota on /srv/data (/dev/loop0)\n                        Blocks              \nUser ID      Used   Soft   Hard Warn/Grace   \n---------- --------------------------------- \nroot            0      0      0  00 [------]\ndatauser        0   100M   100M  00 [------]\n\n== datauser exists ==\nuid=1001(datauser) gid=1001(datauser) groups=1001(datauser)\n== re-verify enforcement post-restart ==\n60+0 records in\n60+0 records out\n62914560 bytes (63 MB, 60 MiB) copied, 0.0137089 s, 4.6 GB/s\n41+0 records in\n40+0 records out\n41943040 bytes (42 MB, 40 MiB) copied, 0.0263353 s, 1.6 GB/s\nexit: 1\nUser quota on /srv/data (/dev/loop0)\n                        Blocks              \nUser ID      Used   Soft   Hard Warn/Grace   \n---------- --------------------------------- \nroot            0      0      0  00 [------]\ndatauser     100M   100M   100M  00 [------]\n\nUser quota on /srv/data (/dev/loop0)\n                        Blocks              \nUser ID      Used   Soft   Hard Warn/Grace   \n---------- --------------------------------- \nroot            0      0      0  00 [------]\ndatauser        0   100M   100M  00 [------]\n\n"
+    },
+    {
+      "command_id": "cmd-5c65f2676990445d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:08:04.025281+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 259,
+      "command": "systemctl status srv-data.mount --no-pager -l | head -20\njournalctl -u srv-data.mount --no-pager | tail -30\ncat /etc/fstab",
+      "stdout": "\u25cf srv-data.mount - /srv/data\n   Loaded: loaded (/etc/fstab; bad; vendor preset: enabled)\n   Active: active (mounted) since Tue 2026-09-29 09:07:54 EDT; 9s ago\n    Where: /srv/data\n     What: /dev/loop0\n     Docs: man:fstab(5)\n           man:systemd-fstab-generator(8)\n  Process: 562 ExecMount=/bin/mount /var/lib/srvdata.img /srv/data -t xfs -o loop,rw,uquota,relatime (code=exited, status=0/SUCCESS)\n    Tasks: 0\n   Memory: 0B\n      CPU: 1ms\nLABEL=cloudimg-rootfs\t/\t ext4\tdefaults\t0 1\n/var/lib/srvdata.img /srv/data xfs loop,rw,uquota,relatime 0 0\n",
+      "stderr": "Hint: You are currently not seeing messages from other users and the system.\n      Users in the 'systemd-journal' group can see all messages. Pass -q to\n      turn off this notice.\nNo journal files were opened due to insufficient permissions.\n"
+    }
+  ]
+}

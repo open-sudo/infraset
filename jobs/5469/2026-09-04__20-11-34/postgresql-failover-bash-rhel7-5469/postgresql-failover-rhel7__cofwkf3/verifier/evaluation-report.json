@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-initial-topology",
+      "requirement": "3-node PostgreSQL streaming replication with node1 as writable primary and node2/node3 as standbys",
+      "status": "satisfied",
+      "summary": "node1 pg_stat_replication shows both node2 (10.100.141.11) and node3 (10.100.141.12) in 'streaming' state (cmd-3dea59b142004f18). node2 and node3 both report pg_is_in_recovery()=true and contain the baseline row replicated from node1 (cmd-85527fad72d34edd, cmd-3b2b536e7a474f6f). This is a directly observed healthy baseline before any disruption.",
+      "evidence_ids": [
+        "cmd-3dea59b142004f18",
+        "cmd-85527fad72d34edd",
+        "cmd-3b2b536e7a474f6f"
+      ]
+    },
+    {
+      "id": "req-2-failover-no-data-loss",
+      "requirement": "When primary is lost, a standby takes over as writable primary without losing committed data",
+      "status": "satisfied",
+      "summary": "A row was committed on node1 and confirmed replicated to both standbys before disruption (cmd-80a8c5742ce3410e, cmd-19a02f59d416440f, cmd-ce736bd72d564323). node1 was then stopped to simulate primary loss (cmd-2ce37a184ded482a). node2 was promoted via pg_ctl promote, pg_is_in_recovery() flipped to false, and the pre-failover committed row plus a new write were confirmed present (cmd-e9bdf93c27964211, cmd-ff7689a4257f432e). This is a directly observed bounded disruption -> promotion -> verified-intact-data transition.",
+      "evidence_ids": [
+        "cmd-80a8c5742ce3410e",
+        "cmd-19a02f59d416440f",
+        "cmd-ce736bd72d564323",
+        "cmd-2ce37a184ded482a",
+        "cmd-e9bdf93c27964211",
+        "cmd-ff7689a4257f432e"
+      ]
+    },
+    {
+      "id": "req-3-surviving-standby-retarget",
+      "requirement": "Surviving standby (node3) continues functioning correctly against the new primary",
+      "status": "satisfied",
+      "summary": "node3's primary_conninfo was repointed to node2 and postgresql-14 restarted (cmd-b5880909ae354100); node2's pg_stat_replication confirms node3 streaming (cmd-5489c8df684944b0), and node3 shows the post-promotion row, confirming successful catch-up (cmd-9e7e24c70fb941b6). Firewall was opened on node2 first to permit this (cmd-d675b80ed73149d2).",
+      "evidence_ids": [
+        "cmd-d675b80ed73149d2",
+        "cmd-b5880909ae354100",
+        "cmd-5489c8df684944b0",
+        "cmd-9e7e24c70fb941b6"
+      ]
+    },
+    {
+      "id": "req-4-former-primary-rejoins",
+      "requirement": "Recovered former primary (node1) comes back as a standby of whichever system is primary at that point (node2)",
+      "status": "satisfied",
+      "summary": "node1's data directory was rebuilt via pg_basebackup -R from node2 (cmd-c940040b628b4c7c), started, and confirmed pg_is_in_recovery()=true with all prior data intact (cmd-701ea95160ed4c5a). node2's pg_stat_replication shows node1 reconnected as a streaming standby, and a subsequent write on node2 is confirmed present on node1 (cmd-118f9d345a344093, cmd-fb7e0af4e2cd45c8).",
+      "evidence_ids": [
+        "cmd-c940040b628b4c7c",
+        "cmd-701ea95160ed4c5a",
+        "cmd-118f9d345a344093",
+        "cmd-fb7e0af4e2cd45c8"
+      ]
+    }
+  ],
+  "overall_summary": "The executor established a healthy 3-node streaming replication topology (node1 primary, node2/node3 standbys) and then directly demonstrated, via observed command output rather than mere claims, the full required failover lifecycle: a committed pre-failover write, simulated primary loss, promotion of node2 with zero data loss, node3 retargeting to the new primary, and rebuild/rejoin of node1 as a standby of node2. All material task outcomes are satisfied with concrete before/during/after evidence. Independently, the provider-wide node-restart evidence protocol was also executed thoroughly and consistently for all three nodes (node1, node3, then node2-as-primary), each showing pre-restart boot id + healthy state, a reboot acknowledgement, a changed boot id, and full recovery of PostgreSQL role, replication, and data \u2014 cross-validated against the fixed after-executor snapshot boot identities, which match exactly. A final post-restart write was confirmed replicated to both standbys, closing the loop. Operational hygiene is good: package-install failures and a repo-disabling workaround were reasonable responses to broken upstream PGDG mirrors on RHEL7 rather than unnecessary mutations, and no residual failed services or abandoned artifacts were observed.",
+  "limitations": [
+    "Package-manager consistency checks (package-health) were unavailable (TimeoutError) in both before_prepare and after_executor snapshots on all three nodes, so package-state damage from the repeated failed yum attempts (PG10/11/12/13/15) cannot be independently confirmed, though no downstream symptoms (failed services, broken postgresql-14 operation) were observed.",
+    "Evidence is based on captured command stdout/stderr only; no independent live inspection of the systems was possible."
+  ],
+  "command_stats": {
+    "total": 87,
+    "successful": 76,
+    "failed": 10,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Reviewing the chronological state-changing command trace: repeated failed yum install attempts for postgresql13/15 (cmd-09871399b3c341f1, cmd-f4d484bd61a44ec4, cmd-8780c75b3f8f4f28, cmd-1a3aa670e3df4952 sed edits to pgdg-redhat-all.repo, cmd-ddf4caff5ddd46a9 and repeats) were driven by genuinely broken/EOL upstream PGDG mirrors (410 Gone, missing libzstd) discovered live, and none of these left functional residue beyond disabling already-broken repo stanzas in pgdg-redhat-all.repo (a low-risk, bounded config edit with a clear causal role: unblocking package installation). The eventual PostgreSQL 14 install succeeded cleanly on all nodes. The rm -rf of /var/lib/pgsql/14/data/* on node2/node3 (cmd-5f994dc621924172, cmd-62662fbcf6484e5e) and later on node1 (cmd-c940040b628b4c7c) is a necessary, expected step to convert a node into a pg_basebackup standby and was retried successfully after fixing the firewall block; it is not an unnecessary mutation. firewalld postgresql-service exposure was opened only on node1 and node2 as required for replication traffic, not broadly. after_executor snapshots show no failed systemd units and no abandoned temp files (only expected postgres socket files) on any of the three nodes. No unnecessary or unexplained mutations were identified.",
+    "evidence_ids": [
+      "cmd-1a3aa670e3df4952",
+      "cmd-5f994dc621924172",
+      "cmd-62662fbcf6484e5e",
+      "cmd-c940040b628b4c7c",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

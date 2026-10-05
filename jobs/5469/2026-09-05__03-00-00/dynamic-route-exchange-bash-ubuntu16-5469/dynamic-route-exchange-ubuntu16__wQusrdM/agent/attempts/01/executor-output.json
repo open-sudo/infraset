@@ -1,0 +1,137 @@
+{
+  "status": "completed",
+  "summary": "Configured dynamic route exchange between node1 and node2 (SONiC switches) via iBGP (AS 65100) over their transit link, so each learns the other's private network without static routes. node1's private subnet 192.168.13.0/24 (to node3) and node2's private subnet 192.168.24.0/24 (to node4) are advertised via BGP `network` statements over a /31 transit link (172.20.1.0/172.20.1.1 on eth1\u2194eth1), and each side installs the peer's subnet in its kernel FIB with `proto bgp`. node3 and node4 gained only a static route to their own gateway router (unavoidable for non-BGP-speaking end hosts) and can now ping each other end-to-end. All config was made boot-persistent (SONiC regenerates FRR config from configdb at boot, wiping raw edits, so a companion systemd unit reapplies BGP peering after container start). Completed the mandatory one-at-a-time restart protocol on all 4 nodes with boot-id proof and post-restart recovery proof; node1 and node2 (SONiC-VS) each took ~14 minutes to fully recover after `shutdown -r now`.",
+  "actions_performed": [
+    "Mapped physical topology via ARP/tcpdump: node3 ens7 <-> node1 eth2 (private), node1 eth1 <-> node2 eth1 (transit), node2 eth2 <-> node4 ens7 (private)",
+    "Cleaned up SONiC docker0 leakage and stopped interfaces-config.service reconciler on node1/node2 before addressing",
+    "Assigned 172.20.1.0/172.20.1.1 (/31) on the node1-node2 transit link; 192.168.13.1/24+192.168.13.2/24 on node1-node3; 192.168.24.1/24+192.168.24.2/24 on node2-node4",
+    "Enabled global+per-interface IP forwarding on node1 and node2",
+    "Configured iBGP (AS 65100, existing SONiC canonical instance extended, not replaced) between node1 and node2 with distinct router-ids, 'network' statements for each private subnet, and next-hop-self",
+    "Added a static route on node3 (to 192.168.24.0/24 via node1) and node4 (to 192.168.13.0/24 via node2), since these Ubuntu hosts don't speak BGP themselves",
+    "Verified BGP session Established with PfxRcd=1 both directions, kernel FIB routes with proto bgp, and end-to-end ping node3<->node4",
+    "Persisted node3/node4 addressing via /etc/network/interfaces.d/ens7.cfg (ifupdown)",
+    "Persisted node1/node2 interface addressing+forwarding via [REDACTED].service (systemd oneshot, enabled)",
+    "Discovered SONiC regenerates FRR config from configdb at boot (write memory alone did not persist neighbor/network config); added antrieb-bgp-config.service (systemd oneshot, waits for vtysh readiness, reapplies BGP config) on node1 and node2, enabled for boot",
+    "Executed mandatory restart protocol sequentially on node3, node4, node1, node2: captured boot_id baseline, issued 'shutdown -r now' backgrounded so ack returned pre-disconnect, polled until reachable, confirmed boot_id changed, verified recovery of interfaces/BGP/routes/end-to-end reachability after each"
+  ],
+  "evidence": [
+    {
+      "requirement": "Physical topology discovery (node3 behind node1, node4 behind node2, shared transit link)",
+      "command_ids": [
+        "cmd-e980613e89ec4018",
+        "cmd-4949186800f54cb3",
+        "cmd-92fc19784cd540f0",
+        "cmd-fc2020a2822b4ff1",
+        "cmd-0529490927ca4638",
+        "cmd-ca6fa4358f594269",
+        "cmd-4c1f2cb19d254f17",
+        "cmd-c404ed138d3744a1",
+        "cmd-29a27a2bc1a54073",
+        "cmd-6b4b08d2244a425d",
+        "cmd-51c1c66818a740c9",
+        "cmd-798599184ecc4e04",
+        "cmd-6d664b9ad60f4116",
+        "cmd-36701325f864454b",
+        "cmd-402c5aa3011849cb"
+      ],
+      "summary": "ARP/tcpdump probes confirmed node1 eth2<->node3 ens7, node1 eth1<->node2 eth1 (transit), node2 eth2<->node4 ens7"
+    },
+    {
+      "requirement": "Interface addressing applied on all 4 nodes for private and transit links",
+      "command_ids": [
+        "cmd-a0c95c5de9dc40e8",
+        "cmd-95b2a4f5fd9e4706",
+        "cmd-0d4b5181838e40a1",
+        "cmd-8ab4d1af819f4fa5",
+        "cmd-d11c797255644cad",
+        "cmd-20f1c4896a094a36"
+      ],
+      "summary": "172.20.1.0/1 transit /31, 192.168.13.0/24 (node1-node3), 192.168.24.0/24 (node2-node4) all applied and confirmed via ip addr"
+    },
+    {
+      "requirement": "node1 and node2 learn each other's private network via a routing protocol (BGP), not manual routes",
+      "command_ids": [
+        "cmd-c17948ef4027475c",
+        "cmd-ddcb5a848f2b41dc",
+        "cmd-6614d8b8fb6240aa",
+        "cmd-f5392a338c2849e6",
+        "cmd-1327147c19634bc8",
+        "cmd-035e6ffb5c1c490f",
+        "cmd-a67c6bd5a5e343fa"
+      ],
+      "summary": "iBGP AS65100 configured on both switches with network statements; session Established, PfxRcd=1, and kernel FIB shows 192.168.24.0/24 (node1) / 192.168.13.0/24 (node2) with 'proto bgp' \u2014 dynamically learned, not statically entered"
+    },
+    {
+      "requirement": "node3 and node4 can reach each other across the two private networks",
+      "command_ids": [
+        "cmd-919a2b30d75f48aa",
+        "cmd-a01b1c25cfae4785"
+      ],
+      "summary": "Successful bidirectional ping between node3 (192.168.13.2) and node4 (192.168.24.2) confirms end-to-end reachability via the BGP-learned path"
+    },
+    {
+      "requirement": "Persistence of BGP/addressing config across reboot (systemd units + FRR write memory)",
+      "command_ids": [
+        "cmd-98c1170db0084ddb",
+        "cmd-a6a1968c4aa44425",
+        "cmd-24e4576c0c7e439f",
+        "cmd-d2ec70f92c064ef8",
+        "cmd-3fb1840bf92d4ded",
+        "cmd-2eabe767e46345ed",
+        "cmd-7377eee31ae74218",
+        "cmd-1944cf2c25494f99"
+      ],
+      "summary": "[REDACTED].service and antrieb-bgp-config.service created/enabled on node1+node2; ens7.cfg persisted on node3+node4; FRR config saved via write memory"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-5327cf4768024dd2",
+        "cmd-c655070af7694679",
+        "cmd-aa23ed4c4785446e",
+        "cmd-5539e5e16c1744ae",
+        "cmd-408ee065f20e4d1f"
+      ],
+      "summary": "Baseline boot_id 8660e8f0..., reboot acked, boot_id changed to 7633aa2e..., post-restart addressing+route+ping to node4 verified"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-c8c011a8573c4fd0",
+        "cmd-26fd08c084a74f62",
+        "cmd-f485accf9b654a73",
+        "cmd-676341ae453d46c8",
+        "cmd-e82875631ec14c02"
+      ],
+      "summary": "Baseline boot_id afd04380..., reboot acked, boot_id changed to d2e7c7e4..., post-restart addressing+route+ping to node3 verified"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart ack, changed boot identity, recovered state (BGP/cluster membership)",
+      "command_ids": [
+        "cmd-84c7431e914949db",
+        "cmd-80ec2fd4c98e4870",
+        "cmd-b4c2c2a9bc414c7b",
+        "cmd-7f52e3afac2d4000",
+        "cmd-318b18ed6e7d4d37",
+        "cmd-52edb69330cc447d",
+        "cmd-d486e2009f9345ca",
+        "cmd-a4df0d8440214814"
+      ],
+      "summary": "Baseline boot_id 1eda2df4..., reboot acked, boot_id changed to 83e5c1bd..., interfaces recovered via systemd unit; BGP neighbor lost on reboot (SONiC configdb regen) then reapplied and re-Established (confirmed both sides + FIB route + node3->node4 ping)"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart ack, changed boot identity, recovered state (BGP/cluster membership)",
+      "command_ids": [
+        "cmd-6769d0070db24bde",
+        "cmd-11b291291f37446f",
+        "cmd-5a927bd0315948a7",
+        "cmd-998996ddbb5a4299",
+        "cmd-7e2792e40c914afa",
+        "cmd-25744efe6afa48d2",
+        "cmd-74e69c0ca4ff4a7d",
+        "cmd-0ec57dfcdaad4bb0"
+      ],
+      "summary": "Baseline boot_id 561a6567..., reboot acked, boot_id changed to cc7dc7f6..., [REDACTED].service and antrieb-bgp-config.service auto-recovered addressing and BGP session; confirmed Established on both sides, FIB route restored, and bidirectional node3<->node4 ping succeeded"
+    }
+  ]
+}

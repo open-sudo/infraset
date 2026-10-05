@@ -1,0 +1,85 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-worker as a hardened systemd service on node1: dedicated unprivileged user/group, /var/lib/inventory data dir, a simple long-running tick loop, and a unit with NoNewPrivileges=yes plus ProtectSystem=strict/ReadWritePaths confinement to /var/lib/inventory (plus other standard sandboxing directives). Falsification test proved writes outside the allowed path fail (read-only) while writes inside succeed. Completed the mandatory single-node restart protocol: captured boot_id/service baseline, rebooted node1, confirmed boot_id changed, and verified the service came back enabled/active with persisted state.",
+  "actions_performed": [
+    "Inspected node1 OS/privileges (RHEL 10, root, systemd 257)",
+    "Created system user/group inventory-worker (no login shell, no home)",
+    "Created /var/lib/inventory owned by inventory-worker, mode 750",
+    "Wrote /usr/local/bin/inventory-worker.sh: infinite loop appending to inventory.log and persisting a counter, sleep 10 between ticks",
+    "Wrote /etc/systemd/system/inventory-worker.service with User/Group=inventory-worker, NoNewPrivileges=yes, ProtectSystem=strict, ReadWritePaths=/var/lib/inventory, StateDirectory=inventory, plus ProtectHome/PrivateTmp/PrivateDevices/CapabilityBoundingSet= and other lockdown directives",
+    "Ran systemd-analyze verify to confirm unit correctness",
+    "systemctl daemon-reload; enable --now inventory-worker.service; confirmed active/running via status",
+    "Verified /var/lib/inventory contains count and inventory.log owned by inventory-worker, and systemctl show confirms NoNewPrivileges/ReadWritePaths/ProtectSystem/User/CapabilityBoundingSet",
+    "Ran a systemd-run transient unit with the same sandbox properties to falsify: write to /etc failed (read-only filesystem), write to /var/lib/inventory succeeded",
+    "Cleaned up test artifact and transient unit",
+    "Captured pre-restart baseline: boot_id, uptime, systemctl is-enabled/is-active, counter value",
+    "Scheduled systemctl reboot via backgrounded nohup so the exec acknowledgement returned before disconnection",
+    "Polled node1 until exec succeeded again; confirmed boot_id changed (636556ce... -> c8000397...)",
+    "Verified post-restart: service enabled and active with a fresh invocation ID, and counter/log continued incrementing from persisted state"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-worker deployed as a managed (systemd) service, long-running",
+      "command_ids": [
+        "cmd-6553b93889124e2b",
+        "cmd-73b62499dd7f4fb2",
+        "cmd-db152d1ff018410b"
+      ],
+      "summary": "Worker script and systemd unit created, unit verified clean, service started and shown active/running with worker+sleep processes in its cgroup"
+    },
+    {
+      "requirement": "Confined to write only inside /var/lib/inventory",
+      "command_ids": [
+        "cmd-14d2d367a8324c52",
+        "cmd-e876848b05b4494c"
+      ],
+      "summary": "Directory created and owned by service user; systemctl show confirms ProtectSystem=strict and ReadWritePaths=/var/lib/inventory; only expected files (count, inventory.log) present and owned by inventory-worker"
+    },
+    {
+      "requirement": "No new privileges",
+      "command_ids": [
+        "cmd-73b62499dd7f4fb2",
+        "cmd-e876848b05b4494c"
+      ],
+      "summary": "Unit defines NoNewPrivileges=yes and CapabilityBoundingSet=; systemctl show confirms both properties are set on the running unit"
+    },
+    {
+      "requirement": "Sandbox confinement actively enforced (falsification)",
+      "command_ids": [
+        "cmd-a9f51374a0fb4d82"
+      ],
+      "summary": "Transient unit with identical sandbox properties: write to /etc/should-fail failed with 'Read-only file system' (exit 1) while write to /var/lib/inventory/should-succeed succeeded (exit 0)"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline before restart",
+      "command_ids": [
+        "cmd-0451a2b149834162"
+      ],
+      "summary": "Captured boot_id=636556ce-a308-49cc-b873-62cedb1c077d, service enabled+active, counter=2 prior to reboot"
+    },
+    {
+      "requirement": "node1 restart: acknowledgement returns before disconnection",
+      "command_ids": [
+        "cmd-4695f0b789fc4753"
+      ],
+      "summary": "Backgrounded 'sleep 2; systemctl reboot' via nohup/disown so the exec call returned REBOOT_SCHEDULED immediately, before the node disconnected"
+    },
+    {
+      "requirement": "node1 restart: changed boot identity proves an actual restart occurred",
+      "command_ids": [
+        "cmd-440b717297c140e3",
+        "cmd-e943d609c6b44ae2",
+        "cmd-070c053c5f174877",
+        "cmd-aa8bb1213902421b"
+      ],
+      "summary": "Polling showed connection timeout then reset while node was down/rebooting; once reachable again, boot_id read as c8000397-abec-446d-9a56-d66a87877c3b, differing from the pre-restart value"
+    },
+    {
+      "requirement": "node1 restart: post-restart recovery of required service and data",
+      "command_ids": [
+        "cmd-0485dc7aab0a4c9d"
+      ],
+      "summary": "After reboot, inventory-worker.service is enabled and active with a new invocation ID; persisted counter/log continued from prior value (3->4->5) and kept ticking, proving both the service and its confined data survived and resumed"
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "status": "completed",
+  "summary": "Implemented VLAN segmentation over the node1/node2/node3 shared trunk link entirely via an Ansible playbook run from control_node node4. node1 (VyOS) got 802.1Q sub-interfaces eth1.10 (10.10.10.1/24) and eth1.20 (10.10.20.1/24) on the trunk NIC and routes between them (ip_forward=1, no firewall filter blocking forwarding). node2 was moved to tagged enp8s0.10 (10.10.10.11/24, VLAN 10) and node3 to enp8s0.20 (10.10.20.12/24, VLAN 20), each with a static route to the peer VLAN via node1's gateway, configured with nmcli and placed in firewalld's trusted zone. Bootstrapped SSH access first (node4 pubkey added to VyOS user 'vyos' and to root on node2/node3), then wrote /root/vlan-segmentation/{inventory.ini,site.yml} on node4 and ran it successfully (idempotent on rerun). Verified bidirectional reachability across the router (ttl=63 both directions). Completed the mandatory restart protocol on all four managed nodes (node2, node3, node1, node4) one at a time, capturing pre-restart boot_id/health, polling through each outage, confirming a changed boot_id and uptime \"0 min\" after each, and re-verifying VLAN config persistence, routing, and Ansible connectivity/playbook success afterward.",
+  "actions_performed": [
+    "Read environment.toml: mgmt network (dhcp/egress) + trunk network (no dhcp/egress) shared by node1/node2/node3; node4 is the designated control_node with Ansible pre-installed",
+    "Bootstrapped SSH: added node4's pubkey to VyOS user 'vyos' via configure/commit/save on node1; appended pubkey to /root/.ssh/authorized_keys on node2 and node3; confirmed DHCP-assigned mgmt IP 10.100.71.10 on node1 eth0",
+    "Wrote Ansible inventory.ini and site.yml on node4 under /root/vlan-segmentation",
+    "Ran ansible-playbook site.yml: created eth1.10/eth1.20 on node1 (VyOS commit+save); removed default DHCP NM profile and created enp8s0 (no-IP) + enp8s0.10/enp8s0.20 VLAN profiles with static peer routes on node2/node3 via nmcli; set firewalld trusted zone on the VLAN interfaces via ansible.posix.firewalld",
+    "Verified end-to-end ping node2<->node3 across node1's router (ttl=63 each way) and playbook idempotency on a second run",
+    "Captured pre-restart boot_id and service/connectivity health on all four nodes",
+    "Restarted node2, then node3, then node1, then node4 one at a time via systemctl reboot / reboot now, polling each until exec access returned",
+    "Confirmed changed /proc/sys/kernel/random/boot_id and uptime '0 min' on every node post-restart",
+    "Re-verified VLAN interfaces, routes, and cross-VLAN ping on node2/node3 and VyOS interface table on node1 after their restarts",
+    "Re-ran ansible -m ping and ansible-playbook site.yml from node4 after node4's own restart, confirming full recovery and continued idempotent success"
+  ],
+  "evidence": [
+    {
+      "requirement": "node2 (VLAN 10) and node3 (VLAN 20) separated onto own VLANs over the shared trunk with node1 routing between them, implemented via Ansible",
+      "command_ids": [
+        "cmd-e750eee680e54819",
+        "cmd-d2d7273d0f24412e",
+        "cmd-6616402bc0df40c1"
+      ],
+      "summary": "site.yml written on node4 and run successfully: created eth1.10/eth1.20 on node1, enp8s0.10 on node2, enp8s0.20 on node3, with forward ping from node2 to node3 (10.10.20.12) succeeding ttl=63"
+    },
+    {
+      "requirement": "Bidirectional reachability across the router",
+      "command_ids": [
+        "cmd-30ddd362f0364e5a",
+        "cmd-03afe5cd5dbe4c3b",
+        "cmd-12ec69468ebd4894"
+      ],
+      "summary": "node3->node2 ping (ttl=63) and node2 routes/addr show, plus repeated ansible-playbook run confirming node2->node3 ping still succeeds"
+    },
+    {
+      "requirement": "Playbook idempotency / config correctness",
+      "command_ids": [
+        "cmd-12ec69468ebd4894"
+      ],
+      "summary": "Second ansible-playbook run shows node1 changed=0, config already applied"
+    },
+    {
+      "requirement": "node1 restart: baseline boot identity and health",
+      "command_ids": [
+        "cmd-1dc63ebb5aec4c73"
+      ],
+      "summary": "Captured boot_id 01e92881... and show interfaces output (eth1.10/eth1.20 present) before restart"
+    },
+    {
+      "requirement": "node1 restart: acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-47bc568145bf4704",
+        "cmd-10c2bd35d736493a",
+        "cmd-8cd1afe28bc64c5d",
+        "cmd-8a1f91c9b7784088"
+      ],
+      "summary": "Reboot acknowledged and connection dropped; boot_id changed to 66cd7e3d... with uptime 0 min; post-restart show interfaces confirms eth1.10/eth1.20 persisted and node2->node3 ping still succeeds"
+    },
+    {
+      "requirement": "node2 restart: baseline, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-df2e2ba6ed004e37",
+        "cmd-1972b31692d84004",
+        "cmd-b75bb0b346bb446d",
+        "cmd-3347e083a426444d"
+      ],
+      "summary": "Baseline boot_id 5f3ce3b8... and healthy VLAN ping captured; reboot acknowledged; new boot_id 0bec52f8... with uptime 0 min; post-restart VLAN interface, route, and ping to node3 verified"
+    },
+    {
+      "requirement": "node3 restart: baseline, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-fa32537606fb4a8a",
+        "cmd-ef5694e7ed814e67",
+        "cmd-c548ed095e134761",
+        "cmd-8cb965a14fc94238"
+      ],
+      "summary": "Baseline boot_id 910dc564... and healthy VLAN ping captured; reboot acknowledged; new boot_id 97ef9d82... with uptime 0 min; post-restart VLAN interface and ping to node2 verified"
+    },
+    {
+      "requirement": "node4 restart: baseline, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-ce8a2c192734468d",
+        "cmd-ef168c76e60e4fb4",
+        "cmd-a34f3c035cf244a8",
+        "cmd-1684ab4edd10436e"
+      ],
+      "summary": "Baseline boot_id e796da36... and successful ansible -m ping to all nodes captured; reboot acknowledged; new boot_id 6aa5493e... with uptime 0 min; post-restart ansible ping and full playbook rerun succeed, confirming cluster-wide health and control-node functionality restored"
+    }
+  ]
+}

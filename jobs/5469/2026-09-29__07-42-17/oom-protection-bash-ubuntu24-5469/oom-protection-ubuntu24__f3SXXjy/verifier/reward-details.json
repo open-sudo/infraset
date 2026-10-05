@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "managed-service",
+      "requirement": "inventory-api runs as a managed (systemd) service on node1",
+      "status": "satisfied",
+      "summary": "systemd unit inventory-api.service created, enabled, and active (MainPID 1285), verified via systemctl show and a successful curl to the JSON endpoint.",
+      "evidence_ids": [
+        "cmd-a1b20ec721ad438f"
+      ]
+    },
+    {
+      "id": "oom-protection",
+      "requirement": "Service is configured to be protected from the OOM killer (low OOM score)",
+      "status": "satisfied",
+      "summary": "Unit sets OOMScoreAdjust=-1000; systemctl show and /proc/<pid>/oom_score_adj both confirm -1000 on the running process.",
+      "evidence_ids": [
+        "cmd-a1b20ec721ad438f"
+      ]
+    },
+    {
+      "id": "oom-behavior",
+      "requirement": "Under real memory pressure, the kernel OOM killer stops the memory-hog process while inventory-api keeps serving",
+      "status": "satisfied",
+      "summary": "An unprotected memory-hog transient unit (oom_score_adj=0) was launched and driven to exhaustion; dmesg shows the kernel's global OOM killer targeting and killing the hog (pid 1315, oom_score_adj:0) while inventory-api (pid 1285) remained active throughout with growing uptime and a successful curl response afterward.",
+      "evidence_ids": [
+        "cmd-0cd710d370df45c8",
+        "cmd-c3c6f2b8a13d4e86"
+      ]
+    },
+    {
+      "id": "restart-resilience",
+      "requirement": "Provider-wide node-restart evidence protocol: pre-restart baseline, restart, changed boot identity, recovered service/behavior",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id (1e0cb179...) and healthy service state captured, reboot acknowledged before disconnect, connection loss observed during reboot, new boot_id (d409655a...) confirmed post-restart matching the fixed after_executor snapshot, and inventory-api recovered (new PID 649, oom_score_adj=-1000, serving curl). The OOM-kill scenario was re-run post-reboot and again showed the hog killed while inventory-api stayed active, directly demonstrating the transition and persistence of protection across restart. This is supplemental to, not required by, the task contract.",
+      "evidence_ids": [
+        "cmd-f58c72a08e564f18",
+        "cmd-a5be39b631174629",
+        "cmd-0673b14b959d48db",
+        "cmd-36bd4d6e86df4d4a",
+        "cmd-3099e5d892d942ee",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor deployed inventory-api as a systemd-managed service with OOMScoreAdjust=-1000, and directly demonstrated via dmesg that under genuine memory exhaustion the kernel's global OOM killer selects and kills an unprotected memory-hog process while inventory-api remains active and continues serving requests, satisfying the task's core contract. The executor also completed the independent node-restart evidence protocol with a full pre-restart baseline, reboot, changed boot identity (cross-checked against fixed lifecycle snapshots), and post-restart recovery with a repeat OOM demonstration, showing the protection persists across reboot. No unnecessary or unrestored mutations were found beyond a reused test script.",
+  "limitations": [
+    "Reliance on the executor's own selected evidence and command trace; no independent tool access to re-verify current live state.",
+    "Memory measurements during the OOM event were sampled at 2s polling intervals, so exact peak memory at the moment of the kill was not directly captured, though dmesg output is authoritative for the kill event itself."
+  ],
+  "command_stats": {
+    "total": 9,
+    "successful": 8,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.95,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "All executor state-changing commands map directly to a material outcome: writing the app and unit files, enabling/starting the service, launching the (deliberately unprotected) memory-hog as a transient --collect unit for controlled OOM demonstration (twice, once pre- and once post-reboot), and issuing the reboot for the restart protocol. The memory-hog transient units were self-cleaning (--collect) after the kernel killed their process, leaving no residual failed units (after_executor failed-services list is empty). The listening-sockets and temporary-files diffs between before_prepare and after_executor are expected/benign (new 8080 listener for inventory-api; /tmp systemd-private dirs rotated due to reboot). The only minor note is that /usr/local/bin/memory-hog.py itself remains on disk after the task; this is a low-risk, non-destructive test artifact intentionally reused for the post-reboot re-verification, not abandoned residue.",
+    "evidence_ids": [
+      "cmd-a1b20ec721ad438f",
+      "cmd-0cd710d370df45c8",
+      "cmd-3099e5d892d942ee",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

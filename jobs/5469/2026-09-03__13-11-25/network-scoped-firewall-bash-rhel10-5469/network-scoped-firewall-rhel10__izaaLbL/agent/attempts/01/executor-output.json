@@ -1,0 +1,95 @@
+{
+  "status": "completed",
+  "summary": "Configured a persistent firewalld policy on node1 (RHEL 10) allowing SSH from any address, allowing TCP/9000 only from node2 (10.100.50.11), and rejecting TCP/9000 from node3 and everywhere else. Verified with live traffic tests before and after restarting all three managed nodes, confirming both the firewall behavior and node restart/recovery.",
+  "actions_performed": [
+    "Inspected node1: RHEL 10, firewalld active and enabled, default public zone allowed ssh/cockpit/dhcpv6-client",
+    "Captured CLUSTER_HOSTS mapping: node1=10.100.50.10, node2=10.100.50.11, node3=10.100.50.12",
+    "Added permanent rich rule on node1 (priority -100): accept TCP/9000 from 10.100.50.11/32 (node2)",
+    "Added permanent rich rule on node1 (priority 100): reject TCP/9000 from any source",
+    "Reloaded firewalld on node1 and confirmed both rich rules present in runtime and permanent config",
+    "Started a test HTTP listener on node1:9000 and confirmed node2 gets HTTP 200, node3 gets connection refused",
+    "Confirmed SSH (port 22) on node1 remains reachable (TCP connect succeeds) from node3",
+    "Killed test listener; confirmed firewalld is systemctl-enabled for boot persistence",
+    "Captured pre-restart boot_id baseline on all three nodes",
+    "Restarted node1 via detached systemctl reboot, polled until exec available again, confirmed boot_id changed",
+    "Re-verified firewalld active on node1 post-reboot with same permanent rich rules intact, and re-tested node2 allowed / node3 rejected on port 9000",
+    "Restarted node2 via detached systemctl reboot, polled until exec available again, confirmed boot_id changed, verified node2 could still reach node1:9000 (200)",
+    "Restarted node3 via detached systemctl reboot, polled until exec available again, confirmed boot_id changed, verified node3 still rejected on node1:9000",
+    "Cleaned up all test listeners; left final firewalld state confirmed via firewall-cmd --list-all"
+  ],
+  "evidence": [
+    {
+      "requirement": "SSH allowed from any address on node1",
+      "command_ids": [
+        "cmd-6328c831402848ab",
+        "cmd-e3219bdb1bdc49a7"
+      ],
+      "summary": "Baseline showed ssh service already allowed in public zone with no source restriction; post-firewall-change test from node3 (a non-node2 address) shows TCP connect to port 22 succeeds (raw connect + banner wait), proving SSH remains open to any source."
+    },
+    {
+      "requirement": "TCP/9000 allowed only from node2 on node1",
+      "command_ids": [
+        "cmd-7fa1b59b64ab4bf2",
+        "cmd-589467edb0fb42d7",
+        "cmd-8a64111e62924dd4"
+      ],
+      "summary": "Permanent rich rule (priority -100) added accepting TCP/9000 from 10.100.50.11/32; live listener test from node2 (10.100.50.11) returns HTTP 200, confirming access is allowed."
+    },
+    {
+      "requirement": "TCP/9000 rejected from node3 and everywhere else on node1",
+      "command_ids": [
+        "cmd-7fa1b59b64ab4bf2",
+        "cmd-589467edb0fb42d7",
+        "cmd-7e249481bb7f4d8a"
+      ],
+      "summary": "Permanent rich rule (priority 100) added rejecting TCP/9000 from any source; live listener test from node3 (10.100.50.12) returns connection refused (curl exit 7), confirming reject behavior for non-node2 sources."
+    },
+    {
+      "requirement": "Firewall configuration is persistent (survives reboot)",
+      "command_ids": [
+        "cmd-f17771f206604fdf",
+        "cmd-b6f21cd1e7d3457d",
+        "cmd-3daca411c7b04b23",
+        "cmd-2a0d43d967684cae"
+      ],
+      "summary": "Permanent config and systemctl-enabled firewalld confirmed pre-reboot; after node1 restart, firewall-cmd --list-all shows both rich rules still present, and live retest again shows node2 allowed (200) / node3 rejected (exit 7)."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-3da7532e867b4833",
+        "cmd-7af9cccf196742cf",
+        "cmd-ee6185457d5244d1",
+        "cmd-a4aba9d6f17e409e",
+        "cmd-b6f21cd1e7d3457d",
+        "cmd-3daca411c7b04b23",
+        "cmd-2a0d43d967684cae"
+      ],
+      "summary": "Pre-restart boot_id=03408ac4...; reboot acknowledged and returned before disconnect; node briefly unreachable (connection timeout) confirming a real restart occurred; post-restart boot_id=c918be62... (changed); firewalld active and rules intact; traffic tests re-confirm correct allow/reject behavior post-recovery."
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-d1e5d34aa2a74592",
+        "cmd-795566d343cb4f83",
+        "cmd-cf0a8b54b85b4ff4",
+        "cmd-23200cafb2344fd9",
+        "cmd-f2768d20fb3541c4",
+        "cmd-c6802548edea40b6"
+      ],
+      "summary": "Pre-restart boot_id=d9f8550d...; reboot acknowledged; node unreachable mid-restart; post-restart boot_id=09bcfe4b... (changed); node2 responsive again and confirmed it can still reach node1:9000 (HTTP 200), proving network/service recovery."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-83da48fd33304b03",
+        "cmd-91ccef2a5bc14212",
+        "cmd-bec39fc970644e7f",
+        "cmd-96214277feae490e",
+        "cmd-58f691a2bf224627",
+        "cmd-0efeed160e164e2c"
+      ],
+      "summary": "Pre-restart boot_id=19062a82...; reboot acknowledged; node unreachable mid-restart; post-restart boot_id=0f6477a6... (changed); node3 responsive again and confirmed it is still correctly rejected from node1:9000, proving both node recovery and continued correct firewall enforcement post-restart."
+    }
+  ]
+}

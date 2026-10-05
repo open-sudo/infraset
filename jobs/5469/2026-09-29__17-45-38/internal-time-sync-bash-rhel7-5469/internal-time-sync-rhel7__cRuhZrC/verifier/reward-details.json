@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Configure node1 as the internal time source for the cluster (no public upstream dependency, serves time locally, reachable by node2)",
+      "status": "satisfied",
+      "summary": "Baseline showed node1 pulling from public pool.ntp.org servers (cmd-1541da650c624a8d). Executor removed the public server lines, enabled 'local stratum 10' and 'allow 10.100.197.0/24' in /etc/chrony.conf (cmd-8af3a00f328b4152), opened firewalld's ntp service permanently (cmd-7785cf5bd3a84f68), and restarted chronyd, after which chronyc showed 0 external sources and Reference ID 7F7F0101 (local clock) at stratum 10 with Leap status Normal (cmd-7785cf5bd3a84f68). This state persisted through the later restart cycle (cmd-03aa19b9d062482d).",
+      "evidence_ids": [
+        "cmd-1541da650c624a8d",
+        "cmd-8af3a00f328b4152",
+        "cmd-7785cf5bd3a84f68",
+        "cmd-03aa19b9d062482d"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Configure node2 to synchronize its clock against node1 instead of a public time server",
+      "status": "satisfied",
+      "summary": "Baseline showed node2 using multiple public pool servers (cmd-b713370fc66e46b8). Executor rewrote /etc/chrony.conf to contain only 'server 10.100.197.10 iburst' (cmd-5b69654095e6449b) and restarted chronyd. Within ~10s chronyc sources showed '^*' (currently synced) to vm-rhel8-3416901243 (10.100.197.10) with Reference ID 0A64C50A and Leap status Normal (cmd-555ce55166bf4247). Config persistence and re-sync were reconfirmed after node2's later reboot (cmd-b07d33d3e52347c4).",
+      "evidence_ids": [
+        "cmd-b713370fc66e46b8",
+        "cmd-5b69654095e6449b",
+        "cmd-88724d70593e4aca",
+        "cmd-555ce55166bf4247",
+        "cmd-b07d33d3e52347c4"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Bidirectional confirmation that node1 actually serves time to node2 (not just node2's client-side view)",
+      "status": "satisfied",
+      "summary": "After node2's chrony.conf change and restart, 'sudo chronyc clients' on node1 listed vm-rhel8-3675796721 (node2's hostname) as an active NTP client (cmd-a6108723cde249f5), and this relationship was still present after both nodes were later rebooted (cmd-cbb59a373ac24f69).",
+      "evidence_ids": [
+        "cmd-a6108723cde249f5",
+        "cmd-cbb59a373ac24f69"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are satisfied with direct, coherent evidence: node1 was reconfigured from public pool.ntp.org servers to a self-serving internal time source (local stratum 10, no external sources, firewall opened for NTP), and node2 was reconfigured to sync exclusively against node1, with bidirectional confirmation (node2 shows '^*' synced state, node1's chronyc clients lists node2) both immediately after configuration and again after both nodes were independently restarted. The separately-mandated node-restart evidence protocol was also executed correctly and completely for both nodes: pre-restart boot ID and healthy chrony state, a restart acknowledgement, an SSH-timeout-confirmed outage, a new boot ID, and full recovery of chronyd, the local-stratum configuration, the firewall rule, and the node1\u2194node2 sync relationship \u2014 all cross-checked against the fixed after-executor boot-identity snapshots. Hygiene is good: no destructive, broad, or security-weakening mutations were found; the only minor residue is uncleaned /etc/chrony.conf.bak backup files left on both nodes from the pre-edit 'cp' safety step.",
+  "limitations": [
+    "The fixed lifecycle collector's after_prepare snapshot is only an alias of before_prepare (prepare was disabled for this task), so preparer-vs-executor separation is not meaningful here; all observed changes are attributable to the executor.",
+    "Package-health checks in the lifecycle snapshots were unavailable (timed out) on both nodes at all captured phases, so package/dependency integrity around the chrony/firewalld changes cannot be independently verified from that channel alone, though the executor's own command outputs (chronyd active, firewalld active) provide adequate direct evidence.",
+    "Whether the /etc/chrony.conf.bak backup files were later removed cannot be confirmed, since the lifecycle temporary-files inventory only covers /tmp, not /etc."
+  ],
+  "command_stats": {
+    "total": 32,
+    "successful": 27,
+    "failed": 5,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.93,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.9,
+    "summary": "Command trace shows a clean, low-risk change set: config edits confined to /etc/chrony.conf on each node, a firewalld rule change on node1 needed for node1 to serve time, and no package installs or destructive actions. Two minor points are noted but not treated as unnecessary mutations: (1) on node1, cmd-6ea0b6309c4a41b8 attempted a python3-based edit that failed silently ('python3: command not found') leaving the file unchanged, and was immediately followed by a working sed-based edit (cmd-8af3a00f328b4152) \u2014 a harmless retry, not a state-changing experiment; (2) both nodes accumulated a /etc/chrony.conf.bak backup file created via 'cp' before editing (cmd-6ea0b6309c4a41b8, cmd-a9a9696ceda549cc), which is a defensible safety practice before modifying a config file and was not observed to be cleaned up afterward \u2014 this is a minor uncleaned artifact rather than a risky or unnecessary mutation. Failed diagnostic commands (cmd-b60892fff8224524 'ip: command not found', cmd-a378b1bc0a724898 unauthorized firewall-cmd without sudo) were read-only/no-op and not state-changing. The provider-wide restart protocol was executed one node at a time with clear baseline capture, restart acknowledgement, confirmed outage via SSH timeout, new boot ID, and full service/config/sync recovery for both node1 and node2, matching the fixed after-executor boot-identity snapshots exactly (bd621ea0... for node1, 698d2b80... for node2). No failed services, no unsafe exposure (firewall change was minimal and appropriate: only opening ntp on node1), and post-executor snapshots show no anomalous listening sockets beyond the expected new NTP UDP/123 listener on node1.",
+    "evidence_ids": [
+      "cmd-6ea0b6309c4a41b8",
+      "cmd-8af3a00f328b4152",
+      "cmd-a9a9696ceda549cc",
+      "cmd-b60892fff8224524",
+      "cmd-a378b1bc0a724898",
+      "global:after_executor:node1:boot-identity",
+      "global:after_executor:node2:boot-identity",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

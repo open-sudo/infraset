@@ -1,0 +1,79 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-api as an OpenRC-managed service on node1 (Alpine 3.23) with kernel OOM protection (oom_score_adj=-1000 via a start_post hook), verified it kept serving through a real global-OOM event that instead killed a dedicated memory-hog test process, and completed the mandatory single-node restart/recovery protocol.",
+  "actions_performed": [
+    "Installed python3 on node1 via apk (no python3/httpd was present)",
+    "Created dedicated system user/group inventoryapi and app at /opt/inventory-api/app.py (Python HTTP server on :8080 with /health and /inventory endpoints)",
+    "Created OpenRC init script /etc/init.d/inventory-api running the app as inventoryapi, with a start_post hook that sets oom_score_adj=-1000 on the running pid",
+    "Enabled (rc-update add default) and started the service; fixed a log-permission issue and verified startup",
+    "Verified service health and oom_score_adj via curl and /proc before inducing OOM",
+    "Wrote /opt/mem-hog/hog.py, a memory-hog test tool with default oom_score_adj=0, launched via setsid+nohup so it survived the exec session",
+    "Drove the hog to consume RAM until the kernel's global OOM killer fired; dmesg confirms pid 3438 (python3 hog, oom_score_adj:0) was killed while inventory-api (pid 3273, oom_score_adj:-1000) was untouched",
+    "Confirmed inventory-api continued serving /health and /inventory uninterrupted (same pid, incrementing uptime) throughout and after the OOM event",
+    "Captured pre-restart boot_id and service health baseline, then rebooted node1 via `reboot` with acknowledgement returned before disconnect",
+    "Polled until node1 was reachable again; confirmed boot_id changed (7045e228-89a9-419a-82af-119f6363505f -> 1a5c0035-16be-4f4d-92b9-a2134a982ec8) and uptime showed 'up 0 min'",
+    "Verified post-reboot recovery: inventory-api auto-started with a new pid, oom_score_adj=-1000 reapplied by the start_post hook, and /health and /inventory responded correctly"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-api runs as a managed (OpenRC) service on node1",
+      "command_ids": [
+        "cmd-e2b8308d81024fc6",
+        "cmd-79b6940102ed438f"
+      ],
+      "summary": "rc-service inventory-api status shows 'started', enabled in rc-update default runlevel, curl to /health and /inventory succeed"
+    },
+    {
+      "requirement": "inventory-api is protected from the OOM killer (oom_score_adj=-1000)",
+      "command_ids": [
+        "cmd-e2b8308d81024fc6",
+        "cmd-79b6940102ed438f",
+        "cmd-95dd172e11bd40f8"
+      ],
+      "summary": "cat /proc/<pid>/oom_score_adj returns -1000 immediately after start and again just before the OOM event; dmesg OOM dump lists pid 3273 python3 with oom_score_adj -1000"
+    },
+    {
+      "requirement": "A memory-hungry process drives the system out of memory and is the one the kernel stops",
+      "command_ids": [
+        "cmd-fc4bc82b0d744835",
+        "cmd-95dd172e11bd40f8"
+      ],
+      "summary": "hog.py launched (pid 3438, oom_score_adj 0) consumed RAM until free memory was exhausted; dmesg shows kernel's global OOM killer selected and killed pid 3438 (anon-rss ~1.8GB, oom_score_adj:0), not inventory-api"
+    },
+    {
+      "requirement": "inventory-api keeps serving during/after the OOM event",
+      "command_ids": [
+        "cmd-95dd172e11bd40f8"
+      ],
+      "summary": "After the hog was OOM-killed, inventory-api (pid 3273) was confirmed alive in the same dmesg task listing and curl to /health returned 200 with the same pid and increasing uptime, with no restart"
+    },
+    {
+      "requirement": "Mandatory restart protocol: pre-restart baseline (boot identity + service health)",
+      "command_ids": [
+        "cmd-79b6940102ed438f"
+      ],
+      "summary": "Captured boot_id 7045e228-89a9-419a-82af-119f6363505f and confirmed inventory-api started, pid 3273, oom_score_adj -1000, health/inventory endpoints responding"
+    },
+    {
+      "requirement": "Mandatory restart protocol: restart acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-81080f3d0e8c43f6"
+      ],
+      "summary": "Backgrounded `reboot` via setsid+disown; exec call returned 'reboot scheduled' successfully before the connection dropped on the next call"
+    },
+    {
+      "requirement": "Mandatory restart protocol: proof of changed boot identity (not just elapsed time)",
+      "command_ids": [
+        "cmd-564e5e263f314a6f"
+      ],
+      "summary": "Post-reboot boot_id read as 1a5c0035-16be-4f4d-92b9-a2134a982ec8, differing from the pre-restart boot_id, with `uptime` showing 'up 0 min'"
+    },
+    {
+      "requirement": "Mandatory restart protocol: post-restart recovery of service, OOM protection, and data",
+      "command_ids": [
+        "cmd-de7541d4e5d04954"
+      ],
+      "summary": "After reboot, inventory-api auto-started under rc-update default (new pid 2314), oom_score_adj re-applied to -1000 by the start_post hook, and curl to /health and /inventory returned correct data"
+    }
+  ]
+}

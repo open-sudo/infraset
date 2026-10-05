@@ -1,0 +1,79 @@
+{
+  "status": "completed",
+  "summary": "Deployed a sandboxed systemd service `inventory-worker` on node1: a Python long-running loop writing tick state to /var/lib/inventory, run as dedicated system user inventory-worker:inventory-worker (uid/gid 999), with NoNewPrivileges=yes, ProtectHome=yes, PrivateTmp=yes, PrivateDevices=yes, and (since node1's systemd is v229, which lacks ProtectSystem=strict/ReadWritePaths) the equivalent legacy directives ReadOnlyDirectories=/ plus ReadWriteDirectories=/var/lib/inventory. Confirmed via mountinfo and nsenter into the service's own mount namespace that / is read-only, /home and /root are inaccessible, and only /var/lib/inventory is writable \u2014 writes to /var/lib and /root fail with Read-only file system while writes to /var/lib/inventory succeed. Completed the mandatory node1 restart: captured baseline boot_id and healthy/active service+ticking data, issued `systemctl reboot` with an async ack, polled until SSH access returned, confirmed boot_id changed (dbb46974... -> 2d5f1eab...) and uptime reset, and verified the service came back enabled+active automatically and resumed ticking with prior data intact in /var/lib/inventory.",
+  "actions_performed": [
+    "Inspected node1 OS/systemd (Ubuntu 16.04, systemd 229) and confirmed sudo/python3 availability",
+    "Created system user inventory-worker and directory /var/lib/inventory (mode 750, owned by that user)",
+    "Wrote /usr/local/bin/inventory-worker.py: a loop writing state.json and worker.log into /var/lib/inventory every 10s",
+    "Created and enabled /etc/systemd/system/inventory-worker.service with NoNewPrivileges, ProtectHome, PrivateTmp, PrivateDevices, ReadOnlyDirectories=/, ReadWriteDirectories=/var/lib/inventory",
+    "Discovered ProtectSystem=strict is unsupported on systemd 229 (journal parse error) and replaced it with the ReadOnlyDirectories=/ + ReadWriteDirectories combo, then verified no parse errors and correct mount namespace via /proc/<pid>/mountinfo",
+    "Verified confinement via nsenter into the service's mount namespace: write succeeds in /var/lib/inventory, fails (read-only fs) in /var/lib and /root",
+    "Captured pre-restart baseline: boot_id, uptime, systemctl enabled/active state, ticking state.json",
+    "Issued backgrounded `sudo systemctl reboot`, confirmed connection loss then recovery via polling",
+    "Verified changed boot_id and uptime after restart, service auto-started (enabled unit), and worker.log shows continuity of tick data across the restart"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-worker deployed as a managed (systemd) service, long-running background worker",
+      "command_ids": [
+        "cmd-b356cad9c110493c",
+        "cmd-281814b05b304f96"
+      ],
+      "summary": "systemctl status shows inventory-worker.service loaded, enabled, active (running) as a persistent python3 process"
+    },
+    {
+      "requirement": "Confined to write only inside /var/lib/inventory",
+      "command_ids": [
+        "cmd-2a98a54e34f349ce",
+        "cmd-75397a9d50dc4319"
+      ],
+      "summary": "mountinfo for the service PID shows / read-only and /var/lib/inventory the only rw bind mount; nsenter into that namespace shows a write to /var/lib/inventory succeeds while writes to /var/lib and /root fail with 'Read-only file system'"
+    },
+    {
+      "requirement": "No new privileges",
+      "command_ids": [
+        "cmd-f53790673d0142c5"
+      ],
+      "summary": "systemctl show output confirms NoNewPrivileges=yes is applied to the unit"
+    },
+    {
+      "requirement": "Worker actually performs long-running work (writes data over time)",
+      "command_ids": [
+        "cmd-4ac99c54b85e419f",
+        "cmd-c7892a25a6174ca8"
+      ],
+      "summary": "state.json tick counter increments and worker.log accumulates timestamped entries across repeated polls"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline on node1",
+      "command_ids": [
+        "cmd-1d8f9827194c4047"
+      ],
+      "summary": "Captured boot_id dbb46974-b99f-4850-81d2-22dfbdf7b8ed, uptime start 23:53:46, service enabled+active before reboot"
+    },
+    {
+      "requirement": "Restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-a4971b9d11154912"
+      ],
+      "summary": "Backgrounded systemctl reboot returned immediately with pid, ack captured before node went down"
+    },
+    {
+      "requirement": "Node actually went down and came back (changed boot identity), not just elapsed time",
+      "command_ids": [
+        "cmd-99404727cbfd42d5",
+        "cmd-b9e6859c70ec42d0",
+        "cmd-2b476c0d60e94a17"
+      ],
+      "summary": "SSH connection refused mid-reboot, then succeeded again; boot_id changed to 2d5f1eab-2a7a-44e3-97e3-f6c3ef499a86 and uptime start reset to 23:56:11, proving an actual reboot occurred"
+    },
+    {
+      "requirement": "Post-restart recovery of the service and its data",
+      "command_ids": [
+        "cmd-2b476c0d60e94a17",
+        "cmd-c7892a25a6174ca8"
+      ],
+      "summary": "Service auto-started (enabled unit) after reboot and is active; state.json/worker.log show new post-restart ticks appended after the prior pre-restart entries, proving data in /var/lib/inventory persisted and the worker resumed"
+    }
+  ]
+}

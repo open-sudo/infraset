@@ -1,0 +1,85 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) to provide NAT egress for node2 and node3 on a private /24 (10.60.60.0/24 over eth1), implemented via an Ansible playbook run from node4 (the pre-provisioned control node). node1 got a static LAN address (10.60.60.254/24 on eth1) plus a VyOS source-NAT masquerade rule (10.60.60.0/24 -> eth0). node2/node3 got a new NetworkManager eth1 profile (10.60.60.11/.12) with a lower-metric default route via node1, so their default internet path now genuinely transits node1's NAT. Verified via api.ipify.org and live NAT translation tables. Then ran the mandatory one-at-a-time restart protocol on all 4 nodes (node2, node3, node1, node4), confirming a changed boot_id and full recovery of NAT config, network profiles, and Ansible tooling after each restart, plus a clean idempotent playbook re-run at the end.",
+  "actions_performed": [
+    "Surveyed topology: node1=VyOS router (eth0 mgmt/WAN with internet, eth1 unconfigured private LAN), node2/node3=RHEL7.9 (eth0 mgmt, eth1 unconfigured private LAN), node4=Ubuntu 24.04 pre-provisioned Ansible control node with ansible-core 2.20 and SSH key material",
+    "Established SSH access from node4 to targets: added node4's pubkey to VyOS node1 via 'set system login user vyos authentication public-keys' (VyOS hardcodes PermitRootLogin no, so root SSH is impossible), and to antrieb's authorized_keys on node2/node3",
+    "Captured pre-change baseline: eth1 had no IP on any node; node2 showed 100% ping loss to 8.8.8.8 over eth1",
+    "Wrote /root/ansible/inventory.ini and /root/ansible/nat-egress.yml on node4",
+    "Playbook play 1 (host group 'router'/node1): bash+VyOS script-template shell task to set eth1 address 10.60.60.254/24 and NAT source masquerade rule 100 (source 10.60.60.0/24, out-interface eth0), then commit+save",
+    "Playbook play 2 (host group 'lan_hosts'/node2,node3): used ansible.builtin.raw (RHEL7 only has Python 2.7, incompatible with modern Ansible module code) to idempotently create an nmcli eth1 connection profile with static IP, gateway 10.60.60.254, and route-metric 50 (lower than the existing eth0 default route's metric 100), then bring it up and verify with a ping test",
+    "Ran the playbook successfully; independently verified via exec: node2/node3 ip route shows eth1 default route preferred, curl to api.ipify.org returns node1's WAN IP (198.58.243.18), and node1's 'show nat source translations' shows live masqueraded sessions from both LAN hosts",
+    "Executed the mandatory restart-evidence protocol sequentially on node2, node3, node1, then node4: captured boot_id + health baseline, issued native reboot, polled until reachable, confirmed changed boot_id, and verified full recovery of NAT/routing/connectivity (and, for node4, a clean idempotent playbook re-run) before moving to the next node"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 provides NAT so node2/node3 can reach the internet through it",
+      "command_ids": [
+        "cmd-6e2475aa05c745ea",
+        "cmd-66f4f40fedd1482b",
+        "cmd-9057b24eecf7402e",
+        "cmd-496a08c971e14589"
+      ],
+      "summary": "Ansible playbook run shows node1's NAT rule/eth1 configured and node2/node3 pinging 8.8.8.8 successfully over eth1; independent exec verification shows both nodes' default route now goes via node1 (metric 50 < eth0's 100), curl to api.ipify.org returns node1's WAN IP 198.58.243.18, and node1's live NAT translation table shows active masqueraded sessions from 10.60.60.11 and 10.60.60.12 to 10.100.76.10"
+    },
+    {
+      "requirement": "Implementation done via Ansible",
+      "command_ids": [
+        "cmd-41621d1a479743ee",
+        "cmd-6e2475aa05c745ea",
+        "cmd-834770110c5d4c8a"
+      ],
+      "summary": "Playbook syntax-checked and executed from node4 (control node) against inventory covering node1 (VyOS) and node2/node3 (RHEL7); final idempotent re-run after all restarts shows ok/changed=0-1 with no failures"
+    },
+    {
+      "requirement": "Pre-change baseline: private network had no internet access of its own",
+      "command_ids": [
+        "cmd-2b5375ceb33c4b95"
+      ],
+      "summary": "Before configuration, node2 showed 100% packet loss pinging 8.8.8.8 sourced from eth1 (private network, unaddressed, no NAT)"
+    },
+    {
+      "requirement": "node2 restart: boot identity change + service/data recovery",
+      "command_ids": [
+        "cmd-388e01ebb04f4f3c",
+        "cmd-080d8a115e164e8d",
+        "cmd-1011e870b9444a56",
+        "cmd-231a0b2ce48943d9"
+      ],
+      "summary": "Baseline boot_id 738d0aac captured with healthy NAT-routed egress; reboot acknowledged (connection closed); post-reboot boot_id 0ca9c5da (changed); recovered state shows eth1/eth0 connections active, correct routes, and successful internet egress via node1's NAT"
+    },
+    {
+      "requirement": "node3 restart: boot identity change + service/data recovery",
+      "command_ids": [
+        "cmd-a83e3ef87cbc4b96",
+        "cmd-756116a549884486",
+        "cmd-705896a324fa4b50",
+        "cmd-b5246e55b1674575"
+      ],
+      "summary": "Baseline boot_id 325732f1 captured; reboot acknowledged; post-reboot boot_id 8e46513a (changed); recovered state shows eth1/eth0 active, correct routes, successful egress via node1's NAT"
+    },
+    {
+      "requirement": "node1 (router) restart: boot identity change + NAT/service recovery",
+      "command_ids": [
+        "cmd-5d9a13780f544432",
+        "cmd-59647eb1914b4951",
+        "cmd-d08fdb8af39146cd",
+        "cmd-eb2f8ceedbec45c3",
+        "cmd-dda308ea30094fc7",
+        "cmd-53b3981541594270",
+        "cmd-82a63a0e27eb4a59"
+      ],
+      "summary": "Baseline boot_id 4098161f captured with NAT rule and eth1 config confirmed; reboot issued; post-reboot boot_id 9ddb11b5 (changed), confirmed via both direct exec and independent SSH poll from node4; recovered state shows NAT rule, eth1 address, and ip_forward=1 all restored from saved VyOS config, and node2/node3 continued reaching the internet through it"
+    },
+    {
+      "requirement": "node4 (control node) restart: boot identity change + tooling/data recovery",
+      "command_ids": [
+        "cmd-1e77b6503a754e39",
+        "cmd-e6397e1372094f1a",
+        "cmd-46726ade90074646",
+        "cmd-834770110c5d4c8a"
+      ],
+      "summary": "Baseline boot_id 416c5cf5 captured with ansible project files present; reboot issued (stream closed); post-reboot boot_id 5f1ed85e (changed); recovered state confirmed by playbook syntax-check passing and a full idempotent playbook re-run succeeding against all managed nodes"
+    }
+  ]
+}

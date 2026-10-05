@@ -1,0 +1,93 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (OPNsense) as the router between lan-a (10.50.10.0/24, via vtnet1/opt1, reached from node2 eth1) and lan-b (10.50.20.0/24, via vtnet2/opt2, reached from node3 eth1). Added pf filter rules that block+log TCP/23 in both directions between the two networks (evaluated before general pass rules, so telnet is refused while other traffic between the networks still routes), verified logging to node1's filter log, and demonstrated a refused-connection log entry produced by an attempt from node2 to node3 on port 23. Then executed the mandatory single-node-at-a-time restart protocol on all three nodes, proving changed boot identity and full recovery of routing/firewall state (including a persisted NetworkManager static route fix on node2/node3 after their reboots) each time.",
+  "actions_performed": [
+    "Inspected node1 (OPNsense/FreeBSD) and confirmed it routes between node2 and node3 over a shared management network",
+    "Assigned static IPs to node2 eth1 (10.50.10.11/24) and node3 eth1 (10.50.20.12/24) via nmcli, creating lan-a and lan-b networks",
+    "Edited node1 /conf/config.xml (via Python/ElementTree, backed up original) to add interfaces opt1 (vtnet1, 10.50.10.254/24, LANA) and opt2 (vtnet2, 10.50.20.254/24, LANB)",
+    "Added pf filter rules on node1: block+log TCP/23 from opt1-net and from opt2-net (each 'quick', evaluated before general pass rules), plus general pass rules allowing other opt1/opt2 traffic",
+    "Applied config with configctl interface reconfigure opt1/opt2 and configctl filter reload; verified SSH-allow rule on vtnet0 (management) was preserved",
+    "Added static routes on node2 and node3 (10.50.20.0/24 via 10.50.10.254, and reverse) to route lan-a<->lan-b traffic through node1",
+    "Verified baseline routing worked with ping between node2 and node3 across node1",
+    "From node2, attempted a raw TCP connect to node3:23 using Python 2.7 (socket) and confirmed it timed out (silently blocked)",
+    "Confirmed the corresponding block+log entry in /var/log/filter/filter_20260905.log on node1, showing source 10.50.10.11 (node2) to destination 10.50.20.12 (node3) port 23 blocked by rule label fb9ec592cb830fe3fbf2f43a8466151e",
+    "Captured pre-restart boot-identity baselines (kern.boottime on node1 FreeBSD, /proc/sys/kernel/random/boot_id on node2/node3 RHEL7) plus health evidence (interfaces, forwarding, pf rules, routes, connectivity)",
+    "Restarted node1 via backgrounded 'shutdown -r now', polled until exec returned, confirmed kern.boottime changed, and verified opt1/opt2 interfaces, ip forwarding, and telnet block rules persisted from config.xml after reboot",
+    "Restarted node2 via backgrounded sudo 'reboot', polled until exec returned, confirmed boot_id changed; found the ephemeral 'ip route add' route to lan-b did not persist, so added it persistently via 'nmcli con modify eth1 +ipv4.routes' and verified restored connectivity",
+    "Proactively added the same persistent route via nmcli on node3 before its restart",
+    "Restarted node3 via backgrounded sudo 'reboot', polled until exec returned, confirmed boot_id changed, and verified eth1 IP, persistent route, and connectivity to node2 all recovered automatically",
+    "Re-ran the node2->node3 port-23 connection attempt after all three restarts and confirmed a fresh block+log filter log entry on node1, proving the refuse+log behavior survived all node restarts"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 refuses TCP/23 between lan-a and lan-b and logs every refused attempt",
+      "command_ids": [
+        "cmd-3ce50233e20749a1",
+        "cmd-b6b912a1fd914869",
+        "cmd-8b9ce0b6ea1e4212",
+        "cmd-59f0c8bd871643cc",
+        "cmd-1963ca3784cd484a"
+      ],
+      "summary": "OPNsense interfaces opt1/opt2 brought up, pf ruleset confirmed to have 'block drop ... quick ... proto tcp ... port = telnet' on both vtnet1 and vtnet2 ahead of general pass rules; a TCP/23 connect attempt from node2 to node3 timed out (silent block), and node1's filter log shows the matching block entry (10.50.10.11 -> 10.50.20.12, port 23, rule label fb9ec592cb830fe3fbf2f43a8466151e)."
+    },
+    {
+      "requirement": "Show a log entry produced by an attempt made from node2",
+      "command_ids": [
+        "cmd-59f0c8bd871643cc",
+        "cmd-1963ca3784cd484a"
+      ],
+      "summary": "Python socket connect from node2 (10.50.10.11) to node3:23 (10.50.20.12) timed out; node1's /var/log/filter/filter_20260905.log contains matching 'block,in,...,tcp,...,10.50.10.11,10.50.20.12,...,23' entries from that exact attempt."
+    },
+    {
+      "requirement": "Non-telnet traffic between lan-a and lan-b still routes (router functions correctly, only port 23 refused)",
+      "command_ids": [
+        "cmd-39b29807c4ec4d19"
+      ],
+      "summary": "ICMP ping from node2 (10.50.10.11) to node3 (10.50.20.12) succeeded through node1's opt1/opt2 pass rules, confirming general routing works while only TCP/23 is blocked."
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-b69412497e9a4b7d",
+        "cmd-3da19ca74d364ecb",
+        "cmd-dd888bbcffe740f9",
+        "cmd-ae5142353d774122",
+        "cmd-a9d8be99351241e1",
+        "cmd-e84bfd96f14649cb"
+      ],
+      "summary": "Baseline kern.boottime=1788628528 captured; backgrounded 'shutdown -r now' acknowledged before disconnect; subsequent polls show connection timeout during reboot then a new kern.boottime=1788628860 confirming restart; post-restart check shows opt1/opt2 IPs, ip forwarding=1, and both telnet block+log pf rules intact."
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-186caf8d34454ef6",
+        "cmd-e5045acb49d94a43",
+        "cmd-4d423b5bcee74bf1",
+        "cmd-5fdf4204d94142b6",
+        "cmd-20933cbb81184f0e",
+        "cmd-f8b05ef0ec36401e"
+      ],
+      "summary": "Baseline boot_id f0f8b8e0-... captured; backgrounded sudo reboot acknowledged before disconnect; poll shows connection timeout then new boot_id 35ab15e4-... confirming restart; eth1 static IP persisted but the lan-b route needed re-adding, which was made persistent via nmcli and verified working with a successful ping to node3."
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-4da34254a8c547e1",
+        "cmd-1c2af3e3dd8b4701",
+        "cmd-74b36451eb2245ee",
+        "cmd-56961edf1ccd4f19",
+        "cmd-4abef98919c94390",
+        "cmd-240d052506f141d3"
+      ],
+      "summary": "Baseline boot_id 16724682-... captured, persistent route pre-added via nmcli; backgrounded sudo reboot acknowledged before disconnect; poll shows connection timeout then new boot_id e639aa57-... confirming restart; post-restart check shows eth1 IP, persistent route, and successful ping to node2, confirming full recovery."
+    },
+    {
+      "requirement": "Block+log behavior survives all node restarts (end-to-end re-verification)",
+      "command_ids": [
+        "cmd-a1afd38162de4b1b",
+        "cmd-f7fcb19088d74cd2"
+      ],
+      "summary": "After all three nodes were restarted, a fresh TCP/23 connect attempt from node2 to node3 again timed out, and node1's filter log shows new matching block entries with the same rule label, confirming persistence of the refuse+log configuration across restarts."
+    }
+  ]
+}

@@ -1,0 +1,283 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 21,
+    "successful": 19,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Working archive queue and future raw-job routing",
+      "command_ids": [
+        "cmd-136962bb1d9f4111",
+        "cmd-71f7719acb8d4e99",
+        "cmd-6ac1848d83324199",
+        "cmd-3fe2b83daad544c8"
+      ],
+      "summary": "The enabled archive queue accepted and completed both raw submissions using the archive backend; after reboot it remains active, idle, and accepting requests at the required output path."
+    },
+    {
+      "requirement": "Process every manifest job exactly once while retaining bytes and original spool files",
+      "command_ids": [
+        "cmd-138357f5f1e64f11",
+        "cmd-637f2b3fad69415b",
+        "cmd-3fe2b83daad544c8"
+      ],
+      "summary": "Two manifest jobs produced exactly two archive files. Source and archived SHA-256 hashes match for both payloads, and both originals remain present."
+    },
+    {
+      "requirement": "Security and persistence",
+      "command_ids": [
+        "cmd-637f2b3fad69415b",
+        "cmd-3fe2b83daad544c8"
+      ],
+      "summary": "SELinux remains enforcing with no observed denials; the local-only output directory and files retain restricted permissions and print-spool labels after reboot."
+    },
+    {
+      "requirement": "Mandatory node1 restart and recovery",
+      "command_ids": [
+        "cmd-5a8e098061ea48d3",
+        "cmd-8d7c63b53ae5431a",
+        "cmd-4fce829c2cf04de7",
+        "cmd-3fe2b83daad544c8"
+      ],
+      "summary": "Healthy baseline boot ID 409baccc-9e04-4b87-a0d9-ba14a3f776a7 was captured, reboot was acknowledged, boot ID changed to 6e938b55-1c5c-4e09-aa39-0c0bcd0cbcdb, and CUPS, queue history, archived payloads, hashes, permissions, and SELinux state all recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-d8dcba3611a84f0f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:24:52.096632+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2650,
+      "command": "set -eu\nprintf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'OS='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nuname -r\nprintf 'CUPS_ACTIVE='; systemctl is-active cups 2>/dev/null || true\nprintf 'CUPS_ENABLED='; systemctl is-enabled cups 2>/dev/null || true\nrpm -q cups cups-filters 2>/dev/null || true\nprintf '%s\\n' '--- queues ---'\nlpstat -t 2>&1 || true\nprintf '%s\\n' '--- recovery tree ---'\nfind /srv/legacy2/print-spool-recovery -maxdepth 3 -printf '%M %u:%g %s %p\\n' 2>&1 | sort\nprintf '%s\\n' '--- jobs manifest ---'\nsed -n '1,200p' /srv/legacy2/print-spool-recovery/spool/jobs.tsv 2>&1",
+      "stdout": "BOOT_ID=409baccc-9e04-4b87-a0d9-ba14a3f776a7\nOS=rhel 10.0\n6.12.0-55.9.1.el10_0.x86_64\nCUPS_ACTIVE=inactive\nCUPS_ENABLED=not-found\npackage cups is not installed\npackage cups-filters is not installed\n--- queues ---\nbash: line 9: lpstat: command not found\n--- recovery tree ---\ndrwxr-xr-x root:root 19 /srv/legacy2/print-spool-recovery\ndrwxr-xr-x root:root 54 /srv/legacy2/print-spool-recovery/spool\n-rw-r--r-- root:root 28 /srv/legacy2/print-spool-recovery/spool/J100.prn\n-rw-r--r-- root:root 31 /srv/legacy2/print-spool-recovery/spool/J101.prn\n-rw-r--r-- root:root 50 /srv/legacy2/print-spool-recovery/spool/jobs.tsv\n--- jobs manifest ---\njob_id  payload\nJ100    J100.prn\nJ101    J101.prn"
+    },
+    {
+      "command_id": "cmd-138357f5f1e64f11",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:25:13.433008+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 7506,
+      "command": "set -eu\ndnf -q list --available cups policycoreutils-python-utils 2>&1 || true\nprintf 'SELINUX='; getenforce 2>/dev/null || true\nprintf 'DISK='; df -h /srv | tail -1\nprintf '%s\\n' '--- source identities ---'\nwhile IFS=' \t' read -r job payload extra; do\n  [ \"$job\" = job_id ] && continue\n  [ -n \"$job\" ] || continue\n  [ -z \"${extra:-}\" ] || { printf 'malformed row: %s\\n' \"$job\"; exit 1; }\n  case \"$payload\" in */*|'') printf 'unsafe payload: %s\\n' \"$payload\"; exit 1;; esac\n  stat -c '%n size=%s mode=%a owner=%U:%G' \"/srv/legacy2/print-spool-recovery/spool/$payload\"\n  sha256sum \"/srv/legacy2/print-spool-recovery/spool/$payload\"\ndone < /srv/legacy2/print-spool-recovery/spool/jobs.tsv",
+      "stdout": "Available Packages\ncups.x86_64                         1:2.4.10-18.el10_2 rhel-10-for-x86_64-appstream-rpms\npolicycoreutils-python-utils.noarch 3.10-2.el10_2      rhel-10-for-x86_64-appstream-rpms\nSELINUX=Enforcing\nDISK=/dev/vda4        17G  1.6G   16G  10% /\n--- source identities ---\n/srv/legacy2/print-spool-recovery/spool/J100.prn size=28 mode=644 owner=root:root\n9bf578f2649c7d9f4b6e77e0b6cc9ee172f12d5fe49e44808707b47a32fbbab0  /srv/legacy2/print-spool-recovery/spool/J100.prn\n/srv/legacy2/print-spool-recovery/spool/J101.prn size=31 mode=644 owner=root:root\n6c9fcbd87c70cfa35fd377e7e2d75e779b75d799febffc32d5ecea5624244d87  /srv/legacy2/print-spool-recovery/spool/J101.prn"
+    },
+    {
+      "command_id": "cmd-7ec63a1da55a47bd",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:26:03.309618+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 45133,
+      "command": "dnf -y install cups policycoreutils-python-utils",
+      "stdout": "Updating Subscription Management repositories.\nLast metadata expiration check: 0:00:07 ago on Sun 04 Oct 2026 02:25:11 PM EDT.\nPackage policycoreutils-python-utils-3.8-1.el10.noarch is already installed.\nDependencies resolved.\n=============================================================================================================\n Package                                Arch    Version              Repository                          Size\n=============================================================================================================\nInstalling:\n cups                                   x86_64  1:2.4.10-18.el10_2   rhel-10-for-x86_64-appstream-rpms  1.6 M\nUpgrading:\n libselinux                             x86_64  3.10-1.el10          rhel-10-for-x86_64-baseos-rpms     104 k\n libselinux-utils                       x86_64  3.10-1.el10          rhel-10-for-x86_64-baseos-rpms     134 k\n libsemanage                            x86_64  3.10-1.el10          rhel-10-for-x86_64-baseos-rpms     128 k\n libsepol                               x86_64  3.10-1.el10          rhel-10-for-x86_64-baseos-rpms     355 k\n policycoreutils                        x86_64  3.10-2.el10_2        rhel-10-for-x86_64-baseos-rpms     277 k\n policycoreutils-python-utils           noarch  3.10-2.el10_2        rhel-10-for-x86_64-appstream-rpms   53 k\n python3-libselinux                     x86_64  3.10-1.el10          rhel-10-for-x86_64-appstream-rpms  209 k\n python3-libsemanage                    x86_64  3.10-1.el10          rhel-10-for-x86_64-appstream-rpms   86 k\n python3-policycoreutils                noarch  3.10-2.el10_2        rhel-10-for-x86_64-appstream-rpms  2.2 M\nInstalling dependencies:\n acl                                    x86_64  2.3.2-4.el10         rhel-10-for-x86_64-baseos-rpms      81 k\n adobe-mappings-cmap                    noarch  20230622-5.el10      rhel-10-for-x86_64-appstream-rpms  2.1 M\n adobe-mappings-cmap-deprecated         noarch  20230622-5.el10      rhel-10-for-x86_64-appstream-rpms  119 k\n adobe-mappin\n...[TRUNCATED 12321 CHARACTERS]...\n            \n  nss-3.124.0-5.el10_0.x86_64                                                   \n  nss-softokn-3.124.0-5.el10_0.x86_64                                           \n  nss-softokn-freebl-3.124.0-5.el10_0.x86_64                                    \n  nss-sysinit-3.124.0-5.el10_0.x86_64                                           \n  nss-util-3.124.0-5.el10_0.x86_64                                              \n  openjpeg2-2.5.2-5.el10.x86_64                                                 \n  pixman-0.43.4-2.el10.x86_64                                                   \n  poppler-24.02.0-7.el10_2.2.x86_64                                             \n  poppler-cpp-24.02.0-7.el10_2.2.x86_64                                         \n  poppler-data-0.4.11-9.el10.noarch                                             \n  poppler-utils-24.02.0-7.el10_2.2.x86_64                                       \n  qpdf-libs-11.8.0-5.el10.x86_64                                                \n  urw-base35-bookman-fonts-20200910-21.el10.noarch                              \n  urw-base35-c059-fonts-20200910-21.el10.noarch                                 \n  urw-base35-d050000l-fonts-20200910-21.el10.noarch                             \n  urw-base35-fonts-20200910-21.el10.noarch                                      \n  urw-base35-fonts-common-20200910-21.el10.noarch                               \n  urw-base35-gothic-fonts-20200910-21.el10.noarch                               \n  urw-base35-nimbus-mono-ps-fonts-20200910-21.el10.noarch                       \n  urw-base35-nimbus-roman-fonts-20200910-21.el10.noarch                         \n  urw-base35-nimbus-sans-fonts-20200910-21.el10.noarch                          \n  urw-base35-p052-fonts-20200910-21.el10.noarch                                 \n  urw-base35-standard-symbols-ps-fonts-20200910-21.el10.noarch                  \n  urw-base35-z003-fonts-20200910-21.el10.noarch                                 \n  xml-common-0.6.3-65.el10.noarch                                               \n\nComplete!"
+    },
+    {
+      "command_id": "cmd-1c4e38f08cd24631",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:26:04.765190+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1450,
+      "command": "for i in 1 2 3 4 5 6; do\n  if ! pgrep -x dnf >/dev/null 2>&1; then break; fi\n  sleep 5\ndone\nrpm -q cups policycoreutils-python-utils\nsystemctl is-active cups 2>/dev/null || true",
+      "stdout": "cups-2.4.10-18.el10_2.x86_64\npolicycoreutils-python-utils-3.10-2.el10_2.noarch\ninactive"
+    },
+    {
+      "command_id": "cmd-ff05af45c3fc4d8a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:26:12.534137+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2768,
+      "command": "set -eu\ngetent passwd lp\nrpm -ql cups | grep '/backend/' | head -30\nprintf '%s\\n' '--- contexts ---'\nls -ldZ /usr/lib/cups/backend /var/spool/cups /srv/legacy2/print-spool-recovery\nmatchpathcon /usr/lib/cups/backend /var/spool/cups /srv/legacy2/print-spool-recovery 2>/dev/null || true\nprintf '%s\\n' '--- writable policy candidates ---'\nsesearch -A -s cupsd_t -c dir -p 'add_name write' 2>/dev/null | head -30 || true",
+      "stdout": "lp:x:4:7:lp:/var/spool/lpd:/usr/sbin/nologin\n/usr/lib/cups/backend/dnssd\n/usr/lib/cups/backend/failover\n/usr/lib/cups/backend/http\n/usr/lib/cups/backend/https\n/usr/lib/cups/backend/ipp\n/usr/lib/cups/backend/ipps\n/usr/lib/cups/backend/lpd\n/usr/lib/cups/backend/snmp\n/usr/lib/cups/backend/socket\n/usr/lib/cups/backend/usb\n--- contexts ---\ndrwxr-xr-x. 3 root root system_u:object_r:var_t:s0           19 Oct  4 14:24 /srv/legacy2/print-spool-recovery\ndrwxr-xr-x. 2 root root system_u:object_r:bin_t:s0         4096 Oct  4 14:25 /usr/lib/cups/backend\ndrwx--x---. 3 root lp   system_u:object_r:print_spool_t:s0   17 Oct  4 14:25 /var/spool/cups\n/usr/lib/cups/backend\tsystem_u:object_r:bin_t:s0\n/var/spool/cups\tsystem_u:object_r:print_spool_t:s0\n/srv/legacy2/print-spool-recovery\tsystem_u:object_r:var_t:s0\n--- writable policy candidates ---"
+    },
+    {
+      "command_id": "cmd-07331cb230614073",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:26:36.469304+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 17678,
+      "command": "semanage fcontext -l | grep -E 'cups|print_spool|usr/lib.*/backend' | head -80\nprintf '%s\\n' '--- relevant executable types ---'\nseinfo -t 2>/dev/null | grep -E 'cups.*exec|print.*exec' | head -30 || true",
+      "stdout": "/etc/alchemist/namespace/printconf(/.*)?           all files          system_u:object_r:cupsd_rw_etc_t:s0 \n/etc/apcupsd/apccontrol                            regular file       system_u:object_r:bin_t:s0 \n/etc/apcupsd/changeme                              regular file       system_u:object_r:bin_t:s0 \n/etc/apcupsd/commfailure                           regular file       system_u:object_r:bin_t:s0 \n/etc/apcupsd/commok                                regular file       system_u:object_r:bin_t:s0 \n/etc/apcupsd/masterconnect                         regular file       system_u:object_r:bin_t:s0 \n/etc/apcupsd/mastertimeout                         regular file       system_u:object_r:bin_t:s0 \n/etc/apcupsd/offbattery                            regular file       system_u:object_r:bin_t:s0 \n/etc/apcupsd/onbattery                             regular file       system_u:object_r:bin_t:s0 \n/etc/cups(/.*)?                                    all files          system_u:object_r:cupsd_etc_t:s0 \n/etc/cups/certs                                    directory          system_u:object_r:cupsd_rw_etc_t:s0 \n/etc/cups/certs/.*                                 regular file       system_u:object_r:cupsd_rw_etc_t:s0 \n/etc/cups/classes\\.conf.*                          regular file       system_u:object_r:cupsd_rw_etc_t:s0 \n/etc/cups/client\\.conf                             regular file       system_u:object_r:etc_t:s0 \n/etc/cups/cupsd\\.conf.*                            regular file       system_u:object_r:cupsd_rw_etc_t:s0 \n/etc/cups/interfaces(/.*)?                         all files          system_u:object_r:cupsd_interface_t:s0 \n/etc/cups/lpoptions.*                              regular file       system_u:object_r:cupsd_rw_etc_t:s0 \n/etc/cups/ppd(/.*)?                                all files          system_u:object_r:cupsd_rw_etc_t:s0 \n/etc/cups/ppds\\.dat                                regular file       system_u:object_r:cupsd_rw_etc_t:s0 \n/etc/cups/printers\\.conf.*                         regular file       system_u:object_r:cupsd_rw\n...[TRUNCATED 4393 CHARACTERS]...\n-browsed                             regular file       system_u:object_r:cupsd_exec_t:s0 \n/usr/sbin/cupsd                                    regular file       system_u:object_r:cupsd_exec_t:s0 \n/usr/sbin/hal_lpadmin                              regular file       system_u:object_r:cupsd_config_exec_t:s0 \n/usr/sbin/hp-[^/]+                                 regular file       system_u:object_r:cupsd_exec_t:s0 \n/usr/sbin/hpiod                                    regular file       system_u:object_r:cupsd_exec_t:s0 \n/usr/sbin/lpc(\\.cups)?                             regular file       system_u:object_r:lpr_exec_t:s0 \n/usr/sbin/printconf-backend                        regular file       system_u:object_r:cupsd_config_exec_t:s0 \n/usr/share/cups(/.*)?                              all files          system_u:object_r:cupsd_etc_t:s0 \n/usr/share/foomatic/db/oldprinterids               regular file       system_u:object_r:cupsd_rw_etc_t:s0 \n/usr/share/hplip/.*\\.py                            regular file       system_u:object_r:cupsd_exec_t:s0 \n/var/cache/alchemist/printconf.*                   all files          system_u:object_r:cupsd_rw_etc_t:s0 \n/var/cache/cups(/.*)?                              all files          system_u:object_r:cupsd_rw_etc_t:s0 \n/var/cache/foomatic(/.*)?                          all files          system_u:object_r:cupsd_rw_etc_t:s0 \n/var/ccpd(/.*)?                                    all files          system_u:object_r:cupsd_var_run_t:s0 \n/var/ekpd(/.*)?                                    all files          system_u:object_r:cupsd_var_run_t:s0 \n/var/lib/cups/certs                                directory          system_u:object_r:cupsd_rw_etc_t:s0 \n/var/lib/cups/certs/.*                             regular file       system_u:object_r:cupsd_rw_etc_t:s0 \n/var/lib/hp(/.*)?                                  all files          system_u:object_r:cupsd_var_lib_t:s0 \n/var/lib/iscan(/.*)?                               all files          system_u:object_r:cupsd_rw_etc_t:s0 \n--- relevant executable types ---"
+    },
+    {
+      "command_id": "cmd-1b7d61d095c4486e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:26:40.463720+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 422,
+      "command": "set -eu\nsesearch -A -s cupsd_t -t print_spool_t -c dir 2>/dev/null | head -40 || true\nsesearch -A -s cupsd_t -t print_spool_t -c file 2>/dev/null | head -40 || true\nsesearch -A -s cupsd_t -t var_t -c file 2>/dev/null | head -20 || true"
+    },
+    {
+      "command_id": "cmd-7e066b8d34374a58",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:26:59.696538+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2252,
+      "command": "set -eu\ninstall -d -o root -g lp -m 0770 /srv/legacy2/print-spool-recovery/printed\ncat > /usr/lib/cups/backend/archive <<'ANTRIEB_ARCHIVE_BACKEND'\n#!/bin/sh\nset -eu\n\nif [ \"$#\" -eq 0 ]; then\n    printf '%s\\n' 'direct archive \"Electronic Archive Printer\" \"Electronic Archive Printer\"'\n    exit 0\nfi\n\nif [ \"$#\" -lt 5 ]; then\n    printf '%s\\n' 'ERROR: invalid CUPS backend invocation' >&2\n    exit 1\nfi\n\njob_id=$1\ncase \"$job_id\" in\n    ''|*[!0-9]*) printf '%s\\n' 'ERROR: invalid CUPS job id' >&2; exit 1 ;;\nesac\n\noutdir=/srv/legacy2/print-spool-recovery/printed\ntarget=$outdir/job-$job_id.raw\ntmp=$outdir/.job-$job_id.$$\numask 027\ntrap 'rm -f \"$tmp\"' EXIT HUP INT TERM\n\nif [ \"$#\" -ge 6 ] && [ -n \"$6\" ]; then\n    cp -- \"$6\" \"$tmp\"\nelse\n    cat > \"$tmp\"\nfi\nchmod 0640 \"$tmp\"\n\nif [ -e \"$target\" ]; then\n    if cmp -s \"$tmp\" \"$target\"; then\n        printf 'INFO: archive already contains identical job %s\\n' \"$job_id\" >&2\n        exit 0\n    fi\n    printf 'ERROR: archive collision for CUPS job %s\\n' \"$job_id\" >&2\n    exit 1\nfi\n\nif ln \"$tmp\" \"$target\"; then\n    rm -f \"$tmp\"\n    trap - EXIT HUP INT TERM\n    printf 'INFO: archived CUPS job %s\\n' \"$job_id\" >&2\n    exit 0\nfi\n\nif [ -e \"$target\" ] && cmp -s \"$tmp\" \"$target\"; then\n    exit 0\nfi\nprintf 'ERROR: unable to commit CUPS job %s\\n' \"$job_id\" >&2\nexit 1\nANTRIEB_ARCHIVE_BACKEND\nchown root:root /usr/lib/cups/backend/archive\nchmod 0755 /usr/lib/cups/backend/archive\nsemanage fcontext -a -t print_spool_t '/srv/legacy2/print-spool-recovery/printed(/.*)?'\nrestorecon -RFv /srv/legacy2/print-spool-recovery/printed\nrestorecon -v /usr/lib/cups/backend/archive\nls -ldZ /srv/legacy2/print-spool-recovery/printed\nls -lZ /usr/lib/cups/backend/archive\n/usr/lib/cups/backend/archive",
+      "stdout": "Relabeled /srv/legacy2/print-spool-recovery/printed from system_u:object_r:var_t:s0 to system_u:object_r:print_spool_t:s0\ndrwxrwx---. 2 root lp system_u:object_r:print_spool_t:s0 6 Oct  4 14:26 /srv/legacy2/print-spool-recovery/printed\n-rwxr-xr-x. 1 root root system_u:object_r:bin_t:s0 1156 Oct  4 14:26 /usr/lib/cups/backend/archive\ndirect archive \"Electronic Archive Printer\" \"Electronic Archive Printer\""
+    },
+    {
+      "command_id": "cmd-136962bb1d9f4111",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:27:07.910876+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 5330,
+      "command": "set -eu\nsystemctl enable --now cups.service\nlpadmin -p archive -E -v archive:/srv/legacy2/print-spool-recovery/printed -m raw\ncupsenable archive\ncupsaccept archive\nlpoptions -d archive\nsystemctl is-active cups\nsystemctl is-enabled cups\nlpstat -t",
+      "stdout": "lpadmin: Raw queues are deprecated and will stop working in a future version of CUPS.\ncopies=1 device-uri=archive:/srv/legacy2/print-spool-recovery/printed finishings=3 job-cancel-after=10800 job-hold-until=no-hold job-priority=50 job-sheets=none,none marker-change-time=0 number-up=1 print-color-mode=monochrome printer-info=archive printer-is-accepting-jobs=true printer-is-shared=true printer-is-temporary=false printer-location printer-make-and-model='Local Raw Printer' printer-state=3 printer-state-change-time=1791138423 printer-state-reasons=none printer-type=4 printer-uri-supported=ipp://localhost/printers/archive\nactive\nenabled\nscheduler is running\nsystem default destination: archive\ndevice for archive: archive:/srv/legacy2/print-spool-recovery/printed\narchive accepting requests since Sun 04 Oct 2026 02:27:03 PM EDT\nprinter archive is idle.  enabled since Sun 04 Oct 2026 02:27:03 PM EDT"
+    },
+    {
+      "command_id": "cmd-71f7719acb8d4e99",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:27:17.977709+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 5229,
+      "command": "set -eu\ntest \"$(find /srv/legacy2/print-spool-recovery/printed -maxdepth 1 -type f | wc -l)\" -eq 0\nlp -d archive -t J100 /srv/legacy2/print-spool-recovery/spool/J100.prn\nfor i in $(seq 1 20); do\n  [ -f /srv/legacy2/print-spool-recovery/printed/job-1.raw ] && break\n  sleep 1\ndone\nlpstat -W all -o archive\nls -lZ /srv/legacy2/print-spool-recovery/printed\njournalctl -u cups -n 20 --no-pager",
+      "stdout": "request id is archive-1 (1 file(s))\narchive-1               root              1024   Sun 04 Oct 2026 02:27:13 PM EDT\ntotal 4\n-rw-r-----. 1 lp lp system_u:object_r:print_spool_t:s0 28 Oct  4 14:27 job-1.raw\nOct 04 14:27:02 node1 systemd[1]: Starting cups.service - CUPS Scheduler...\nOct 04 14:27:02 node1 systemd[1]: Started cups.service - CUPS Scheduler.\nOct 04 14:27:03 node1 cupsd[2496]: REQUEST localhost - - \"POST /admin/ HTTP/1.1\" 401 0 - -\nOct 04 14:27:03 node1 cupsd[2496]: REQUEST localhost - root \"POST /admin/ HTTP/1.1\" 200 290 CUPS-Add-Modify-Printer successful-ok\nOct 04 14:27:03 node1 cupsd[2496]: REQUEST localhost - - \"POST /admin/ HTTP/1.1\" 401 0 - -\nOct 04 14:27:03 node1 cupsd[2496]: REQUEST localhost - root \"POST /admin/ HTTP/1.1\" 200 152 Resume-Printer successful-ok\nOct 04 14:27:03 node1 cupsd[2496]: REQUEST localhost - - \"POST /admin/ HTTP/1.1\" 401 0 - -\nOct 04 14:27:03 node1 cupsd[2496]: REQUEST localhost - root \"POST /admin/ HTTP/1.1\" 200 152 CUPS-Accept-Jobs successful-ok\nOct 04 14:27:13 node1 cupsd[2496]: REQUEST localhost - - \"POST /printers/archive HTTP/1.1\" 200 353 Create-Job successful-ok\nOct 04 14:27:13 node1 cupsd[2496]: REQUEST localhost - - \"POST /printers/archive HTTP/1.1\" 200 288 Send-Document successful-ok\nOct 04 14:27:13 node1 cupsd[2496]: archive root 1 [04/Oct/2026:14:27:13 -0400] total 0 - localhost J100 - -"
+    },
+    {
+      "command_id": "cmd-6ac1848d83324199",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:27:25.013260+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 3328,
+      "command": "set -eu\nlp -d archive -t J101 /srv/legacy2/print-spool-recovery/spool/J101.prn\nfor i in $(seq 1 20); do\n  [ -f /srv/legacy2/print-spool-recovery/printed/job-2.raw ] && break\n  sleep 1\ndone\ntest -f /srv/legacy2/print-spool-recovery/printed/job-2.raw\nlpstat -W completed -o archive\nls -lZ /srv/legacy2/print-spool-recovery/printed",
+      "stdout": "request id is archive-2 (1 file(s))\narchive-2               root              1024   Sun 04 Oct 2026 02:27:22 PM EDT\narchive-1               root              1024   Sun 04 Oct 2026 02:27:13 PM EDT\ntotal 8\n-rw-r-----. 1 lp lp system_u:object_r:print_spool_t:s0 28 Oct  4 14:27 job-1.raw\n-rw-r-----. 1 lp lp system_u:object_r:print_spool_t:s0 31 Oct  4 14:27 job-2.raw"
+    },
+    {
+      "command_id": "cmd-637f2b3fad69415b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:27:45.072105+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 6011,
+      "command": "set -eu\nlpadmin -p archive -o printer-is-shared=false\nsrcdir=/srv/legacy2/print-spool-recovery/spool\noutdir=/srv/legacy2/print-spool-recovery/printed\nmanifest_jobs=$(awk 'NR>1 && NF {n++} END {print n+0}' \"$srcdir/jobs.tsv\")\narchive_files=$(find \"$outdir\" -maxdepth 1 -type f -name 'job-*.raw' | wc -l)\n[ \"$manifest_jobs\" -eq 2 ]\n[ \"$archive_files\" -eq \"$manifest_jobs\" ]\ncmp \"$srcdir/J100.prn\" \"$outdir/job-1.raw\"\ncmp \"$srcdir/J101.prn\" \"$outdir/job-2.raw\"\nprintf 'manifest_jobs=%s archive_files=%s exact_matches=2\\n' \"$manifest_jobs\" \"$archive_files\"\nprintf '%s\\n' '--- originals retained ---'\nstat -c '%n size=%s inode=%i' \"$srcdir/J100.prn\" \"$srcdir/J101.prn\"\nprintf '%s\\n' '--- source/archive hashes ---'\nsha256sum \"$srcdir/J100.prn\" \"$outdir/job-1.raw\" \"$srcdir/J101.prn\" \"$outdir/job-2.raw\"\nprintf '%s\\n' '--- completed CUPS jobs ---'\nlpstat -W completed -o archive\nprintf '%s\\n' '--- queue policy ---'\nlpoptions -p archive\nprintf '%s\\n' '--- SELinux ---'\ngetenforce\nif ausearch -m AVC,USER_AVC -ts recent 2>/dev/null | grep -q denied; then\n  ausearch -m AVC,USER_AVC -ts recent 2>/dev/null | tail -30\n  exit 1\nelse\n  printf '%s\\n' 'no recent SELinux denials'\nfi",
+      "stdout": "manifest_jobs=2 archive_files=2 exact_matches=2\n--- originals retained ---\n/srv/legacy2/print-spool-recovery/spool/J100.prn size=28 inode=34285776\n/srv/legacy2/print-spool-recovery/spool/J101.prn size=31 inode=34285777\n--- source/archive hashes ---\n9bf578f2649c7d9f4b6e77e0b6cc9ee172f12d5fe49e44808707b47a32fbbab0  /srv/legacy2/print-spool-recovery/spool/J100.prn\n9bf578f2649c7d9f4b6e77e0b6cc9ee172f12d5fe49e44808707b47a32fbbab0  /srv/legacy2/print-spool-recovery/printed/job-1.raw\n6c9fcbd87c70cfa35fd377e7e2d75e779b75d799febffc32d5ecea5624244d87  /srv/legacy2/print-spool-recovery/spool/J101.prn\n6c9fcbd87c70cfa35fd377e7e2d75e779b75d799febffc32d5ecea5624244d87  /srv/legacy2/print-spool-recovery/printed/job-2.raw\n--- completed CUPS jobs ---\narchive-2               root              1024   Sun 04 Oct 2026 02:27:22 PM EDT\narchive-1               root              1024   Sun 04 Oct 2026 02:27:13 PM EDT\n--- queue policy ---\ncopies=1 device-uri=archive:/srv/legacy2/print-spool-recovery/printed finishings=3 job-cancel-after=10800 job-hold-until=no-hold job-priority=50 job-sheets=none,none marker-change-time=0 number-up=1 print-color-mode=monochrome printer-info=archive printer-is-accepting-jobs=true printer-is-shared=false printer-is-temporary=false printer-location printer-make-and-model='Local Raw Printer' printer-state=3 printer-state-change-time=1791138442 printer-state-reasons=none printer-type=2097156 printer-uri-supported=ipp://localhost/printers/archive\n--- SELinux ---\nEnforcing\nno recent SELinux denials"
+    },
+    {
+      "command_id": "cmd-5a8e098061ea48d3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:27:52.719707+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1682,
+      "command": "set -eu\nprintf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'CUPS_ACTIVE='; systemctl is-active cups\nprintf 'CUPS_ENABLED='; systemctl is-enabled cups\nlpstat -p archive -l\nlpstat -W completed -o archive\ncmp /srv/legacy2/print-spool-recovery/spool/J100.prn /srv/legacy2/print-spool-recovery/printed/job-1.raw\ncmp /srv/legacy2/print-spool-recovery/spool/J101.prn /srv/legacy2/print-spool-recovery/printed/job-2.raw\nprintf 'PRE_RESTART_DATA=healthy files='; find /srv/legacy2/print-spool-recovery/printed -maxdepth 1 -type f -name 'job-*.raw' | wc -l",
+      "stdout": "BOOT_ID=409baccc-9e04-4b87-a0d9-ba14a3f776a7\nCUPS_ACTIVE=active\nCUPS_ENABLED=enabled\nprinter archive is idle.  enabled since Sun 04 Oct 2026 02:27:22 PM EDT\narchive-2               root              1024   Sun 04 Oct 2026 02:27:22 PM EDT\narchive-1               root              1024   Sun 04 Oct 2026 02:27:13 PM EDT\nPRE_RESTART_DATA=healthy files=2"
+    },
+    {
+      "command_id": "cmd-8d7c63b53ae5431a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:27:59.089965+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1547,
+      "command": "set -eu\nsystemd-run --unit=harbor-node-restart --on-active=2s /usr/bin/systemctl reboot\nprintf 'RESTART_SCHEDULED node=%s\\n' \"$NODE_NAME\"",
+      "stdout": "Running timer as unit: harbor-node-restart.timer\nWill run service as unit: harbor-node-restart.service\nRESTART_SCHEDULED node=node1"
+    },
+    {
+      "command_id": "cmd-9ba50c3da54e42fb",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:28:02.520880+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1576,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "409baccc-9e04-4b87-a0d9-ba14a3f776a7"
+    },
+    {
+      "command_id": "cmd-fff3a11d43dc4e89",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:28:05.944508+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 411,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "409baccc-9e04-4b87-a0d9-ba14a3f776a7"
+    },
+    {
+      "command_id": "cmd-b315ecb1f10944ee",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:28:11.798954+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2866,
+      "command": "systemctl status harbor-node-restart.timer harbor-node-restart.service --no-pager 2>&1 || true\ncat /proc/sys/kernel/random/boot_id",
+      "stdout": "\u25cf harbor-node-restart.timer - [systemd-run] /usr/bin/systemctl reboot\n     Loaded: loaded (/run/systemd/transient/harbor-node-restart.timer; transient)\n  Transient: yes\n     Active: active (running) since Sun 2026-10-04 14:27:57 EDT; 11s ago\n Invocation: acc88889c89941b995b254ef2e9525f7\n    Trigger: n/a\n   Triggers: \u25cf harbor-node-restart.service\n\nOct 04 14:27:57 node1 systemd[1]: Started harbor-node-restart.timer - [systemd-run] /usr/bin/systemctl reboot.\n\n\u25cf harbor-node-restart.service - [systemd-run] /usr/bin/systemctl reboot\n     Loaded: loaded (/run/systemd/transient/harbor-node-restart.service; transient)\n  Transient: yes\n     Active: active (running) since Sun 2026-10-04 14:28:09 EDT; 1ms ago\n Invocation: 06c9f9981d4d4f0f8fed0f221a0b3814\nTriggeredBy: \u25cf harbor-node-restart.timer\n   Main PID: 2680 ((ystemctl))\n      Tasks: 1 (limit: 12343)\n     Memory: 800K (peak: 800K)\n        CPU: 74us\n     CGroup: /system.slice/harbor-node-restart.service\n             \u2514\u25002680 \"(ystemctl)\"\n\nOct 04 14:28:09 node1 systemd[1]: Started harbor-node-restart.service - [systemd-run] /usr/bin/systemctl reboot.\n409baccc-9e04-4b87-a0d9-ba14a3f776a7"
+    },
+    {
+      "command_id": "cmd-6c07695e7af7452f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:28:17.129524+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2511,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-dbff41bd33a64ccf",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:28:19.361848+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 436,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-4fce829c2cf04de7",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:28:22.331955+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1256,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "6e938b55-1c5c-4e09-aa39-0c0bcd0cbcdb"
+    },
+    {
+      "command_id": "cmd-3fe2b83daad544c8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T18:28:42.057585+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 5195,
+      "command": "set -eu\nprintf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'OS='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nprintf 'KERNEL='; uname -r\nprintf 'CUPS_ACTIVE='; systemctl is-active cups\nprintf 'CUPS_ENABLED='; systemctl is-enabled cups\nprintf '%s\\n' '--- queue recovered ---'\nlpstat -t\nprintf '%s\\n' '--- completed jobs recovered ---'\nlpstat -W completed -o archive\nsrcdir=/srv/legacy2/print-spool-recovery/spool\noutdir=/srv/legacy2/print-spool-recovery/printed\ntest \"$(find \"$outdir\" -maxdepth 1 -type f -name 'job-*.raw' | wc -l)\" -eq 2\ncmp \"$srcdir/J100.prn\" \"$outdir/job-1.raw\"\ncmp \"$srcdir/J101.prn\" \"$outdir/job-2.raw\"\nprintf '%s\\n' '--- recovered data hashes ---'\nsha256sum \"$srcdir/J100.prn\" \"$outdir/job-1.raw\" \"$srcdir/J101.prn\" \"$outdir/job-2.raw\"\nprintf '%s\\n' '--- security state ---'\ngetenforce\nls -ldZ \"$outdir\"\nls -lZ \"$outdir\"\ntest \"$(stat -c %a \"$outdir\")\" = 770\ntest \"$(stat -c %U:%G \"$outdir\")\" = root:lp\nif ausearch -m AVC,USER_AVC -ts boot 2>/dev/null | grep -q denied; then\n  ausearch -m AVC,USER_AVC -ts boot 2>/dev/null | tail -30\n  exit 1\nelse\n  printf '%s\\n' 'no SELinux denials since boot'\nfi\nprintf '%s\\n' 'POST_RESTART_RECOVERY=healthy'",
+      "stdout": "BOOT_ID=6e938b55-1c5c-4e09-aa39-0c0bcd0cbcdb\nOS=rhel 10.0\nKERNEL=6.12.0-55.9.1.el10_0.x86_64\nCUPS_ACTIVE=active\nCUPS_ENABLED=enabled\n--- queue recovered ---\nscheduler is running\nsystem default destination: archive\ndevice for archive: archive:/srv/legacy2/print-spool-recovery/printed\narchive accepting requests since Sun 04 Oct 2026 02:27:22 PM EDT\nprinter archive is idle.  enabled since Sun 04 Oct 2026 02:27:22 PM EDT\n--- completed jobs recovered ---\narchive-2               root              1024   Sun 04 Oct 2026 02:27:22 PM EDT\narchive-1               root              1024   Sun 04 Oct 2026 02:27:13 PM EDT\n--- recovered data hashes ---\n9bf578f2649c7d9f4b6e77e0b6cc9ee172f12d5fe49e44808707b47a32fbbab0  /srv/legacy2/print-spool-recovery/spool/J100.prn\n9bf578f2649c7d9f4b6e77e0b6cc9ee172f12d5fe49e44808707b47a32fbbab0  /srv/legacy2/print-spool-recovery/printed/job-1.raw\n6c9fcbd87c70cfa35fd377e7e2d75e779b75d799febffc32d5ecea5624244d87  /srv/legacy2/print-spool-recovery/spool/J101.prn\n6c9fcbd87c70cfa35fd377e7e2d75e779b75d799febffc32d5ecea5624244d87  /srv/legacy2/print-spool-recovery/printed/job-2.raw\n--- security state ---\nEnforcing\ndrwxrwx---. 2 root lp system_u:object_r:print_spool_t:s0 40 Oct  4 14:27 /srv/legacy2/print-spool-recovery/printed\ntotal 8\n-rw-r-----. 1 lp lp system_u:object_r:print_spool_t:s0 28 Oct  4 14:27 job-1.raw\n-rw-r-----. 1 lp lp system_u:object_r:print_spool_t:s0 31 Oct  4 14:27 job-2.raw\nno SELinux denials since boot\nPOST_RESTART_RECOVERY=healthy"
+    }
+  ]
+}

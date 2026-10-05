@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "shared-vip-single-owner",
+      "requirement": "node1 and node2 share a single address on the private network, answered by only one of them at a time",
+      "status": "satisfied",
+      "summary": "keepalived/VRRP configured via UCI on both nodes with virtual_ipaddress 10.100.179.50/24; direct evidence shows node1 (MASTER) holding the VIP on br-lan while node2 (BACKUP) does not have it assigned at the same timestamp.",
+      "evidence_ids": [
+        "cmd-69c831313b054b78",
+        "cmd-e8baa32c99324ed8",
+        "cmd-0f63f13c7757492f",
+        "cmd-98f969f5156d442b"
+      ]
+    },
+    {
+      "id": "automatic-takeover",
+      "requirement": "The other node takes over the address automatically when the first stops serving",
+      "status": "satisfied",
+      "summary": "Stopping keepalived on node1 (MASTER) immediately resulted in node2 (BACKUP) acquiring the VIP without manual intervention, observed within seconds via ip addr checks.",
+      "evidence_ids": [
+        "cmd-b76ef2f747d94f9d",
+        "cmd-73fe932cfaea4ccd"
+      ]
+    },
+    {
+      "id": "node3-continuous-reachability",
+      "requirement": "node3 keeps reaching the shared address across one such transition",
+      "status": "satisfied",
+      "summary": "A continuous background ping from node3 spanning the node1-to-node2 failover shows all icmp_seq 1-57 eventually answered (only a transient latency spike/reordering around the cutover, no dropped packets), directly demonstrating uninterrupted reachability across the transition.",
+      "evidence_ids": [
+        "cmd-8feefec2b1c440eb",
+        "cmd-6f61c576f0564472",
+        "cmd-43b35df81f73487d",
+        "cmd-9eb22895d53a4b6c"
+      ]
+    },
+    {
+      "id": "restore-stable-state",
+      "requirement": "Restore original component and confirm a stable redundant pair afterward",
+      "status": "satisfied",
+      "summary": "node1's keepalived was restarted and preempted the VIP back (higher priority MASTER), node2 returned to clean BACKUP without the VIP, and node3 continued reaching the VIP successfully.",
+      "evidence_ids": [
+        "cmd-21fc1fe7f1b44e04",
+        "cmd-f4212c0ba9b44f91",
+        "cmd-141d3b5a5f664a80",
+        "cmd-71220eeb12f8492a"
+      ]
+    },
+    {
+      "id": "mandatory-node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on every managed node (node1, node2, node3) with pre-restart identity/health, reboot ack, changed post-restart boot identity, and recovered service/cluster state",
+      "status": "satisfied",
+      "summary": "All three nodes show pre-restart boot_id + health, an explicit reboot/systemctl reboot acknowledgement, polling through a connection outage, a new distinct post-restart boot_id, and recovered keepalived/VIP/ping state. Rebooting node1 (the then-MASTER) triggered a second live failover to node2 which was also captured with zero-loss pings from node3, then preemption back to node1 after recovery. Minor caveat: the fixed after-executor snapshot captured node1's boot-identity and node2's platform check mid-transition (return code 255), but this is superseded by the executor's own successful boot-id reads immediately afterward in the command timeline.",
+      "evidence_ids": [
+        "cmd-3d5dc6a8e0194bcf",
+        "cmd-3de62daa7385462f",
+        "cmd-e93aa7179d0f43ae",
+        "cmd-3d5196156ef44463",
+        "cmd-e2fd544d19344cad",
+        "cmd-9ae228a9ab414f2b",
+        "cmd-624c17faf46c48fd",
+        "cmd-8123ca5e931741f7",
+        "cmd-7e234276ee5d4db7",
+        "cmd-e1f8c60b0b5c4108",
+        "cmd-308a25a0c4204494",
+        "cmd-f78fef9104074bc0",
+        "cmd-6cf113bf181b4c3e",
+        "cmd-cc2b25ddf55f4d70",
+        "cmd-291553469310460e",
+        "cmd-faa7e40005404f40",
+        "cmd-9350a9445d3d4c62",
+        "cmd-0d4b532c19064547",
+        "cmd-07c57fbbf08f40de",
+        "cmd-a082c466122c411c",
+        "cmd-097c51253441460f",
+        "cmd-6227d2373955492b",
+        "cmd-c694abec2a5a4d66"
+      ]
+    }
+  ],
+  "overall_summary": "The executor configured a VRRP/keepalived-based shared VIP (10.100.179.50) between node1 and node2 via OpenWrt UCI, demonstrated automatic, zero-packet-loss failover to node3's continuous ping across a node1-stop/node2-takeover transition, restored node1 as MASTER, and confirmed a stable redundant end state. It also completed the mandatory provider-wide restart protocol on all three nodes with clear pre/post boot-identity changes, reboot acknowledgements, and recovered service/VIP/reachability state, including capturing a second live failover during node1's own reboot. All material task outcomes are directly satisfied by evidence.",
+  "limitations": [
+    "The fixed after-executor lifecycle snapshot captured node1's boot-identity check and node2's platform check mid-reboot/mid-transition (return code 255); this is superseded by successful boot-id reads in the executor's own command timeline shortly after, but it means the fixed snapshot alone cannot independently confirm final steady-state for those two specific checks.",
+    "The /etc/keepalived/keepalived.conf file (manually edited before the UCI-based approach was adopted) was left in place on node1 and node2 but is unused since the init script regenerates /tmp/keepalived.conf from UCI; this is dead but harmless residue.",
+    "A background ping process log/pid file (/tmp/vip_ping.log, /tmp/vip_ping.pid) was left on node3 after the demonstration rather than cleaned up."
+  ],
+  "command_stats": {
+    "total": 55,
+    "successful": 51,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "State-changing commands were largely well-justified: package installs (keepalived on both nodes), config writes (both the initial direct /etc/keepalived/keepalived.conf edits and the subsequent, authoritative UCI /etc/config/keepalived writes), service enable/restart/stop/start cycles for the failover demonstration, and three mandated reboots. One minor inefficiency: the executor first hand-edited /etc/keepalived/keepalived.conf directly (cmd-7de5bd9212ba4c1c on node1, cmd-8a42db6dc2ab4cd8 on node2) before discovering the UCI-managed init script overwrites /tmp/keepalived.conf from /etc/config/keepalived, and then redid the configuration properly via UCI (cmd-4e62b97d32bb4997, cmd-111278b7186d4800). This left an unused, superseded /etc/keepalived/keepalived.conf file on both nodes \u2014 bounded, low-risk residue rather than a functional problem. A background ping process was left running on node3 with /tmp/vip_ping.log and /tmp/vip_ping.pid not cleaned up after the demonstration (visible in the after-executor temp-files snapshot for node3), a small piece of abandoned diagnostic residue. No destructive actions, no weakened security controls, no failed services, and package-health diffs on node1/node2 show only the expected 'keepalived' uci-defaults addition.",
+    "evidence_ids": [
+      "cmd-7de5bd9212ba4c1c",
+      "cmd-8a42db6dc2ab4cd8",
+      "cmd-4e62b97d32bb4997",
+      "cmd-111278b7186d4800",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

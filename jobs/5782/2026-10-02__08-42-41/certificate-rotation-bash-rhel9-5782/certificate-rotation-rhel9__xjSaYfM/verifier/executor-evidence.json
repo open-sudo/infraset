@@ -1,0 +1,258 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 19,
+    "successful": 16,
+    "failed": 3,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "HTTPS service on port 8443",
+      "command_ids": [
+        "cmd-842d61534bff4ca9",
+        "cmd-b55daed42624443a"
+      ],
+      "summary": "Direct CA-validated HTTPS responses, matching stored/served certificate serials, active listener, and open runtime/permanent firewall port."
+    },
+    {
+      "requirement": "Automatic renewal before expiry",
+      "command_ids": [
+        "cmd-25f827b31282454a",
+        "cmd-b55daed42624443a"
+      ],
+      "summary": "A one-day certificate triggered renewal to a new 30-day certificate; the enabled timer has a scheduled next run."
+    },
+    {
+      "requirement": "Service adopts new certificates while continuing to answer",
+      "command_ids": [
+        "cmd-25f827b31282454a"
+      ],
+      "summary": "Serial changed from 510CAF\u2026 to 34BDCC\u2026 while PID remained 1739; all 80 continuous HTTPS requests succeeded with zero failures."
+    },
+    {
+      "requirement": "node1 mandatory restart and recovery",
+      "command_ids": [
+        "cmd-842d61534bff4ca9",
+        "cmd-6f72babd350542dd",
+        "cmd-325f16a82f774438",
+        "cmd-b55daed42624443a"
+      ],
+      "summary": "Healthy baseline used boot ID 67c52137-ce51-4fec-b441-23966cea63a8; reboot was acknowledged; boot ID changed to 9fc6e574-21ce-4c37-ad68-779c2e3c1948; HTTPS, certificate state, timer, listener, and firewall recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-8e9663b61fde4ac6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:50:13.201035+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1792,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\ncat /etc/redhat-release\nprintf 'listeners_8443:\\n'; ss -ltnp '( sport = :8443 )' || true\nprintf 'web_units:\\n'; systemctl list-unit-files --type=service --no-legend | grep -E '^(nginx|httpd|caddy)' || true\nprintf 'certbot='; command -v certbot || true\nprintf 'openssl='; command -v openssl || true\nprintf 'selinux='; getenforce\nprintf 'firewalld='; systemctl is-active firewalld || true",
+      "stdout": "node=node1 ip=10.100.150.10\nboot_id=67c52137-ce51-4fec-b441-23966cea63a8\nRed Hat Enterprise Linux release 9.8 (Plow)\nlisteners_8443:\nState Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nweb_units:\ncertbot=openssl=/usr/bin/openssl\nselinux=Enforcing\nfirewalld=active"
+    },
+    {
+      "command_id": "cmd-aeaf19ed63ed46cf",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:50:21.563723+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2217,
+      "command": "set -eu\nid\npython3 --version\nsystemctl --version | head -1\nfirewall-cmd --state\nfirewall-cmd --query-port=8443/tcp || true\nls -ld /etc/systemd/system /usr/local/sbin /var/lib",
+      "stdout": "uid=0(root) gid=0(root) groups=0(root) context=system_u:system_r:unconfined_service_t:s0\nPython 3.9.25\nsystemd 252 (252-67.el9_8.4)\nrunning\nno\ndrwxr-xr-x. 10 root root 4096 Jun 30 10:08 /etc/systemd/system\ndrwxr-xr-x.  2 root root    6 Jun 25  2024 /usr/local/sbin\ndrwxr-xr-x. 23 root root 4096 Jun 30 10:04 /var/lib"
+    },
+    {
+      "command_id": "cmd-162002310977407d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:50:44.315228+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1545,
+      "command": "set -eu\ninstall -d -m 0700 /var/lib/certrotate\ninstall -d -m 0755 /usr/local/libexec\ncat > /usr/local/libexec/certrotate-renew <<'ANTRIEB_EOF'\n#!/bin/sh\nset -eu\numask 077\nstate=/var/lib/certrotate\nlive=$state/server.pem\nrenew_before=604800\nmkdir -p \"$state\"\nexec 9>\"$state/renew.lock\"\nflock 9\nif [ -s \"$live\" ] && openssl x509 -checkend \"$renew_before\" -noout -in \"$live\" >/dev/null 2>&1; then\n    exit 0\nfi\nnode_name=$(hostname -s)\nnode_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk 'NR==1 {for (i=1;i<=NF;i++) if ($i==\"src\") {print $(i+1); exit}}')\nif [ -z \"$node_ip\" ]; then\n    node_ip=$(hostname -I | awk '{print $1}')\nfi\ntmpdir=$(mktemp -d \"$state/.renew.XXXXXX\")\ntrap 'rm -rf \"$tmpdir\"' EXIT HUP INT TERM\nopenssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 30 \\\n    -subj \"/CN=$node_name\" \\\n    -addext \"subjectAltName=DNS:$node_name,IP:$node_ip\" \\\n    -keyout \"$tmpdir/key.pem\" -out \"$tmpdir/cert.pem\" >/dev/null 2>&1\ncat \"$tmpdir/key.pem\" \"$tmpdir/cert.pem\" > \"$tmpdir/server.pem\"\nchmod 0600 \"$tmpdir/server.pem\"\nopenssl x509 -in \"$tmpdir/server.pem\" -noout >/dev/null\nopenssl pkey -in \"$tmpdir/server.pem\" -noout >/dev/null\nmv -f \"$tmpdir/server.pem\" \"$live\"\nrestorecon -F \"$live\" >/dev/null 2>&1 || true\nANTRIEB_EOF\nchmod 0755 /usr/local/libexec/certrotate-renew\n/usr/local/libexec/certrotate-renew\nopenssl x509 -in /var/lib/certrotate/server.pem -noout -subject -issuer -dates -serial -ext subjectAltName\nstat -c 'mode=%a owner=%U:%G path=%n' /var/lib/certrotate/server.pem",
+      "stdout": "subject=CN=node1\nissuer=CN=node1\nnotBefore=Oct  2 15:50:43 2026 GMT\nnotAfter=Nov  1 15:50:43 2026 GMT\nserial=06A2BE78BDAEED2D91D2238250D1674FC5301FD5\nX509v3 Subject Alternative Name: \n    DNS:node1, IP Address:10.100.150.10\nmode=600 owner=root:root path=/var/lib/certrotate/server.pem"
+    },
+    {
+      "command_id": "cmd-f9b4496e4ba24509",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:50:55.336148+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1645,
+      "command": "set -eu\ncat > /usr/local/libexec/certrotate-https <<'ANTRIEB_EOF'\n#!/usr/bin/python3\nimport http.server\nimport json\nimport os\nimport ssl\nimport subprocess\nimport socketserver\n\nPEM = \"/var/lib/certrotate/server.pem\"\n\nclass Handler(http.server.BaseHTTPRequestHandler):\n    protocol_version = \"HTTP/1.1\"\n    def do_GET(self):\n        serial = subprocess.check_output(\n            [\"/usr/bin/openssl\", \"x509\", \"-in\", PEM, \"-noout\", \"-serial\"],\n            text=True,\n        ).strip().split(\"=\", 1)[1]\n        body = (json.dumps({\"status\": \"ok\", \"node\": os.uname().nodename,\n                            \"certificate_serial\": serial}) + \"\\n\").encode()\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"application/json\")\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\n    def log_message(self, fmt, *args):\n        print(\"%s - %s\" % (self.address_string(), fmt % args), flush=True)\n\nclass ReloadingTLSServer(socketserver.ThreadingMixIn, http.server.HTTPServer):\n    daemon_threads = True\n    allow_reuse_address = True\n    def get_request(self):\n        raw, address = self.socket.accept()\n        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)\n        context.minimum_version = ssl.TLSVersion.TLSv1_2\n        context.load_cert_chain(PEM)\n        try:\n            return context.wrap_socket(raw, server_side=True), address\n        except Exception:\n            raw.close()\n            raise\n\nReloadingTLSServer((\"0.0.0.0\", 8443), Handler).serve_forever()\nANTRIEB_EOF\nchmod 0755 /usr/local/libexec/certrotate-https\npython3 -m py_compile /usr/local/libexec/certrotate-https\nprintf 'https_server_script_valid\\n'",
+      "stdout": "https_server_script_valid"
+    },
+    {
+      "command_id": "cmd-13bba33232ac4257",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:05.052855+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1817,
+      "command": "set -eu\ngetent group certreader >/dev/null || groupadd --system certreader\nid certrotatehttps >/dev/null 2>&1 || useradd --system --gid certreader --home-dir /nonexistent --shell /sbin/nologin certrotatehttps\nsed -i '/openssl pkey -in.*-noout/a chown root:certreader \"$tmpdir/server.pem\"\\nchmod 0640 \"$tmpdir/server.pem\"' /usr/local/libexec/certrotate-renew\nchown root:certreader /var/lib/certrotate/server.pem\nchmod 0640 /var/lib/certrotate/server.pem\nid certrotatehttps\nstat -c 'mode=%a owner=%U:%G path=%n' /var/lib/certrotate/server.pem",
+      "stdout": "uid=996(certrotatehttps) gid=996(certreader) groups=996(certreader)\nmode=640 owner=root:certreader path=/var/lib/certrotate/server.pem"
+    },
+    {
+      "command_id": "cmd-5e664e353eba4d6c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:19.025235+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2202,
+      "command": "set -eu\ncat > /etc/systemd/system/certrotate-renew.service <<'ANTRIEB_EOF'\n[Unit]\nDescription=Renew the local HTTPS certificate before expiry\n\n[Service]\nType=oneshot\nExecStart=/usr/local/libexec/certrotate-renew\nPrivateTmp=true\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths=/var/lib/certrotate\nANTRIEB_EOF\ncat > /etc/systemd/system/certrotate-renew.timer <<'ANTRIEB_EOF'\n[Unit]\nDescription=Twice-daily HTTPS certificate renewal check\n\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=12h\nAccuracySec=1min\nRandomizedDelaySec=5min\nPersistent=true\nUnit=certrotate-renew.service\n\n[Install]\nWantedBy=timers.target\nANTRIEB_EOF\ncat > /etc/systemd/system/certrotate-https.service <<'ANTRIEB_EOF'\n[Unit]\nDescription=HTTPS service with per-connection certificate reload\nWants=network-online.target\nAfter=network-online.target certrotate-renew.service\nRequires=certrotate-renew.service\n\n[Service]\nType=simple\nUser=certrotatehttps\nGroup=certreader\nExecStart=/usr/local/libexec/certrotate-https\nRestart=always\nRestartSec=2s\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nProtectHome=true\nProtectKernelTunables=true\nProtectKernelModules=true\nProtectControlGroups=true\nRestrictAddressFamilies=AF_INET AF_INET6\n\n[Install]\nWantedBy=multi-user.target\nANTRIEB_EOF\nsystemctl daemon-reload\nsystemctl enable --now certrotate-renew.timer certrotate-https.service\nfirewall-cmd --permanent --add-port=8443/tcp\nfirewall-cmd --add-port=8443/tcp\nsystemctl is-active certrotate-https.service\nsystemctl is-active certrotate-renew.timer\nfirewall-cmd --query-port=8443/tcp",
+      "stdout": "Created symlink /etc/systemd/system/timers.target.wants/certrotate-renew.timer \u2192 /etc/systemd/system/certrotate-renew.timer.\nCreated symlink /etc/systemd/system/multi-user.target.wants/certrotate-https.service \u2192 /etc/systemd/system/certrotate-https.service.\nsuccess\nsuccess\nactive\nactive\nyes"
+    },
+    {
+      "command_id": "cmd-f9dcb6fbc5ac468f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:25.501527+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 35,
+      "duration_ms": 1629,
+      "command": "set -eu\nprintf 'listener:\\n'; ss -ltnp '( sport = :8443 )'\nprintf 'https_response:\\n'; curl --silent --show-error --fail --cacert /var/lib/certrotate/server.pem --resolve \"node1:8443:$NODE_IP\" \"https://node1:8443/health\"\nprintf 'served_certificate:\\n'; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -serial -fingerprint -sha256\nprintf 'timer:\\n'; systemctl list-timers certrotate-renew.timer --no-pager\nprintf 'units:\\n'; systemctl is-enabled certrotate-https.service certrotate-renew.timer; systemctl is-active certrotate-https.service certrotate-renew.timer",
+      "stdout": "listener:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                                   \nLISTEN 0      5            0.0.0.0:8443      0.0.0.0:*    users:((\"certrotate-http\",pid=1670,fd=3))\nhttps_response:\ncurl: (35) OpenSSL SSL_connect: SSL_ERROR_ZERO_RETURN in connection to node1:8443 "
+    },
+    {
+      "command_id": "cmd-25e46b9b9ce44003",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:30.536189+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 2415,
+      "command": "systemctl status certrotate-https.service --no-pager -l\njournalctl -u certrotate-https.service -n 40 --no-pager\nls -lZ /var/lib/certrotate/server.pem\nrunuser -u certrotatehttps -- openssl x509 -in /var/lib/certrotate/server.pem -noout -serial",
+      "stdout": "\u25cf certrotate-https.service - HTTPS service with per-connection certificate reload\n     Loaded: loaded (/etc/systemd/system/certrotate-https.service; enabled; preset: disabled)\n     Active: active (running) since Fri 2026-10-02 11:51:17 EDT; 11s ago\n   Main PID: 1670 (certrotate-http)\n      Tasks: 1 (limit: 12290)\n     Memory: 9.1M (peak: 9.2M)\n        CPU: 58ms\n     CGroup: /system.slice/certrotate-https.service\n             \u2514\u25001670 /usr/bin/python3 /usr/local/libexec/certrotate-https\n\nOct 02 11:51:17 node1 systemd[1]: Started HTTPS service with per-connection certificate reload.\nOct 02 11:51:17 node1 systemd[1]: Started HTTPS service with per-connection certificate reload.\n-rw-r-----. 1 root certreader system_u:object_r:var_lib_t:s0 2839 Oct  2 11:50 /var/lib/certrotate/server.pem\nCould not open file or uri for loading certificate from /var/lib/certrotate/server.pem: Permission denied"
+    },
+    {
+      "command_id": "cmd-4138ff213a3a495b",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:51:36.858986+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2635,
+      "command": "set -eu\nchown root:certreader /var/lib/certrotate\nchmod 0750 /var/lib/certrotate\nrunuser -u certrotatehttps -- openssl x509 -in /var/lib/certrotate/server.pem -noout -serial\nsystemctl restart certrotate-https.service\nsleep 1\nsystemctl is-active certrotate-https.service\ncurl --silent --show-error --fail --cacert /var/lib/certrotate/server.pem --resolve \"node1:8443:$NODE_IP\" \"https://node1:8443/health\"",
+      "stdout": "serial=06A2BE78BDAEED2D91D2238250D1674FC5301FD5\nactive\n{\"status\": \"ok\", \"node\": \"node1\", \"certificate_serial\": \"06A2BE78BDAEED2D91D2238250D1674FC5301FD5\"}"
+    },
+    {
+      "command_id": "cmd-25f827b31282454a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:52:09.192574+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 10000,
+      "command": "set -eu\nstate=/var/lib/certrotate\ntmpdir=$(mktemp -d \"$state/.expiry-test.XXXXXX\")\ntrap 'rm -rf \"$tmpdir\"' EXIT HUP INT TERM\nnode_name=$(hostname -s)\nnode_ip=$(ip -4 route get 1.1.1.1 | awk 'NR==1 {for (i=1;i<=NF;i++) if ($i==\"src\") {print $(i+1); exit}}')\nopenssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj \"/CN=$node_name\" -addext \"subjectAltName=DNS:$node_name,IP:$node_ip\" -keyout \"$tmpdir/key.pem\" -out \"$tmpdir/cert.pem\" >/dev/null 2>&1\ncat \"$tmpdir/key.pem\" \"$tmpdir/cert.pem\" > \"$tmpdir/server.pem\"\nchown root:certreader \"$tmpdir/server.pem\"\nchmod 0640 \"$tmpdir/server.pem\"\nmv -f \"$tmpdir/server.pem\" \"$state/server.pem\"\nrestorecon -F \"$state/server.pem\" >/dev/null 2>&1 || true\npid_before=$(systemctl show -p MainPID --value certrotate-https.service)\nserial_before=$(openssl x509 -in \"$state/server.pem\" -noout -serial | cut -d= -f2)\nnotafter_before=$(openssl x509 -in \"$state/server.pem\" -noout -enddate | cut -d= -f2-)\nresults=$(mktemp)\n: > \"$results\"\n(\n  i=1\n  while [ \"$i\" -le 80 ]; do\n    if curl -ksSf --connect-timeout 2 \"https://$NODE_IP:8443/health\" >/dev/null; then printf S >> \"$results\"; else printf F >> \"$results\"; fi\n    i=$((i+1))\n    sleep 0.05\n  done\n) &\nloop_pid=$!\nsleep 1\nsystemctl start certrotate-renew.service\nwait \"$loop_pid\"\npid_after=$(systemctl show -p MainPID --value certrotate-https.service)\nserial_after=$(openssl x509 -in \"$state/server.pem\" -noout -serial | cut -d= -f2)\nnotafter_after=$(openssl x509 -in \"$state/server.pem\" -noout -enddate | cut -d= -f2-)\nsuccesses=$(tr -cd S < \"$results\" | wc -c)\nfailures=$(tr -cd F < \"$results\" | wc -c)\nrm -f \"$results\"\nprintf 'pid_before=%s pid_after=%s\\n' \"$pid_before\" \"$pid_after\"\nprintf 'serial_before=%s notAfter_before=%s\\n' \"$serial_before\" \"$notafter_before\"\nprintf 'serial_after=%s notAfter_after=%s\\n' \"$serial_after\" \"$notafter_after\"\nprintf 'continuous_https_successes=%s failures=%s\\n' \"$successes\" \"$failures\"\n[ \"$pid_before\" = \"$pid_after\" ]\n[ \"$serial_before\" != \"$serial_after\" ]\n[ \"$failures\" -eq 0 ]\ncurl --silent --show-error --fail --cacert \"$state/server.pem\" --resolve \"node1:8443:$NODE_IP\" \"https://node1:8443/health\"",
+      "stdout": "pid_before=1739 pid_after=1739\nserial_before=510CAF0FD2DE3AA0B73B1D2727DC3E4A6EF75CAC notAfter_before=Oct  3 15:51:59 2026 GMT\nserial_after=34BDCC87EF4FAE9578EF5CC96529FB70595B242E notAfter_after=Nov  1 15:52:00 2026 GMT\ncontinuous_https_successes=80 failures=0\n{\"status\": \"ok\", \"node\": \"node1\", \"certificate_serial\": \"34BDCC87EF4FAE9578EF5CC96529FB70595B242E\"}"
+    },
+    {
+      "command_id": "cmd-842d61534bff4ca9",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:52:23.125963+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2202,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service_active='; systemctl is-active certrotate-https.service\nprintf 'service_enabled='; systemctl is-enabled certrotate-https.service\nprintf 'timer_active='; systemctl is-active certrotate-renew.timer\nprintf 'timer_enabled='; systemctl is-enabled certrotate-renew.timer\nprintf 'file_serial='; openssl x509 -in /var/lib/certrotate/server.pem -noout -serial | cut -d= -f2\nprintf 'served_serial='; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2\nprintf 'https_response='; curl --silent --show-error --fail --cacert /var/lib/certrotate/server.pem --resolve \"node1:8443:$NODE_IP\" \"https://node1:8443/health\"\nprintf 'firewall_runtime='; firewall-cmd --query-port=8443/tcp\nprintf 'firewall_permanent='; firewall-cmd --permanent --query-port=8443/tcp",
+      "stdout": "boot_id=67c52137-ce51-4fec-b441-23966cea63a8\nservice_active=active\nservice_enabled=enabled\ntimer_active=active\ntimer_enabled=enabled\nfile_serial=34BDCC87EF4FAE9578EF5CC96529FB70595B242E\nserved_serial=34BDCC87EF4FAE9578EF5CC96529FB70595B242E\nhttps_response={\"status\": \"ok\", \"node\": \"node1\", \"certificate_serial\": \"34BDCC87EF4FAE9578EF5CC96529FB70595B242E\"}\nfirewall_runtime=yes\nfirewall_permanent=yes"
+    },
+    {
+      "command_id": "cmd-6f72babd350542dd",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:52:30.701964+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1509,
+      "command": "set -eu\nsystemd-run --unit=harbor-evidence-reboot --on-active=3s /usr/bin/systemctl reboot\nprintf 'reboot_scheduled_via_systemd\\n'\nsystemctl list-timers harbor-evidence-reboot.timer --no-pager",
+      "stdout": "Running timer as unit: harbor-evidence-reboot.timer\nWill run service as unit: harbor-evidence-reboot.service\nreboot_scheduled_via_systemd\nNEXT                        LEFT    LAST PASSED UNIT                         ACTIVATES\nFri 2026-10-02 11:52:32 EDT 2s left -    -      harbor-evidence-reboot.timer harbor-evidence-reboot.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too."
+    },
+    {
+      "command_id": "cmd-8168befcec684d1f",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:52:34.212989+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1391,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "67c52137-ce51-4fec-b441-23966cea63a8"
+    },
+    {
+      "command_id": "cmd-f9db4c2ac0a94e35",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:52:37.781263+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 452,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "67c52137-ce51-4fec-b441-23966cea63a8"
+    },
+    {
+      "command_id": "cmd-d38a9fb9d6764cc6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:52:45.402481+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 5464,
+      "command": "sleep 5\ncat /proc/sys/kernel/random/boot_id",
+      "stdout": "67c52137-ce51-4fec-b441-23966cea63a8"
+    },
+    {
+      "command_id": "cmd-3e1d7b154a714df5",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:52:51.087823+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2550,
+      "command": "systemctl status harbor-evidence-reboot.timer harbor-evidence-reboot.service --no-pager -l || true\njournalctl -u harbor-evidence-reboot.service -n 20 --no-pager\nwho -b",
+      "stdout": "Failed to dump process list for 'harbor-evidence-reboot.service', ignoring: Unit harbor-evidence-reboot.service not loaded.\n\u25cf harbor-evidence-reboot.timer - /usr/bin/systemctl reboot\n     Loaded: loaded (/run/systemd/transient/harbor-evidence-reboot.timer; transient)\n  Transient: yes\n     Active: active (running) since Fri 2026-10-02 11:52:29 EDT; 19s ago\n      Until: Fri 2026-10-02 11:52:29 EDT; 19s ago\n    Trigger: n/a\n   Triggers: \u25cf harbor-evidence-reboot.service\n\nOct 02 11:52:29 node1 systemd[1]: Started /usr/bin/systemctl reboot.\n\n\u25cf harbor-evidence-reboot.service - /usr/bin/systemctl reboot\n     Loaded: loaded (/run/systemd/transient/harbor-evidence-reboot.service; transient)\n  Transient: yes\n     Active: active (running) since Fri 2026-10-02 11:52:48 EDT; 2ms ago\nTriggeredBy: \u25cf harbor-evidence-reboot.timer\n   Main PID: 2248 (systemctl)\n      Tasks: 1 (limit: 12290)\n     Memory: 1.2M (peak: 1.2M)\n        CPU: 882us\n     CGroup: /system.slice/harbor-evidence-reboot.service\n\nOct 02 11:52:48 node1 systemd[1]: Started /usr/bin/systemctl reboot.\nOct 02 11:52:48 node1 systemd[1]: harbor-evidence-reboot.service: Deactivated successfully.\nOct 02 11:52:48 node1 systemd[1]: Stopped /usr/bin/systemctl reboot.\nOct 02 11:52:48 node1 systemd[1]: Started /usr/bin/systemctl reboot.\nOct 02 11:52:48 node1 systemd[1]: harbor-evidence-reboot.service: Deactivated successfully.\nOct 02 11:52:48 node1 systemd[1]: Stopped /usr/bin/systemctl reboot.\n         system boot  2026-06-30 10:26"
+    },
+    {
+      "command_id": "cmd-cfffb3cf51404335",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:52:58.157981+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2019,
+      "command": "systemctl is-system-running || true\nsystemctl list-jobs --no-pager\ncat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-325f16a82f774438",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:53:02.068888+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1844,
+      "command": "cat /proc/sys/kernel/random/boot_id",
+      "stdout": "9fc6e574-21ce-4c37-ad68-779c2e3c1948"
+    },
+    {
+      "command_id": "cmd-b55daed42624443a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T15:53:11.951111+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2209,
+      "command": "set -eu\nprintf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'service_active='; systemctl is-active certrotate-https.service\nprintf 'service_enabled='; systemctl is-enabled certrotate-https.service\nprintf 'timer_active='; systemctl is-active certrotate-renew.timer\nprintf 'timer_enabled='; systemctl is-enabled certrotate-renew.timer\nprintf 'file_serial='; openssl x509 -in /var/lib/certrotate/server.pem -noout -serial | cut -d= -f2\nprintf 'served_serial='; openssl s_client -connect \"$NODE_IP:8443\" -servername node1 </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2\nprintf 'https_response='; curl --silent --show-error --fail --cacert /var/lib/certrotate/server.pem --resolve \"node1:8443:$NODE_IP\" \"https://node1:8443/health\"\nprintf 'listener:\\n'; ss -ltnp '( sport = :8443 )'\nprintf 'timer_schedule:\\n'; systemctl list-timers certrotate-renew.timer --no-pager\nprintf 'firewall_runtime='; firewall-cmd --query-port=8443/tcp\nprintf 'firewall_permanent='; firewall-cmd --permanent --query-port=8443/tcp",
+      "stdout": "boot_id=9fc6e574-21ce-4c37-ad68-779c2e3c1948\nservice_active=active\nservice_enabled=enabled\ntimer_active=active\ntimer_enabled=enabled\nfile_serial=34BDCC87EF4FAE9578EF5CC96529FB70595B242E\nserved_serial=34BDCC87EF4FAE9578EF5CC96529FB70595B242E\nhttps_response={\"status\": \"ok\", \"node\": \"node1\", \"certificate_serial\": \"34BDCC87EF4FAE9578EF5CC96529FB70595B242E\"}\nlistener:\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                                  \nLISTEN 0      5            0.0.0.0:8443      0.0.0.0:*    users:((\"certrotate-http\",pid=732,fd=3))\ntimer_schedule:\nNEXT                        LEFT      LAST                        PASSED       UNIT                   ACTIVATES\nFri 2026-10-02 11:58:12 EDT 5min left Fri 2026-10-02 11:51:17 EDT 1min 52s ago certrotate-renew.timer certrotate-renew.service\n\n1 timers listed.\nPass --all to see loaded but inactive timers, too.\nfirewall_runtime=yes\nfirewall_permanent=yes"
+    }
+  ]
+}

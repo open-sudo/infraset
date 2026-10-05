@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-https-8443",
+      "requirement": "Serve HTTPS on node1 port 8443",
+      "status": "satisfied",
+      "summary": "Ansible-applied nginx vhost listens on 8443 with TLS; verified locally on node1 (curl to 127.0.0.1:8443 returns HTTP:200) and remotely from node2 (curl to 10.100.219.10:8443 returns HTTP:200), and `ss -tlnp` shows the port bound.",
+      "evidence_ids": [
+        "cmd-f1aa4dc1ae9e489f",
+        "cmd-395bf19d1d6c411d",
+        "cmd-e4de1092bd884ee9"
+      ]
+    },
+    {
+      "id": "req-2-cert-auto-renew",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A systemd oneshot service + hourly timer (cert-renew.service/.timer) is Ansible-deployed and shown active/enabled with a scheduled next run; the renewal script uses `openssl x509 -checkend` against a 30-day threshold to decide when to regenerate. The exact renewal logic (openssl regen + symlink swap + reload) was directly exercised via a forced invocation of the same script (--force) that the timer calls, producing a verified new certificate. Genuine unattended timer-triggered firing was not observed within the task window (expected, since the 90-day cert with 30-day threshold would not naturally fire during the session), but the mechanism and schedule are both directly confirmed rather than merely configured.",
+      "evidence_ids": [
+        "cmd-c76900430394466b",
+        "cmd-fb6a5b65322c48d8",
+        "cmd-f5487eb5999b4ae4"
+      ]
+    },
+    {
+      "id": "req-3-hot-reload",
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no downtime)",
+      "status": "satisfied",
+      "summary": "A renewal was forced while a concurrent curl loop hit the HTTPS endpoint every ~100ms from node2; all 81 captured requests returned HTTP 200 with zero failures during and after the renewal, and a subsequent TLS handshake fingerprint matched the newly generated certificate (not the old one), directly demonstrating a graceful reload that swapped certs without dropping traffic.",
+      "evidence_ids": [
+        "cmd-c7ddee72d35f478a",
+        "cmd-fb6a5b65322c48d8",
+        "cmd-0af3ad24489b44d3",
+        "cmd-478982c408ed498d"
+      ]
+    },
+    {
+      "id": "req-4-ansible-implementation",
+      "requirement": "Implementation is done via Ansible",
+      "status": "satisfied",
+      "summary": "All configuration (package install, cert directories, renewal script, nginx vhost, systemd unit/timer) was applied from node2 via `ansible-playbook -i inventory.ini playbook.yml`, reaching ok=15 changed=8 with no failures, and a subsequent re-run showed changed=0 (idempotent). Node1's incompatible Python required building Python 3.9 and pointing ansible_python_interpreter at it, and one task (apt install) fell back to raw `command` due to a missing python3-apt dependency for the custom interpreter \u2014 a reasonable environment-driven adaptation that does not undermine the overall Ansible-driven implementation.",
+      "evidence_ids": [
+        "cmd-f1aa4dc1ae9e489f",
+        "cmd-a37c93c7195a40c2",
+        "cmd-e377a4f321dc4e09"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the task \u2014 HTTPS on node1:8443, automatic pre-expiry certificate renewal via an Ansible-deployed systemd timer, zero-downtime hot pickup of renewed certificates, and an Ansible-driven implementation \u2014 are supported by direct, mostly first-hand evidence rather than executor claims alone. The zero-downtime cert-swap behavior in particular is strongly evidenced by a concurrent load test spanning the renewal event. The mandatory node-restart evidence protocol was completed for both node1 and node2 with pre-restart boot-identity/health baselines, an acknowledged restart, a changed post-restart boot identity (independently corroborated by the fixed lifecycle snapshots), and confirmed recovery of nginx, the renewal timer, and HTTPS availability. One minor, low-risk piece of unreverted residue (an added but unused deadsnakes PPA) was found on node1.",
+  "limitations": [
+    "Autonomous (unattended, timer-triggered) certificate renewal was not directly observed firing on its own; the evidence instead shows the timer active/enabled with a scheduled next run plus a manually forced invocation of the identical renewal script/logic.",
+    "The deadsnakes PPA addition on node1 (cmd-8f6e30cadf3d4750) was abandoned in favor of building Python from source; no evidence in the captured trace shows it was removed afterward."
+  ],
+  "command_stats": {
+    "total": 55,
+    "successful": 45,
+    "failed": 10,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "Most state-changing commands were necessary prerequisites (build toolchain and dev libs for compiling Python 3.9 on node1, required to run modern Ansible modules) or directly served the task outcome (nginx/cert/systemd installation, forced renewal for verification). One unnecessary mutation stands out: cmd-8f6e30cadf3d4750 added the `software-properties-common` package and the `ppa:deadsnakes/ppa` apt repository to node1 in an attempt to find a newer Python package, but the executor abandoned that path (no compatible candidate was found in the PPA per cmd-c43d25444fd24674) and instead built Python 3.9.19 from source. The added PPA repository entry and the software-properties-common package were left in place with no evidence they were removed \u2014 a low-risk but unreverted residue from an exploratory troubleshooting step. All other troubleshooting iterations (fixing the apt module/python3-apt issue, fixing openssl -addext incompatibility) were corrective actions needed to reach a working final state and are not penalized. The 0750 permission on /etc/nginx/ssl (root:root) causing the non-root `antrieb` user's plain `ls`/`curl` to fail is an intentional security-appropriate restriction, not residue.",
+    "evidence_ids": [
+      "cmd-8f6e30cadf3d4750",
+      "cmd-c43d25444fd24674",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

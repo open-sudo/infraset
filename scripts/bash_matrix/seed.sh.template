@@ -1,0 +1,44 @@
+# POSIX sh; works with GNU coreutils and BusyBox. No guest Python dependency.
+set -eu
+umask 022
+LC_ALL=C
+TZ=UTC0
+export LC_ALL TZ
+seed_root=__ROOT__
+staging=
+trap '[ -z "$staging" ] || rm -f "$staging"' 0
+trap 'exit 1' 1 2 15
+
+safe_dir() (
+    [ ! -L "$1" ] || { printf 'Symlink directory: %s\n' "$1" >&2; exit 1; }
+    if [ -e "$1" ]; then
+        [ -d "$1" ] || exit 1
+        return
+    fi
+    safe_dir "$(dirname "$1")"
+    mkdir -m 0755 "$1"
+)
+
+destination() {
+    case "$1" in ''|/*|..|../*|*/../*|*/..) exit 1;; esac
+    path="$seed_root/$1"
+    safe_dir "$(dirname "$path")"
+    # Check every existing parent, not just the final directory.
+    [ "$(cd "$(dirname "$path")" && pwd -P)" = "$(dirname "$path")" ] || exit 1
+}
+
+regular_destination() {
+    [ ! -L "$path" ] || exit 1
+    if [ -e "$path" ]; then [ -f "$path" ] || exit 1; fi
+}
+
+verify_regular() {
+    actual=$(sha256sum "$path")
+    [ "${actual%% *}" = "$1" ] || exit 1
+    [ "$(stat -c '%a' "$path")" = "$2" ] || exit 1
+    [ "$(stat -c '%Y' "$path")" = "$3" ] || exit 1
+}
+
+safe_dir "$seed_root"
+__BODY__
+printf '%s\n' 'Prepared and checked fixture contents, modes, timestamps and special files'

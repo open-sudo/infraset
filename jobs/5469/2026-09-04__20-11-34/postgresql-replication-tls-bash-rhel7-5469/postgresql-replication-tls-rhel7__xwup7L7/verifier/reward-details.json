@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "replication-topology",
+      "requirement": "PostgreSQL streaming replication configured across node1 (primary), node2, and node3 (standbys)",
+      "status": "satisfied",
+      "summary": "pg_stat_replication on node1 shows both node2 (10.100.34.11) and node3 (10.100.34.12) connected as streaming/async replicas via replicator role and physical slots (node2_slot, node3_slot). A test row inserted on the primary (repl_test) appeared on both standbys, and after the full restart sequence a second test table (post_restart_check) also replicated successfully to both, confirming write-path/primary role on node1 and read-only recovery state (pg_is_in_recovery=t) on node2/node3.",
+      "evidence_ids": [
+        "cmd-7f1e1b108dd145ab",
+        "cmd-16385aab80ec4cd4",
+        "cmd-d5d335e830c247d9",
+        "cmd-b22725c5a5de4e45",
+        "cmd-296d167cf32242d1",
+        "cmd-30d00c63b40240f2",
+        "cmd-875c68ffdb264685",
+        "cmd-f5e2d662d4b24017"
+      ]
+    },
+    {
+      "id": "tls-cluster-ca",
+      "requirement": "Replication traffic carried over TLS using a certificate authority created for this cluster",
+      "status": "satisfied",
+      "summary": "A dedicated CA (CN=postgres-cluster-ca) was generated on node1 with its own key, then used to sign server certs for node1/node2/node3 and a client cert for the replicator role; all three nodes were configured with ssl=on and node-specific ssl_cert_file/ssl_key_file/ssl_ca_file pointing at this CA. pg_stat_ssl joined to pg_stat_replication confirms ssl=t and client_dn=/CN=replicator for both standby connections, both immediately after setup and again after the full restart sequence.",
+      "evidence_ids": [
+        "cmd-d6d8aceb012c4b87",
+        "cmd-1a54533b1b654cea",
+        "cmd-1b6b7085829a47dc",
+        "cmd-9f8d60683eb847ea",
+        "cmd-9454da5bdd064cc4"
+      ]
+    },
+    {
+      "id": "cert-restricted-replication",
+      "requirement": "Accept replication connections only from peers presenting a certificate issued by the cluster CA",
+      "status": "satisfied",
+      "summary": "pg_hba.conf on node1 restricts replication to hostssl entries scoped to the node2/node3 IPs using the 'cert' auth method, which requires a client certificate verified against ssl_ca_file (the cluster CA). A connection attempt lacking a usable client certificate was rejected with 'FATAL: no pg_hba.conf entry ... SSL encryption', while the actual standby connections (verified via pg_stat_ssl client_dn=/CN=replicator) succeeded. The negative test used a missing/invalid cert rather than a cert signed by a different CA, which is a minor gap in enforcement testing, but the hostssl+cert configuration mechanically enforces CA-based verification.",
+      "evidence_ids": [
+        "cmd-5888c604858744f8",
+        "cmd-5d0ee4018bf94a6b",
+        "cmd-e1aa1e2295734cb0",
+        "cmd-393033b9883e4a75",
+        "cmd-0ff235863df242ec"
+      ]
+    },
+    {
+      "id": "restart-node1",
+      "requirement": "Provider-wide node-restart evidence protocol for node1 (primary)",
+      "status": "satisfied",
+      "summary": "Baseline boot_id d72bd4ec... and healthy primary state (pg_is_in_recovery=f, 2 active replication connections) captured before reboot; systemctl reboot issued; new boot_id 938def43... observed with uptime 0; postgresql-15 confirmed active, pg_is_in_recovery=f, both standbys reconnected streaming, and a new test row (post_restart_check) written on the primary replicated to both standbys.",
+      "evidence_ids": [
+        "cmd-6b5574d4ca244839",
+        "cmd-16bf6429e1964e39",
+        "cmd-851f95fb0f92464e",
+        "cmd-a86c3b807a9748ca",
+        "cmd-875c68ffdb264685",
+        "cmd-f5e2d662d4b24017"
+      ]
+    },
+    {
+      "id": "restart-node2",
+      "requirement": "Provider-wide node-restart evidence protocol for node2 (standby)",
+      "status": "satisfied",
+      "summary": "Baseline boot_id d7a80301... and healthy standby state (pg_is_in_recovery=t) captured; systemctl reboot issued; new boot_id ca95c822... observed with uptime 0; postgresql-15 confirmed active, pg_is_in_recovery=t, and node1's pg_stat_replication shows node2 reconnected streaming shortly after.",
+      "evidence_ids": [
+        "cmd-296d167cf32242d1",
+        "cmd-9931370cd553442c",
+        "cmd-03df7e60594545b5",
+        "cmd-43cad0d98b424bb3",
+        "cmd-69c68e9f07f8424d",
+        "cmd-dd1c9347ecf041ca"
+      ]
+    },
+    {
+      "id": "restart-node3",
+      "requirement": "Provider-wide node-restart evidence protocol for node3 (standby)",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 73bafeef... and healthy standby state (pg_is_in_recovery=t) captured; systemctl reboot issued; new boot_id 228d9c79... observed with uptime 0; postgresql-15 confirmed active, pg_is_in_recovery=t, and node1's pg_stat_replication shows node3 reconnected streaming shortly after.",
+      "evidence_ids": [
+        "cmd-30d00c63b40240f2",
+        "cmd-07a2c63468ad4adb",
+        "cmd-f6188a6174ff489e",
+        "cmd-87a633f9e5834133",
+        "cmd-284720796c52481c"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task instruction are satisfied with direct, coherent evidence: PostgreSQL 15 streaming replication is established from node1 (primary) to node2 and node3 (standbys); a cluster-specific CA was created and used to issue TLS certs for all nodes and a replicator client cert, with pg_stat_ssl confirming SSL-encrypted replication connections presenting CN=replicator; pg_hba.conf restricts replication to hostssl+cert-authenticated peers, with a negative test confirming rejection of connections lacking a valid client cert. The independently-required node-restart evidence protocol was executed cleanly for all three nodes (node2 and node3 first, then the primary node1), each showing a pre-restart baseline, a boot_id change confirming an actual reboot, and full recovery of the PostgreSQL service, replication streaming, and data (verified via a post-restart test table visible on all nodes).",
+  "limitations": [
+    "The negative access-control test demonstrated rejection of a replication attempt with no/invalid client certificate, but did not test a certificate signed by a different (non-cluster) CA, which would have been a stronger enforcement proof.",
+    "Package-manager health checks (rpm/yum consistency) timed out and were unavailable in all three lifecycle snapshots, so post-install package integrity could not be independently confirmed beyond the specific rpm -q checks the executor ran inline.",
+    "Minor /tmp log residue and a leftover verification table were not cleaned up; these do not affect functional correctness but are noted for completeness."
+  ],
+  "command_stats": {
+    "total": 162,
+    "successful": 123,
+    "failed": 39,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewing the chronological executor trace, the many failed yum/repo troubleshooting commands (releasever mismatch fixes, disabling pgdg12/13/14 repos, multiple failed postgresql15/13 install attempts, epel-release mirror workarounds) were all necessary, low-risk corrective steps to work around broken upstream PGDG/RHEL mirrors on this RHEL7.9 image, and each ultimately contributed to the working final package state (postgresql15-server successfully installed on all three nodes per after-executor listening-socket evidence). No destructive or security-weakening mutation was found: firewalld port 5432 was opened on all nodes (required for replication), pg_hba.conf changes only add restrictive hostssl+cert rules, and file permissions on TLS material were tightened appropriately (600 for keys, 644 for certs). Minor unnecessary residue: several install/debug log files (epel.log, pg_install.log, pgdg.pid, pgdg_install.log, zstd.log, reboot.log) and a leftover /tmp/no_such_home_dir_xyz directory on node2 remain in /tmp per the after-executor snapshot; the repl_test table was dropped (cmd-52286ae8faba427b) but the post_restart_check verification table was left in place on node1/node2/node3. These are bounded, non-security-relevant residues rather than broad or destructive mutations.",
+    "evidence_ids": [
+      "cmd-a182d5841dfb4c55",
+      "cmd-7a9def5be3a141fb",
+      "cmd-124a5a336b224d8b",
+      "cmd-573626a265fb4f64",
+      "cmd-52286ae8faba427b",
+      "cmd-851f95fb0f92464e",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

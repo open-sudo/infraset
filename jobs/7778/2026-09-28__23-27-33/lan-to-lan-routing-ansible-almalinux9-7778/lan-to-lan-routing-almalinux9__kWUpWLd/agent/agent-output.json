@@ -1,0 +1,92 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) as an inter-LAN router between lan-a (node2) and lan-b (node3) using an Ansible playbook run from control node4. node2 and node3 now reach each other on any port with original source addresses preserved (pure routing, no NAT/masquerade). Completed the mandatory one-node-at-a-time restart/recovery protocol on all four managed nodes, with proof of changed boot identity and post-restart recovery for each.",
+  "actions_performed": [
+    "Mapped topology via tcpdump/ARP correlation: node1 eth1 is on lan-a with node2 eth1; node1 eth2 is on lan-b with node3 eth1; all nodes' eth0 sit on the shared 10.100.136.0/24 management network used for exec access.",
+    "Bootstrapped passwordless SSH from control node4 to node1 (vyos user via `set system login user vyos authentication public-keys`) and to node2/node3 (root via authorized_keys), using the cluster-provided CLUSTER_SSH_PUBKEY/PRIVKEY ed25519 keypair.",
+    "Built an Ansible project on node4 (/root/lan-routing: inventory.ini, group_vars/all.yml, site.yml) with three plays: configure node1 eth1=10.60.10.254/24 and eth2=10.60.20.254/24 via VyOS configure/commit/save (using ansible.builtin.raw with newline-separated commands, since ansible's shell/command modules broke VyOS's config-session state when run as a temp-file script); configure node2 eth1=10.60.10.10/24 with a static route to 10.60.20.0/24 via node1; configure node3 eth1=10.60.20.10/24 with a static route to 10.60.10.0/24 via node1 (both via community.general.nmcli).",
+    "Found and fixed a firewalld interface-zone binding (ansible.posix.firewalld immediate+permanent) that did not survive reboot because NetworkManager re-asserts its own connection.zone at boot; switched to setting zone=trusted directly on the NM connection profile via nmcli, confirmed durable across a second reboot of node2.",
+    "Verified bidirectional ICMP and arbitrary-port TCP connectivity between node2 and node3 (HTTP server + curl test on non-standard ports), with tcpdump/access-log proof that source IPs are preserved end-to-end (no NAT).",
+    "Ran the mandatory node-restart evidence protocol sequentially on node1, node2, node3, node4: captured baseline boot_id and health per node, issued a native `reboot`, polled until exec access returned, confirmed boot_id changed, and confirmed routing config/services/connectivity recovered before moving to the next node.",
+    "Final full end-to-end verification after all four restarts: ping and HTTP(TCP) reachability confirmed both directions between node2 and node3 through node1."
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 routes between lan-a and lan-b so node2/node3 reach each other on any port, preserving source addresses",
+      "command_ids": [
+        "cmd-b0ef138d33d1477a",
+        "cmd-fe94126662f942de",
+        "cmd-83bb87580461499a",
+        "cmd-ca61649c288942c5",
+        "cmd-9486537652934e11",
+        "cmd-a4429289f3134499"
+      ],
+      "summary": "node1 eth1/eth2 addressed via VyOS config (committed and saved); node2<->node3 ping and TCP (HTTP) both directions succeed; tcpdump/access logs show the true peer IP as source with no NAT rewriting"
+    },
+    {
+      "requirement": "Implemented using Ansible",
+      "command_ids": [
+        "cmd-2edc7f6e271e42a2",
+        "cmd-ba13133902e74dcb",
+        "cmd-9bfa75ee95ae4e93",
+        "cmd-ee6ae60cdf1e4e8c",
+        "cmd-83bb87580461499a"
+      ],
+      "summary": "Ansible inventory and site.yml on control node4, syntax-checked and run successfully, applying node1/node2/node3 configuration"
+    },
+    {
+      "requirement": "Firewall zone durable across reboot (any-port reachability holds after restart, not just immediately after config)",
+      "command_ids": [
+        "cmd-30dbb0ada2724f10",
+        "cmd-b6e5556210da4f88",
+        "cmd-a9b486669cbe4b57",
+        "cmd-ada31fbd523247d4",
+        "cmd-ba8088bb4fe74a42",
+        "cmd-b8d2c223d8874970"
+      ],
+      "summary": "Detected firewalld interface-zone binding lost after node2's first reboot; fixed via nmcli connection.zone, re-applied, and confirmed TCP reachability and zone binding held"
+    },
+    {
+      "requirement": "node1 restart: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-21812c78ef704f4d",
+        "cmd-9922b621c09d4eb2",
+        "cmd-ea63c62f963c4176",
+        "cmd-fa12a5dc081742e8",
+        "cmd-9ab740d3e9ef4596"
+      ],
+      "summary": "Baseline boot_id 2674ee60...; reboot issued; post-reboot boot_id d18624ed... (changed); VyOS interface config persisted and node2->node3 routing verified working"
+    },
+    {
+      "requirement": "node2 restart: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-c223386d715243c8",
+        "cmd-66c7ddd9413441bd",
+        "cmd-e191aca4663e4ba5",
+        "cmd-a453b7df58a449c5",
+        "cmd-873196e6643a482a"
+      ],
+      "summary": "Baseline boot_id f38484ef...; reboot issued; boot_id changed twice across two reboots (effcd930..., then 07d32a44...) confirming persistence; eth1 IP, route, firewall zone, and ping all recovered"
+    },
+    {
+      "requirement": "node3 restart: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-8241dc3c559c4f6f",
+        "cmd-fb4aefeec7d2463d",
+        "cmd-2f0510f5c3a04215",
+        "cmd-338fd6cd9b4f4483"
+      ],
+      "summary": "Baseline boot_id d6298ced...; reboot issued; post-reboot boot_id 2078227b... (changed); eth1 IP, static route, firewalld trusted zone, and ping to node2 recovered"
+    },
+    {
+      "requirement": "node4 restart: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-338ca4e2ce2443d4",
+        "cmd-e0c0547922a447d5",
+        "cmd-e5a4aef72aff4808",
+        "cmd-697b311588434bab"
+      ],
+      "summary": "Baseline boot_id 489b0bb4...; reboot issued; post-reboot boot_id ebfe595c... (changed); Ansible playbook files intact and ansible raw ping to all three managed nodes succeeded post-restart"
+    }
+  ]
+}

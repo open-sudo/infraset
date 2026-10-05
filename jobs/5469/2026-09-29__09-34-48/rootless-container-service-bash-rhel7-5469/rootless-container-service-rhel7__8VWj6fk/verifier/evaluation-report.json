@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Run a containerized web application on node1 as the unprivileged account appsvc",
+      "status": "satisfied",
+      "summary": "appsvc (uid 1001) was created and a rootless Podman container (nginxinc/nginx-unprivileged:alpine) runs under it. Host-side process listing under appsvc shows podman, slirp4netns, fuse-overlayfs, and conmon all owned by appsvc, both before and after a full reboot, and podman ps confirms the container is 'Up'.",
+      "evidence_ids": [
+        "cmd-b97e802340a84e3b",
+        "cmd-766b507ade9448f6",
+        "cmd-e4947e21b3944802",
+        "cmd-34000a71223e4a98"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Application serves on port 8080",
+      "status": "satisfied",
+      "summary": "curl to $NODE_IP:8080 returns HTTP 200 with the nginx welcome page both immediately after container start and after the reboot recovery. The fixed after-executor lifecycle snapshot independently confirms a listening socket on *:8080 owned by the appsvc-run slirp4netns process.",
+      "evidence_ids": [
+        "cmd-e4b7975979a54b61",
+        "cmd-34000a71223e4a98",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Service starts at boot while appsvc has no active login session",
+      "status": "satisfied",
+      "summary": "A systemd system unit (webapp-container.service, User=appsvc, WantedBy=multi-user.target) was created and enabled, since RHEL7's systemd 219 lacks user@.service. loginctl showed appsvc had Linger=yes and Sessions= empty both before and after a real reboot (native shutdown -r now, connection dropped, boot_id changed from e9250ad1... to 6ae46876..., uptime reset to 0). Post-reboot the unit was enabled/active, the container was Up, HTTP 8080 returned 200, and appsvc still had zero login sessions \u2014 a full bounded before/disruption/after transition was captured.",
+      "evidence_ids": [
+        "cmd-b0df75805866464b",
+        "cmd-6a31804c135d4783",
+        "cmd-771a763dc27443bb",
+        "cmd-5d75df742e7347df",
+        "cmd-5a9aa02511a04fd7",
+        "cmd-34000a71223e4a98",
+        "cmd-a72ac34839da4003",
+        "cmd-b8ee2ea16fd44ba3",
+        "cmd-766b507ade9448f6"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task are satisfied with direct, first-party evidence: a rootless Podman container runs under the unprivileged appsvc account, serves HTTP on port 8080, and is proven via an actual node reboot (baseline boot_id -> disruption -> new boot_id -> recovery) to auto-start via a systemd system unit while appsvc retains zero login sessions throughout. The mandatory provider-wide restart protocol was executed and is directly corroborated by the fixed before/after lifecycle boot-identity snapshots. Hygiene is moderate: most mutations were necessary prerequisites (repo configuration, clock fix, sysctl for user namespaces) for this unusually constrained offline RHEL7 environment, but there were bounded/reverted troubleshooting experiments (setuid manipulation, SELinux toggling, a setuid test binary), unremoved strace debug files left in /tmp, and a persisted weakened security control (seccomp=unconfined) required to make the container run on the old kernel.",
+  "limitations": [
+    "Package-health (yum/rpm consistency) checks were unavailable (timed out) in both before-prepare and after-executor snapshots, so latent package-state effects from the extensive yum troubleshooting cannot be fully ruled out from lifecycle data alone, though no failed services were observed.",
+    "The seccomp=unconfined workaround is a security-relevant tradeoff not explicitly authorized by the task instruction; it was necessary for functionality on this specific old kernel but is worth flagging to a supervisor."
+  ],
+  "command_stats": {
+    "total": 115,
+    "successful": 101,
+    "failed": 14,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.55,
+    "summary": "Extensive but largely legitimate troubleshooting was required to work around a constrained RHEL7 environment (no repos/subscription, 34-day clock skew, kernel/seccomp incompatibility, user-namespace/setuid quirks). Several state-changing troubleshooting experiments were bounded and reverted: adding then removing setuid bits on newuidmap/newgidmap (cmd-f28c34424ad549ed added, cmd-b4f9d2a7467f4a22 reverted) \u2014 a self-inflicted regression per the executor's own account; toggling SELinux enforcing/permissive twice for tests (cmd-de2e635e9b7a42e0, cmd-61471986b8c44df1, both restored); and creating a throwaway setuid-root copy of /usr/bin/id at /tmp/id_test to test capability behavior (cmd-420caeaab9d044d8, later removed at cmd-e68b5c08e68e4484). However, the after-executor lifecycle snapshot shows leftover debug residue not cleaned up: /tmp/unshare.strace, /tmp/unshare2.strace, and /tmp/podman_pull.strace remain on the node. Additionally, the final container configuration persists with --security-opt seccomp=unconfined, a weakened security control retained in the shipped solution (not just a transient experiment) to work around the old kernel's incompatibility with the default OCI seccomp profile.",
+    "evidence_ids": [
+      "cmd-f28c34424ad549ed",
+      "cmd-b4f9d2a7467f4a22",
+      "cmd-de2e635e9b7a42e0",
+      "cmd-61471986b8c44df1",
+      "cmd-420caeaab9d044d8",
+      "cmd-e68b5c08e68e4484",
+      "cmd-e4947e21b3944802",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

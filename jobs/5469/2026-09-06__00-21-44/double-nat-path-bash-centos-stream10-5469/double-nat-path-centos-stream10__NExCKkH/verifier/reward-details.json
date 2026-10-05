@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1-node1-snat",
+      "requirement": "node1 (VyOS) performs source NAT translating node3's lan-a address to its own transit-facing address (192.168.20.1) as traffic enters the transit network",
+      "status": "satisfied",
+      "summary": "VyOS NAT source rule 10 (192.168.10.0/24 -> masquerade out eth1) was committed and confirmed via 'show nat source rules' (cmd-811a7262de954808). Conntrack directly shows src=192.168.10.12 (node3) translated to src=192.168.20.1 (node1) toward node4, both pre-restart (cmd-c8139a8bb79046da) and post-restart (cmd-5877c0d502374a73), confirming the translation is live and persistent.",
+      "evidence_ids": [
+        "cmd-e24101eff21e4f61",
+        "cmd-606e06cdecbe4580",
+        "cmd-811a7262de954808",
+        "cmd-c8139a8bb79046da",
+        "cmd-5877c0d502374a73"
+      ]
+    },
+    {
+      "id": "req-2-node2-snat",
+      "requirement": "node2 (OPNsense) performs a second source NAT translating the transit-hop address to its own lan-b-facing address (192.168.30.1) as traffic enters lan-b",
+      "status": "satisfied",
+      "summary": "OPNsense config.xml was edited to add opt1/opt2 interfaces and a hybrid-mode outbound NAT rule on opt2, applied via configctl. pfctl -s nat confirms 'nat on vtnet2 inet all -> (vtnet2:0)' is active (cmd-b917dfde42834869). pf state directly shows src 192.168.20.1 (node1) translated to 192.168.30.1 toward node4:8080, both pre-restart (cmd-e54ea63cbaaf4e63) and post-restart (cmd-3a7f90076a90487f).",
+      "evidence_ids": [
+        "cmd-5cfb8ac5b6c0415e",
+        "cmd-ece093ce629449c1",
+        "cmd-b917dfde42834869",
+        "cmd-e54ea63cbaaf4e63",
+        "cmd-3a7f90076a90487f"
+      ]
+    },
+    {
+      "id": "req-3-node4-visible-source",
+      "requirement": "node4 records the connection as arriving from node2 (192.168.30.1), not from node3 or node1",
+      "status": "satisfied",
+      "summary": "node4's lanb-http.service journal log shows the client GET request logged with source IP 192.168.30.1 (node2's lan-b address) both before (cmd-603625c65c45454a) and after (cmd-a25d588faf05498e) the restart cycle, directly confirming the double-NAT hides node3/node1 addresses from node4.",
+      "evidence_ids": [
+        "cmd-603625c65c45454a",
+        "cmd-a25d588faf05498e"
+      ]
+    },
+    {
+      "id": "req-4-end-to-end",
+      "requirement": "End-to-end HTTP connectivity from node3 (lan-a) to node4:8080 (lan-b) works through the double-NAT path",
+      "status": "satisfied",
+      "summary": "curl from node3 to http://192.168.30.13:8080/ returned HTTP 200 with the expected body, verified once before (cmd-218d755c26994764) and once after (cmd-22efb1b2319247fe) the full restart cycle.",
+      "evidence_ids": [
+        "cmd-218d755c26994764",
+        "cmd-22efb1b2319247fe"
+      ]
+    },
+    {
+      "id": "req-5-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all four managed nodes: pre-restart baseline, restart acknowledgement, changed boot identity, recovered state",
+      "status": "satisfied",
+      "summary": "Each node shows a pre-restart boot identity/baseline, a restart acknowledgement (or exec-stream-closed acknowledgement consistent with a reboot severing the session), polling until reconnection, a directly observed different post-restart boot identity, and recovered interfaces/NAT/routes/service state. Values are corroborated by the fixed after_executor lifecycle snapshot and executor_comparison diff (e.g. node1 boot_id 5bcff8f9\u219259c5eb4d, node2 kern.boottime 1781406916\u21921788670990 with a fresh 6s uptime, node3 boot_id d4784d1b\u2192182d97ff, node4 boot_id 984a7d52\u2192ca041523), and the double-NAT path was re-verified end-to-end after all four restarts.",
+      "evidence_ids": [
+        "cmd-82f0be4350a2458a",
+        "cmd-9d77ec5aa34b4ec6",
+        "cmd-2c12c68326c745e9",
+        "cmd-043a01e467af4fc3",
+        "cmd-727083262cd64521",
+        "cmd-fcc591819c1948e6",
+        "cmd-d3dade50fc5b455b",
+        "cmd-cd55f8c0168e461d",
+        "cmd-25cc59f301844ad6",
+        "cmd-17460536c1724b11",
+        "cmd-3e0072bf0def495d",
+        "cmd-2218e2de8f8f4d0d",
+        "cmd-3bbb1b4a8894448b",
+        "cmd-bd5533d0b2434c30",
+        "cmd-4f11c62ebe634881",
+        "cmd-ff727b1852b04664",
+        "cmd-218d755c26994764",
+        "cmd-22efb1b2319247fe"
+      ]
+    }
+  ],
+  "overall_summary": "All four material outcomes of the task -- VyOS SNAT to the transit address, OPNsense SNAT to the lan-b address, node4 observing only node2's address, and working end-to-end HTTP connectivity -- are directly evidenced via committed configuration plus live conntrack/pf-state and application-log observations, both before and after a full four-node restart cycle. The independent provider-wide restart protocol was also completed and directly corroborated by the fixed lifecycle boot-identity snapshots for all four nodes, with recovered NAT/interface/service state shown after each restart.",
+  "limitations": [
+    "Restart acknowledgements for node3 and node4 returned 'exec stream closed before command completion' rather than a clean synchronous ack, which is expected behavior when a reboot severs the connection but means the ack itself is inferred rather than a captured success return code.",
+    "Physical NIC-to-peer topology was discovered empirically through many trial-and-error IP assignments and pings rather than being given, which somewhat obscures which specific commands were strictly necessary versus exploratory, though all were reverted before final configuration."
+  ],
+  "command_stats": {
+    "total": 102,
+    "successful": 72,
+    "failed": 30,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.72,
+    "summary": "The bulk of the executor's mutating commands during physical-topology discovery (repeated ip addr add/flush, ifconfig alias add/delete on all four nodes to identify which NIC connects to which peer) were bounded, low-risk, and fully reverted before final configuration, and were a reasonable prerequisite given the topology was not pre-labeled -- these are not penalized. One notable unnecessary mutation: cmd-8396dcdfe6fd43a3 disabled OPNsense's pf firewall entirely ('pfctl -d') as an ad hoc troubleshooting step to test whether pf was blocking a ping; this briefly weakened a security control on a managed node and had no causal role in the final solution, though it was reverted seconds later by cmd-25b6b16250594567 ('pfctl -e'). Minor low-risk residue remained after the task: an orphaned /tmp/www/index.html on node4 (superseded by /srv/www, cmd-cfb2fc53c4794d92) and evidence-collection artifacts (/tmp/out.txt, /tmp/reboot.log) on node3/node4, all low-risk and non-conflicting. No failed/conflicting services, no damaged package state, and NAT/firewall changes were the intended task outcome rather than residue.",
+    "evidence_ids": [
+      "cmd-8396dcdfe6fd43a3",
+      "cmd-25b6b16250594567",
+      "cmd-cfb2fc53c4794d92",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node4:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

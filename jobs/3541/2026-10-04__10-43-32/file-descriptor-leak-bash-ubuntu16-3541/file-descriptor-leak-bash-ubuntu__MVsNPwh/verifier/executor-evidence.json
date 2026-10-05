@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 12,
+    "successful": 10,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Process at least 500 successive reads with soft open-file limit 64 and identical lengths",
+      "command_ids": [
+        "cmd-be610d45deae44cc",
+        "cmd-3444330611674861"
+      ],
+      "summary": "Both before and after restart: exit 0, 500 lines, all lengths 42, and empty stderr."
+    },
+    {
+      "requirement": "Close resources when a later open fails",
+      "command_ids": [
+        "cmd-ff846a5946454cc4",
+        "cmd-f77520d87f9f41b6"
+      ],
+      "summary": "Injected failure on open 250 left zero active handles; all 249 prior handles closed and maximum concurrency was one."
+    },
+    {
+      "requirement": "Keep supplied document unchanged and retain count argument",
+      "command_ids": [
+        "cmd-f3d5a15a27c04646",
+        "cmd-aaf9fc8d58de426a",
+        "cmd-3444330611674861"
+      ],
+      "summary": "Document SHA-256 remained 88fe7058122f278cca094fad2c26108a2b401dd1ecddc14d330ff0eed96377ff; passing 500 produced exactly 500 results."
+    },
+    {
+      "requirement": "Keep installed operating-system release and kernel",
+      "command_ids": [
+        "cmd-aaf9fc8d58de426a",
+        "cmd-3444330611674861"
+      ],
+      "summary": "Ubuntu 16.04 and kernel 4.4.0-210-generic were unchanged across the repair and restart."
+    },
+    {
+      "requirement": "Mandatory node1 restart and recovery",
+      "command_ids": [
+        "cmd-aaf9fc8d58de426a",
+        "cmd-3408b8d68ec54403",
+        "cmd-5e6cf3f6563348f6",
+        "cmd-3444330611674861"
+      ],
+      "summary": "Healthy pre-restart workload captured; restart acknowledged; boot ID changed from b185f188-42be-40d1-84ea-f7c9a76f5c8d to 8bf17548-0e9e-460d-b862-ade3c18c3432; document and 500-read workload recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-f3d5a15a27c04646",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:52:24.710158+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1756,
+      "command": "set -eu\nprintf 'NODE=%s IP=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nprintf 'BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'KERNEL='; uname -r\nprintf 'OS='; . /etc/os-release; printf '%s %s\\n' \"$ID\" \"$VERSION_ID\"\nprintf 'SOFT_NOFILE='; ulimit -Sn\ncd /srv/legacy2/file-descriptor-leak\nprintf '%s\\n' '--- FILES ---'\nfind . -maxdepth 2 -type f -printf '%p %s bytes\\n' | sort\nprintf '%s\\n' '--- SCRIPT ---'\nsed -n '1,240p' bin/read-documents.py\nprintf '%s\\n' '--- DOCUMENT HASH ---'\nfind . -maxdepth 2 -type f ! -path './bin/read-documents.py' -exec sha256sum {} \\;",
+      "stdout": "NODE=node1 IP=10.100.170.10\nBOOT_ID=b185f188-42be-40d1-84ea-f7c9a76f5c8d\nKERNEL=4.4.0-210-generic\nOS=ubuntu 16.04\nSOFT_NOFILE=1024\n--- FILES ---\n./bin/read-documents.py 271 bytes\n./document.txt 42 bytes\n--- SCRIPT ---\n#!/usr/bin/python\nimport os, sys\nbase = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\nhandles = []\nfor number in range(int(sys.argv[1])):\n    f = open(os.path.join(base, 'document.txt'))\n    handles.append(f)\n    sys.stdout.write(str(len(f.read())) + '\\n')\n--- DOCUMENT HASH ---\n88fe7058122f278cca094fad2c26108a2b401dd1ecddc14d330ff0eed96377ff  ./document.txt\n"
+    },
+    {
+      "command_id": "cmd-a69ae877ae744c84",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:52:30.866938+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1497,
+      "command": "cd /srv/legacy2/file-descriptor-leak\nprintf 'PYTHON='; /usr/bin/python --version 2>&1\nprintf 'PRE_FDS='; find /proc/$$/fd -mindepth 1 -maxdepth 1 | wc -l\nset +e\n(ulimit -Sn 64; /usr/bin/python bin/read-documents.py 500) >/tmp/read-documents.before.out 2>/tmp/read-documents.before.err\nrc=$?\nprintf 'RC=%s LINES=%s\\n' \"$rc\" \"$(wc -l </tmp/read-documents.before.out)\"\nprintf 'ERROR='; tail -n 3 /tmp/read-documents.before.err\nexit 0",
+      "stdout": "PYTHON=Python 2.7.12\nPRE_FDS=3\nRC=1 LINES=61\nERROR=Traceback (most recent call last):\n  File \"bin/read-documents.py\", line 6, in <module>\nIOError: [Errno 24] Too many open files: '/srv/legacy2/file-descriptor-leak/document.txt'\n"
+    },
+    {
+      "command_id": "cmd-734407cb4d624ea5",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:52:40.009835+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 1,
+      "duration_ms": 1788,
+      "command": "set -eu\ncd /srv/legacy2/file-descriptor-leak\nmode=$(stat -c '%a' bin/read-documents.py)\nowner=$(stat -c '%u:%g' bin/read-documents.py)\ncat > /tmp/read-documents.py.fixed <<'ANTRIEB_EOF'\n#!/usr/bin/python\nimport os, sys\nbase = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\nfor number in range(int(sys.argv[1])):\n    with open(os.path.join(base, 'document.txt')) as f:\n        length = len(f.read())\n    sys.stdout.write(str(length) + '\\n')\nANTRIEB_EOF\nchown \"$owner\" /tmp/read-documents.py.fixed\nchmod \"$mode\" /tmp/read-documents.py.fixed\nmv /tmp/read-documents.py.fixed bin/read-documents.py\nprintf 'MODE_OWNER='; stat -c '%a %U:%G' bin/read-documents.py\nsed -n '1,120p' bin/read-documents.py",
+      "stderr": "chown: changing ownership of '/tmp/read-documents.py.fixed': Operation not permitted\n"
+    },
+    {
+      "command_id": "cmd-2d471ca9bcea4383",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:52:45.136269+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1641,
+      "command": "cd /srv/legacy2/file-descriptor-leak\nid\nls -l bin/read-documents.py document.txt /tmp/read-documents.py.fixed\nif sudo -n true 2>/dev/null; then printf 'SUDO=available\\n'; else printf 'SUDO=unavailable\\n'; fi",
+      "stdout": "uid=1000(antrieb) gid=1000(antrieb) groups=1000(antrieb)\n-rw-rw-r-- 1 antrieb antrieb 267 Oct  4 10:52 /tmp/read-documents.py.fixed\n-rwxr-xr-x 1 root    root    271 Nov 14  2023 bin/read-documents.py\n-rw-r--r-- 1 root    root     42 Nov 14  2023 document.txt\nSUDO=available\n"
+    },
+    {
+      "command_id": "cmd-f77520d87f9f41b6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:52:49.394342+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1819,
+      "command": "set -eu\ncd /srv/legacy2/file-descriptor-leak\nsudo -n install -o root -g root -m 0755 /tmp/read-documents.py.fixed bin/read-documents.py\nrm -f /tmp/read-documents.py.fixed\nprintf 'MODE_OWNER='; stat -c '%a %U:%G' bin/read-documents.py\nprintf '%s\\n' '--- UPDATED SCRIPT ---'\nsed -n '1,120p' bin/read-documents.py\nprintf 'DOCUMENT_SHA256='; sha256sum document.txt | awk '{print $1}'",
+      "stdout": "MODE_OWNER=755 root:root\n--- UPDATED SCRIPT ---\n#!/usr/bin/python\nimport os, sys\nbase = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\nfor number in range(int(sys.argv[1])):\n    with open(os.path.join(base, 'document.txt')) as f:\n        length = len(f.read())\n    sys.stdout.write(str(length) + '\\n')\nDOCUMENT_SHA256=88fe7058122f278cca094fad2c26108a2b401dd1ecddc14d330ff0eed96377ff\n"
+    },
+    {
+      "command_id": "cmd-be610d45deae44cc",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:53:06.078805+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1639,
+      "command": "set -eu\ncd /srv/legacy2/file-descriptor-leak\n(ulimit -Sn 64; /usr/bin/python bin/read-documents.py 500) >/tmp/read-documents.after.out 2>/tmp/read-documents.after.err\nrc=$?\nexpected=$(/usr/bin/python -c \"print len(open('document.txt').read())\")\nlines=$(wc -l </tmp/read-documents.after.out)\nunique=$(sort -u /tmp/read-documents.after.out | tr '\\n' ' ')\nmatches=$(awk -v expected=\"$expected\" '$0 == expected {n++} END {print n+0}' /tmp/read-documents.after.out)\nprintf 'RC=%s SOFT_LIMIT=64 REQUESTED=500 OUTPUT_LINES=%s EXPECTED_LENGTH=%s MATCHING_LINES=%s UNIQUE_LENGTHS=%s\\n' \"$rc\" \"$lines\" \"$expected\" \"$matches\" \"$unique\"\nprintf 'STDERR_BYTES='; wc -c </tmp/read-documents.after.err\ntest \"$rc\" -eq 0\ntest \"$lines\" -eq 500\ntest \"$matches\" -eq 500\ntest \"$(sort -u /tmp/read-documents.after.out | wc -l)\" -eq 1\nrm -f /tmp/read-documents.after.out /tmp/read-documents.after.err",
+      "stdout": "RC=0 SOFT_LIMIT=64 REQUESTED=500 OUTPUT_LINES=500 EXPECTED_LENGTH=42 MATCHING_LINES=500 UNIQUE_LENGTHS=42 \nSTDERR_BYTES=0\n"
+    },
+    {
+      "command_id": "cmd-ff846a5946454cc4",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:53:15.990135+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1471,
+      "command": "cd /srv/legacy2/file-descriptor-leak\n/usr/bin/python - <<'PY'\nimport __builtin__, os, sys\nscript = os.path.abspath('bin/read-documents.py')\nreal_open = __builtin__.open\nstate = {'calls': 0, 'active': 0, 'max_active': 0, 'closed': 0}\nclass TrackedFile(object):\n    def __init__(self, wrapped):\n        self.wrapped = wrapped\n    def __enter__(self):\n        return self\n    def __exit__(self, exc_type, exc_value, traceback):\n        self.close()\n        return False\n    def read(self, *args, **kwargs):\n        return self.wrapped.read(*args, **kwargs)\n    def close(self):\n        if not self.wrapped.closed:\n            self.wrapped.close()\n            state['active'] -= 1\n            state['closed'] += 1\n\ndef tracked_open(path, *args, **kwargs):\n    state['calls'] += 1\n    if state['calls'] == 250:\n        raise IOError('injected open failure')\n    wrapped = real_open(path, *args, **kwargs)\n    state['active'] += 1\n    state['max_active'] = max(state['max_active'], state['active'])\n    return TrackedFile(wrapped)\n\nsaved_stdout = sys.stdout\nsink = real_open(os.devnull, 'w')\nsys.stdout = sink\n__builtin__.open = tracked_open\nsys.argv = [script, '500']\nfailed = False\ntry:\n    execfile(script, {'__file__': script, '__name__': '__main__'})\nexcept IOError as exc:\n    failed = str(exc) == 'injected open failure'\nfinally:\n    __builtin__.open = real_open\n    sys.stdout = saved_stdout\n    sink.close()\nprint 'INJECTED_FAILURE_CAUGHT=%s OPEN_CALLS=%d PRIOR_HANDLES_CLOSED=%d ACTIVE_HANDLES_AFTER_FAILURE=%d MAX_ACTIVE_HANDLES=%d' % (\n    failed, state['calls'], state['closed'], state['active'], state['max_active'])\nif not failed or state['calls'] != 250 or state['closed'] != 249 or state['active'] != 0 or state['max_active'] != 1:\n    sys.exit(1)\nPY",
+      "stdout": "INJECTED_FAILURE_CAUGHT=True OPEN_CALLS=250 PRIOR_HANDLES_CLOSED=249 ACTIVE_HANDLES_AFTER_FAILURE=0 MAX_ACTIVE_HANDLES=1\n"
+    },
+    {
+      "command_id": "cmd-aaf9fc8d58de426a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:53:29.418030+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1597,
+      "command": "set -eu\ncd /srv/legacy2/file-descriptor-leak\nprintf 'PRE_RESTART_BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'OS_KERNEL='; . /etc/os-release; printf '%s %s / %s\\n' \"$ID\" \"$VERSION_ID\" \"$(uname -r)\"\nprintf 'DOCUMENT_SHA256='; sha256sum document.txt | awk '{print $1}'\nprintf 'READER_MODE_OWNER='; stat -c '%a %U:%G' bin/read-documents.py\n(ulimit -Sn 64; /usr/bin/python bin/read-documents.py 500) >/tmp/pre-restart-read.out 2>/tmp/pre-restart-read.err\nlines=$(wc -l </tmp/pre-restart-read.out)\nunique=$(sort -u /tmp/pre-restart-read.out | tr '\\n' ' ')\nerrors=$(wc -c </tmp/pre-restart-read.err)\nprintf 'HEALTH_RC=0 REQUESTED=500 LINES=%s UNIQUE_LENGTHS=%s STDERR_BYTES=%s\\n' \"$lines\" \"$unique\" \"$errors\"\ntest \"$lines\" -eq 500\ntest \"$(sort -u /tmp/pre-restart-read.out | wc -l)\" -eq 1\ntest \"$unique\" = '42 '\ntest \"$errors\" -eq 0\nrm -f /tmp/pre-restart-read.out /tmp/pre-restart-read.err",
+      "stdout": "PRE_RESTART_BOOT_ID=b185f188-42be-40d1-84ea-f7c9a76f5c8d\nOS_KERNEL=ubuntu 16.04 / 4.4.0-210-generic\nDOCUMENT_SHA256=88fe7058122f278cca094fad2c26108a2b401dd1ecddc14d330ff0eed96377ff\nREADER_MODE_OWNER=755 root:root\nHEALTH_RC=0 REQUESTED=500 LINES=500 UNIQUE_LENGTHS=42  STDERR_BYTES=0\n"
+    },
+    {
+      "command_id": "cmd-3408b8d68ec54403",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:53:32.815077+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1607,
+      "command": "set -eu\nold_boot=$(cat /proc/sys/kernel/random/boot_id)\nsudo -n /bin/sh -c \"nohup /bin/sh -c 'sleep 2; /sbin/shutdown -r now' >/tmp/benchmark-reboot.log 2>&1 &\"\nprintf 'RESTART_ACKNOWLEDGED node=%s boot_id=%s method=shutdown-r-now delay_seconds=2\\n' \"$NODE_NAME\" \"$old_boot\"",
+      "stdout": "RESTART_ACKNOWLEDGED node=node1 boot_id=b185f188-42be-40d1-84ea-f7c9a76f5c8d method=shutdown-r-now delay_seconds=2\n"
+    },
+    {
+      "command_id": "cmd-983e5f3488be470e",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:53:37.952619+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 3431,
+      "command": "printf 'POLL_BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'UPTIME_SECONDS='; cut -d. -f1 /proc/uptime",
+      "stderr": "ssh: connect to host 10.100.170.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-5e6cf3f6563348f6",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:53:42.455697+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1561,
+      "command": "printf 'POLL_BOOT_ID='; cat /proc/sys/kernel/random/boot_id\nprintf 'UPTIME_SECONDS='; cut -d. -f1 /proc/uptime",
+      "stdout": "POLL_BOOT_ID=8bf17548-0e9e-460d-b862-ade3c18c3432\nUPTIME_SECONDS=6\n"
+    },
+    {
+      "command_id": "cmd-3444330611674861",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-04T14:53:50.523086+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1876,
+      "command": "set -eu\ncd /srv/legacy2/file-descriptor-leak\nold_boot='b185f188-42be-40d1-84ea-f7c9a76f5c8d'\nnew_boot=$(cat /proc/sys/kernel/random/boot_id)\nprintf 'OLD_BOOT_ID=%s\\nNEW_BOOT_ID=%s\\nBOOT_CHANGED=%s\\n' \"$old_boot\" \"$new_boot\" \"$([ \"$old_boot\" != \"$new_boot\" ] && printf yes || printf no)\"\nprintf 'OS_KERNEL='; . /etc/os-release; printf '%s %s / %s\\n' \"$ID\" \"$VERSION_ID\" \"$(uname -r)\"\nprintf 'DOCUMENT_SHA256='; sha256sum document.txt | awk '{print $1}'\nprintf 'READER_MODE_OWNER='; stat -c '%a %U:%G' bin/read-documents.py\n(ulimit -Sn 64; /usr/bin/python bin/read-documents.py 500) >/tmp/post-restart-read.out 2>/tmp/post-restart-read.err\nlines=$(wc -l </tmp/post-restart-read.out)\nmatches=$(awk '$0 == 42 {n++} END {print n+0}' /tmp/post-restart-read.out)\nunique=$(sort -u /tmp/post-restart-read.out | tr '\\n' ' ')\nerrors=$(wc -c </tmp/post-restart-read.err)\nprintf 'RECOVERED_RC=0 SOFT_LIMIT=64 REQUESTED=500 LINES=%s MATCHING_LENGTH_42=%s UNIQUE_LENGTHS=%s STDERR_BYTES=%s\\n' \"$lines\" \"$matches\" \"$unique\" \"$errors\"\ntest \"$old_boot\" != \"$new_boot\"\ntest \"$lines\" -eq 500\ntest \"$matches\" -eq 500\ntest \"$(sort -u /tmp/post-restart-read.out | wc -l)\" -eq 1\ntest \"$errors\" -eq 0\nrm -f /tmp/post-restart-read.out /tmp/post-restart-read.err",
+      "stdout": "OLD_BOOT_ID=b185f188-42be-40d1-84ea-f7c9a76f5c8d\nNEW_BOOT_ID=8bf17548-0e9e-460d-b862-ade3c18c3432\nBOOT_CHANGED=yes\nOS_KERNEL=ubuntu 16.04 / 4.4.0-210-generic\nDOCUMENT_SHA256=88fe7058122f278cca094fad2c26108a2b401dd1ecddc14d330ff0eed96377ff\nREADER_MODE_OWNER=755 root:root\nRECOVERED_RC=0 SOFT_LIMIT=64 REQUESTED=500 LINES=500 MATCHING_LENGTH_42=500 UNIQUE_LENGTHS=42  STDERR_BYTES=0\n"
+    }
+  ]
+}

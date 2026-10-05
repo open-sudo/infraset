@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "Configured node1 (VyOS) as the DNS resolver for a new private network (10.50.50.0/24) shared with node2/node3, using an Ansible playbook run from node4 (the only node with Ansible installed, so it served as control node). node1 answers inventory.internal authoritatively with node2's private address (10.50.50.2) and forwards all other queries upstream (10.100.231.1, 1.1.1.1). node2 and node3 were configured to use node1 (10.50.50.1) as their sole nameserver. All four nodes were then restarted one at a time per the mandatory restart-evidence protocol, with boot-id changes and full service/config/data recovery verified on each.",
+  "actions_performed": [
+    "Discovered topology: eth1 on node1/node2/node3 was an unconfigured private (dhcp:false) network shared by those three nodes; node4 (Ubuntu) had Ansible pre-installed and was the only viable control node",
+    "Wired passwordless SSH: added CLUSTER_SSH_PUBKEY to node1's vyos user via VyOS 'set system login user vyos authentication public-keys', and created a dedicated 'ansible' sudo (NOPASSWD) user with the same pubkey plus a freshly generated random password on node2/node3 (root login was locked via '!' in /etc/shadow)",
+    "Installed python3 on node2/node3 via an Ansible raw/apk task so standard Ansible modules could run",
+    "Built /root/ansible/dns-resolver/{inventory.ini,playbook.yml} on node4: play 1 configures node1's eth1 static IP (10.50.50.1/24) and DNS forwarding (allow-from, listen-address, upstream name-servers, authoritative-domain inventory.internal -> 10.50.50.2) by driving the VyOS script-template bash wrapper over a plain (non-PTY) SSH shell task, after discovering the vyos.vyos/network_cli module path corrupted commands due to a CLI pager 'terminal not fully functional' issue on this VyOS build",
+    "Play 2 configures eth1 static IPs on node2 (10.50.50.2) and node3 (10.50.50.3), disables dhcpcd's resolv.conf hook, and points /etc/resolv.conf at node1",
+    "Ran the playbook successfully end to end and verified inventory.internal resolves to 10.50.50.2 and external names (example.com) resolve via upstream forwarding from node1, node2, and node3; reran the playbook to confirm idempotent behavior",
+    "Captured a healthy baseline (boot_id, interface state, resolv.conf, DNS test queries) on all four nodes",
+    "Restarted node1, node2, node3, and node4 one at a time via native reboot mechanisms (systemctl reboot / reboot, backgrounded so the ack returned before disconnect), polled each until exec was available again, confirmed a changed boot_id on each, and verified full recovery of interfaces, DNS config, and DNS resolution (internal + external) after each restart",
+    "After all four restarts, reran the Ansible playbook from node4 to confirm the control node and its inventory/playbook files survived its own restart and the automation still applies cleanly"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 is configured as authoritative + forwarding DNS resolver for inventory.internal -> node2's address, forwarding everything else upstream",
+      "command_ids": [
+        "cmd-0e424006314247d4",
+        "cmd-9f069c13e2374589",
+        "cmd-d220c1bc1cec4226",
+        "cmd-f7573beafb9e4713"
+      ],
+      "summary": "VyOS committed config shows authoritative-domain inventory.internal record a @ -> 10.50.50.2, allow-from 10.50.50.0/24, listen-address 10.50.50.1, and upstream name-servers 10.100.231.1/1.1.1.1"
+    },
+    {
+      "requirement": "node2 and node3 resolve DNS through node1, both for inventory.internal and external names",
+      "command_ids": [
+        "cmd-3db122539bb04593",
+        "cmd-e1fd847c7d9b41ef",
+        "cmd-5436e7d809a1404d"
+      ],
+      "summary": "resolv.conf on node2/node3 points to 10.50.50.1; nslookup for inventory.internal returns 10.50.50.2 and nslookup for example.com returns real upstream-resolved addresses"
+    },
+    {
+      "requirement": "Implementation done via Ansible from the designated control node",
+      "command_ids": [
+        "cmd-9837bb975c6248f6",
+        "cmd-5436e7d809a1404d",
+        "cmd-15f1ea653b16442f"
+      ],
+      "summary": "playbook.yml/inventory.ini on node4 (the only node with ansible-playbook installed) applied the full configuration in one successful run, and a rerun showed idempotent convergence"
+    },
+    {
+      "requirement": "node1 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-e6e31b38d4764313",
+        "cmd-fa2afd21f7ef4572",
+        "cmd-b4c08938d8cb43e4",
+        "cmd-0377c3c06ba747d2",
+        "cmd-6641e40d47044b89"
+      ],
+      "summary": "Baseline boot_id 2674ee60...; reboot ack returned immediately then connection timed out; new boot_id 496e8eba... confirms restart; post-restart config, eth1 address, and both DNS test queries recovered"
+    },
+    {
+      "requirement": "node2 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-e571d4b02c354262",
+        "cmd-a958aba132744bb5",
+        "cmd-269fb9d99d874b63",
+        "cmd-d1e5e91d4f304858",
+        "cmd-3abc3096a14749e8"
+      ],
+      "summary": "Baseline boot_id ec05ff34...; reboot ack returned then connection reset; new boot_id e2547ce6... confirms restart; eth1 IP, resolv.conf, and both DNS queries recovered"
+    },
+    {
+      "requirement": "node3 restart: healthy baseline, restart, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-cd0104080b2b40b3",
+        "cmd-b5c478c1087240e8",
+        "cmd-75e6d84d60f2487f",
+        "cmd-3226b5d497b24d7f",
+        "cmd-36d58f379fae411b"
+      ],
+      "summary": "Baseline boot_id b2754e4a...; reboot ack returned then connection timed out; new boot_id 22eec4cb... confirms restart; eth1 IP, resolv.conf, and both DNS queries recovered"
+    },
+    {
+      "requirement": "node4 restart: healthy baseline, restart, changed boot identity, recovered state (control node)",
+      "command_ids": [
+        "cmd-8bb3b565f8b74971",
+        "cmd-1d8dd613ad2b4e86",
+        "cmd-0143bd8fde3d4d00",
+        "cmd-68222d5832fb4f9f",
+        "cmd-b13a5eb7f9124bab"
+      ],
+      "summary": "Baseline boot_id 489b0bb4...; reboot ack returned then connection reset; new boot_id 1744a4c1... confirms restart; ansible project files intact and playbook rerun succeeded, proving end-to-end automation survived the control node's own restart"
+    }
+  ]
+}

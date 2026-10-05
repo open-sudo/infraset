@@ -1,0 +1,77 @@
+{
+  "status": "completed",
+  "summary": "Created a systemd-managed background service `inventory-worker` on node1, sandboxed to write only inside /var/lib/inventory with NoNewPrivileges and strict systemd hardening, verified confinement empirically, and completed the mandatory single-node restart/recovery evidence protocol.",
+  "actions_performed": [
+    "Created dedicated system user 'inventory-worker' (nologin, no home creation) via useradd -r -s /sbin/nologin",
+    "Created /var/lib/inventory owned by inventory-worker:inventory-worker, mode 750",
+    "Wrote /usr/local/bin/inventory-worker.sh: a long-running loop that writes state.json and worker.log only under /var/lib/inventory every 5s",
+    "Created /etc/systemd/system/inventory-worker.service with User/Group=inventory-worker, NoNewPrivileges=true, ProtectSystem=strict, ReadWritePaths=/var/lib/inventory, ReadOnlyPaths for the script, StateDirectory=inventory, plus PrivateTmp/PrivateDevices/ProtectKernel*/RestrictSUIDSGID/RestrictNamespaces/LockPersonality/MemoryDenyWriteExecute/RemoveIPC/empty CapabilityBoundingSet+AmbientCapabilities/SystemCallFilter=@system-service/UMask=0027",
+    "systemctl daemon-reload; systemctl enable --now inventory-worker.service",
+    "Verified service active, ticking, and writing only inside /var/lib/inventory",
+    "Ran an ephemeral systemd-run probe with identical sandbox properties as the inventory-worker user to falsify confinement: write inside /var/lib/inventory succeeded, writes to /tmp and /etc failed with 'Read-only file system'",
+    "Verified NoNewPrivs=1 in /proc/<mainpid>/status for the running service",
+    "Captured pre-restart baseline: boot_id, uptime -s, service active/enabled state, live state.json tick",
+    "Triggered systemctl reboot via backgrounded nohup so the exec ack returned before disconnection",
+    "Polled node1 until exec succeeded again, confirming reconnection",
+    "Confirmed boot_id changed (98aa35f5... -> 187948fa...) and uptime -s reset, proving an actual reboot occurred",
+    "Verified post-reboot recovery: inventory-worker.service active and enabled, state.json/worker.log ticking again, directory ownership/permissions unchanged"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-worker created as a managed (systemd) service and running as a long-running background worker",
+      "command_ids": [
+        "cmd-bc8ab5a110f04a16",
+        "cmd-d10c5423edd84add"
+      ],
+      "summary": "systemctl enable --now succeeded; systemctl status shows Active: active (running) with the worker process and its sleep child under the service cgroup; state.json tick counter increments across polls, proving continuous long-running operation."
+    },
+    {
+      "requirement": "Service confined to write only inside /var/lib/inventory",
+      "command_ids": [
+        "cmd-d10c5423edd84add",
+        "cmd-67455cdfc7b34f38"
+      ],
+      "summary": "Directory listing shows state.json/worker.log owned by inventory-worker only inside /var/lib/inventory. An ephemeral probe run as the same user with the same sandbox properties (ProtectSystem=strict, ReadWritePaths=/var/lib/inventory) succeeded writing inside /var/lib/inventory but failed with 'Read-only file system' when attempting to write to /tmp and /etc, empirically falsifying/confirming the write confinement."
+    },
+    {
+      "requirement": "Service gains no new privileges (NoNewPrivileges)",
+      "command_ids": [
+        "cmd-d10c5423edd84add",
+        "cmd-5fc1b89a67744240"
+      ],
+      "summary": "systemctl show reports NoNewPrivileges=yes for the unit; /proc/<MainPID>/status of the actually running process confirms NoNewPrivs:\t1 at the kernel level."
+    },
+    {
+      "requirement": "Node1 healthy baseline before restart",
+      "command_ids": [
+        "cmd-efb4dec19f1e4eed"
+      ],
+      "summary": "Captured boot_id 98aa35f5-6905-42fd-9f07-0e28f75b4fa6, uptime -s, systemctl is-active/is-enabled=active/enabled, and live state.json tick=5 as pre-restart baseline."
+    },
+    {
+      "requirement": "Node1 restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-8209648b7175450c"
+      ],
+      "summary": "Backgrounded 'sleep 1; systemctl reboot' via nohup+disown; the exec call returned 'reboot-scheduled' successfully before the node dropped, and the next call failed with connection reset, confirming the reboot took effect."
+    },
+    {
+      "requirement": "Node1 boot identity changed after restart",
+      "command_ids": [
+        "cmd-82ac8bc92fa243da",
+        "cmd-b1a9c208a13f4e2d",
+        "cmd-861e6913ae9b4d4f",
+        "cmd-f255b459fb564229"
+      ],
+      "summary": "Node was unreachable (connection reset, then timeouts) during reboot, then became reachable again with boot_id 187948fa-e868-408c-9a20-dfce798bb9a3, different from the pre-restart boot_id, proving an actual kernel restart occurred (not just a service bounce)."
+    },
+    {
+      "requirement": "Node1 service and data recovered after restart, quorum/health confirmed (single-node, no cluster)",
+      "command_ids": [
+        "cmd-e46767be02ce4a63",
+        "cmd-c67a9510c82449ef"
+      ],
+      "summary": "Post-reboot uptime -s reset to the new boot time; inventory-worker.service is active/enabled again with a new MainPID; state.json and worker.log persisted in /var/lib/inventory and the tick counter resumed incrementing (tick 5 -> 7), proving both service and data recovery."
+    }
+  ]
+}

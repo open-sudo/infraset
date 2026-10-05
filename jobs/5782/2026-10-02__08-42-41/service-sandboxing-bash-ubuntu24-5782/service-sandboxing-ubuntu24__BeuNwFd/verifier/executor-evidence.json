@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 10,
+    "successful": 9,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "inventory-worker is a managed, enabled, long-running service",
+      "command_ids": [
+        "cmd-0ccca788c2f34f15",
+        "cmd-3a28be0d311640c1"
+      ],
+      "summary": "Systemd reports the unit enabled and active; its heartbeat demonstrates ongoing work."
+    },
+    {
+      "requirement": "Worker writes only inside /var/lib/inventory",
+      "command_ids": [
+        "cmd-5852b87f45da4894",
+        "cmd-7d615ba892524589"
+      ],
+      "summary": "Tests within the service mount namespace allowed writes in /var/lib/inventory while denying writes to /var/lib, /etc, and /tmp, both before and after reboot."
+    },
+    {
+      "requirement": "Worker gains no new privileges",
+      "command_ids": [
+        "cmd-3a28be0d311640c1",
+        "cmd-7d615ba892524589"
+      ],
+      "summary": "Systemd reports NoNewPrivileges=yes, the live process reports NoNewPrivs: 1, and the capability bounding set is empty."
+    },
+    {
+      "requirement": "node1 restart and recovery",
+      "command_ids": [
+        "cmd-7def711b1a214c3d",
+        "cmd-36d88075989742e3",
+        "cmd-7d615ba892524589"
+      ],
+      "summary": "Captured healthy baseline boot ID 4b43f122-6c8b-4c87-b01a-12705c4a9f4f, acknowledged the native reboot, then observed changed boot ID 1a102212-3901-4d89-ad6b-174de6966e6e with the system running and the enabled worker, changing heartbeat, NoNewPrivileges, and confinement fully recovered."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-cca34937e11645a8",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:31:28.304886+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1348,
+      "command": "set -eu\nprintf 'node=%s ip=%s\\n' \"$NODE_NAME\" \"$NODE_IP\"\nid\ncat /etc/os-release | sed -n '1,6p'\nsystemctl is-system-running || true\nsystemctl status inventory-worker --no-pager 2>&1 || true\nls -ld /var/lib/inventory 2>&1 || true",
+      "stdout": "node=node1 ip=10.100.224.10\nuid=0(root) gid=0(root) groups=0(root)\nPRETTY_NAME=\"Ubuntu 24.04.3 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.3 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nrunning\nUnit inventory-worker.service could not be found.\nls: cannot access '/var/lib/inventory': No such file or directory"
+    },
+    {
+      "command_id": "cmd-0ccca788c2f34f15",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:31:50.644401+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1650,
+      "command": "set -eu\nif ! getent group inventory-worker >/dev/null; then groupadd --system inventory-worker; fi\nif ! id inventory-worker >/dev/null 2>&1; then useradd --system --gid inventory-worker --home-dir /nonexistent --shell /usr/sbin/nologin inventory-worker; fi\ninstall -d -o inventory-worker -g inventory-worker -m 0700 /var/lib/inventory\ncat > /etc/systemd/system/inventory-worker.service <<'ANTRIEB_UNIT'\n[Unit]\nDescription=Inventory background worker\nAfter=local-fs.target\n\n[Service]\nType=simple\nUser=inventory-worker\nGroup=inventory-worker\nExecStart=/bin/sh -c 'while :; do date -u +%%FT%%TZ > /var/lib/inventory/heartbeat; sleep 5; done'\nRestart=always\nRestartSec=2s\nUMask=0077\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nAmbientCapabilities=\nProtectSystem=strict\nProtectHome=yes\nPrivateDevices=yes\nPrivateIPC=yes\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nProtectClock=yes\nProtectHostname=yes\nLockPersonality=yes\nMemoryDenyWriteExecute=yes\nRestrictRealtime=yes\nRestrictSUIDSGID=yes\nRestrictAddressFamilies=AF_UNIX\nSystemCallArchitectures=native\nReadWritePaths=/var/lib/inventory\nInaccessiblePaths=/tmp /var/tmp /run/user\n\n[Install]\nWantedBy=multi-user.target\nANTRIEB_UNIT\nsystemctl daemon-reload\nsystemctl enable --now inventory-worker.service\nsystemctl is-active inventory-worker.service\nsystemctl is-enabled inventory-worker.service",
+      "stdout": "Created symlink /etc/systemd/system/multi-user.target.wants/inventory-worker.service \u2192 /etc/systemd/system/inventory-worker.service.\nactive\nenabled"
+    },
+    {
+      "command_id": "cmd-3a28be0d311640c1",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:32:03.023867+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 8293,
+      "command": "set -eu\nsleep 6\nsystemctl status inventory-worker.service --no-pager\nprintf '\\nunit-security-properties:\\n'\nsystemctl show inventory-worker.service -p User -p Group -p MainPID -p NoNewPrivileges -p ProtectSystem -p ProtectHome -p ReadWritePaths -p InaccessiblePaths -p CapabilityBoundingSet\npid=$(systemctl show -p MainPID --value inventory-worker.service)\nprintf '\\nprocess-status:\\n'\nsed -n '/^Name:/p;/^Uid:/p;/^Gid:/p;/^NoNewPrivs:/p' \"/proc/$pid/status\"\nprintf '\\nworker-data:\\n'\nstat -c 'path=%n owner=%U:%G mode=%a size=%s' /var/lib/inventory /var/lib/inventory/heartbeat\ncat /var/lib/inventory/heartbeat",
+      "stdout": "\u25cf inventory-worker.service - Inventory background worker\n     Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; preset: enabled)\n     Active: active (running) since Fri 2026-10-02 12:31:49 EDT; 11s ago\n   Main PID: 1289 (sh)\n      Tasks: 2 (limit: 2317)\n     Memory: 688.0K (peak: 1.1M)\n        CPU: 14ms\n     CGroup: /system.slice/inventory-worker.service\n             \u251c\u25001289 /bin/sh -c \"while :; do date -u +%FT%TZ > /var/lib/inventory/heartbeat; sleep 5; done\"\n             \u2514\u25001312 sleep 5\n\nOct 02 12:31:49 node1 systemd[1]: Started inventory-worker.service - Inventory background worker.\n\nunit-security-properties:\nMainPID=1289\nCapabilityBoundingSet=\nUser=inventory-worker\nGroup=inventory-worker\nReadWritePaths=/var/lib/inventory\nInaccessiblePaths=/tmp /var/tmp /run/user\nProtectHome=yes\nProtectSystem=strict\nNoNewPrivileges=yes\n\nprocess-status:\nName:\tsh\nUid:\t999\t999\t999\t999\nGid:\t988\t988\t988\t988\nNoNewPrivs:\t1\n\nworker-data:\npath=/var/lib/inventory owner=inventory-worker:inventory-worker mode=700 size=4096\npath=/var/lib/inventory/heartbeat owner=inventory-worker:inventory-worker mode=600 size=21\n2026-10-02T16:31:59Z"
+    },
+    {
+      "command_id": "cmd-5852b87f45da4894",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:32:12.556173+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2056,
+      "command": "set -eu\npid=$(systemctl show -p MainPID --value inventory-worker.service)\nuid=$(id -u inventory-worker)\ngid=$(id -g inventory-worker)\nprintf 'mount-namespace-write-test pid=%s uid=%s gid=%s\\n' \"$pid\" \"$uid\" \"$gid\"\nnsenter -t \"$pid\" -m -- setpriv --reuid=\"$uid\" --regid=\"$gid\" --clear-groups --no-new-privs /bin/sh -c '\nfor p in /var/lib/inventory/confinement-probe /var/lib/confinement-probe /etc/confinement-probe /tmp/confinement-probe; do\n  if touch \"$p\" 2>/dev/null; then printf \"ALLOWED %s\\n\" \"$p\"; else printf \"DENIED %s\\n\" \"$p\"; fi\ndone\nrm -f /var/lib/inventory/confinement-probe\n'\ntest ! -e /var/lib/confinement-probe\ntest ! -e /etc/confinement-probe\ntest ! -e /tmp/confinement-probe\nsystemctl is-active inventory-worker.service",
+      "stdout": "mount-namespace-write-test pid=1289 uid=999 gid=988\nALLOWED /var/lib/inventory/confinement-probe\nDENIED /var/lib/confinement-probe\nDENIED /etc/confinement-probe\nDENIED /tmp/confinement-probe\nactive"
+    },
+    {
+      "command_id": "cmd-7def711b1a214c3d",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:32:34.225894+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 7689,
+      "command": "set -eu\nprintf 'boot_id='\ncat /proc/sys/kernel/random/boot_id\nprintf 'service_active='\nsystemctl is-active inventory-worker.service\nprintf 'service_enabled='\nsystemctl is-enabled inventory-worker.service\nfirst=$(cat /var/lib/inventory/heartbeat)\nsleep 6\nsecond=$(cat /var/lib/inventory/heartbeat)\nprintf 'heartbeat_before=%s\\nheartbeat_after=%s\\n' \"$first\" \"$second\"\ntest \"$first\" != \"$second\"\nstat -c 'data=%n owner=%U:%G mode=%a' /var/lib/inventory/heartbeat\npid=$(systemctl show -p MainPID --value inventory-worker.service)\nprintf 'main_pid=%s no_new_privs=' \"$pid\"\nsed -n 's/^NoNewPrivs:[[:space:]]*//p' \"/proc/$pid/status\"",
+      "stdout": "boot_id=4b43f122-6c8b-4c87-b01a-12705c4a9f4f\nservice_active=active\nservice_enabled=enabled\nheartbeat_before=2026-10-02T16:32:24Z\nheartbeat_after=2026-10-02T16:32:29Z\ndata=/var/lib/inventory/heartbeat owner=inventory-worker:inventory-worker mode=600\nmain_pid=1289 no_new_privs=1"
+    },
+    {
+      "command_id": "cmd-36d88075989742e3",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:32:38.460453+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1871,
+      "command": "set -eu\nsystemd-run --unit=benchmark-node-restart --on-active=2s /usr/bin/systemctl reboot\nprintf 'restart_acknowledged node=%s\\n' \"$NODE_NAME\"\nsystemctl status benchmark-node-restart.timer --no-pager | sed -n '1,8p'",
+      "stdout": "Running timer as unit: benchmark-node-restart.timer\nWill run service as unit: benchmark-node-restart.service\nrestart_acknowledged node=node1\n\u25cf benchmark-node-restart.timer - /usr/bin/systemctl reboot\n     Loaded: loaded (/run/systemd/transient/benchmark-node-restart.timer; transient)\n  Transient: yes\n     Active: active (waiting) since Fri 2026-10-02 12:32:36 EDT; 2ms ago\n    Trigger: Fri 2026-10-02 12:32:38 EDT; 1s left\n   Triggers: \u25cf benchmark-node-restart.service\n\nOct 02 12:32:36 node1 systemd[1]: Started benchmark-node-restart.timer - /usr/bin/systemctl reboot."
+    },
+    {
+      "command_id": "cmd-55b6b249782d4e6c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:32:42.672298+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 481,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nsystemctl is-system-running || true",
+      "stdout": "boot_id=4b43f122-6c8b-4c87-b01a-12705c4a9f4f\nrunning"
+    },
+    {
+      "command_id": "cmd-d26b8e146f56435c",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:32:46.864446+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 1075,
+      "command": "systemctl status benchmark-node-restart.service benchmark-node-restart.timer --no-pager 2>&1 || true\njournalctl -u benchmark-node-restart.service -n 20 --no-pager 2>&1 || true\nuptime -s",
+      "stderr": "[Errno 104] Connection reset by peer"
+    },
+    {
+      "command_id": "cmd-478554169a7d410a",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:32:58.444913+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 1593,
+      "command": "printf 'boot_id='; cat /proc/sys/kernel/random/boot_id\nprintf 'system_state='; systemctl is-system-running || true\nprintf 'service_active='; systemctl is-active inventory-worker.service || true",
+      "stdout": "boot_id=1a102212-3901-4d89-ad6b-174de6966e6e\nsystem_state=running\nservice_active=active"
+    },
+    {
+      "command_id": "cmd-7d615ba892524589",
+      "executor_attempt": 1,
+      "timestamp": "2026-10-02T16:33:15.954682+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 7680,
+      "command": "set -eu\nold_boot=4b43f122-6c8b-4c87-b01a-12705c4a9f4f\nnew_boot=$(cat /proc/sys/kernel/random/boot_id)\nprintf 'old_boot_id=%s\\nnew_boot_id=%s\\n' \"$old_boot\" \"$new_boot\"\ntest \"$new_boot\" != \"$old_boot\"\nprintf 'system_state='; systemctl is-system-running\nprintf 'service_active='; systemctl is-active inventory-worker.service\nprintf 'service_enabled='; systemctl is-enabled inventory-worker.service\nfirst=$(cat /var/lib/inventory/heartbeat)\nsleep 6\nsecond=$(cat /var/lib/inventory/heartbeat)\nprintf 'heartbeat_after_restart_1=%s\\nheartbeat_after_restart_2=%s\\n' \"$first\" \"$second\"\ntest \"$first\" != \"$second\"\npid=$(systemctl show -p MainPID --value inventory-worker.service)\nprintf 'main_pid=%s no_new_privs=' \"$pid\"\nsed -n 's/^NoNewPrivs:[[:space:]]*//p' \"/proc/$pid/status\"\nuid=$(id -u inventory-worker); gid=$(id -g inventory-worker)\nnsenter -t \"$pid\" -m -- setpriv --reuid=\"$uid\" --regid=\"$gid\" --clear-groups --no-new-privs /bin/sh -c '\nfor p in /var/lib/inventory/post-restart-probe /var/lib/post-restart-probe /etc/post-restart-probe /tmp/post-restart-probe; do\n  if touch \"$p\" 2>/dev/null; then printf \"ALLOWED %s\\n\" \"$p\"; else printf \"DENIED %s\\n\" \"$p\"; fi\ndone\nrm -f /var/lib/inventory/post-restart-probe\n'\nstat -c 'data=%n owner=%U:%G mode=%a' /var/lib/inventory/heartbeat",
+      "stdout": "old_boot_id=4b43f122-6c8b-4c87-b01a-12705c4a9f4f\nnew_boot_id=1a102212-3901-4d89-ad6b-174de6966e6e\nsystem_state=running\nservice_active=active\nservice_enabled=enabled\nheartbeat_after_restart_1=2026-10-02T16:33:06Z\nheartbeat_after_restart_2=2026-10-02T16:33:11Z\nmain_pid=652 no_new_privs=1\nALLOWED /var/lib/inventory/post-restart-probe\nDENIED /var/lib/post-restart-probe\nDENIED /etc/post-restart-probe\nDENIED /tmp/post-restart-probe\ndata=/var/lib/inventory/heartbeat owner=inventory-worker:inventory-worker mode=600"
+    }
+  ]
+}

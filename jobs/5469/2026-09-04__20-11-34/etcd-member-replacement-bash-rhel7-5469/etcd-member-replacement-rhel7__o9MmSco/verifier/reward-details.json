@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Establish a three-member etcd cluster across node1/node2/node3 holding application keys",
+      "status": "satisfied",
+      "summary": "etcd 3.5.17 was installed fresh on all three nodes (none had it), a systemd unit and config were created, firewall ports 2379/2380 opened, and the cluster was bootstrapped. Member list shows all three members 'started' and healthy (cmd-e5431965b0504d8c). Four application keys were written from node1 and confirmed readable from node3's own endpoint (cmd-07a8ebc2703749e1, cmd-e01fae350f51481e), directly showing the healthy 3-member baseline with data present on all members.",
+      "evidence_ids": [
+        "cmd-ab9908a15c92499d",
+        "cmd-e5431965b0504d8c",
+        "cmd-07a8ebc2703749e1",
+        "cmd-e01fae350f51481e"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "Handle permanent loss of the node3 member (data unrecoverable) while preserving cluster quorum/availability",
+      "status": "satisfied",
+      "summary": "node3's etcd was stopped/disabled and /var/lib/etcd deleted, simulating unrecoverable data loss (cmd-79c2521caeda443a). The dead member was then removed from the cluster via etcdctl issued from node1, and the remaining node1+node2 pair was directly confirmed healthy afterward, showing quorum was preserved during the disruption (cmd-2e2579a2f2394dff). This demonstrates the required healthy-baseline -> disruption -> still-available transition for the surviving members.",
+      "evidence_ids": [
+        "cmd-79c2521caeda443a",
+        "cmd-2e2579a2f2394dff"
+      ]
+    },
+    {
+      "id": "R3",
+      "requirement": "Replace the lost member with a working member on the same node3 host, returning the cluster to 3 healthy members with existing keys intact",
+      "status": "satisfied",
+      "summary": "A new member was registered via `member add` and node3 was reconfigured with `initial-cluster-state: existing` and restarted (cmd-f339cac8d7a04364, cmd-529c7418b6204595). Post-replacement, the member list shows 3 'started' members with matching raft term/applied index across all endpoints (cmd-1ee77dc7820843f2), and all four original application keys were confirmed intact via node3's own client endpoint (cmd-1a826e09bb024143), directly showing full restoration to a healthy 3-member cluster with the same data.",
+      "evidence_ids": [
+        "cmd-f339cac8d7a04364",
+        "cmd-529c7418b6204595",
+        "cmd-33394b780ec94ccc",
+        "cmd-1ee77dc7820843f2",
+        "cmd-1a826e09bb024143"
+      ]
+    },
+    {
+      "id": "R4",
+      "requirement": "(Independent protocol) Provider-wide node-restart evidence on every managed node",
+      "status": "satisfied",
+      "summary": "For each of node1, node2, node3, a pre-restart boot_id/healthy-cluster/keys baseline was captured, `systemctl reboot` was acknowledged (connection closed), SSH was unreachable during the transition, a new distinct boot_id was observed post-restart, and etcd active state, 3-member membership, and application keys were reconfirmed after each reboot before moving to the next node. This matches the fixed after-prepare/after-executor boot-identity cross-check (boot_id changed for all three nodes between snapshots).",
+      "evidence_ids": [
+        "cmd-fae327f907734989",
+        "cmd-d2c033c7e8f54a08",
+        "cmd-b80e95ffeeeb4ce9",
+        "cmd-aa49d60eec064c31",
+        "cmd-174650c3ddf842d1",
+        "cmd-6b3c921334ac48c1",
+        "cmd-788f87d9b9a44021",
+        "cmd-be81e8a6c326407f",
+        "cmd-6d61a3fd8c584ef8",
+        "cmd-0114d86f66b8418d",
+        "cmd-9c6cad4de70b4dbf",
+        "cmd-fd831bb387624c12",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a fresh 3-member etcd cluster on node1/node2/node3, wrote application keys, directly demonstrated the required healthy-baseline -> node3-loss-with-quorum-preserved -> replacement-member-restored-healthy transition with matching raft indices and intact keys, and additionally completed the mandatory per-node restart protocol with clear boot-identity changes and full post-reboot recovery on all three nodes. All material task outcomes are satisfied with direct, coherent evidence. The only hygiene concern is unremoved etcd installation artifacts left in /tmp on all three nodes, a minor, low-risk residue.",
+  "limitations": [
+    "Native package-manager consistency checks (package-health) were unavailable (timed out) at all lifecycle phases on all nodes, so package database integrity cannot be independently verified from this evidence.",
+    "The node3 'permanent loss' scenario was executor-simulated (manual stop/wipe) rather than an externally injected failure, which is consistent with the task's premise but means the disruption timing and mechanism were fully executor-controlled.",
+    "Leftover /tmp installation artifacts (etcd.tar.gz, extracted etcd-v3.5.17-linux-amd64) were not cleaned up on any of the three nodes after task completion."
+  ],
+  "command_stats": {
+    "total": 69,
+    "successful": 56,
+    "failed": 13,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Executor-caused mutations were reviewed chronologically. Package/service installation (binary copy, mkdir/chown, systemd unit, etcd.conf.yml) on all three nodes were necessary prerequisites. The first `systemctl enable --now etcd` attempt (cmd-40959533baea4ebd) timed out because firewall ports were not yet open; the subsequent firewall-cmd port-opening (cmd-dd36d0c5d1064b80 et al.) and the `stop etcd; rm -rf /var/lib/etcd/*; start etcd` retry (cmd-7a01701d2c3641ce et al.) on all three nodes were corrective actions needed to recover from that failed first bootstrap attempt, not gratuitous experiments \u2014 reasonable and bounded. Read-only diagnostics (nc missing, /dev/tcp probes, ping, iptables -L) caused no state change. The main unaddressed hygiene issue is leftover installation residue: the downloaded etcd.tar.gz and extracted etcd-v3.5.17-linux-amd64 directory remain in /tmp on all three nodes after task completion (visible in after_executor temporary-files diffs), which was never cleaned up. This is a low-risk, bounded residue (disk space only, no security exposure) but was retained rather than reverted. No failed services, damaged package state, or unsafe exposure were observed in the final snapshots.",
+    "evidence_ids": [
+      "cmd-40959533baea4ebd",
+      "cmd-dd36d0c5d1064b80",
+      "cmd-7a01701d2c3641ce",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -6,11 +6,15 @@ from __future__ import annotations
 import ast
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Iterator
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+from job_layout import job_location  # noqa: E402
+
 TRANSPORT_FAILURE = re.compile(
     r"connection reset by peer"
     r"|connection timed out"
@@ -72,11 +76,11 @@ def job_dir(audit: Path) -> Path:
 
 
 def category(audit: Path) -> str:
-    return audit.relative_to(ROOT / "jobs").parts[0]
+    return job_location(job_dir(audit), ROOT / "jobs").category
 
 
 def task_name(audit: Path) -> str:
-    return job_dir(audit).parent.name
+    return job_location(job_dir(audit), ROOT / "jobs").task_name
 
 
 def trial_result(audit: Path) -> dict[str, Any] | None:
@@ -102,8 +106,7 @@ def audit_records(audit: Path) -> Iterator[dict[str, Any]]:
 
 def is_transport_failure(record: dict[str, Any]) -> bool:
     return any(
-        isinstance(record.get(field), str)
-        and TRANSPORT_FAILURE.search(record[field])
+        isinstance(record.get(field), str) and TRANSPORT_FAILURE.search(record[field])
         for field in ("stderr", "error")
     )
 

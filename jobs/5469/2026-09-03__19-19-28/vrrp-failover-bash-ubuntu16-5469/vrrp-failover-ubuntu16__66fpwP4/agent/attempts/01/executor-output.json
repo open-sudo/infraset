@@ -1,0 +1,102 @@
+{
+  "status": "completed",
+  "summary": "Configured VRRP-based single gateway on node3's private link so it can reach node4's private network with automatic failover between routers node1/node2, preferring node1. node1/node2 (VyOS) each got static IPs on eth1 (toward node3, 10.10.13.0/24) and eth2 (toward node4, 10.10.14.0/24), plus two keepalived VRRP groups (NET-A vrid13, NET-B vrid14) with virtual IPs 10.10.13.1 and 10.10.14.1; node1 priority 200 (preferred master), node2 priority 100 (backup), committed and saved to config.boot. node3 (Ubuntu 16.04) got a static IP 10.10.13.10/24 on ens7 plus a persistent systemd-networkd route to 10.10.14.0/24 via the VRRP VIP 10.10.13.1 (single gateway address). node4 got the mirror config (10.10.14.10/24, route to 10.10.13.0/24 via VIP 10.10.14.1). Verified: node3->node4 ping succeeds with VIP ARP resolving to node1's MAC (preferred path); stopping keepalived on node1 caused node2 to become MASTER within ~5s with zero ping packet loss and VIP MAC switching to node2; restarting node1 caused it to preempt back to MASTER (priority-based) with connectivity intact. Completed mandatory node-restart evidence protocol on all four nodes sequentially (one at a time, quorum preserved): captured pre-restart boot_id, issued native reboot (VyOS `reboot`, Ubuntu `reboot`), polled until exec access returned, confirmed boot_id changed on every node, and re-verified VRRP state/routes/end-to-end ping after each restart. Final check after all four restarts confirms node1 still holds both VIPs as MASTER and node3->node4 connectivity via the single gateway address works.",
+  "actions_performed": [
+    "Inspected topology/interfaces on node1-4 to discover eth1/eth2 (VyOS routers) and ens7 (Ubuntu hosts) as the private-network NICs",
+    "Configured static addressing + VRRP (keepalived) groups NET-A/NET-B on node1 (priority 200) and node2 (priority 100) via VyOS configure/commit/save",
+    "Configured static IP + persistent systemd-networkd route on node3 (10.10.13.10/24, route to 10.10.14.0/24 via VIP 10.10.13.1)",
+    "Configured static IP + persistent systemd-networkd route on node4 (10.10.14.10/24, route to 10.10.13.0/24 via VIP 10.10.14.1)",
+    "Verified baseline: node3->node4 ping via VIP resolving to node1's MAC",
+    "Disrupted node1 by stopping keepalived; verified node2 became VRRP MASTER on both groups and node3->node4 connectivity was preserved via the same gateway address",
+    "Restored node1's keepalived; verified it preempted back to MASTER (priority-based) and node2 returned to BACKUP",
+    "Captured pre-restart boot_id on all four nodes",
+    "Sequentially rebooted node1, node2, node3, node4 (one at a time), polling exec availability, confirming changed boot_id, and re-verifying VRRP/keepalived state, routes, and end-to-end ping after each restart",
+    "Final post-all-restarts verification that node1 holds both VIPs as MASTER and node3->node4 connectivity works through the single gateway address"
+  ],
+  "evidence": [
+    {
+      "requirement": "node3 has a single gateway address for reaching node4, backed by VRRP on node1+node2",
+      "command_ids": [
+        "cmd-b69303d68d314b08",
+        "cmd-3e51680011ff4cfc",
+        "cmd-c803611e9956454c",
+        "cmd-374b93c6c41e4eb1",
+        "cmd-a0ff8a82dc3d4be7"
+      ],
+      "summary": "VRRP groups NET-A/NET-B committed on node1 (priority 200) and node2 (priority 100) producing shared VIPs 10.10.13.1/10.10.14.1; node1 confirmed MASTER via ip addr showing secondary VIP addresses; node3 and node4 configured with a single static route to each other's network via the VIP."
+    },
+    {
+      "requirement": "Gateway prefers node1 while healthy",
+      "command_ids": [
+        "cmd-5d8d0a9c88a34f7f"
+      ],
+      "summary": "node3 ARP for VIP 10.10.13.1 resolves to node1 eth1 MAC (02:53:05:43:81:f0), confirming node1 is the active forwarding path under normal conditions."
+    },
+    {
+      "requirement": "Gateway stays available when node1 (preferred router) is down",
+      "command_ids": [
+        "cmd-0644b3e1f4144036",
+        "cmd-85b67eec63be4b0b",
+        "cmd-16bf391667d846d3"
+      ],
+      "summary": "Stopped keepalived on node1; node2 log shows Entering MASTER STATE for both groups within seconds; node3 ping to node4 continued with 0% loss and ARP for VIP now shows node2's MAC, proving uninterrupted single-gateway failover."
+    },
+    {
+      "requirement": "Gateway recovers preference to node1 once healthy again (and stays available when node2 is later restarted)",
+      "command_ids": [
+        "cmd-8752127ffca54e71",
+        "cmd-665e797fcba748f7",
+        "cmd-038c55851708485a"
+      ],
+      "summary": "Restarting keepalived on node1 causes it to preempt back to MASTER (priority 200 beats node2's 100); node2 logs show it stepping down to BACKUP; node3 ping to node4 succeeds with ARP again resolving to node1's MAC."
+    },
+    {
+      "requirement": "Node-restart protocol: node1 healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-a5d6b411ee51497d",
+        "cmd-b0a0cf09aa77456e",
+        "cmd-4e9130b74c574505",
+        "cmd-d1ba522eefd24952",
+        "cmd-fce401b8fa9144b3"
+      ],
+      "summary": "Captured pre-restart boot_id 32669db3...; issued reboot; polled through connection-refused/reset until new boot_id 3f7e2c0e... appeared; confirmed keepalived active and both VRRP groups back to MASTER; confirmed node3->node4 ping still succeeds."
+    },
+    {
+      "requirement": "Node-restart protocol: node2 healthy baseline, restart acknowledgement, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-18ca68b63e9c455f",
+        "cmd-af1e6bfe08324efe",
+        "cmd-8d8b4c8a7dba4081",
+        "cmd-0578f4ed35eb4775"
+      ],
+      "summary": "Captured pre-restart boot_id 5bcff8f9...; issued reboot; polled until new boot_id f0870086... appeared; confirmed keepalived active and both VRRP groups correctly returned to BACKUP state (node1 remained healthy master)."
+    },
+    {
+      "requirement": "Node-restart protocol: node3 healthy baseline, restart acknowledgement, changed boot identity, recovered state/data",
+      "command_ids": [
+        "cmd-348fea9b8a2649ef",
+        "cmd-82c215acdfae470f",
+        "cmd-83a3c42cedf84312",
+        "cmd-d8114b8bc86f462a"
+      ],
+      "summary": "Captured pre-restart boot_id e881ab3c...; issued reboot; polled until new boot_id 3dc76665... appeared; confirmed persistent static IP/route on ens7 survived reboot (systemd-networkd config) and ping to node4 via the single gateway succeeded with 0% loss."
+    },
+    {
+      "requirement": "Node-restart protocol: node4 healthy baseline, restart acknowledgement, changed boot identity, recovered state/data",
+      "command_ids": [
+        "cmd-f85f0286c25f4321",
+        "cmd-97baa684302a428d",
+        "cmd-fd9ddfae15984078",
+        "cmd-78ced4f5213b4906"
+      ],
+      "summary": "Captured pre-restart boot_id f41e1f8a...; issued reboot; polled until new boot_id 2328b246... appeared; confirmed persistent static IP/route on ens7 survived reboot and ping to node3 succeeded with 0% loss."
+    },
+    {
+      "requirement": "Final full-cluster health check after all four restarts, confirming node1 preference restored",
+      "command_ids": [
+        "cmd-ab0b554bcc434444"
+      ],
+      "summary": "After all four sequential restarts, node3's ARP entry for the VIP 10.10.13.1 again resolves to node1's MAC, and connectivity to node4 succeeds, confirming node1 as the healthy preferred gateway end-state."
+    }
+  ]
+}

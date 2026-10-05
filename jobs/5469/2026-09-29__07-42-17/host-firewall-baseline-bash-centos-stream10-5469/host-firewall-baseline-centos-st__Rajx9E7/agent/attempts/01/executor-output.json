@@ -1,0 +1,75 @@
+{
+  "status": "completed",
+  "summary": "Configured firewalld on node1 (CentOS Stream 10) to persistently allow only SSH and TCP/8080 inbound, rejecting everything else via the default public-zone reject target; verified rule structure in the generated nftables ruleset, then rebooted node1 and confirmed the config and firewalld service survived the restart intact.",
+  "actions_performed": [
+    "Inspected baseline: firewalld active/enabled, public zone had ssh+cockpit+dhcpv6-client allowed, target=default",
+    "Added --permanent --add-service=ssh and --add-port=8080/tcp to the public zone",
+    "Set --zone=public --set-target=default to ensure unmatched inbound is rejected (icmpx admin-prohibited)",
+    "Removed pre-existing unrelated allowances (cockpit, dhcpv6-client) so only ssh+8080 remain permitted",
+    "Reloaded firewalld to apply permanent config to runtime",
+    "Verified runtime and --permanent list-all show only services=ssh, ports=8080/tcp",
+    "Attempted live traffic test via NODE_IP; discovered self-directed traffic to the node's own IP is locally routed via lo (kernel 'local' route), bypassing the enp1s0 zone entirely - not valid evidence either way",
+    "Dumped nft ruleset directly: confirmed filter_INPUT_POLICIES jumps to filter_IN_public for iifname enp1s0, filter_IN_public_allow only contains tcp dport 22 and 8080 accept, with a trailing 'reject with icmpx admin-prohibited' fallback for anything else",
+    "Captured baseline boot_id and firewalld health before restart",
+    "Issued sudo systemctl reboot on node1 (backgrounded so ack returned before disconnect)",
+    "Polled node1 until exec succeeded again",
+    "Confirmed boot_id changed (83a0a80f... -> 4bee2296...), proving an actual restart occurred",
+    "Re-verified post-restart: firewalld active/enabled, public zone rules identical (ssh, 8080/tcp, target=default), nft filter_IN_public_allow chain identical, sshd listening"
+  ],
+  "evidence": [
+    {
+      "requirement": "Persistent firewall permits SSH and TCP 8080",
+      "command_ids": [
+        "cmd-b3d523cca9a44289",
+        "cmd-3e7b3ce1741243b0"
+      ],
+      "summary": "firewall-cmd --permanent adds ssh and 8080/tcp; --permanent --list-all confirms they persist in the saved config, not just runtime"
+    },
+    {
+      "requirement": "Firewall rejects unrelated inbound connections",
+      "command_ids": [
+        "cmd-3e7b3ce1741243b0",
+        "cmd-b0150348752a4997"
+      ],
+      "summary": "Only ssh/8080 remain in the zone (cockpit/dhcpv6-client removed); nft ruleset dump shows filter_IN_public_allow contains solely tcp dport 22/8080 accept, with a reject-with-icmpx-admin-prohibited fallback for the enp1s0 ingress path for everything else"
+    },
+    {
+      "requirement": "Self-test caveat on same-host traffic",
+      "command_ids": [
+        "cmd-fed3da3564ee43ce",
+        "cmd-5180d256d1e94087"
+      ],
+      "summary": "curl to the node's own external IP for an unrelated port (9999) unexpectedly succeeded; ip route get showed the kernel delivers self-addressed traffic via 'lo' (local route), never touching the enp1s0-scoped zone, so this test result was discarded as invalid rather than treated as a firewall gap"
+    },
+    {
+      "requirement": "Mandatory restart: healthy baseline before reboot",
+      "command_ids": [
+        "cmd-5074ab6888c64dcb"
+      ],
+      "summary": "Captured boot_id=83a0a80f..., firewalld active/enabled, and the target ruleset (ssh, 8080/tcp) prior to reboot"
+    },
+    {
+      "requirement": "Mandatory restart: reboot acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-b41db6f9aa0b408a"
+      ],
+      "summary": "systemctl reboot issued in background; exec call returned 'reboot_issued' successfully before the node dropped"
+    },
+    {
+      "requirement": "Mandatory restart: changed boot identity proves an actual restart",
+      "command_ids": [
+        "cmd-d2e074832889499b",
+        "cmd-112d23b3e75747b4",
+        "cmd-ada46320e7af4c25"
+      ],
+      "summary": "Node became unreachable (connection timed out, then reset) during reboot, then came back with boot_id=4bee2296... - different from the pre-reboot 83a0a80f..., proving a real restart occurred"
+    },
+    {
+      "requirement": "Mandatory restart: post-restart recovery of required service/config",
+      "command_ids": [
+        "cmd-08d51769c5214f2c"
+      ],
+      "summary": "Post-reboot: firewalld active/enabled, public zone still shows services=ssh, ports=8080/tcp with target=default, nft filter_IN_public_allow chain identical to pre-reboot, sshd listening on 22 - config fully persisted across restart"
+    }
+  ]
+}

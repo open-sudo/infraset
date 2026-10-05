@@ -1,0 +1,77 @@
+{
+  "status": "completed",
+  "summary": "On node1 (AlmaLinux 9), installed nginx serving HTTPS on port 8443 with a certificate signed by a locally-generated internal CA. A renewal script (/usr/local/sbin/renew-cert.sh) checks certificate expiry via `openssl x509 -checkend`, regenerates the cert when within 10 minutes of expiry, and reloads nginx (`systemctl reload nginx`) so the new cert is picked up without dropping in-flight connections. A systemd timer (cert-renew.timer, every 5 min, enabled at boot) drives this automatically. Opened firewalld port 8443/tcp permanently. Demonstrated the full renewal-and-hot-swap behavior by advancing the system clock into the renewal window while a continuous curl loop hit the service: renewal fired, the served certificate's serial changed, nginx reloaded, and all 70 requests during the operation returned HTTP 200 (zero downtime). Restored real time via chronyd and forced a fresh renewal so the live cert's validity window is correct. Completed the mandatory restart-evidence protocol for node1: captured pre-reboot boot_id and service health, issued `systemctl reboot` with an ack that returned before disconnect, polled until reachable, confirmed the boot_id changed, and verified nginx/cert-renew.timer/firewalld/chronyd all recovered with the HTTPS service still serving a CA-verifiable certificate.",
+  "actions_performed": [
+    "Installed nginx on node1 via dnf",
+    "Created local CA and renewal script /usr/local/sbin/renew-cert.sh with checkend-based expiry detection and --force option",
+    "Configured nginx server block for HTTPS on 8443 using /etc/nginx/ssl/server-cert.pem and server-key.pem",
+    "Created and enabled systemd cert-renew.service + cert-renew.timer (OnBootSec=2min, OnUnitActiveSec=5min, Persistent=true)",
+    "Opened firewalld port 8443/tcp permanently and reloaded firewall",
+    "Ran continuous curl loop against https://$NODE_IP:8443/healthz while forcing the system clock into the cert's renewal window to trigger automatic renewal",
+    "Verified renewal changed the served certificate serial and nginx reload occurred with zero failed requests in the curl loop",
+    "Restored real system time via chronyd, forced one more renewal so the live cert's validity window matches real time, verified via strict CA-validated curl",
+    "Captured pre-reboot boot_id and service health baseline on node1",
+    "Issued systemctl reboot with backgrounded ack, polled until node1 was reachable again",
+    "Verified boot_id changed post-reboot and nginx, cert-renew.timer, firewalld, chronyd all recovered with HTTPS serving a valid, CA-verifiable certificate"
+  ],
+  "evidence": [
+    {
+      "requirement": "HTTPS served on port 8443",
+      "command_ids": [
+        "cmd-041657839cd44f17",
+        "cmd-548c3818f5b84e4d",
+        "cmd-8ca04ad2ea83402e"
+      ],
+      "summary": "nginx config test passes, nginx listens on 0.0.0.0:8443, curl to https://$NODE_IP:8443/healthz returns HTTP 200 with TLS handshake showing CN=node1.internal issued by Internal-Test-CA"
+    },
+    {
+      "requirement": "Certificate renews automatically before expiry",
+      "command_ids": [
+        "cmd-9236e29ca37f420e",
+        "cmd-53d66e3b60b64bc4"
+      ],
+      "summary": "System clock advanced to within 5 minutes of the cert's real notAfter; checkend reported expiry approaching; the systemd-triggered cert-renew.service automatically detected this and generated a new certificate (serial changed 5326...8 -> 5326...9) without manual intervention"
+    },
+    {
+      "requirement": "Service picks up new certificate while continuing to answer requests (no downtime)",
+      "command_ids": [
+        "cmd-3b9d8b991d594c36",
+        "cmd-917d2c0ce0aa4031",
+        "cmd-34eafb1d30d94341"
+      ],
+      "summary": "A continuous curl loop hitting the HTTPS endpoint every ~0.3s logged 70/70 HTTP 200 responses spanning the exact renewal/reload timestamp, and a follow-up TLS handshake showed the newly served cert serial, proving nginx reloaded live via 'systemctl reload' without dropping connections"
+    },
+    {
+      "requirement": "Renewal mechanism persists and remains correct going forward",
+      "command_ids": [
+        "cmd-c79753b38cc34e06",
+        "cmd-6f94d5b965c545c7"
+      ],
+      "summary": "After restoring real system time, a forced renewal produced a certificate with notBefore/notAfter aligned to actual current time, and strict TLS validation against the CA cert (no -k) succeeded; cert-renew.timer confirmed enabled with an active next-fire schedule"
+    },
+    {
+      "requirement": "Node1 restart evidence: healthy baseline",
+      "command_ids": [
+        "cmd-a5191284159e4e97"
+      ],
+      "summary": "Captured boot_id 1b0321bf-2638-4d27-bc00-5bd01dce8e0b, confirmed nginx/cert-renew.timer/chronyd active, and HTTPS endpoint returning 200 with the current cert serial before reboot"
+    },
+    {
+      "requirement": "Node1 restart evidence: reboot acknowledgement and changed boot identity",
+      "command_ids": [
+        "cmd-f5f433a64faa464e",
+        "cmd-0a1c3d5f9de740f4",
+        "cmd-1d38971be13f44c1",
+        "cmd-458b62bfbaa54d66"
+      ],
+      "summary": "Reboot command acknowledged before disconnect; node became unreachable then reachable again; boot_id changed to 43a189ab-ad4b-4485-a2d5-a552f26d705e, proving an actual OS restart occurred"
+    },
+    {
+      "requirement": "Node1 restart evidence: post-restart recovery of services and data",
+      "command_ids": [
+        "cmd-4c45f4efd1dd4a4a"
+      ],
+      "summary": "After reboot, chronyd resynchronized, nginx/cert-renew.timer/firewalld active and enabled, firewalld still allows 8443/tcp, and HTTPS endpoint served the same valid certificate verified against the CA with HTTP 200"
+    }
+  ]
+}

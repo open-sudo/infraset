@@ -1,0 +1,85 @@
+---
+- name: Configure inter-VLAN routing on node1 (VyOS)
+  hosts: vyos_router
+  gather_facts: false
+  become: false
+  vars:
+    vlan10_gateway: 192.168.10.1/24
+    vlan20_gateway: 192.168.20.1/24
+  tasks:
+    - name: Set VLAN 10 and VLAN 20 sub-interfaces on eth0 and commit
+      ansible.builtin.shell: |
+        bash -c '
+        source /opt/vyatta/etc/functions/script-template
+        configure
+        set interfaces ethernet eth0 vif 10 address "{{ vlan10_gateway }}"
+        set interfaces ethernet eth0 vif 20 address "{{ vlan20_gateway }}"
+        commit
+        save
+        exit
+        '
+      register: vyos_result
+      changed_when: "'No configuration changes to commit' not in vyos_result.stdout"
+      failed_when: vyos_result.rc != 0 and 'No configuration changes to commit' not in vyos_result.stdout
+
+    - name: Verify VLAN sub-interfaces are present
+      ansible.builtin.shell: ip -4 addr show eth0.10; ip -4 addr show eth0.20
+      register: vyos_show
+      changed_when: false
+
+    - name: Show interface state
+      ansible.builtin.debug:
+        var: vyos_show.stdout_lines
+
+- name: Segment node2/node3 onto their own VLAN over the shared link
+  hosts: vlan_hosts
+  gather_facts: false
+  become: true
+  # RHEL7 hosts only have python2, which this ansible-core version's
+  # module_utils no longer supports, so every task here uses raw (pure
+  # SSH command execution, no remote python required).
+  tasks:
+    - name: Create the 802.1q VLAN sub-interface if it doesn't already exist
+      ansible.builtin.raw: >
+        nmcli -t -f NAME connection show | grep -qx "eth0.{{ vlan_id }}" ||
+        nmcli connection add type vlan con-name "eth0.{{ vlan_id }}" ifname "eth0.{{ vlan_id }}"
+        dev eth0 id {{ vlan_id }} ip4 {{ vlan_ip }}
+      register: vlan_create
+      changed_when: "'Connection' in vlan_create.stdout and 'successfully added' in vlan_create.stdout"
+
+    - name: Ensure the VLAN interface has the correct address and route to the peer VLAN
+      ansible.builtin.raw: >
+        nmcli connection modify "eth0.{{ vlan_id }}"
+        ipv4.method manual ipv4.addresses {{ vlan_ip }}
+        ipv4.routes "{{ peer_subnet }} {{ gateway_ip }}"
+        connection.autoconnect yes
+      register: vlan_modify
+      changed_when: true
+
+    - name: Bring the VLAN connection up
+      ansible.builtin.raw: nmcli connection up "eth0.{{ vlan_id }}"
+      register: vlan_up
+      changed_when: "'activated' in vlan_up.stdout or 'successfully activated' in vlan_up.stdout"
+
+    - name: Confirm the VLAN interface has the expected address
+      ansible.builtin.raw: ip -4 addr show "eth0.{{ vlan_id }}"
+      register: vlan_addr
+      changed_when: false
+
+    - name: Show VLAN interface address
+      ansible.builtin.debug:
+        var: vlan_addr.stdout_lines
+
+- name: Verify end-to-end reachability across VLANs through node1
+  hosts: node2
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Ping node3's VLAN 20 address from node2 over VLAN 10 via node1
+      ansible.builtin.raw: ping -c 4 -W 2 192.168.20.2
+      register: ping_result
+      changed_when: false
+
+    - name: Show ping result
+      ansible.builtin.debug:
+        var: ping_result.stdout_lines

@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 8,
+    "successful": 6,
+    "failed": 2,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "usb-storage module blocked from loading now",
+      "command_ids": [
+        "cmd-b14434e2beae4449",
+        "cmd-3731c2394199421c"
+      ],
+      "summary": "Confirmed usb_storage not loaded before change; after writing blacklist+install directives, modprobe attempt to load it failed (blocked by install /bin/false) and lsmod still shows it absent"
+    },
+    {
+      "requirement": "usb-storage module blocked from loading after reboot (persistence)",
+      "command_ids": [
+        "cmd-29744b6a81d24592",
+        "cmd-0ba74d8666934529",
+        "cmd-1195a01ae44a4974",
+        "cmd-6756bf2cf781407f",
+        "cmd-bc5d38bb90124ce2"
+      ],
+      "summary": "Captured pre-restart boot_id (71f12f87...) and module state, issued systemctl reboot (ack returned then connection dropped confirming disruption), polled until exec available again with a new boot_id (4253c6c8...) proving an actual restart, then verified the blacklist file still present, usb_storage still not loaded, and modprobe still blocked post-restart"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-b14434e2beae4449",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:10:27.739718+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 189,
+      "command": "set -Eeuo pipefail\necho \"== baseline boot id ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"\nuptime -s || true\necho \"== lsmod usb_storage before ==\"\nlsmod | grep -i usb_storage || echo \"not currently loaded\"\necho \"== existing modprobe.d blacklist files ==\"\nls -la /etc/modprobe.d/ 2>/dev/null || true\ngrep -r usb_storage /etc/modprobe.d/ 2>/dev/null || echo \"no existing blacklist entry\"\necho \"== dracut/initramfs presence ==\"\nls /boot/initramfs-$(uname -r).img 2>/dev/null || true\necho \"== kernel cmdline for module_blacklist ==\"\ncat /proc/cmdline\n",
+      "stdout": "== baseline boot id ==\n71f12f87-337d-4ff3-b414-9680244c2694\n== uptime ==\n2026-09-29 08:10:08\n== lsmod usb_storage before ==\nnot currently loaded\n== existing modprobe.d blacklist files ==\ntotal 52\ndrwxr-xr-x.  2 root root 4096 Apr 30 20:20 .\ndrwxr-xr-x. 94 root root 8192 Sep 29 08:10 ..\n-rw-r--r--.  1 root root  158 Nov  6  2025 firewalld-sysctls.conf\n-rw-r--r--.  1 root root  373 Feb 11  2026 l2tp_eth-blacklist.conf\n-rw-r--r--.  1 root root  373 Feb 11  2026 l2tp_ip6-blacklist.conf\n-rw-r--r--.  1 root root  372 Feb 11  2026 l2tp_ip-blacklist.conf\n-rw-r--r--.  1 root root  377 Feb 11  2026 l2tp_netlink-blacklist.conf\n-rw-r--r--.  1 root root  373 Feb 11  2026 l2tp_ppp-blacklist.conf\n-rw-r--r--.  1 root root  369 Feb 11  2026 sctp-blacklist.conf\n-rw-r--r--.  1 root root  374 Feb 11  2026 sctp_diag-blacklist.conf\n-rw-r--r--.  1 root root  374 Feb 11  2026 tipc_diag-blacklist.conf\nno existing blacklist entry\n== dracut/initramfs presence ==\n/boot/initramfs-6.12.0-205.el10.x86_64.img\n== kernel cmdline for module_blacklist ==\nBOOT_IMAGE=(hd0,gpt3)/boot/vmlinuz-6.12.0-205.el10.x86_64 root=UUID=759facae-f5ba-43be-b717-b4fd6540aefc ro console=ttyS0,115200n8 no_timer_check crashkernel=2G-64G:256M,64G-:512M"
+    },
+    {
+      "command_id": "cmd-6e022598f444463c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:10:47.776708+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 12786,
+      "command": "set -Eeuo pipefail\necho \"== is usb_storage in current initramfs ==\"\nlsinitrd /boot/initramfs-$(uname -r).img 2>/dev/null | grep -i usb_storage || echo \"not present in initramfs\"\n",
+      "stdout": "== is usb_storage in current initramfs ==\nnot present in initramfs"
+    },
+    {
+      "command_id": "cmd-3731c2394199421c",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:11:06.344699+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 12885,
+      "command": "set -Eeuo pipefail\necho \"== step 1: write blacklist config ==\"\nsudo -n tee /etc/modprobe.d/usb-storage-blacklist.conf > /dev/null <<'EOF'\nblacklist usb_storage\ninstall usb_storage /bin/false\nEOF\ncat /etc/modprobe.d/usb-storage-blacklist.conf\n\necho \"== step 2: ensure not currently loaded (unload if present) ==\"\nif lsmod | grep -q '^usb_storage'; then\n  sudo -n modprobe -r usb_storage\nelse\n  echo \"usb_storage already not loaded\"\nfi\n\necho \"== step 3: verify modprobe refuses to load it now ==\"\nsudo -n modprobe usb_storage 2>&1 || echo \"modprobe blocked as expected (exit $?)\"\nlsmod | grep -i usb_storage || echo \"confirmed: usb_storage not loaded after modprobe attempt\"\n\necho \"== step 4: verify modprobe config resolution ==\"\nmodprobe --showconfig | grep -i usb_storage\n\necho \"== step 5: regenerate initramfs for safety/persistence ==\"\nsudo -n dracut -f --regenerate-all\necho \"dracut regeneration done\"\n\necho \"== step 6: confirm blacklist survives into new initramfs modules list (informational) ==\"\nlsinitrd /boot/initramfs-$(uname -r).img 2>/dev/null | grep -i usb_storage || echo \"usb_storage still absent from initramfs (expected)\"\n",
+      "stdout": "== step 1: write blacklist config ==\nblacklist usb_storage\ninstall usb_storage /bin/false\n== step 2: ensure not currently loaded (unload if present) ==\nusb_storage already not loaded\n== step 3: verify modprobe refuses to load it now ==\nmodprobe: ERROR: libkmod/libkmod-module.c:1084 command_do() Error running install command '/bin/false' for module usb_storage: retcode 1\nmodprobe: ERROR: could not insert 'usb_storage': Invalid argument\nmodprobe blocked as expected (exit 1)\nconfirmed: usb_storage not loaded after modprobe attempt\n== step 4: verify modprobe config resolution ==\nblacklist usb_storage\ninstall usb_storage /bin/false\nalias usb:v*p*d*dc*dsc*dp*ic08isc01ip00in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc01ip01in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc01ip50in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc02ip00in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc02ip01in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc02ip50in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc03ip00in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc03ip01in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc03ip50in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc04ip00in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc04ip01in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc04ip50in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc05ip00in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc05ip01in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc05ip50in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc06ip00in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc06ip01in* usb_storage\nalias usb:v*p*d*dc*dsc*dp*ic08isc06ip50in* usb_storage\nalias usb:v03EBp2002d0100dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v03EEp6906d0003dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v03F0p0107d0200dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v03F0p070Cd0000dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v03F0p4002d0001dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v03F3p0001d*dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v0409p0040d*dc*dsc*dp*ic*isc*ip*in* usb_storage\nal\n...[TRUNCATED 12321 CHARACTERS]...\nas usb:v4102p1020d0100dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v4102p1059d0000dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v4146pBA01d0100dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v4971p1012d*dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v4971p8017d*dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v4971p8024d*dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:v4971p8024d*dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:vC251p4003d0100dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:vE5B7p0811d0100dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:vED06p4500d0001dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias usb:vED10p7636d0001dc*dsc*dp*ic*isc*ip*in* usb_storage\nalias symbol:fill_inquiry_response usb_storage\nalias symbol:usb_stor_Bulk_reset usb_storage\nalias symbol:usb_stor_Bulk_transport usb_storage\nalias symbol:usb_stor_CB_reset usb_storage\nalias symbol:usb_stor_CB_transport usb_storage\nalias symbol:usb_stor_access_xfer_buf usb_storage\nalias symbol:usb_stor_adjust_quirks usb_storage\nalias symbol:usb_stor_bulk_srb usb_storage\nalias symbol:usb_stor_bulk_transfer_buf usb_storage\nalias symbol:usb_stor_bulk_transfer_sg usb_storage\nalias symbol:usb_stor_clear_halt usb_storage\nalias symbol:usb_stor_control_msg usb_storage\nalias symbol:usb_stor_ctrl_transfer usb_storage\nalias symbol:usb_stor_disconnect usb_storage\nalias symbol:usb_stor_host_template_init usb_storage\nalias symbol:usb_stor_post_reset usb_storage\nalias symbol:usb_stor_pre_reset usb_storage\nalias symbol:usb_stor_probe1 usb_storage\nalias symbol:usb_stor_probe2 usb_storage\nalias symbol:usb_stor_reset_resume usb_storage\nalias symbol:usb_stor_resume usb_storage\nalias symbol:usb_stor_sense_invalidCDB usb_storage\nalias symbol:usb_stor_set_xfer_buf usb_storage\nalias symbol:usb_stor_suspend usb_storage\nalias symbol:usb_stor_transparent_scsi_command usb_storage\n== step 5: regenerate initramfs for safety/persistence ==\ndracut regeneration done\n== step 6: confirm blacklist survives into new initramfs modules list (informational) ==\nusb_storage still absent from initramfs (expected)"
+    },
+    {
+      "command_id": "cmd-29744b6a81d24592",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:11:11.468328+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 127,
+      "command": "set -Eeuo pipefail\necho \"== pre-restart boot id ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== pre-restart usb_storage state ==\"\nlsmod | grep -i usb_storage || echo \"not loaded\"\necho \"== pre-restart blacklist file ==\"\ncat /etc/modprobe.d/usb-storage-blacklist.conf\n",
+      "stdout": "== pre-restart boot id ==\n71f12f87-337d-4ff3-b414-9680244c2694\n== pre-restart usb_storage state ==\nnot loaded\n== pre-restart blacklist file ==\nblacklist usb_storage\ninstall usb_storage /bin/false"
+    },
+    {
+      "command_id": "cmd-0ba74d8666934529",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:11:14.315502+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 109,
+      "command": "nohup sudo -n systemctl reboot >/tmp/reboot.log 2>&1 & disown; sleep 1; echo \"reboot issued\"",
+      "stderr": "exec stream closed before command completion"
+    },
+    {
+      "command_id": "cmd-1195a01ae44a4974",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:11:18.938182+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": -1,
+      "duration_ms": 2074,
+      "command": "echo up; cat /proc/sys/kernel/random/boot_id",
+      "stderr": "[Errno 110] Connection timed out"
+    },
+    {
+      "command_id": "cmd-6756bf2cf781407f",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:11:26.226576+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 121,
+      "command": "echo up; cat /proc/sys/kernel/random/boot_id",
+      "stdout": "up\n4253c6c8-87f3-4858-95ff-8fc35a5a9266"
+    },
+    {
+      "command_id": "cmd-bc5d38bb90124ce2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:11:30.626595+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 230,
+      "command": "set -Eeuo pipefail\necho \"== post-restart usb_storage loaded? ==\"\nlsmod | grep -i usb_storage || echo \"confirmed: usb_storage NOT loaded after reboot\"\necho \"== post-restart blacklist config present ==\"\ncat /etc/modprobe.d/usb-storage-blacklist.conf\necho \"== post-restart modprobe attempt blocked ==\"\nsudo -n modprobe usb_storage 2>&1 || echo \"modprobe blocked as expected\"\nlsmod | grep -i usb_storage || echo \"confirmed still not loaded after modprobe attempt\"\necho \"== systemd boot confirm (should be recent) ==\"\nuptime -s\n",
+      "stdout": "== post-restart usb_storage loaded? ==\nconfirmed: usb_storage NOT loaded after reboot\n== post-restart blacklist config present ==\nblacklist usb_storage\ninstall usb_storage /bin/false\n== post-restart modprobe attempt blocked ==\nmodprobe: ERROR: libkmod/libkmod-module.c:1084 command_do() Error running install command '/bin/false' for module usb_storage: retcode 1\nmodprobe: ERROR: could not insert 'usb_storage': Invalid argument\nmodprobe blocked as expected\nconfirmed still not loaded after modprobe attempt\n== systemd boot confirm (should be recent) ==\n2026-09-29 08:11:18"
+    }
+  ]
+}

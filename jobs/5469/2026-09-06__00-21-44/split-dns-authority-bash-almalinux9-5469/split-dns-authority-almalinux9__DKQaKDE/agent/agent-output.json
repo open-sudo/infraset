@@ -1,0 +1,85 @@
+{
+  "status": "completed",
+  "summary": "Configured split-horizon DNS: node1 (VyOS) forwards DNS on its lan-a interface (10.10.1.254/24) and answers app.internal -> 10.10.1.10 (node3) via a static-host-mapping in pdns-recursor. node2 (OPNsense) was given a new lan-b interface (opt1/vtnet2, 10.10.2.254/24) with a matching firewall pass rule, and Unbound answers app.internal -> 10.10.2.10 (node4) via a host override. Both hosts (node3, node4) were switched to static NM addressing on their second NIC with DNS pointed only at their own router, and each independently resolves app.internal to its own IP and reaches a demo HTTP service by that name. All four nodes were then restarted one at a time (boot-id/boottime changed on each), and full recovery (addressing, DNS service, resolution, and service reachability) was re-verified after each reboot.",
+  "actions_performed": [
+    "Mapped physical L2 wiring via arping (node1 eth1<->node2 vtnet1 transit; node1 eth2<->node3 eth1 lan-a; node2 vtnet2<->node4 eth1 lan-b)",
+    "Configured VyOS node1: eth1 10.10.0.1/30 (transit), eth2 10.10.1.254/24 (lan-a); service dns forwarding listen-address/allow-from on lan-a; system static-host-mapping app.internal -> 10.10.1.10; commit+save",
+    "Fixed node3/node4 NetworkManager eth1 profiles to static addressing (10.10.1.10/24 and 10.10.2.10/24) with gateway/DNS pointing at their router, and raised eth1 dns-priority so only the LAN router is used for resolution",
+    "Added OPNsense node2 interface assignment opt1 (vtnet2, 10.10.2.254/24) plus a firewall pass rule, applied via configctl interface reconfigure/filter reload",
+    "Added Unbound host override app.internal -> 10.10.2.10 in config.xml (using correct 'hostname' field), applied via configctl template reload + unbound restart",
+    "Deployed demo HTTP services on node3 and node4 and validated end-to-end name resolution + reachability from each host",
+    "Captured baseline boot identity (boot_id/kern.boottime) and health checks on all 4 nodes, restarted node3, node4, node1, node2 one at a time via backgrounded reboot, polled until exec responsive, and confirmed changed boot identity plus recovered networking/DNS/service state on each"
+  ],
+  "evidence": [
+    {
+      "requirement": "node1 resolves app.internal to node3's lan-a address",
+      "command_ids": [
+        "cmd-0d9ebe2bc6014636",
+        "cmd-b63e437fda3647ed",
+        "cmd-9453ac783b064297"
+      ],
+      "summary": "vyos-hostsd state shows hosts.system.app.internal=10.10.1.10; pdns-recursor listening on 10.10.1.254; node3 getaddrinfo resolves app.internal to 10.10.1.10"
+    },
+    {
+      "requirement": "node2 resolves app.internal to node4's lan-b address",
+      "command_ids": [
+        "cmd-4e08331d7d054084",
+        "cmd-63d1476b6de145fe"
+      ],
+      "summary": "unbound host_entries.conf shows app.internal A 10.10.2.10; node4 getaddrinfo resolves app.internal to 10.10.2.10"
+    },
+    {
+      "requirement": "each host reaches its own-side service by the name app.internal",
+      "command_ids": [
+        "cmd-e1d7018c4ccc4490",
+        "cmd-fe329640789c44b5"
+      ],
+      "summary": "curl http://app.internal/ returns node3-lan-a on node3 and node4-lan-b on node4"
+    },
+    {
+      "requirement": "node1 restart: baseline, ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-d5c241ed3658402f",
+        "cmd-0b7f74cff0344ec0",
+        "cmd-849f954719e74a47",
+        "cmd-4a29037be9bc4cb6",
+        "cmd-1cf6d11490b14041"
+      ],
+      "summary": "boot_id baseline e98d9010...; reboot acked; new boot_id 69521285...; interface/DNS state and node3 resolution confirmed post-reboot"
+    },
+    {
+      "requirement": "node2 restart: baseline, ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-7bbb38eb88484b0c",
+        "cmd-5adc89c3053d41e1",
+        "cmd-a10e69c013b1405e",
+        "cmd-317328dff0ba4bb7",
+        "cmd-9eb5076439a34d15"
+      ],
+      "summary": "kern.boottime baseline 1788668549; reboot acked; new boottime 1788669069; vtnet2 addr, unbound process/socket, and node4 end-to-end resolution+curl confirmed post-reboot"
+    },
+    {
+      "requirement": "node3 restart: baseline, ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-2526721d7c294302",
+        "cmd-d5b1a4ede4cb48f7",
+        "cmd-b8f706662c784c08",
+        "cmd-5f7501a3073a4717",
+        "cmd-af6b200e581343e0",
+        "cmd-3201409677074460"
+      ],
+      "summary": "boot_id baseline f43afa1c...; reboot acked, exec timed out then returned new boot_id 55db7fce...; static addressing/route/DNS and service reachability confirmed post-reboot"
+    },
+    {
+      "requirement": "node4 restart: baseline, ack, changed boot identity, recovery",
+      "command_ids": [
+        "cmd-0d508fac31244ed3",
+        "cmd-50a8342157c041cc",
+        "cmd-47b5c2ccc23b4d49",
+        "cmd-88823d76aa214067",
+        "cmd-63d1476b6de145fe"
+      ],
+      "summary": "boot_id baseline dfdea52d...; reboot acked, exec timed out then returned new boot_id 2e58e1f7...; static addressing/DNS/service confirmed post-reboot"
+    }
+  ]
+}

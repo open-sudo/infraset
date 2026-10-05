@@ -1,0 +1,73 @@
+{
+  "status": "completed",
+  "summary": "Set up nginx on node1 (CentOS Stream 10) serving HTTPS on port 8443 with a locally-issued, short-lived TLS certificate that is renewed automatically before expiry via a systemd timer, and demonstrated zero-downtime pickup of the renewed certificate via nginx graceful reload. Performed and verified the mandatory single-node restart protocol.",
+  "actions_performed": [
+    "Installed nginx and openssl on node1",
+    "Created a local self-signed CA at /etc/pki/rotation-ca",
+    "Wrote /usr/local/sbin/renew-cert.sh: checks cert remaining lifetime, and when below threshold, issues a new 5-minute-validity cert (CN=NODE_IP, SAN=node IP + node1) signed by the local CA, atomically replaces /etc/nginx/ssl/server.{crt,key}, then runs `systemctl reload nginx` (graceful reload, no dropped connections)",
+    "Configured nginx vhost /etc/nginx/conf.d/rotation-demo.conf listening on 8443 with ssl_certificate/ssl_certificate_key pointing at the rotated files",
+    "Added SELinux port label (http_port_t for 8443) and restorecon on /etc/nginx/ssl; opened firewalld port 8443/tcp permanently",
+    "Created renew-cert.service (oneshot) and renew-cert.timer (OnBootSec=10s, OnUnitActiveSec=30s) and enabled both along with nginx",
+    "Ran a background curl-polling loop against https://$NODE_IP:8443 every 2s for ~3.5 minutes while the timer fired; observed the certificate serial change automatically at 08:10:51 (145s remaining of a 300s-lived cert) with continuous HTTP 200 responses before and after the swap, proving no request downtime across rotation",
+    "Captured pre-restart baseline (boot_id, active/enabled services, live cert serial/expiry, HTTP 200)",
+    "Triggered a single deferred reboot on node1 via systemd-run so the exec call's acknowledgement returned before disconnection; polled until the node was reachable again",
+    "Verified changed boot_id (4cee4ea8-4b8e-4c2f-af1a-3a82b9ec41f4 to a00fa18c-7c49-45aa-a752-7e61095ac1f1)",
+    "Verified post-restart recovery: nginx and renew-cert.timer active/enabled, previously issued cert intact and valid, firewalld port and SELinux enforcing mode preserved, HTTPS returned 200, and renew-cert.service ran again automatically per the timer schedule"
+  ],
+  "evidence": [
+    {
+      "requirement": "HTTPS served on port 8443",
+      "command_ids": [
+        "cmd-b55cd39e3b484481",
+        "cmd-6f509e37bd304d2a"
+      ],
+      "summary": "Initial curl to https://$NODE_IP:8443/ returned http_code=200 and body 'cert-rotation-demo ok'; pre-restart baseline curl also returned 200."
+    },
+    {
+      "requirement": "Certificate is renewed automatically before it expires",
+      "command_ids": [
+        "cmd-f10ff9fa55b44198"
+      ],
+      "summary": "renew-cert.service journal shows periodic checks every ~31s; at 08:10:51, with 145s remaining on the 300s-lived cert (below the 150s threshold), the script issued a new cert (serial changed from ...704EF to ...704F0, new notAfter 12:15:51) automatically via the systemd timer, well before the original cert's expiry."
+    },
+    {
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no downtime)",
+      "command_ids": [
+        "cmd-f10ff9fa55b44198"
+      ],
+      "summary": "Background watcher curled the endpoint every 2s for ~3.5 minutes; every single sample returned code=200, including the exact sample where the served certificate serial changed (08:10:50 old serial -> 08:10:52 new serial), proving nginx's graceful reload picked up the new cert with zero dropped requests."
+    },
+    {
+      "requirement": "Pre-restart healthy baseline",
+      "command_ids": [
+        "cmd-6f509e37bd304d2a"
+      ],
+      "summary": "Captured boot_id=4cee4ea8-4b8e-4c2f-af1a-3a82b9ec41f4, nginx and renew-cert.timer active+enabled, live cert serial/expiry, and HTTP 200 response prior to restart."
+    },
+    {
+      "requirement": "node1 restart acknowledgement returns before disconnect",
+      "command_ids": [
+        "cmd-6600b1c365e14a5b"
+      ],
+      "summary": "systemd-run scheduled a deferred `systemctl reboot` 1s in the future; the exec call returned 'reboot scheduled' successfully before the node went down."
+    },
+    {
+      "requirement": "Changed boot identity proves an actual restart occurred",
+      "command_ids": [
+        "cmd-6cce7d8e094d46eb",
+        "cmd-28d17129a02b4d11",
+        "cmd-9d35dbce4aa640ae",
+        "cmd-c1ad5976008b4cad",
+        "cmd-4d98e2b049554489"
+      ],
+      "summary": "Node became unreachable (connection timed out/reset) during reboot, then returned with boot_id=a00fa18c-7c49-45aa-a752-7e61095ac1f1, differing from the pre-restart boot_id, direct proof of a real reboot rather than mere elapsed time."
+    },
+    {
+      "requirement": "Post-restart recovery of required services, data, and functionality",
+      "command_ids": [
+        "cmd-3046b588f4454736"
+      ],
+      "summary": "After reboot: nginx and renew-cert.timer both active and enabled, the previously issued certificate (same serial, same expiry) persisted on disk, firewalld still had 8443/tcp open, SELinux still Enforcing, HTTPS curl returned 200 with the expected body, and renew-cert.service ran again automatically per the timer confirming the rotation pipeline survived the restart."
+    }
+  ]
+}

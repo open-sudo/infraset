@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on port 8443 on node1 with a valid certificate",
+      "status": "satisfied",
+      "summary": "After fixing a python2 accept() bug and restarting the service, curl -k to https://$NODE_IP:8443/ returns HTTP 200 'ok', and openssl s_client confirms the served certificate (serial=1000, valid SAN for node1/IP) matches the locally issued leaf cert. After_executor lifecycle snapshot independently confirms tcp *:8443 LISTEN owned by python2 pid 871.",
+      "evidence_ids": [
+        "cmd-fab7c445afbc4ab2",
+        "cmd-812068271bd94ec8",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "cert-auto-renew",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A systemd timer (https-rotate-renew.timer, 60s interval) triggered renewals with no manual intervention: serial advanced 1000->1001 (before original 14:31:04Z expiry, new expiry 14:33:40Z), then 1001->1002, and later 1002->1003, each captured via live TLS handshake and file checks with fresh notAfter timestamps confirming renewal always occurred prior to expiry.",
+      "evidence_ids": [
+        "cmd-0ee1c869bb9a49d0",
+        "cmd-07959ec603834e0e",
+        "cmd-2501cdeb50f448f3",
+        "cmd-9076668de03e498b"
+      ]
+    },
+    {
+      "id": "hot-pickup-no-restart",
+      "requirement": "Service picks up each new certificate while continuing to answer requests (no restart/drop)",
+      "status": "satisfied",
+      "summary": "Poll log shows serial transitioning 1001->1002 with http=200 on every 20s check throughout the renewal, while systemctl show -p MainPID reported the unchanged PID 2428 across the observed cycles, directly demonstrating the running process served the newly rotated cert without restarting or dropping connections.",
+      "evidence_ids": [
+        "cmd-07959ec603834e0e",
+        "cmd-841a5d49d57c442a",
+        "cmd-3f1006faac974330"
+      ]
+    },
+    {
+      "id": "node-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1 (independent of public task)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id d72bd4ec..., both units active, cert serial=1002 valid, http 200. sudo systemctl reboot was issued and acknowledged (connection dropped), a subsequent SSH attempt timed out during the reboot window, and a later attempt succeeded reporting a new boot_id 41f1cd47.... Post-restart, both systemd units auto-started (new MainPID 871), on-disk cert/data was intact, HTTPS answered 200, and a further automatic renewal (1002->1003) was observed post-reboot. The fixed after_executor boot-identity snapshot (41f1cd47-f42d-46ed-8ba7-ca8f93bcee75) matches the executor-reported post-reboot boot_id, cross-confirming the restart.",
+      "evidence_ids": [
+        "cmd-025e277b09ab45aa",
+        "cmd-555ed2e6f1e94739",
+        "cmd-d2496a8a26f543da",
+        "cmd-994e2ac946eb41f2",
+        "cmd-c5a6e8daf40648c5",
+        "cmd-9076668de03e498b",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor built a self-signed-CA-backed Python2 HTTPS server on node1:8443 whose SSLContext is rebuilt per-connection from files on disk, paired with a systemd timer that renews the short-lived leaf certificate every 60s and swaps it in atomically. Directly observed evidence confirms all three material outcomes: HTTPS is served with a valid cert, the certificate is renewed automatically before expiry across multiple cycles, and the running service (constant MainPID) continues answering 200s through the cert swap with no restart or dropped requests. The independently mandated node-restart evidence protocol was also fully executed and cross-validated against the fixed before/after boot-identity snapshots, showing healthy pre-restart state, an acknowledged restart, a changed boot id, and full post-restart recovery of both the service and the renewal timer, including a further renewal cycle observed after reboot.",
+  "limitations": [
+    "Package-health checks were unavailable (timed out) in both the before_prepare and after_executor lifecycle snapshots, so native package-manager consistency cannot be independently verified, though this is unrelated to the HTTPS/rotation task outcomes.",
+    "The demo certificate lifetime (300s) and renewal window (checkend 180s) are artificially short for verification purposes; the underlying mechanism (openssl x509 -checkend driven by a systemd timer) generalizes to realistic longer-lived certs but that generalization itself was not directly tested.",
+    "No internet-facing CA (e.g. Let's Encrypt/ACME) was used since node1 has no outbound internet access or enabled yum repos; a locally trusted demo CA was used instead, which is a reasonable adaptation to the environment's constraints rather than a requirement gap, but differs from a typical production ACME setup."
+  ],
+  "command_stats": {
+    "total": 38,
+    "successful": 30,
+    "failed": 7,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Command trace shows a coherent, mostly discovery-then-build-then-verify flow. Two early yum-install attempts (cmd-eadb4706960a4841, cmd-3b37666e63154ee9) failed due to missing sudo/repos and made no system state changes \u2014 reasonable discovery given no nginx/httpd/python3/certbot were available, not unnecessary mutations since nothing was mutated. All later mutating commands (mkdir/chown of /opt/https-rotate, writing CA/scripts, generating CA and first cert, installing and enabling the two systemd units, the serve.py bug-fix and service restart, the reboot) each have a clear causal link to building or verifying the required HTTPS-with-rotation service or to the mandated restart-evidence protocol. Diagnostic commands (ss missing, netstat, journalctl, s_client probes) were read-only. The only residue left behind is a handful of small log files under /tmp (ca-genkey.log, ca-req.log, checkend.log, gen-cert-last.log, poll.log, poll-nohup.log) from cert generation and the polling loop, visible in the after_executor temporary-files snapshot; these are low-risk, bounded artifacts of legitimate verification work and were not cleaned up afterward. A background polling shell (pid 2674) was left running unattended after cmd-9d09044e0b7747aa but was self-bounded (15 iterations x 20s, ~5 min) and not persisted as a service, so it posed no lasting risk.",
+    "evidence_ids": [
+      "cmd-eadb4706960a4841",
+      "cmd-3b37666e63154ee9",
+      "cmd-5e88ea91fd9b4400",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

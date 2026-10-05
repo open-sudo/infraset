@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Traffic between the two private networks (node3/node4) is carried over both independent links between node1 and node2 simultaneously, not just active/passive",
+      "status": "satisfied",
+      "summary": "After the initial 802.3ad LACP attempt failed due to virtio NICs not reporting link speed/duplex (dmesg 'failed to get link speed/duplex', Partner Mac all-zero, cmd-6a0068c82b684926/cmd-3a8ac372b3b14840), the executor rebuilt bond0 in balance-rr mode on both node1 and node2 (cmd-aa54a1089f3e46e4, cmd-8af14fc01fb04cae), which round-robins per-packet across both slave links without requiring LACP negotiation. Interface counters on node1's eth1 and eth2 were captured before and after a ping burst (cmd-13db90513be54e6c -> cmd-85db3afa69d64c0e, both interfaces' rx/tx increased similarly), directly showing both physical links carrying traffic concurrently rather than one idle standby link.",
+      "evidence_ids": [
+        "cmd-6a0068c82b684926",
+        "cmd-3a8ac372b3b14840",
+        "cmd-aa54a1089f3e46e4",
+        "cmd-8af14fc01fb04cae",
+        "cmd-13db90513be54e6c",
+        "cmd-5e654d5aafb04f82",
+        "cmd-85db3afa69d64c0e"
+      ]
+    },
+    {
+      "id": "R2",
+      "requirement": "node3 and node4 continue reaching each other when either one of the two links is taken out of service",
+      "status": "satisfied",
+      "summary": "The executor directly demonstrated a bounded disruption-and-recovery cycle for both links. Baseline steady-state ping showed 0% loss (cmd-5e654d5aafb04f82). With eth1 (link1) brought down on both node1 and node2, node3->node4 ping over 10 packets showed 0% loss (cmd-b0c74d40f37c4d6a, cmd-9784475aa72a40e0, cmd-31df9b633af148e7); the link was then restored (cmd-3a7c00de15e545a8, cmd-e2aaad23125f4d1e). eth2 (link2) was then downed on both ends and node4->node3 ping over 10 packets showed 0% loss (cmd-8542f8c537d646f3, cmd-49c53342563c4ba0, cmd-30d46d7d9bad47d7), followed by restoration (cmd-28f690b10f3945e0, cmd-26b9b387016c4cad) and a final steady-state re-check (cmd-85db3afa69d64c0e, cmd-a526b0fcd26643fe). Both the healthy baseline, the bounded disruption, and the restored/recovered state are directly observed for both links.",
+      "evidence_ids": [
+        "cmd-5e654d5aafb04f82",
+        "cmd-b0c74d40f37c4d6a",
+        "cmd-9784475aa72a40e0",
+        "cmd-31df9b633af148e7",
+        "cmd-3a7c00de15e545a8",
+        "cmd-e2aaad23125f4d1e",
+        "cmd-8542f8c537d646f3",
+        "cmd-49c53342563c4ba0",
+        "cmd-30d46d7d9bad47d7",
+        "cmd-28f690b10f3945e0",
+        "cmd-26b9b387016c4cad",
+        "cmd-a526b0fcd26643fe"
+      ]
+    }
+  ],
+  "overall_summary": "Both material outcomes of the task contract are directly satisfied with strong evidence: node1/node2 bond both parallel links (balance-rr, since the platform's virtio NICs could not negotiate 802.3ad LACP) so traffic is genuinely carried over both links simultaneously, and node3<->node4 connectivity was directly shown to survive a full bilateral failure of either individual link with 0% packet loss, followed by restoration. The mandatory provider-wide restart protocol was also executed cleanly and sequentially on all four nodes, each showing a captured pre-restart boot id and healthy state, a restart acknowledgement, a changed post-restart boot id (cross-checked against the fixed after-executor lifecycle snapshot, which matches exactly), and recovered bond/route/service state plus renewed cross-network ping. Hygiene is good: the one dead-end LACP attempt and temporary link-mapping IPs were bounded, diagnostic, and fully cleaned up, and a brief accidental eth0 (mgmt) drop was immediately corrected.",
+  "limitations": [
+    "Persistence-across-reboot was not an explicit item in the public task instruction; it was demonstrated only as part of the independently-mandated restart evidence protocol, so it is reported as supplemental context rather than a scored task requirement.",
+    "Single-link-down tests where only one end (not both) of the link was disabled showed 50% loss (cmd-33ecbdd2e04d4362, cmd-3819f018d36a4df3) before the executor moved to disabling both ends; this reflects a virtualized-link characteristic (one-sided carrier loss not being detected by the peer) rather than a flaw in the redundancy design, but it means true single-sided physical link failures were not directly validated, only bilateral simulated failures were."
+  ],
+  "command_stats": {
+    "total": 99,
+    "successful": 79,
+    "failed": 20,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.88,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.82,
+    "summary": "Most state-changing commands map clearly to necessary prerequisites (SONiC docker0/interfaces-config cleanup on node1/node2), topology discovery, or the final solution. Temporary 172.31.x.x/24 test addresses assigned on eth1/eth2/eth3/enp8s0 to empirically map physical link pairing (cmd-95478587efb84c64, cmd-f87cd1002db04705, cmd-671bde25696f456e, cmd-32cbd80ec2854d99, cmd-f707d4b2d84d4570, cmd-a57ac7fd46c74997, cmd-ab92b7c55e3e4ffe) were a bounded, low-risk diagnostic that was fully flushed afterward (cmd-34d63a0063e24e1e, cmd-adcacfe0156a4ea7, cmd-32cb4a77a51d414d, cmd-f6386022cee740ed) and left no residue. The initial 802.3ad LACP bond configuration on node1/node2 (cmd-6a0068c82b684926, cmd-2e2fd9aa4a9443be, cmd-d4d770768c5b4e14) failed due to a platform limitation (virtio NICs cannot report speed/duplex) and was torn down and rebuilt as balance-rr (cmd-aa54a1089f3e46e4, cmd-8af14fc01fb04cae); this diagnostic directly informed the final bonding-mode choice and left no residue, so it is treated as a low-severity, fully-corrected exploration rather than a true unnecessary mutation. A brief, unexplained drop of node1's mgmt interface eth0 (observed in cmd-a7844c3458c346a9) was caught and restored within seconds (cmd-e3c9020060f64462) with no lasting effect. No abandoned files, conflicting services, or unnecessary residual mutations were found in the after-executor snapshot beyond the expected new antrieb-uplinks.service/script and systemd-networkd file, which are directly required for persistence and are not residue.",
+    "evidence_ids": [
+      "cmd-95478587efb84c64",
+      "cmd-f87cd1002db04705",
+      "cmd-671bde25696f456e",
+      "cmd-32cbd80ec2854d99",
+      "cmd-f707d4b2d84d4570",
+      "cmd-a57ac7fd46c74997",
+      "cmd-ab92b7c55e3e4ffe",
+      "cmd-34d63a0063e24e1e",
+      "cmd-adcacfe0156a4ea7",
+      "cmd-32cb4a77a51d414d",
+      "cmd-f6386022cee740ed",
+      "cmd-6a0068c82b684926",
+      "cmd-2e2fd9aa4a9443be",
+      "cmd-d4d770768c5b4e14",
+      "cmd-aa54a1089f3e46e4",
+      "cmd-8af14fc01fb04cae",
+      "cmd-a7844c3458c346a9",
+      "cmd-e3c9020060f64462",
+      "global:after_executor:node1:listening-sockets",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

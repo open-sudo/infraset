@@ -1,0 +1,93 @@
+{
+  "status": "completed",
+  "summary": "Deployed inventory-api as a protected systemd service on node1 (OOMScoreAdjust=-1000), proved the kernel OOM killer targets an unprotected memory-hog process instead of inventory-api under real memory pressure, then completed the mandatory single-node restart protocol confirming persistence and recovery.",
+  "actions_performed": [
+    "Inspected node1 (RHEL 10, 1.9GiB RAM, 2GiB swap, python3+systemd available)",
+    "Wrote /opt/inventory-api/app.py: a stdlib http.server JSON API exposing /healthz and /inventory on 0.0.0.0:8080",
+    "Created /etc/systemd/system/inventory-api.service with Restart=always and OOMScoreAdjust=-1000 (kernel-level OOM protection), enabled and started it",
+    "Verified baseline: service active, oom_score_adj=-1000 on the running PID, curl against $NODE_IP:8080 returned healthy JSON",
+    "Wrote /opt/inventory-api/memhog.py, an unbounded memory-allocation loop",
+    "Disabled swap (swapoff -a) to force a genuine, fast kernel OOM condition (reversible pre-test step)",
+    "Launched memhog as a transient systemd scope (default oom_score_adj=0, i.e. unprotected relative to inventory-api)",
+    "Observed dmesg oom-killer log and `systemctl status memhog.scope` showing Active: failed (Result: oom-kill) confirming the kernel picked the hog (pid 1773) and killed it",
+    "Confirmed inventory-api was untouched: same PID (1670) throughout, uptime and request counter kept incrementing across the OOM event, /healthz and /inventory still served correctly",
+    "Restored swap (swapon /dev/vda3) and cleaned up memhog artifacts/failed scope",
+    "Captured pre-restart boot_id (2db46909-...) as the stable boot marker",
+    "Rebooted node1 via `systemctl reboot` (scheduled with nohup+sleep so the ack returned before disconnect)",
+    "Polled node1 until exec connectivity returned",
+    "Verified boot_id changed to c1881a58-875a-499b-876f-57d25f453051, proving an actual restart occurred",
+    "Verified post-restart recovery: inventory-api auto-started (enabled unit, new PID 756), OOMScoreAdjust=-1000 preserved, both endpoints returned correct JSON, and swap was back at its original 2GiB/0B-used state"
+  ],
+  "evidence": [
+    {
+      "requirement": "inventory-api deployed as a managed (systemd) service and serving traffic",
+      "command_ids": [
+        "cmd-3ec1f8c4d9a84a89",
+        "cmd-4c864f6bb007408f"
+      ],
+      "summary": "app.py compiled cleanly; systemd unit created, enabled, started (active), oom_score_adj=-1000 confirmed on the running PID, and curl against $NODE_IP:8080/healthz and /inventory returned correct JSON"
+    },
+    {
+      "requirement": "Kernel OOM killer targets the memory hog, not inventory-api, when the system is driven out of memory",
+      "command_ids": [
+        "cmd-33c2f4a2fb45466f",
+        "cmd-b3a0f26511284f81",
+        "cmd-84d44d7ae68648d0",
+        "cmd-1fc439b127fc4450"
+      ],
+      "summary": "Swap disabled to force real memory pressure; memhog launched as an unprotected scope (oom_score_adj=0); dmesg shows 'Out of memory: Killed process 1773 (python3) ... oom_score_adj:0' and systemctl status confirms memhog.scope Active: failed (Result: oom-kill)"
+    },
+    {
+      "requirement": "inventory-api keeps serving throughout and after the OOM event (not the process the kernel stops)",
+      "command_ids": [
+        "cmd-84d44d7ae68648d0",
+        "cmd-21561926dd34466e"
+      ],
+      "summary": "inventory-api PID (1670) and monotonically increasing uptime/request counters were unchanged across the OOM kill; curl to /healthz and /inventory succeeded immediately after the hog was killed"
+    },
+    {
+      "requirement": "Reversible disruption restored to original state",
+      "command_ids": [
+        "cmd-21561926dd34466e",
+        "cmd-3ac2bf3424364350"
+      ],
+      "summary": "swapon /dev/vda3 restored 2GiB swap (0B used, matching pre-test state); memhog.scope reset-failed and script files removed"
+    },
+    {
+      "requirement": "Mandatory restart protocol: healthy baseline before restart",
+      "command_ids": [
+        "cmd-3ac2bf3424364350"
+      ],
+      "summary": "Pre-restart boot_id captured (2db46909-a020-4fda-b1db-2c3ead04c18a) alongside healthy inventory-api process state and restored swap/memory"
+    },
+    {
+      "requirement": "Mandatory restart protocol: restart acknowledged and node restarted one at a time",
+      "command_ids": [
+        "cmd-8fc87cd2445c408f"
+      ],
+      "summary": "systemctl reboot scheduled via a backgrounded delayed command so the exec call acknowledged before the node disconnected; only node1 (the sole managed node) was restarted"
+    },
+    {
+      "requirement": "Mandatory restart protocol: node polled until command execution available again",
+      "command_ids": [
+        "cmd-2a1d091c9e62439a",
+        "cmd-cf621d7c1d594276"
+      ],
+      "summary": "First poll timed out (node mid-reboot); second poll succeeded, confirming exec availability returned"
+    },
+    {
+      "requirement": "Mandatory restart protocol: changed boot identity proven",
+      "command_ids": [
+        "cmd-30bf3d5f7983478e"
+      ],
+      "summary": "Post-restart boot_id is c1881a58-875a-499b-876f-57d25f453051, differing from the pre-restart boot_id 2db46909-a020-4fda-b1db-2c3ead04c18a, proving an actual kernel restart occurred"
+    },
+    {
+      "requirement": "Mandatory restart protocol: post-restart recovery of required service and data",
+      "command_ids": [
+        "cmd-30bf3d5f7983478e"
+      ],
+      "summary": "inventory-api auto-started after reboot (enabled unit, new MainPID 756, OOMScoreAdjust=-1000 preserved) and /healthz plus /inventory returned correct JSON data; swap confirmed back at original 2GiB/0B-used"
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "https-8443",
+      "requirement": "Serve HTTPS on node1 port 8443",
+      "status": "satisfied",
+      "summary": "nginx installed, configured with an https-8443.conf server block listening on 0.0.0.0:8443 and [::]:8443, config validated with nginx -t, service enabled and active, firewalld port 8443/tcp opened permanently, and curl over TLS returned http_code=200. Confirmed again in the post-reboot after_executor listening-sockets snapshot showing nginx bound to 8443 on both IPv4/IPv6.",
+      "evidence_ids": [
+        "cmd-e16d390a866a4230",
+        "cmd-9387412e11e14455",
+        "cmd-fbb1dff5e9ae4968",
+        "cmd-5bb97a730fcd4ab6",
+        "global:after_executor:node1:listening-sockets"
+      ]
+    },
+    {
+      "id": "cert-auto-renewal",
+      "requirement": "Certificate is renewed automatically before it expires",
+      "status": "satisfied",
+      "summary": "A systemd oneshot service (cert-renew.service) driven by a 60s-interval timer (cert-renew.timer) runs renew-cert.sh, which checks certificate validity via `openssl x509 -checkend 180` and reissues a new self-signed cert when fewer than 180s of a deliberately short (6-minute) lifetime remain. Two independent automatic renewals were directly observed: one before reboot (serial changed from 5E40A9F5... to 4B4F3527..., notAfter extended, logged in /var/log/renew-cert.log at 10:04:39) and one after reboot (serial changed to 25112A49..., notAfter extended to 14:13:51, logged at 10:07:51), each occurring without manual intervention.",
+      "evidence_ids": [
+        "cmd-7fa528522ea74c8e",
+        "cmd-0d239e5ca67d4a8b",
+        "cmd-e6d7d2951d1a413d",
+        "cmd-f9b9fff3d0bf45fa"
+      ]
+    },
+    {
+      "id": "service-picks-up-cert",
+      "requirement": "Service picks up each new certificate while continuing to answer requests",
+      "status": "satisfied",
+      "summary": "renew-cert.sh issues `systemctl reload nginx` (guarded by an is-active check) after swapping in the new cert/key, which is a zero-downtime reload. Immediately after the pre-reboot renewal, curl to :8443 still returned 200 and a live TLS handshake via openssl s_client served the exact new serial (4B4F3527...), and the same pattern held after the post-reboot renewal (serial 25112A49..., http_code=200), directly demonstrating continuous service while the certificate rotated underneath it.",
+      "evidence_ids": [
+        "cmd-0d239e5ca67d4a8b",
+        "cmd-d7f77e35d02f4f3c",
+        "cmd-e6d7d2951d1a413d"
+      ]
+    },
+    {
+      "id": "restart-evidence-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1 (independent of task contract)",
+      "status": "satisfied",
+      "summary": "Pre-restart baseline captured boot_id 83a0a80f..., nginx/cert-renew.timer active, HTTPS 200, live cert serial matching the renewed cert. `systemctl reboot` was issued and acknowledged (backgrounded). After connection drops/timeouts consistent with a real reboot, a new boot_id (ee5486d2...) was observed, matching the fixed after_executor global snapshot. Post-reboot, nginx and cert-renew.timer were both active again, HTTPS served 200 with the persisted cert, and a fresh automatic renewal occurred and was served live over TLS post-recovery \u2014 showing the full pre-restart/disruption/post-restart/recovered-state transition for services, data (cert files), and cluster/automation state.",
+      "evidence_ids": [
+        "cmd-a95a2943d2474f8a",
+        "cmd-2251d467984f4d4a",
+        "cmd-cbb70143a7174e77",
+        "cmd-ff5d6d8129484d87",
+        "cmd-a4e0baf310e54dd3",
+        "cmd-e6d7d2951d1a413d",
+        "global:before_prepare:node1:boot-identity",
+        "global:after_executor:node1:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "All three material outcomes of the task \u2014 HTTPS on 8443, automatic pre-expiry certificate renewal, and gapless pickup of each new certificate \u2014 are directly and repeatedly demonstrated in the evidence, including across a full node reboot. The independent restart-evidence protocol is also fully satisfied with matching boot-identity snapshots and confirmed post-reboot recovery of nginx, the renewal timer, and live TLS serving. No unnecessary or unreverted risky mutations were found; only trivial log-file residue remains.",
+  "limitations": [
+    "The 6-minute certificate lifetime and 180s checkend threshold are executor-chosen test parameters for demonstrability within the session; longer-lived production certificates were not exercised, though the renewal mechanism itself is lifetime-agnostic.",
+    "One long-poll command (cmd-3e63502a0f4545d7) failed due to a proxy read timeout rather than a service failure; it was immediately followed by a successful equivalent check (cmd-a4e0baf310e54dd3), so it does not indicate an outage."
+  ],
+  "command_stats": {
+    "total": 29,
+    "successful": 23,
+    "failed": 5,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.94,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "Reviewed all state-changing executor commands chronologically: package install, iterative writes of renew-cert.sh (three revisions, each a deliberate refinement \u2014 checkend threshold tightened, notAfter switched to a fixed short lifetime, reload guarded with is-active \u2014 not abandoned experiments), node.env creation, manual first-run of the script to seed the initial cert (necessary prerequisite before nginx could start with TLS), nginx config/service enablement, firewalld port opening, and systemd unit creation for the timer. Every mutation maps directly to a required outcome or a necessary prerequisite; none were reverted-but-unnecessary troubleshooting. The reboot (cmd-2251d467984f4d4a) was the mandated restart-evidence action. Minor residue: /tmp/renew-cert.log (openssl req output redirect inside the script) and /tmp/reboot.log (nohup output) were left in place \u2014 both are small, low-risk operational log artifacts with a clear causal role (script diagnostics, reboot scheduling) rather than unrelated debris, so severity is low. No failed services, no damaged package state, and firewalld/socket changes match the intended 8443 exposure with no unnecessary port openings.",
+    "evidence_ids": [
+      "cmd-fb6a0ffa753f49b8",
+      "cmd-5928d67b9c3b4545",
+      "cmd-3578362e52e04ef3",
+      "cmd-cb2944285d7f4175",
+      "cmd-6230e527361c4605",
+      "cmd-f9b9fff3d0bf45fa",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node1:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

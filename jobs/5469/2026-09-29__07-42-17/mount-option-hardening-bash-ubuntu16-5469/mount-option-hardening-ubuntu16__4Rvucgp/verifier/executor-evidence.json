@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 7,
+    "successful": 6,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "Baseline state before changes (mounts, fstab, boot id)",
+      "command_ids": [
+        "cmd-fe4f859552174395"
+      ],
+      "summary": "Captured initial boot_id, showed /tmp had no dedicated mount and /dev/shm lacked noexec, and fstab had no /tmp or /dev/shm entries."
+    },
+    {
+      "requirement": "/tmp and /dev/shm configured with noexec,nosuid,nodev and fstab updated for persistence",
+      "command_ids": [
+        "cmd-87d1e201e86f4ac2"
+      ],
+      "summary": "Added fstab entries, remounted both filesystems, and findmnt confirmed rw,nosuid,nodev,noexec on both /tmp and /dev/shm; functional test scripts in both locations failed with Permission denied."
+    },
+    {
+      "requirement": "Pre-restart healthy baseline for restart protocol",
+      "command_ids": [
+        "cmd-82c1c3d5a4ae403d"
+      ],
+      "summary": "Captured pre-restart boot_id (8336c3a1...) and confirmed both mounts and fstab entries were in the hardened state prior to reboot."
+    },
+    {
+      "requirement": "Restart acknowledgement returned before disconnect",
+      "command_ids": [
+        "cmd-6d7327fd7f684eb2"
+      ],
+      "summary": "Issued backgrounded non-interactive reboot; command returned REBOOT_ACK_SENT before the node disconnected."
+    },
+    {
+      "requirement": "Node unreachable during restart, then command execution restored",
+      "command_ids": [
+        "cmd-8bed84dd313b4b34",
+        "cmd-d30647ae28a74130"
+      ],
+      "summary": "First poll showed connection refused (node rebooting); second poll succeeded and returned a new boot_id (51d306f6...), proving the node came back up with a changed boot identity."
+    },
+    {
+      "requirement": "Post-restart recovery: fstab-driven mount options persisted and are functionally enforced",
+      "command_ids": [
+        "cmd-6c0ea0d0518c40d9"
+      ],
+      "summary": "After reboot, findmnt on /tmp and /dev/shm both show rw,nosuid,nodev,noexec sourced from the persisted /etc/fstab entries, and functional exec tests in both locations again failed with Permission denied, confirming the hardening survived the reboot."
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-fe4f859552174395",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:10:44.808531+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 403,
+      "command": "set -Eeuo pipefail\necho \"=== BOOT ID ===\"; cat /proc/sys/kernel/random/boot_id\necho \"=== findmnt /tmp ===\"; findmnt /tmp || true\necho \"=== findmnt /dev/shm ===\"; findmnt /dev/shm || true\necho \"=== fstab ===\"; cat /etc/fstab\necho \"=== mount output ===\"; mount | grep -E ' /tmp | /dev/shm '\necho \"=== os-release ===\"; cat /etc/os-release\n",
+      "stdout": "=== BOOT ID ===\n8336c3a1-91fc-4135-b26a-5d2863cb2594\n=== findmnt /tmp ===\n=== findmnt /dev/shm ===\nTARGET   SOURCE FSTYPE OPTIONS\n/dev/shm tmpfs  tmpfs  rw,nosuid,nodev\n=== fstab ===\nLABEL=cloudimg-rootfs\t/\t ext4\tdefaults\t0 1\n=== mount output ===\ntmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)\n=== os-release ===\nNAME=\"Ubuntu\"\nVERSION=\"16.04.7 LTS (Xenial Xerus)\"\nID=ubuntu\nID_LIKE=debian\nPRETTY_NAME=\"Ubuntu 16.04.7 LTS\"\nVERSION_ID=\"16.04\"\nHOME_URL=\"http://www.ubuntu.com/\"\nSUPPORT_URL=\"http://help.ubuntu.com/\"\nBUG_REPORT_URL=\"http://bugs.launchpad.net/ubuntu/\"\nVERSION_CODENAME=xenial\nUBUNTU_CODENAME=xenial\n"
+    },
+    {
+      "command_id": "cmd-87d1e201e86f4ac2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:10:58.381878+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 402,
+      "command": "set -Eeuo pipefail\necho \"=== STEP: backup fstab ===\"\nsudo -n cp /etc/fstab /etc/fstab.bak.$(date +%s)\n\necho \"=== STEP: remove any existing /tmp or /dev/shm fstab lines ===\"\nsudo -n sed -i.orig '/[[:space:]]\\/tmp[[:space:]]/d; /[[:space:]]\\/dev\\/shm[[:space:]]/d' /etc/fstab\n\necho \"=== STEP: append hardened entries ===\"\n{\n  echo \"tmpfs /tmp tmpfs defaults,rw,nosuid,nodev,noexec,relatime 0 0\"\n  echo \"tmpfs /dev/shm tmpfs defaults,rw,nosuid,nodev,noexec,relatime 0 0\"\n} | sudo -n tee -a /etc/fstab >/dev/null\n\necho \"=== STEP: check for systemd tmp.mount masking fstab ===\"\nsystemctl list-unit-files | grep -i '^tmp.mount' || true\nsystemctl is-enabled tmp.mount 2>/dev/null || true\n\necho \"=== STEP: reload systemd + remount ===\"\nsudo -n systemctl daemon-reload\nsudo -n mount -o remount /tmp || sudo -n mount /tmp\nsudo -n mount -o remount /dev/shm || sudo -n mount /dev/shm\n\necho \"=== VERIFY fstab ===\"\ncat /etc/fstab\n\necho \"=== VERIFY findmnt /tmp ===\"\nfindmnt /tmp\necho \"=== VERIFY findmnt /dev/shm ===\"\nfindmnt /dev/shm\n\necho \"=== VERIFY exec test in /tmp (should fail) ===\"\ncat > /tmp/exec_test.sh <<'EOF'\n#!/bin/sh\necho it_ran\nEOF\nchmod +x /tmp/exec_test.sh\nif /tmp/exec_test.sh 2>/tmp/exec_test.err; then\n  echo \"EXEC_TEST: UNEXPECTED_SUCCESS\"\nelse\n  echo \"EXEC_TEST: BLOCKED_AS_EXPECTED\"\n  cat /tmp/exec_test.err\nfi\n\necho \"=== VERIFY setuid test in /tmp ===\"\nsudo -n cp /bin/true /tmp/suid_test\nsudo -n chmod 4755 /tmp/suid_test\nls -l /tmp/suid_test\nstat -c '%a' /tmp/suid_test\n\necho \"=== VERIFY exec test in /dev/shm (should fail) ===\"\ncat > /dev/shm/exec_test.sh <<'EOF'\n#!/bin/sh\necho it_ran\nEOF\nchmod +x /dev/shm/exec_test.sh\nif /dev/shm/exec_test.sh 2>/dev/shm/exec_test.err; then\n  echo \"SHM_EXEC_TEST: UNEXPECTED_SUCCESS\"\nelse\n  echo \"SHM_EXEC_TEST: BLOCKED_AS_EXPECTED\"\n  cat /dev/shm/exec_test.err\nfi\n\necho \"=== cleanup ===\"\nsudo -n rm -f /tmp/exec_test.sh /tmp/exec_test.err /tmp/suid_test /dev/shm/exec_test.sh /dev/shm/exec_test.err\n",
+      "stdout": "=== STEP: backup fstab ===\n=== STEP: remove any existing /tmp or /dev/shm fstab lines ===\n=== STEP: append hardened entries ===\n=== STEP: check for systemd tmp.mount masking fstab ===\n=== STEP: reload systemd + remount ===\n=== VERIFY fstab ===\nLABEL=cloudimg-rootfs\t/\t ext4\tdefaults\t0 1\ntmpfs /tmp tmpfs defaults,rw,nosuid,nodev,noexec,relatime 0 0\ntmpfs /dev/shm tmpfs defaults,rw,nosuid,nodev,noexec,relatime 0 0\n=== VERIFY findmnt /tmp ===\nTARGET SOURCE FSTYPE OPTIONS\n/tmp   tmpfs  tmpfs  rw,nosuid,nodev,noexec,relatime\n=== VERIFY findmnt /dev/shm ===\nTARGET   SOURCE FSTYPE OPTIONS\n/dev/shm tmpfs  tmpfs  rw,nosuid,nodev,noexec,relatime\n=== VERIFY exec test in /tmp (should fail) ===\nEXEC_TEST: BLOCKED_AS_EXPECTED\nbash: line 36: /tmp/exec_test.sh: Permission denied\n=== VERIFY setuid test in /tmp ===\n-rwsr-xr-x 1 root root 26364 Sep 29 09:10 /tmp/suid_test\n4755\n=== VERIFY exec test in /dev/shm (should fail) ===\nSHM_EXEC_TEST: BLOCKED_AS_EXPECTED\nbash: line 55: /dev/shm/exec_test.sh: Permission denied\n=== cleanup ===\n",
+      "stderr": "mount: /tmp not mounted or bad option\n\n       In some cases useful info is found in syslog - try\n       dmesg | tail or so.\n"
+    },
+    {
+      "command_id": "cmd-82c1c3d5a4ae403d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:09.210924+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 286,
+      "command": "set -Eeuo pipefail\necho \"=== PRE-RESTART BOOT ID ===\"\ncat /proc/sys/kernel/random/boot_id\necho \"=== PRE-RESTART uptime ===\"\nuptime -s || true\necho \"=== PRE-RESTART mounts ===\"\nfindmnt /tmp\nfindmnt /dev/shm\necho \"=== PRE-RESTART fstab ===\"\ngrep -E 'tmp|shm' /etc/fstab\n",
+      "stdout": "=== PRE-RESTART BOOT ID ===\n8336c3a1-91fc-4135-b26a-5d2863cb2594\n=== PRE-RESTART uptime ===\n2026-09-29 09:10:13\n=== PRE-RESTART mounts ===\nTARGET SOURCE FSTYPE OPTIONS\n/tmp   tmpfs  tmpfs  rw,nosuid,nodev,noexec,relatime\nTARGET   SOURCE FSTYPE OPTIONS\n/dev/shm tmpfs  tmpfs  rw,nosuid,nodev,noexec,relatime\n=== PRE-RESTART fstab ===\ntmpfs /tmp tmpfs defaults,rw,nosuid,nodev,noexec,relatime 0 0\ntmpfs /dev/shm tmpfs defaults,rw,nosuid,nodev,noexec,relatime 0 0\n"
+    },
+    {
+      "command_id": "cmd-6d7327fd7f684eb2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:11.435408+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 261,
+      "command": "set -Eeuo pipefail\necho \"=== ISSUING REBOOT ===\"\nsudo -n sh -c 'nohup reboot >/tmp/reboot.log 2>&1 &' \necho \"REBOOT_ACK_SENT\"\n",
+      "stdout": "=== ISSUING REBOOT ===\nREBOOT_ACK_SENT\n"
+    },
+    {
+      "command_id": "cmd-8bed84dd313b4b34",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:15.450753+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 1077,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo UNREACHABLE",
+      "stderr": "ssh: connect to host 10.100.229.10 port 22: Connection refused\r\n"
+    },
+    {
+      "command_id": "cmd-d30647ae28a74130",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:17.659874+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 244,
+      "command": "cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo UNREACHABLE",
+      "stdout": "51d306f6-23b8-4b16-9c65-ce7b56d3c241\n"
+    },
+    {
+      "command_id": "cmd-6c0ea0d0518c40d9",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T13:11:24.014151+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 375,
+      "command": "set -Eeuo pipefail\necho \"=== POST-RESTART BOOT ID ===\"\ncat /proc/sys/kernel/random/boot_id\necho \"=== POST-RESTART uptime ===\"\nuptime -s\necho \"=== POST-RESTART findmnt /tmp ===\"\nfindmnt /tmp\necho \"=== POST-RESTART findmnt /dev/shm ===\"\nfindmnt /dev/shm\necho \"=== POST-RESTART fstab ===\"\ngrep -E 'tmp|shm' /etc/fstab\n\necho \"=== POST-RESTART exec test /tmp (should fail) ===\"\ncat > /tmp/exec_test2.sh <<'EOF'\n#!/bin/sh\necho it_ran\nEOF\nchmod +x /tmp/exec_test2.sh\nif /tmp/exec_test2.sh 2>/tmp/exec_test2.err; then\n  echo \"EXEC_TEST: UNEXPECTED_SUCCESS\"\nelse\n  echo \"EXEC_TEST: BLOCKED_AS_EXPECTED\"\n  cat /tmp/exec_test2.err\nfi\n\necho \"=== POST-RESTART exec test /dev/shm (should fail) ===\"\ncat > /dev/shm/exec_test2.sh <<'EOF'\n#!/bin/sh\necho it_ran\nEOF\nchmod +x /dev/shm/exec_test2.sh\nif /dev/shm/exec_test2.sh 2>/dev/shm/exec_test2.err; then\n  echo \"SHM_EXEC_TEST: UNEXPECTED_SUCCESS\"\nelse\n  echo \"SHM_EXEC_TEST: BLOCKED_AS_EXPECTED\"\n  cat /dev/shm/exec_test2.err\nfi\n\necho \"=== cleanup ===\"\nsudo -n rm -f /tmp/exec_test2.sh /tmp/exec_test2.err /dev/shm/exec_test2.sh /dev/shm/exec_test2.err /tmp/reboot.log\n",
+      "stdout": "=== POST-RESTART BOOT ID ===\n51d306f6-23b8-4b16-9c65-ce7b56d3c241\n=== POST-RESTART uptime ===\n2026-09-29 09:11:11\n=== POST-RESTART findmnt /tmp ===\nTARGET SOURCE FSTYPE OPTIONS\n/tmp   tmpfs  tmpfs  rw,nosuid,nodev,noexec,relatime\n=== POST-RESTART findmnt /dev/shm ===\nTARGET   SOURCE FSTYPE OPTIONS\n/dev/shm tmpfs  tmpfs  rw,nosuid,nodev,noexec,relatime\n=== POST-RESTART fstab ===\ntmpfs /tmp tmpfs defaults,rw,nosuid,nodev,noexec,relatime 0 0\ntmpfs /dev/shm tmpfs defaults,rw,nosuid,nodev,noexec,relatime 0 0\n=== POST-RESTART exec test /tmp (should fail) ===\nEXEC_TEST: BLOCKED_AS_EXPECTED\nbash: line 18: /tmp/exec_test2.sh: Permission denied\n=== POST-RESTART exec test /dev/shm (should fail) ===\nSHM_EXEC_TEST: BLOCKED_AS_EXPECTED\nbash: line 31: /dev/shm/exec_test2.sh: Permission denied\n=== cleanup ===\n"
+    }
+  ]
+}

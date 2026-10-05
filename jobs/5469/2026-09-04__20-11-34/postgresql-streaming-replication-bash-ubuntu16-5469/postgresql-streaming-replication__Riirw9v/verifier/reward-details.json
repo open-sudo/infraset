@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 configured as writable primary with streaming replication enabled",
+      "status": "satisfied",
+      "summary": "PostgreSQL 9.5 installed and running on node1 with wal_level=hot_standby, listen_addresses='*', max_wal_senders=10, wal_keep_segments=64, a replicator role, and pg_hba.conf entries for node2/node3; service restarted and confirmed active. node1 subsequently accepted writes (CREATE TABLE, INSERT) directly, confirming it functions as the writable primary.",
+      "evidence_ids": [
+        "cmd-19a664d4501b4d5a",
+        "cmd-93a57ed6e9cd4000",
+        "cmd-20f20d532cea42bb",
+        "cmd-8f4593eaff024b94",
+        "cmd-e50f07ef60274649",
+        "cmd-8615b1b09d354eee"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "node2 and node3 configured as read-only standbys via streaming replication from node1",
+      "status": "satisfied",
+      "summary": "Both nodes were rebuilt from a pg_basebackup taken from node1, given a recovery.conf pointing at node1 with hot_standby=on, and started. pg_is_in_recovery() returned true on both, both appear as 'streaming'/'async' in node1's pg_stat_replication, and node2 was directly shown rejecting a CREATE TABLE with a read-only error.",
+      "evidence_ids": [
+        "cmd-608d78e6bc0c42f2",
+        "cmd-7782a4f2de4c48f8",
+        "cmd-f3c633944716448a",
+        "cmd-76583552560c4f69"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Changes committed on the primary are visible on both standbys",
+      "status": "satisfied",
+      "summary": "A row inserted on node1 (repl_test id=1) was independently confirmed present via SELECT on both node2 and node3 within one second. This was reconfirmed with a second row inserted after all three nodes were sequentially restarted, again visible on both standbys, directly demonstrating durable, working replication rather than a one-off snapshot.",
+      "evidence_ids": [
+        "cmd-8615b1b09d354eee",
+        "cmd-ace0ce2b841e4f24",
+        "cmd-50e22cc9c62d40a9",
+        "cmd-c87e35652aaa41c6",
+        "cmd-4d49a9b78d404c2f",
+        "cmd-749bebd9da1c4012"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully stood up PostgreSQL 9.5 streaming replication across node1 (writable primary), node2, and node3 (read-only standbys). Writes on node1 were directly and repeatedly shown to propagate to both standbys, both before and after a full sequential restart of all three nodes, with pg_stat_replication, pg_is_in_recovery(), and read-only rejection all directly observed rather than merely configured. The optional provider-wide restart evidence protocol was executed thoroughly for all three nodes (pre-restart boot id/health, reboot acknowledgement, changed boot id, recovered service/data/cluster state), giving strong confidence in both the primary task and general node resilience. The main blemish is a brief, self-detected and self-remediated credential exposure during the initial pg_basebackup attempt, which was rotated and followed by more careful secret handling.",
+  "limitations": [
+    "The mid-transcript pg_basebackup commands show the replication password already redacted as '[REDACTED]]' in the captured audit log, so the exact scope of the leak the executor described (partial echo into command output) cannot be independently confirmed beyond the executor's own narrative and the fact that a password rotation followed.",
+    "Restart/recovery evidence, while thorough and directly observed for all three nodes, was not itself part of the public task contract (which only requires replication and write visibility), so it is treated as supplemental confidence-building evidence rather than a graded material outcome.",
+    "No verification was captured of standby behavior under a longer network partition or of replication lag/catch-up after an extended outage; only short, immediate restarts were exercised."
+  ],
+  "command_stats": {
+    "total": 88,
+    "successful": 78,
+    "failed": 9,
+    "indeterminate": 1,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.75,
+    "summary": "Most state-changing commands were clearly tied to task prerequisites: unblocking a stuck apt lock (cmd-b85f9262e18a408f) and switching sources.list to HTTPS mirrors (cmd-918fbc7a25754d09, cmd-333d76e03cd149b9, cmd-10ec0f765e6246a2) were necessary corrective actions after the HTTP mirror proved unreachable/broken, and both were retained only as far as needed to get apt-get update working (no other stray repo changes). One notable issue: the replicator password was embedded directly into a composed pg_basebackup command (cmd-cc46132c712a4aee, cmd-ece75fbb5cc2490e) and partially echoed into command output per the executor's own account, a real (if brief) credential exposure in the command audit trail; the executor detected this, rotated the password (cmd-8572366496b24700) and moved subsequent secret handling to a file-based approach that shredded temporary secret files afterward (cmd-ab154558649b4e3d, cmd-e12e19611ae246a8, cmd-0f5753d7df7d42d8). The retained cluster-wide SSH keypair/authorized_keys trust between nodes (cmd-71df41809059426e, cmd-06c14835b8f84e99, cmd-046d55b2c7c740e7) was used as the out-of-band channel for secret distribution; it persists on all three nodes, but it was built from environment-provided CLUSTER_SSH_PRIVKEY/PUBKEY variables suggesting this mechanism was intended for such cluster coordination rather than an unsanctioned mutation. No abandoned files, conflicting/failed services, or damaged package state were observed in the after-executor snapshot (failed-services and package-health checks are clean on all three nodes).",
+    "evidence_ids": [
+      "cmd-b85f9262e18a408f",
+      "cmd-918fbc7a25754d09",
+      "cmd-cc46132c712a4aee",
+      "cmd-ece75fbb5cc2490e",
+      "cmd-8572366496b24700",
+      "cmd-ab154558649b4e3d",
+      "cmd-0f5753d7df7d42d8",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node1:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

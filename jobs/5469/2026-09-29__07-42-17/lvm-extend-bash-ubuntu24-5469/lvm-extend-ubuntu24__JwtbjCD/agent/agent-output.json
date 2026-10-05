@@ -1,0 +1,63 @@
+{
+  "status": "completed",
+  "summary": "Created an LVM logical volume (vg_data/lv_data) backed by two loop-device PVs on node1's root filesystem, mounted it at /srv/data, then grew it online from ~1.17G to ~2.34G while it stayed mounted, preserving all existing data. Configured a systemd oneshot unit (lvm-loop-setup.service) plus /etc/fstab entry so loop devices, VG activation, and the mount are re-established automatically at boot. Performed the mandatory single-node restart: captured baseline boot_id and health, issued systemctl reboot, polled until the node returned, confirmed boot_id changed, and verified the LV was auto-remounted at /srv/data with data checksum still passing.",
+  "actions_performed": [
+    "Inspected node1 disk layout (single 20G vda, no spare block device) via lsblk/df/pvs/vgs/lvs",
+    "Checked LVM devices-file config (use_devicesfile=0, filter-based scanning) to ensure loop-device PVs survive reboot regardless of loop number reassignment",
+    "Created /var/lib/lvm-loop-data/disk0.img (1200M), attached as /dev/loop0, pvcreate+vgcreate vg_data+lvcreate lv_data (100%FREE), mkfs.ext4, mounted at /srv/data",
+    "Wrote 50M random payload.bin + sha256 checksum + marker.txt to /srv/data as integrity/content proof",
+    "Created disk1.img (1200M), attached as /dev/loop1, pvcreate, vgextend vg_data, lvextend -l +100%FREE, resize2fs online (LV grew from <1.17G to <2.34G) while /srv/data stayed mounted",
+    "Verified post-grow: df shows 2.3G filesystem, sha256sum -c payload.sha256 OK, marker.txt intact",
+    "Created /usr/local/sbin/lvm-loop-setup.sh + systemd unit lvm-loop-setup.service (DefaultDependencies=no, Before=local-fs-pre.target) to re-attach loop devices and vgchange -ay at boot; enabled it and added fstab entry with x-systemd.requires",
+    "Sanity-tested by manually unmounting and re-mounting via the new service/fstab path before rebooting",
+    "Captured pre-restart boot_id and health baseline (mount, df, lvs, vgs, checksum, service active)",
+    "Issued sudo systemctl reboot on node1 (ack returned via disconnected stream), polled until exec succeeded again",
+    "Confirmed boot_id changed from 242af11e-49fb-4e07-a001-8016b2349acb to 6c3cb967-2f45-470b-bf5b-672736f56ea2, proving an actual restart",
+    "Verified post-restart recovery: /srv/data auto-mounted, LV at <2.34g, both PVs active, sha256sum -c payload.sha256 OK, service active+enabled"
+  ],
+  "evidence": [
+    {
+      "requirement": "Logical volume provided and mounted at /srv/data",
+      "command_ids": [
+        "cmd-2f5448b27a3249ef"
+      ],
+      "summary": "pvcreate/vgcreate/lvcreate/mkfs/mount sequence succeeded; df shows /dev/mapper/vg_data-lv_data mounted at /srv/data at 1.2G"
+    },
+    {
+      "requirement": "LV grown to at least 2GB while staying mounted and data intact",
+      "command_ids": [
+        "cmd-2f5448b27a3249ef"
+      ],
+      "summary": "vgextend+lvextend+online resize2fs while mounted grew LV from <1.17G to <2.34G; sha256sum -c payload.sha256 reported OK and marker.txt readable immediately after, proving contents survived the grow"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline (boot identity + service/data health) on node1",
+      "command_ids": [
+        "cmd-b1f7f55e13a442df"
+      ],
+      "summary": "Captured boot_id 242af11e-49fb-4e07-a001-8016b2349acb plus mount, df, lvs, vgs and passing checksum before reboot"
+    },
+    {
+      "requirement": "Restart acknowledgement returned before disconnection",
+      "command_ids": [
+        "cmd-96ff31578ea649de"
+      ],
+      "summary": "systemctl reboot issued in background; exec stream closed as the node went down, confirming the reboot command was accepted and executing"
+    },
+    {
+      "requirement": "Node restart availability polling and changed boot identity proof",
+      "command_ids": [
+        "cmd-3cd0450b074d47e5",
+        "cmd-7aff0f4da0ef48ca"
+      ],
+      "summary": "First poll failed with connection reset (node down); second poll succeeded returning boot_id 6c3cb967-2f45-470b-bf5b-672736f56ea2, different from baseline, proving an actual restart occurred"
+    },
+    {
+      "requirement": "Post-restart recovery of LV, mount, and data integrity",
+      "command_ids": [
+        "cmd-7bfa1bf390a54d8a"
+      ],
+      "summary": "After reboot, /srv/data is mounted again at 2.3G via /dev/mapper/vg_data-lv_data, both PVs (loop0/loop1) active in vg_data, lvm-loop-setup.service active+enabled, and sha256sum -c payload.sha256 reported OK confirming data survived the restart"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "status": "completed",
+  "summary": "Deployed a Python stdlib HTTP inventory application (SQLite-backed, GET/POST /items) on node1, running as a dedicated unprivileged systemd service bound to 0.0.0.0:8181, confined by a custom AppArmor profile (/etc/apparmor.d/opt.inventory-app.app.py) loaded and running in enforce mode. Verified the app is reachable and functional over $NODE_IP:8181 with AppArmor actively enforcing (not complain/disabled) and zero denials. Completed the mandatory single-node restart protocol: captured pre-restart boot_id and health baseline, issued systemctl reboot, polled until node1 was reachable again, confirmed the boot_id changed, and verified the service, AppArmor enforcement, port binding, and inventory data all recovered post-restart.",
+  "actions_performed": [
+    "Inspected node1 OS (Ubuntu 24.04) and confirmed AppArmor (not SELinux) is the active MAC framework, enabled and enforcing profiles",
+    "Created dedicated system user inventoryapp (no login, no home)",
+    "Wrote /opt/inventory-app/app.py: a Python stdlib http.server + sqlite3 inventory API (GET /items, POST /items, /healthz), executable with shebang #!/usr/bin/python3",
+    "Created systemd unit inventory-app.service running as inventoryapp, ExecStart=/opt/inventory-app/app.py, NoNewPrivileges, empty capability sets",
+    "Authored and loaded (apparmor_parser -r) a dedicated enforce-mode AppArmor profile /etc/apparmor.d/opt.inventory-app.app.py granting only the network/file access the app needs",
+    "Enabled and started inventory-app.service; verified via aa-status that the running process is confined under the profile in (enforce) mode, not unconfined",
+    "Verified service reachable on $NODE_IP:8181 via curl GET and POST, confirmed sqlite persistence and zero AppArmor DENIED entries in dmesg",
+    "Captured pre-restart baseline: boot_id, AppArmor enforce count, service state, port binding, and DB contents",
+    "Issued 'systemctl reboot' on node1 (backgrounded so the ack returned before disconnect)",
+    "Polled node1 until exec was available again; confirmed boot_id changed, proving an actual restart",
+    "Verified post-restart recovery: service active, AppArmor profile enforcing (25 profiles), port 8181 listening, inventory data intact, zero AppArmor denials"
+  ],
+  "evidence": [
+    {
+      "requirement": "MAC (AppArmor) framework present, enabled, and in enforcing mode before any changes",
+      "command_ids": [
+        "cmd-0ce7704b6b7744f4",
+        "cmd-b729cee0b9f94a81"
+      ],
+      "summary": "aa-status shows apparmor module loaded, 24 profiles in enforce mode pre-change; kernel module enabled=Y and systemctl is-active apparmor=active"
+    },
+    {
+      "requirement": "Inventory application built and served on TCP port 8181",
+      "command_ids": [
+        "cmd-6125efc88c394391",
+        "cmd-515788cd8dfb43c8",
+        "cmd-3af69aa672d94bf1"
+      ],
+      "summary": "app.py compiled cleanly, systemd service started active/running, ss shows LISTEN 0.0.0.0:8181, curl GET/POST against $NODE_IP:8181 return and persist inventory items"
+    },
+    {
+      "requirement": "MAC stays enforcing while the service runs (not disabled/complain to make the port work)",
+      "command_ids": [
+        "cmd-305e455e99ed4d05",
+        "cmd-3af69aa672d94bf1",
+        "cmd-45ffad768dea45ce"
+      ],
+      "summary": "Custom profile /opt/inventory-app/app.py parsed and loaded; aa-status shows the running python3.12 process (pid 1473) confined under this profile in (enforce) mode; dmesg shows zero AppArmor DENIED entries while serving real GET/POST traffic"
+    },
+    {
+      "requirement": "Pre-restart healthy baseline captured with a stable boot marker",
+      "command_ids": [
+        "cmd-527c53c44fe74257"
+      ],
+      "summary": "Captured boot_id bdd5de93-e94e-4d33-8384-6a01c51a3d49, 25 enforce-mode profiles, active service, listening port, and 4 items in the DB via direct curl/ss/systemctl checks"
+    },
+    {
+      "requirement": "Restart acknowledged before disconnect; exactly one node restarted",
+      "command_ids": [
+        "cmd-93c16cbcfc364352"
+      ],
+      "summary": "systemctl reboot issued in background on node1 only; exec stream closed as expected, showing the reboot proceeded after the command was accepted"
+    },
+    {
+      "requirement": "Changed boot identity proves an actual node restart occurred",
+      "command_ids": [
+        "cmd-7d07a62d3450411e",
+        "cmd-5796e9e0b08344e9"
+      ],
+      "summary": "Node briefly unreachable (connection reset) then came back with boot_id 36c6e323-1644-4317-8261-8242a55a867a, differing from the pre-restart bdd5de93-... value"
+    },
+    {
+      "requirement": "Post-restart recovery of service, MAC enforcement, port, and data",
+      "command_ids": [
+        "cmd-4654173224934f66"
+      ],
+      "summary": "After reboot: inventory-app.service active, AppArmor profile for app.py still in enforce mode (25 profiles enforcing), port 8181 listening again, curl GET returns all 4 persisted items including the pre-reboot POST, and zero AppArmor denials in dmesg"
+    }
+  ]
+}

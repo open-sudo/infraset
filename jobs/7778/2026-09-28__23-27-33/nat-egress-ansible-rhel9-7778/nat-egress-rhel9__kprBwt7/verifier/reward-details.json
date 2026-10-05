@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "node1 (VyOS) is configured via Ansible to provide NAT (masquerade) for the private lan network",
+      "status": "satisfied",
+      "summary": "An Ansible playbook (nat-egress.yml) run from control_node node4 against an inventory grouping node1 as router applies a static LAN IP (10.50.50.1/24 on eth1) and a VyOS NAT source masquerade rule (rule 100, source 10.50.50.0/24 -> outbound eth0) via configure/commit/save. Post-apply 'show' output on node1 confirms the nat source rule and interface config are present in the running/committed config, and a subsequent idempotent playbook re-run confirms it is Ansible-managed state (ok, not changed).",
+      "evidence_ids": [
+        "cmd-303e7a4dad2d4e1c",
+        "cmd-7162864e7cde4c56",
+        "cmd-256fb7b577a34e38",
+        "cmd-ee971fdcefc74f9a"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Processes on node2 and node3 can actually reach the internet through node1's NAT (not just config presence)",
+      "status": "satisfied",
+      "summary": "node2/node3 were given static LAN IPs and a low-priority default route via node1 by the same playbook. Live traffic evidence: tcpdump on node1 eth0 (WAN) and eth1 (LAN) simultaneously during a ping from node2 shows correct masquerade translation (10.50.50.11 <-> 10.100.177.10 <-> 1.1.1.1) end-to-end. An initial curl-based egress check failed due to an rp_filter-caused drop of return traffic on the LAN clients; this was root-caused and fixed via an Ansible-applied sysctl change, after which both node2 and node3 got HTTP 204 from a live internet endpoint via the private interface, confirmed again after each node's restart.",
+      "evidence_ids": [
+        "cmd-c338a9b683d243a9",
+        "cmd-8ecf6d6027694a4a",
+        "cmd-c559bfba58ca4969",
+        "cmd-518cce220b6541a1",
+        "cmd-5e8f40c1c670401c",
+        "cmd-ee971fdcefc74f9a",
+        "cmd-1a11ab0c897d4ff6",
+        "cmd-0e780037b30e48c4"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "Existing mgmt-network connectivity/management access to node1, node2, node3 is not disrupted by the NAT change",
+      "status": "satisfied",
+      "summary": "The playbook adds the LAN default route at a higher metric (200) than the existing mgmt DHCP default route (metric 100), leaving mgmt reachability as primary. SSH/Ansible access to all nodes via the mgmt network was demonstrated working both before and after the change and after every node's restart (Ansible ping/idempotent playbook re-run succeeded post-restart).",
+      "evidence_ids": [
+        "cmd-3892edf5ccf344d0",
+        "cmd-256fb7b577a34e38",
+        "cmd-0a769867ad274f55"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Implementation is delivered using Ansible (per explicit instruction), not purely manual/ad hoc CLI configuration",
+      "status": "satisfied",
+      "summary": "All material state changes for the NAT feature itself (VyOS interface/NAT config commit+save, client static IPs/routes, and the rp_filter fix) are shown executed as tasks inside the ansible-playbook run against an inventory file, with 'changed'/'ok' task results visible in the playbook output. Manual SSH commands were used only for prerequisite SSH-key bootstrap and diagnostics, not the NAT configuration itself.",
+      "evidence_ids": [
+        "cmd-7162864e7cde4c56",
+        "cmd-ee971fdcefc74f9a",
+        "cmd-4c627477e58a4761"
+      ]
+    },
+    {
+      "id": "req-5",
+      "requirement": "(Independent protocol) Provider-wide restart evidence on every managed node: pre-restart health, restart, distinct post-restart boot identity, and recovered service/data/cluster state",
+      "status": "satisfied",
+      "summary": "All four nodes show a captured pre-restart boot_id and healthy baseline, a reboot acknowledgement, a distinct post-restart boot_id, and recovered functional state: node2/node3 regained their LAN IP/route/rp_filter and live internet egress (HTTP 204); node1 regained its LAN IP, ip_forward, and (via node2/node3 egress tests) working NAT; node4 regained Ansible connectivity to all managed nodes and a successful idempotent playbook re-run. A VyOS SSH-key reconciler issue caused a transient loss of Ansible access to node1 after its reboot, which was diagnosed and fixed (adding the key through VyOS's own login config) and full connectivity/functionality was restored and re-verified. Boot IDs in the restart evidence match the fixed after-executor lifecycle snapshot for all four nodes, providing an independent cross-check.",
+      "evidence_ids": [
+        "cmd-38dc2e58c3974f25",
+        "cmd-81fb3e558f2d4dd3",
+        "cmd-4b841679b15747f0",
+        "cmd-7a432d253d6e42ad",
+        "cmd-a10191ce1d88444b",
+        "cmd-5d0e4939b3cd435e",
+        "cmd-ed26ad123a5c4d28",
+        "cmd-5a6d0ef26fbd4cb0",
+        "cmd-6a6b83680bd94e87",
+        "cmd-8da4fe602f394469",
+        "cmd-814b538f743840f9",
+        "cmd-594acc11a5df4a54",
+        "cmd-1a11ab0c897d4ff6",
+        "cmd-0e780037b30e48c4",
+        "cmd-f0222e398a6941cf",
+        "cmd-64fd774ff603445c",
+        "cmd-f7550adee11b43fd",
+        "cmd-512c8717396a4da4",
+        "cmd-fadb84c924194a42",
+        "cmd-0a769867ad274f55",
+        "cmd-4c627477e58a4761"
+      ]
+    }
+  ],
+  "overall_summary": "The task's material outcome \u2014 node1 configured via Ansible to NAT/masquerade traffic for node2 and node3 on the private lan network \u2014 is directly and coherently demonstrated: an Ansible playbook applies the VyOS interface/NAT config and client static IPs/routes, and live tcpdump/curl evidence confirms end-to-end internet egress from node2 and node3 through node1, including after an rp_filter-related return-path bug was diagnosed and fixed via the same playbook. The existing mgmt-network management path was preserved (lower-metric route retained) and verified reachable throughout. The independent provider-wide restart protocol was completed on all four nodes with matching pre/post boot identities and fully recovered NAT, routing, and Ansible-management state, including a transient VyOS SSH-key reconciliation issue that was diagnosed and properly fixed. Hygiene is good: temporary diagnostic mutations (tcpdump captures, a malformed playbook write, and a since-overwritten manual SSH key edit) were bounded and left no lasting residue or broken state.",
+  "limitations": [
+    "The initial pre-restart NAT verification on node1 after reboot (cmd-594acc11a5df4a54) used a grep pattern that did not match the actual config indentation and returned no output for the NAT config section; functional confirmation instead relies on the live egress tests from node2/node3 immediately afterward, which is sufficient but indirect for that one specific check.",
+    "Evidence of the NAT rule's exact live packet-count/hit-counter behavior was not captured; correctness is inferred from tcpdump translation evidence and successful HTTP/ICMP tests rather than firewall/NAT rule counters."
+  ],
+  "command_stats": {
+    "total": 79,
+    "successful": 69,
+    "failed": 10,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.92,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Reviewed the full chronological command trace. Most state-changing commands map clearly to a prerequisite (SSH key bootstrap on node4/node1/node2/node3), the material NAT outcome (Ansible-applied VyOS NAT/interface config, client static IPs/routes, rp_filter sysctl fix), or bounded diagnostic/evidence collection (tcpdump captures, started and cleanly killed via pkill/kill on node1: cmd-48bdbbc06453449a, cmd-26f4ce5aa3624340, cmd-8ecf6d6027694a4a, all reaped by cmd-c338a9b683d243a9/cmd-f12faabb5c924b91/cmd-518cce220b6541a1). One minor unnecessary artifact: an initial base64-decoded playbook write produced a corrupt/undecodable file (cmd-a2a60a6edd3e4c7d) that was immediately overwritten by a corrected version (cmd-480f39636c4a41f1); this left no residue. A manual, direct edit of /home/vyos/.ssh/authorized_keys on node1 (cmd-82159dd5604e4def) was a reasonable first attempt at SSH access bootstrap but was silently wiped by VyOS's own login reconciler on reboot, requiring a corrective, properly-persisted fix via VyOS config (cmd-fadb84c924194a42); this is a corrective action following an expected VyOS-specific pitfall rather than a careless mutation, and no failed/damaged state remained afterward (package-health and failed-services checks are clean before and after in the fixed lifecycle snapshots). No unsafe exposure, no broad or destructive mutations, no abandoned files, and idempotent final playbook runs confirm no drift.",
+    "evidence_ids": [
+      "cmd-a2a60a6edd3e4c7d",
+      "cmd-480f39636c4a41f1",
+      "cmd-82159dd5604e4def",
+      "cmd-fadb84c924194a42",
+      "cmd-48bdbbc06453449a",
+      "cmd-c338a9b683d243a9",
+      "cmd-26f4ce5aa3624340",
+      "cmd-f12faabb5c924b91",
+      "global:after_executor:node1:failed-services",
+      "global:after_executor:node2:failed-services",
+      "global:after_executor:node3:failed-services",
+      "global:after_executor:node4:failed-services",
+      "global:after_executor:node1:package-health",
+      "global:after_executor:node2:package-health",
+      "global:after_executor:node3:package-health",
+      "global:after_executor:node4:package-health"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

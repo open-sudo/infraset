@@ -1,0 +1,98 @@
+{
+  "status": "completed",
+  "summary": "Deployed a fresh 3-member MariaDB Galera cluster (mariadb 11.4.12 + galera 26.4.13) on node1/node2/node3 (Alpine 3.23), loaded it with committed application data (appdb.orders), performed a full clean maintenance-window shutdown of all three members, and brought the cluster back up with every committed write intact and all three members Synced/Primary again. Additionally executed the mandatory per-node restart protocol: captured pre-restart boot_id baselines, restarted node1/node2/node3 one at a time via native reboot while preserving quorum, confirmed each node's boot_id changed post-restart, and verified each node auto-rejoined Galera (wsrep_cluster_size=3, Synced) with the application data fully present afterward.",
+  "actions_performed": [
+    "Installed mariadb, mariadb-client, galera, rsync on node1/node2/node3 via apk",
+    "Diagnosed and fixed a platform defect: Alpine's busybox ps/lsof applets lack -p/-i LISTEN support needed by wsrep_sst_rsync readiness checks, causing spurious rsync SST failures; installed real procps-ng, lsof, iproute2 packages to resolve the correct binaries via PATH",
+    "Configured /etc/my.cnf.d/galera.cnf on all three nodes with cluster address and per-node identity, rsync SST method",
+    "Bootstrapped Galera on node1 (--wsrep-new-cluster), joined node2 and node3 via SST, verified wsrep_cluster_size=3 and Synced state",
+    "Generated a root DB password on node1 via /dev/urandom (not exposed in this report), applied with ALTER USER, confirmed Galera-replicated grant tables took effect cluster-wide",
+    "Created appdb.orders table and inserted 3 committed rows on node1; verified replication to node2 and node3",
+    "Performed the maintenance-window full cluster shutdown: stopped node3, then node2, then node1 in that order to preserve highest seqno/safe_to_bootstrap on node1",
+    "Verified grastate.dat showed node1 seqno=10 safe_to_bootstrap=1, confirming correct shutdown order",
+    "Confirmed full outage: all three mariadbd processes down, no member reachable",
+    "Restarted the cluster: bootstrapped node1 (wsrep-new-cluster) confirming all 3 pre-shutdown rows present, then started node2 and node3 which rejoined via SST and reported Synced/cluster_size=3",
+    "Performed a post-recovery write test (INSERT on node2) and confirmed it replicated to node3, proving multi-master write availability restored",
+    "Executed mandatory node-restart evidence protocol: captured boot_id baseline on all 3 nodes, restarted node1 via native reboot (quorum preserved with node2+node3 up), polled until reachable, confirmed changed boot_id, verified MariaDB auto-started and rejoined as Synced/cluster_size=3 with data intact",
+    "Repeated the restart cycle for node2 (quorum preserved by node1+node3), then node3 (quorum preserved by node1+node2), confirming boot_id change and full Galera rejoin with data intact after each",
+    "Performed a final cross-node consistency check from node1 confirming cluster_size=3, all three peer addresses present, and consistent row count (4) across the cluster"
+  ],
+  "evidence": [
+    {
+      "requirement": "Healthy 3-member Galera cluster established with committed application data",
+      "command_ids": [
+        "cmd-a746392e8438488f",
+        "cmd-03ddd375a1cd48cf",
+        "cmd-a70f66eb469341f0",
+        "cmd-2671e88ba0064262"
+      ],
+      "summary": "Cluster reached wsrep_cluster_size=3, all Synced/Primary; appdb.orders table created with 3 committed rows on node1 and confirmed replicated to node2 and node3."
+    },
+    {
+      "requirement": "Full cluster maintenance shutdown",
+      "command_ids": [
+        "cmd-e1fefb8356904a9a",
+        "cmd-931171aefabb44ea",
+        "cmd-dab5abb559f2484a",
+        "cmd-9fcb014b61674145",
+        "cmd-4aadc79e34a447c2",
+        "cmd-3b52399b484e46df"
+      ],
+      "summary": "node3, node2, then node1 stopped in sequence (correct order); grastate.dat on each confirms clean shutdown with node1 holding the highest seqno (10) and safe_to_bootstrap=1, and all mysqladmin ping calls fail confirming full outage."
+    },
+    {
+      "requirement": "Cluster brought back up with every committed write present and all three members serving",
+      "command_ids": [
+        "cmd-af62673609d14d09",
+        "cmd-a242fd70b01040ae",
+        "cmd-d5b866c159994c69",
+        "cmd-20b44b779dee41b4",
+        "cmd-39d40b77f1444835",
+        "cmd-e75bad6c04fa4bb2"
+      ],
+      "summary": "node1 bootstrapped from its safe_to_bootstrap state showing all 3 pre-shutdown rows; node2 and node3 rejoined via SST reporting Synced/cluster_size=3 with the same rows; a post-recovery write on node2 replicated to node3; final check from node1 shows cluster_size=3 and consistent row count across all nodes."
+    },
+    {
+      "requirement": "node1 mandatory restart: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-d828dc0e2a984027",
+        "cmd-d9b3f99bb1ae4e3b",
+        "cmd-ef64de8501314830",
+        "cmd-8dc060ce30694d6f"
+      ],
+      "summary": "Baseline boot_id 142a4fa7... captured; reboot acknowledged and returned before disconnect; post-restart boot_id a5693eca... confirms a real reboot; MariaDB auto-started and rejoined as Synced/cluster_size=3 with appdb.orders data intact."
+    },
+    {
+      "requirement": "node2 mandatory restart: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-0f195b88b1a24d44",
+        "cmd-5e51de57834f4297",
+        "cmd-c930d56ecff449de",
+        "cmd-c03d7097f93a4707"
+      ],
+      "summary": "Baseline boot_id ff2ab5bc... captured; reboot acknowledged; post-restart boot_id d27dcf53... confirms reboot; MariaDB auto-started and rejoined as Synced/cluster_size=3 with data intact, taken while node1+node3 preserved quorum."
+    },
+    {
+      "requirement": "node3 mandatory restart: baseline, restart ack, changed boot identity, recovered state",
+      "command_ids": [
+        "cmd-04d26292b6e1468e",
+        "cmd-b39feb61c12f4067",
+        "cmd-3e9b2401284341f2",
+        "cmd-07174e72a397434f"
+      ],
+      "summary": "Baseline boot_id a9a825cc... captured; reboot acknowledged; post-restart boot_id 7957cd30... confirms reboot; MariaDB auto-started and rejoined as Synced/cluster_size=3/Primary with data intact, taken while node1+node2 preserved quorum."
+    },
+    {
+      "requirement": "Root cause diagnosis and fix for Galera SST tooling defect on Alpine",
+      "command_ids": [
+        "cmd-e9ba168198b74380",
+        "cmd-887ffaa04c9e433b",
+        "cmd-ad7d203a8d274509",
+        "cmd-7730c365f9f743e3",
+        "cmd-8ca13a390bf94b32",
+        "cmd-292f3213b91f4494"
+      ],
+      "summary": "Identified that busybox-provided ps/lsof (lacking -p and LISTEN-column support) broke wsrep_sst_rsync's readiness detection, causing false 'terminated unexpectedly' SST failures; installed procps-ng, lsof, and iproute2 on all three nodes to resolve real binaries via PATH, which fixed SST joins."
+    }
+  ]
+}

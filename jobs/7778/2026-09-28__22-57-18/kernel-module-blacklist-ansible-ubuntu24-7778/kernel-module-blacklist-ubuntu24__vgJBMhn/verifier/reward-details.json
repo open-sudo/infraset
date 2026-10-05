@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "immediate-unload",
+      "requirement": "usb-storage kernel module is not currently loaded on node1 (module stopped 'now')",
+      "status": "satisfied",
+      "summary": "Baseline (cmd-55de29ecc7a0494b) showed the module already unloaded and no blacklist file present. After the playbook ran, an explicit modprobe attempt (cmd-caa57d6719044407) failed with rc=1 and lsmod stayed empty, directly confirming the module is blocked from loading immediately.",
+      "evidence_ids": [
+        "cmd-55de29ecc7a0494b",
+        "cmd-4b731f48756449b2",
+        "cmd-2f8d02ea92144dc2",
+        "cmd-caa57d6719044407"
+      ]
+    },
+    {
+      "id": "persistent-block",
+      "requirement": "usb-storage kernel module is prevented from loading after a reboot",
+      "status": "satisfied",
+      "summary": "A blacklist/install-false modprobe.d config was written and initramfs updated (cmd-4b731f48756449b2). A real reboot was performed (cmd-71cc473d5cdf45e8), boot_id changed from 901ef286... to d397e892... (cmd-e44f6c1f1b76433f, cmd-fe5e3ecd4c404e05), and post-reboot verification (cmd-1a9afa498dc44815) confirmed the config file was intact and modprobe usb-storage still failed (rc=1) with the module unloaded \u2014 a direct before/disruption/after demonstration of the persistence requirement.",
+      "evidence_ids": [
+        "cmd-4b731f48756449b2",
+        "cmd-e44f6c1f1b76433f",
+        "cmd-71cc473d5cdf45e8",
+        "cmd-fe5e3ecd4c404e05",
+        "cmd-1a9afa498dc44815"
+      ]
+    },
+    {
+      "id": "ansible-implementation",
+      "requirement": "Change implemented using Ansible",
+      "status": "satisfied",
+      "summary": "node2 was confirmed as the only node with ansible/ansible-playbook installed (cmd-e384874676f94ccb, cmd-8954a3960f524edd) and used to run a playbook against node1 using ansible.builtin.copy, ansible.builtin.command, and community.general.modprobe, completing with changed=2 (cmd-4b731f48756449b2).",
+      "evidence_ids": [
+        "cmd-e384874676f94ccb",
+        "cmd-8954a3960f524edd",
+        "cmd-4b731f48756449b2"
+      ]
+    },
+    {
+      "id": "node1-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node1 (boot identity before/after, restart ack, recovered state)",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id 901ef286... and healthy blacklist state captured (cmd-e44f6c1f1b76433f), reboot acknowledged (cmd-71cc473d5cdf45e8), connection loss observed during boot (cmd-8b14c51e8f164270, cmd-c79d1fbc575d48e3), new boot_id d397e892... confirmed (cmd-fe5e3ecd4c404e05), and recovered/persisted blacklist state verified (cmd-1a9afa498dc44815). Consistent with fixed before_prepare/after_executor boot-identity snapshots for node1 (901ef286... -> d397e892...).",
+      "evidence_ids": [
+        "cmd-e44f6c1f1b76433f",
+        "cmd-71cc473d5cdf45e8",
+        "cmd-8b14c51e8f164270",
+        "cmd-fe5e3ecd4c404e05",
+        "cmd-1a9afa498dc44815"
+      ]
+    },
+    {
+      "id": "node2-restart-protocol",
+      "requirement": "Provider-wide node-restart evidence protocol executed on node2 (boot identity before/after, restart ack, recovered state)",
+      "status": "satisfied",
+      "summary": "Pre-restart boot_id 6fd57414... and working ansible install captured (cmd-7ae338b30ee3497e), reboot acknowledged (cmd-7665bd2eaad64ee1), connection loss observed (cmd-dca33bae13774192, cmd-ae56fa5dee2e471c), new boot_id b0b9b35a... confirmed (cmd-5e8358c140e94836), and recovery verified via a successful idempotent playbook re-run against node1 (changed=0) confirming both control tooling and cross-node connectivity recovered (cmd-37770848fe2d49a2). Matches fixed after_executor boot-identity snapshot for node2.",
+      "evidence_ids": [
+        "cmd-7ae338b30ee3497e",
+        "cmd-7665bd2eaad64ee1",
+        "cmd-dca33bae13774192",
+        "cmd-5e8358c140e94836",
+        "cmd-37770848fe2d49a2"
+      ]
+    }
+  ],
+  "overall_summary": "The core task \u2014 blacklisting usb-storage on node1 both immediately and persistently across reboot, implemented via Ansible \u2014 is directly and coherently demonstrated: baseline capture, playbook run (changed=2), immediate modprobe-failure verification, a real reboot with boot_id change, and post-reboot re-verification that the block survived. The separate mandatory node-restart evidence protocol was also completed correctly for both node1 and node2, with boot identities matching the fixed lifecycle snapshots. The main issue is operational hygiene: to make Ansible reach node1 at all, the executor had to bootstrap and persistently enable sshd with root key-based login, which remains active afterward and is a genuine (if necessary) widening of node1's attack surface, plus a stray SSH key addition to node2's own authorized_keys with no clear purpose. Neither undermines the task outcome itself.",
+  "limitations": [
+    "No independent evidence outside the executor's own commands was available to corroborate the reboot timing or the modprobe.d file's exact deployment mechanism beyond the playbook's own reported 'changed' status.",
+    "The persistent enabling of root SSH access on node1 is a side effect of environment bootstrapping (missing default 'antrieb' user/sshd) rather than a task requirement, but is noted because it was not reverted."
+  ],
+  "command_stats": {
+    "total": 34,
+    "successful": 22,
+    "failed": 12,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.65,
+    "summary": "Most state-changing commands were justified prerequisites: node1's sshd was not running (missing host keys), so ssh-keygen -A, 'systemctl enable --now ssh' (cmd-adf66e128fb04ed7, following the failed attempt cmd-3bdd85671eb74ed0), and writing authorized_keys were necessary to make node1 reachable by Ansible from node2, and the default ansible.cfg's 'antrieb' remote user was correctly worked around with an explicit inventory override (cmd-4b731f48756449b2) rather than modifying shared config. However, this leaves two residual, executor-caused footprint changes beyond the task's scope that were not reverted: (1) sshd on node1 is now a persistently enabled, actively listening service (visible in the after_executor listening-sockets diff, owned by a running sshd process rather than socket-activated systemd as at baseline) with root key-based login enabled \u2014 a meaningful and permanent widening of remote access that was not cleaned up after the playbook run completed; (2) cmd-15e2b3c779ab4279 appended the CLUSTER_SSH_PUBKEY to node2's own ~/.ssh/authorized_keys, which has no apparent purpose (node2 is the control node initiating connections, not receiving them) and was left in place. Both were low-risk, bounded, single-purpose mutations rather than broad or destructive ones, so they lower the score moderately rather than severely. No failed/conflicting services, package damage, or abandoned temp files were observed; package-health and failed-services checks were clean before and after.",
+    "evidence_ids": [
+      "cmd-3bdd85671eb74ed0",
+      "cmd-adf66e128fb04ed7",
+      "cmd-15e2b3c779ab4279",
+      "cmd-4b731f48756449b2",
+      "global:after_executor:node1:listening-sockets",
+      "global:before_prepare:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "req-1",
+      "requirement": "Traffic from node2 toward node3 is limited to 1 Mbit/s",
+      "status": "satisfied",
+      "summary": "A VyOS 'rate-control' QoS policy with bandwidth 1mbit was applied as an egress shaper on node1's eth2 interface (the interface facing node3), which is the correct chokepoint for traffic destined to node3 regardless of origin (node2 is the only other private-network peer). tc qdisc confirms a tbf qdisc with rate 1Mbit on eth2 both immediately after configuration and after node1's reboot. An actual HTTP transfer from node2 to node3 measured ~119,866 bytes/s (~0.96 Mbit/s), consistent with the configured 1 Mbit/s cap accounting for protocol overhead.",
+      "evidence_ids": [
+        "cmd-7b20a977c699440d",
+        "cmd-0cd6ec9c78c54aea",
+        "cmd-acfdd0b827c44d3f",
+        "cmd-2113de0f2f264dc0"
+      ]
+    },
+    {
+      "id": "req-2",
+      "requirement": "Traffic from node3 toward node2 remains unrestricted",
+      "status": "satisfied",
+      "summary": "No shaping policy was applied to node1's eth1 interface (facing node2), which is the egress path for node3->node2 traffic. An HTTP transfer from node3 to node2 measured ~582,866,036 bytes/s (~4.6 Gbit/s), showing no throttling in that direction.",
+      "evidence_ids": [
+        "cmd-cb35cf4b1d814ef2"
+      ]
+    },
+    {
+      "id": "req-3",
+      "requirement": "node2 and node3 sit on separate private networks and communicate only through node1",
+      "status": "satisfied",
+      "summary": "node1 eth1 (10.10.12.1/24) connects to node2's private subnet and eth2 (10.10.13.1/24) connects to node3's private subnet; node2 and node3 each hold static routes to the other's subnet via node1. Bidirectional pings confirmed reachability across this topology both before and after node restarts.",
+      "evidence_ids": [
+        "cmd-857fb85a08b946f4",
+        "cmd-83e4629fffcd4db7",
+        "cmd-d6d4bfd375ea42a3",
+        "cmd-6ff0dd0f2c434334",
+        "cmd-8d6cbae1b9ca48a2",
+        "cmd-a4f1f77ada1f457c",
+        "cmd-9d4a789c93aa4dc2",
+        "cmd-210334c9184a4991"
+      ]
+    },
+    {
+      "id": "req-4",
+      "requirement": "Provider-wide node-restart evidence protocol executed on all managed nodes (node1, node2, node3)",
+      "status": "satisfied",
+      "summary": "Each node shows a pre-restart healthy baseline (boot_id + config state), an explicit restart command, confirmed unreachability mid-restart, a changed post-restart boot_id, and recovered network/service state \u2014 including persistence of the 1Mbit TBF qdisc on node1's eth2 after its own reboot, and recovered IP/route/connectivity on node2 and node3. Final bidirectional pings after all three restarts confirm the shaped topology survived intact. This is corroborated by the fixed lifecycle before/after-executor boot-identity snapshots, which show all three boot IDs changed (node1: 50503c5d\u21929d1f4a16, node2: a8e7c48c\u2192803ad1f3, node3: 9ed9e820\u2192ca45755d).",
+      "evidence_ids": [
+        "cmd-069ca4f772254df7",
+        "cmd-27f73c8445374ba4",
+        "cmd-bd7acbda347844af",
+        "cmd-7a537ad8b96d4559",
+        "cmd-2113de0f2f264dc0",
+        "cmd-7af818f0f4424221",
+        "cmd-480a6b1ea22a4c52",
+        "cmd-44b1ed6a696341c2",
+        "cmd-e2b59559f53d416f",
+        "cmd-91e4b82f926f4359",
+        "cmd-b2310d6e36d043f7",
+        "cmd-84237d4fb9e64c01",
+        "cmd-39911ba60897458f",
+        "cmd-c88d894a60d64827",
+        "cmd-fdc239a83d0a417d",
+        "global:after_executor:node1:boot-identity",
+        "global:after_executor:node2:boot-identity",
+        "global:after_executor:node3:boot-identity"
+      ]
+    }
+  ],
+  "overall_summary": "The executor successfully built the required node2/node3-via-node1 private topology and applied a VyOS TBF-based QoS egress shaper on node1's eth2 interface, capping node2\u2192node3 traffic at ~1 Mbit/s while leaving node3\u2192node2 traffic unrestricted, both confirmed via real cross-node HTTP transfers. All three nodes were subsequently restarted with clear pre/post boot-identity evidence, connectivity loss during reboot, and full recovery of connectivity and the shaping configuration afterward, corroborated by the fixed lifecycle snapshots. Temporary test/firewall mutations were reverted with only trivial residual files remaining.",
+  "limitations": [
+    "The executor's own evidence citation list referenced command ID 'cmd-0cd6ec9c8c54aea' for the qdisc verification step, but the actual timeline only contains 'cmd-0cd6ec9c78c54aea' (an apparent typo); the correct command was used to substantiate this finding.",
+    "Direct traffic-shaping verification relied on single HTTP transfers rather than repeated trials, so natural variance in the ~0.96 Mbit/s vs 1 Mbit/s target could not be statistically characterized, though the observed tbf qdisc configuration directly corroborates the intended limit.",
+    "Executor evidence item 1 referenced unknown command IDs: cmd-0cd6ec9c8c54aea"
+  ],
+  "command_stats": {
+    "total": 77,
+    "successful": 52,
+    "failed": 23,
+    "indeterminate": 2,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.85,
+    "summary": "Executor's state-changing commands were tightly scoped to the task: configuring node1/node2/node3 interfaces and routes (necessary for the topology), applying the QoS policy (necessary for the requirement), and temporarily opening firewalld port 8000 on node2/node3 to run ad-hoc HTTP test servers for bandwidth verification. The firewall port openings (cmd-21ad726f7a804911, cmd-60dbfbc1c2824992) and test servers/files were fully reverted (cmd-6316a203df734d60 removed port on node2, cmd-6847bf099c3c4776 removed port on node3 and deleted test files/dirs), and post-restart lifecycle snapshots show no residual firewall exposure or orphaned processes. One early SimpleHTTPServer attempt (cmd-3262c4d779574413, cmd-f8c138a29ba040b7) timed out but the retry succeeded and residue was cleaned up. Minor residual artifact: /tmp/reboot.log left on node2/node3 and /tmp/httpd.pid left on node3 per the after-executor snapshot \u2014 small, low-risk leftovers from the reboot/test process rather than unnecessary mutations. No destructive or unbounded actions were taken.",
+    "evidence_ids": [
+      "cmd-21ad726f7a804911",
+      "cmd-60dbfbc1c2824992",
+      "cmd-6316a203df734d60",
+      "cmd-6847bf099c3c4776",
+      "global:after_executor:node2:temporary-files",
+      "global:after_executor:node3:temporary-files"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

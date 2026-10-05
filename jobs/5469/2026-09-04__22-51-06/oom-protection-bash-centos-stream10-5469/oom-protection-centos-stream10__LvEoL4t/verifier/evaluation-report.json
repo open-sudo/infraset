@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "managed-service",
+      "requirement": "inventory-api deployed on node1 as a systemd-managed service",
+      "status": "satisfied",
+      "summary": "systemd unit inventory-api.service created with Restart=always and OOMScoreAdjust=-1000, enabled and started; systemctl reports active with a MainPID.",
+      "evidence_ids": [
+        "cmd-521f12ca554b4216"
+      ]
+    },
+    {
+      "id": "healthy-baseline",
+      "requirement": "Service is healthy and correctly configured before disruption",
+      "status": "satisfied",
+      "summary": "oom_score_adj confirmed -1000 in /proc for the running PID, and /health and /inventory endpoints return valid JSON over the network prior to the memory-hog test.",
+      "evidence_ids": [
+        "cmd-e8ae5ee84b3348ac",
+        "cmd-43d0be9e71f64e93"
+      ]
+    },
+    {
+      "id": "oom-induced",
+      "requirement": "A memory-hungry process drives the system out of memory",
+      "status": "satisfied",
+      "summary": "An unprotected hog.py process was launched and grew to ~1.5GB RSS on a 1.7GiB-RAM, swapless node, exhausting available memory and triggering a real kernel OOM event (visible in dmesg's oom-kill trace).",
+      "evidence_ids": [
+        "cmd-38f773baeeea4bef",
+        "cmd-51d5aea529884518"
+      ]
+    },
+    {
+      "id": "hog-is-killed-not-service",
+      "requirement": "The kernel's OOM killer stops the memory hog, not inventory-api",
+      "status": "satisfied",
+      "summary": "dmesg directly shows 'Out of memory: Killed process 2505 (python3) ... oom_score_adj:0' (the hog), while the same process-table dump lists inventory-api's pid 2445 with oom_score_adj:-1000 as still alive and unaffected.",
+      "evidence_ids": [
+        "cmd-51d5aea529884518"
+      ]
+    },
+    {
+      "id": "keeps-serving",
+      "requirement": "inventory-api keeps serving through and after the OOM event",
+      "status": "satisfied",
+      "summary": "Post-OOM check shows systemctl is-active=active with the same PID 2445 (service was never restarted), and both /health and /inventory return correct JSON over the network immediately after the kill.",
+      "evidence_ids": [
+        "cmd-99e4aa37e0284e53"
+      ]
+    }
+  ],
+  "overall_summary": "All material outcomes of the task contract are directly and coherently evidenced: inventory-api is deployed as a proper systemd-managed service with a hardened OOM score, a real memory-exhaustion event was triggered on the 1.7GiB swapless node, dmesg directly confirms the kernel killed the unprotected hog process (pid 2505) while leaving inventory-api (pid 2445, oom_score_adj:-1000) untouched, and the service continued serving correct responses on the same PID both during and after the event. The separately-mandated node-restart evidence protocol is also well-documented and internally consistent: pre-restart boot_id be303eb3... and post-restart boot_id 58cc4b95... match the fixed before-prepare/after-executor lifecycle snapshots exactly, the reboot acknowledgement is shown by the exec stream closing, and post-reboot recovery of the service (active/enabled, OOMScoreAdjust=-1000 preserved, /health and /inventory functioning) is directly observed.",
+  "limitations": [
+    "The restart/reboot evidence, while high quality and cross-checked against the fixed lifecycle snapshots, is not itself part of the public task contract and is noted only to assess evidence quality, not scored as a task requirement.",
+    "One diagnostic command during the OOM window (cmd-09c8e39117da4b15) returned a closed exec stream rather than output, slightly narrowing the window of directly-observed system state at the exact moment of the kill, though the immediately following command (cmd-51d5aea529884518) fully covers the same evidence via dmesg."
+  ],
+  "command_stats": {
+    "total": 18,
+    "successful": 14,
+    "failed": 4,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.9,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.95,
+    "summary": "All state-changing executor commands map cleanly to the task: unit-file creation and service start (necessary), the hog.py memory-exhaustion process (necessary to trigger the required OOM scenario), and the mandated post-task reboot (separate provider protocol). The hog script/log/pid files were explicitly removed afterward (cmd-e068d40a049c44cf), leaving no residue, and the after-executor temp-file/listening-socket diffs show only expected systemd-private dirs tied to the new boot and the intended inventory-api:8080 listener \u2014 no abandoned files, failed units, or unrelated exposure. The unit file's added MemoryHigh=infinity/MemoryMax=infinity lines are a low-risk, retained tweak reasonably tied to demonstrating unconstrained memory behavior for the OOM test, not an unrelated mutation. One diagnostic command (cmd-09c8e39117da4b15) failed with a closed exec stream (concurrent with the OOM disruption) but was read-only (free/ps/cat/dmesg) and caused no state change.",
+    "evidence_ids": [
+      "cmd-e068d40a049c44cf",
+      "cmd-521f12ca554b4216",
+      "global:before_prepare:node1:temporary-files",
+      "global:after_executor:node1:temporary-files",
+      "global:after_executor:node1:listening-sockets",
+      "global:before_prepare:node1:listening-sockets",
+      "global:after_executor:node1:failed-services"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}

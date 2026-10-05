@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "command_stats": {
+    "total": 8,
+    "successful": 7,
+    "failed": 1,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "selected_evidence": [
+    {
+      "requirement": "os-comparison-worker configured as managed service 'inventory-worker' under dedicated 'inventorysvc' account",
+      "command_ids": [
+        "cmd-96eba1126916449d",
+        "cmd-2ed74938aee54566",
+        "cmd-ec1e0d8434664db2"
+      ],
+      "summary": "Confirmed target binary/OS, then created inventorysvc user and inventory-worker.service; verified active/enabled with process running as inventorysvc (PID 2173)"
+    },
+    {
+      "requirement": "node1 restart evidence: healthy baseline before restart",
+      "command_ids": [
+        "cmd-40c7810f0b8a44e8"
+      ],
+      "summary": "Captured baseline boot_id (fe422859-bfe7-4eb4-819b-e09864f3ca60), uptime, and active inventory-worker.service with MainPID=2173"
+    },
+    {
+      "requirement": "node1 restart evidence: restart acknowledgement and disconnection",
+      "command_ids": [
+        "cmd-fceefbbee5a04351",
+        "cmd-3eb4447af1f54267"
+      ],
+      "summary": "Issued backgrounded sudo -n reboot which returned an ack, then confirmed node1 became unreachable (SSH connection timed out), proving the reboot took effect"
+    },
+    {
+      "requirement": "node1 restart evidence: changed boot identity and recovery",
+      "command_ids": [
+        "cmd-a60c7459fb2c4d7b",
+        "cmd-ff6db495342c4fd7"
+      ],
+      "summary": "Reconnected once exec became available again; boot_id changed to be48fda2-9c49-4834-8bb9-18f274083cdd (different from baseline) with fresh uptime, and inventory-worker.service was active/enabled again with new MainPID=872 running as inventorysvc, proving service recovery after restart"
+    }
+  ],
+  "limitations": [],
+  "commands": [
+    {
+      "command_id": "cmd-96eba1126916449d",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:51:19.805065+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 489,
+      "command": "set -Eeuo pipefail\necho \"== os ==\"; cat /etc/os-release | head -5\necho \"== init ==\"; ps -p1 -o comm=\necho \"== binary ==\"; ls -la /usr/local/bin/os-comparison-worker; file /usr/local/bin/os-comparison-worker || true\necho \"== user check ==\"; id inventorysvc 2>&1 || true\necho \"== existing unit ==\"; systemctl list-unit-files | grep -i inventory || true\n",
+      "stdout": "== os ==\nNAME=\"Red Hat Enterprise Linux Server\"\nVERSION=\"7.9 (Maipo)\"\nID=\"rhel\"\nID_LIKE=\"fedora\"\nVARIANT=\"Server\"\n== init ==\nsystemd\n== binary ==\n-rwxr-xr-x. 1 root root 60 Aug 26 10:37 /usr/local/bin/os-comparison-worker\n/usr/local/bin/os-comparison-worker: POSIX shell script, ASCII text executable\n== user check ==\nid: inventorysvc: no such user\n== existing unit ==\n"
+    },
+    {
+      "command_id": "cmd-2ed74938aee54566",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:51:21.853288+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 314,
+      "command": "set -Eeuo pipefail\necho \"== script content ==\"; cat /usr/local/bin/os-comparison-worker\necho \"== sudo check ==\"; sudo -n true && echo SUDO_OK\n",
+      "stdout": "== script content ==\n#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 30; done\n== sudo check ==\nSUDO_OK\n"
+    },
+    {
+      "command_id": "cmd-ec1e0d8434664db2",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:51:29.037074+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 2521,
+      "command": "set -Eeuo pipefail\n\necho \"== step 1: create system user ==\"\nsudo -n useradd --system --no-create-home --shell /sbin/nologin inventorysvc\nid inventorysvc\n\necho \"== step 2: write systemd unit ==\"\nsudo -n tee /etc/systemd/system/inventory-worker.service > /dev/null <<'UNIT'\n[Unit]\nDescription=Inventory Worker (OS comparison worker)\nAfter=network.target\n\n[Service]\nType=simple\nUser=inventorysvc\nGroup=inventorysvc\nExecStart=/usr/local/bin/os-comparison-worker\nRestart=on-failure\nNoNewPrivileges=true\n\n[Install]\nWantedBy=multi-user.target\nUNIT\n\necho \"== step 3: reload + enable + start ==\"\nsudo -n systemctl daemon-reload\nsudo -n systemctl enable inventory-worker.service\nsudo -n systemctl restart inventory-worker.service\nsleep 2\n\necho \"== step 4: verify ==\"\nsudo -n systemctl is-active inventory-worker.service\nsudo -n systemctl is-enabled inventory-worker.service\nsudo -n systemctl status inventory-worker.service --no-pager\necho \"== process owner ==\"\nps -eo user,pid,cmd | grep os-comparison-worker | grep -v grep\n",
+      "stdout": "== step 1: create system user ==\nuid=997(inventorysvc) gid=995(inventorysvc) groups=995(inventorysvc)\n== step 2: write systemd unit ==\n== step 3: reload + enable + start ==\n== step 4: verify ==\nactive\nenabled\n\u25cf inventory-worker.service - Inventory Worker (OS comparison worker)\n   Loaded: loaded (/etc/systemd/system/inventory-worker.service; enabled; vendor preset: disabled)\n   Active: active (running) since Wed 2026-08-26 10:38:20 EDT; 2s ago\n Main PID: 2173 (os-comparison-w)\n   CGroup: /system.slice/inventory-worker.service\n           \u251c\u25002173 /bin/sh /usr/local/bin/os-comparison-worker\n           \u2514\u25002175 sleep 30\n\nAug 26 10:38:20 node1 systemd[1]: Started Inventory Worker (OS comparison worker).\n== process owner ==\ninvento+  2173 /bin/sh /usr/local/bin/os-comparison-worker\n",
+      "stderr": "Created symlink from /etc/systemd/system/multi-user.target.wants/inventory-worker.service to /etc/systemd/system/inventory-worker.service.\n"
+    },
+    {
+      "command_id": "cmd-40c7810f0b8a44e8",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:51:32.024321+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 338,
+      "command": "set -Eeuo pipefail\necho \"== boot id baseline ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"\nuptime -s\necho \"== service health baseline ==\"\nsystemctl is-active inventory-worker.service\nsystemctl show inventory-worker.service -p MainPID -p ExecMainStartTimestamp\nps -eo user,pid,cmd | grep os-comparison-worker | grep -v grep\n",
+      "stdout": "== boot id baseline ==\nfe422859-bfe7-4eb4-819b-e09864f3ca60\n== uptime ==\n2026-08-26 10:36:06\n== service health baseline ==\nactive\nMainPID=2173\nExecMainStartTimestamp=Wed 2026-08-26 10:38:20 EDT\ninvento+  2173 /bin/sh /usr/local/bin/os-comparison-worker\n"
+    },
+    {
+      "command_id": "cmd-fceefbbee5a04351",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:51:33.976349+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 300,
+      "command": "set -Eeuo pipefail\nnohup sudo -n reboot >/tmp/reboot.log 2>&1 &\ndisown\necho \"reboot command issued\"\n",
+      "stdout": "reboot command issued\n"
+    },
+    {
+      "command_id": "cmd-3eb4447af1f54267",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:51:42.304661+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 255,
+      "duration_ms": 5077,
+      "command": "echo pong",
+      "stderr": "ssh: connect to host 10.100.64.10 port 22: Connection timed out\r\n"
+    },
+    {
+      "command_id": "cmd-a60c7459fb2c4d7b",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:51:47.926822+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 4384,
+      "command": "echo pong",
+      "stdout": "pong\n"
+    },
+    {
+      "command_id": "cmd-ff6db495342c4fd7",
+      "executor_attempt": 1,
+      "timestamp": "2026-09-29T12:51:50.442057+00:00",
+      "node": "node1",
+      "outcome": "completed",
+      "return_code": 0,
+      "duration_ms": 286,
+      "command": "set -Eeuo pipefail\necho \"== boot id post-restart ==\"\ncat /proc/sys/kernel/random/boot_id\necho \"== uptime ==\"\nuptime -s\necho \"== service health post-restart ==\"\nsystemctl is-active inventory-worker.service\nsystemctl is-enabled inventory-worker.service\nsystemctl show inventory-worker.service -p MainPID -p ExecMainStartTimestamp\nps -eo user,pid,cmd | grep os-comparison-worker | grep -v grep\n",
+      "stdout": "== boot id post-restart ==\nbe48fda2-9c49-4834-8bb9-18f274083cdd\n== uptime ==\n2026-09-29 08:51:40\n== service health post-restart ==\nactive\nenabled\nMainPID=872\nExecMainStartTimestamp=Tue 2026-09-29 08:51:46 EDT\ninvento+   872 /bin/sh /usr/local/bin/os-comparison-worker\n"
+    }
+  ]
+}

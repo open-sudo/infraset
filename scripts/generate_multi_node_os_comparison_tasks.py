@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
+from scenario_layout import resolve_task_path, collection_asset
+from variant_metadata import dumps, initial_metadata
 
 try:
     import tomllib
@@ -13,8 +15,9 @@ except ModuleNotFoundError:  # Python 3.10 and earlier
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-MATRIX_ROOT = REPOSITORY / "tasks" / "multi-node-os-comparison"
-CATALOG_PATH = MATRIX_ROOT / "catalog.toml"
+MATRIX_ROOT = REPOSITORY / "tasks"
+GROUP = "multi-node-os-comparison"
+CATALOG_PATH = REPOSITORY / "scripts" / "legacy2" / "catalogs" / (GROUP + ".toml")
 
 SENTINEL = """#!/bin/sh
 echo "InfraSet requires the configured Harbor-Antrieb verifier." >&2
@@ -56,15 +59,15 @@ def validate_catalog(catalog: dict[str, object]) -> tuple[list[dict], list[dict]
     tasks = catalog.get("tasks")
     if not isinstance(systems, list) or not isinstance(tasks, list):
         raise ValueError("catalog requires operating_systems and tasks arrays")
-    if len(systems) != 8:
-        raise ValueError(f"expected 8 operating systems, found {len(systems)}")
+    if len(systems) != 2:
+        raise ValueError(f"expected 2 operating systems, found {len(systems)}")
     if len(tasks) != 10:
         raise ValueError(f"expected 10 task families, found {len(tasks)}")
 
     os_ids = [item.get("id") for item in systems if isinstance(item, dict)]
     slugs = [item.get("slug") for item in tasks if isinstance(item, dict)]
     numbers = [item.get("number") for item in tasks if isinstance(item, dict)]
-    if len(os_ids) != 8 or len(set(os_ids)) != 8:
+    if len(os_ids) != 2 or len(set(os_ids)) != 2:
         raise ValueError("operating-system IDs must be unique")
     if len(slugs) != 10 or len(set(slugs)) != 10:
         raise ValueError("task slugs must be unique")
@@ -85,7 +88,7 @@ def environment_text(system: dict, nodes: int) -> str:
         lines.append('initialize = ["rhsm"]')
     lines.extend(
         [
-            'base_runbooks = ["antrieb/primer"]',
+            'base_runbooks = ["antrieb/primer", "antrieb/networking-primer"]',
             'control_node = "node1"',
             'endpoint = "https://antrieb.sh/mcp"',
         ]
@@ -99,11 +102,10 @@ def generate() -> int:
 
     generated = 0
     for system in systems:
-        os_root = MATRIX_ROOT / system["id"]
-        os_root.mkdir(parents=True, exist_ok=True)
+        os_root = MATRIX_ROOT / ("bash-" + system["id"]) / GROUP
         for task in tasks:
             task_name = f'{task["slug"]}-{system["id"]}'
-            task_root = os_root / task_name
+            task_root = resolve_task_path(os_root / task_name)
             task_root.mkdir(parents=True, exist_ok=True)
             instruction = clean_block(task["instruction"])
 
@@ -117,6 +119,7 @@ def generate() -> int:
                 environment_text(system, task["nodes"]),
             )
             write(task_root / "tests" / "test.sh", SENTINEL, 0o755)
+            write(task_root / "variant.toml", dumps(initial_metadata(task_root)))
 
             generated += 1
 
@@ -128,4 +131,4 @@ def generate() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(0 if generate() == 80 else 1)
+    raise SystemExit(0 if generate() == 20 else 1)

@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "evaluator": "evidence",
+  "requirements": [
+    {
+      "id": "dns-node1",
+      "requirement": "node1 (OpenWrt) answers authoritative DNS for app.internal -> node2's IP (10.100.198.11) on the shared lan network",
+      "status": "satisfied",
+      "summary": "A UCI dhcp.@domain record (app.internal -> 10.100.198.11) was added and committed, dnsmasq restarted, and confirmed listening on the shared br-lan address 10.100.198.10:53 (both TCP and UDP). A local nslookup on node1 resolves app.internal to 10.100.198.11. This configuration survived a full node1 reboot (baseline boot_id f90f49b2, changed to c5d4abec after restart) with dnsmasq status/config verified intact post-reboot.",
+      "evidence_ids": [
+        "cmd-6a4368d73ef045c4",
+        "cmd-b8f94754e07e497a",
+        "cmd-756b73c21f124512",
+        "cmd-44d608144fdf4b97"
+      ]
+    },
+    {
+      "id": "node3-resolution-no-hosts",
+      "requirement": "node3 resolves app.internal via real DNS (pointed at node1) with no local /etc/hosts entry",
+      "status": "satisfied",
+      "summary": "node3's NetworkManager connection was reconfigured to use 10.100.198.10 as DNS server (ipv4.ignore-auto-dns=yes), and /etc/resolv.conf reflects this. A grep of /etc/hosts for app.internal returns no match, while getent hosts and a Python socket.gethostbyname both resolve app.internal to 10.100.198.11, confirming resolution is via DNS rather than a static hosts entry. This held after node3's own reboot as well (resolv.conf and hosts-grep re-checked post-restart).",
+      "evidence_ids": [
+        "cmd-e8a3915a1ee844ee",
+        "cmd-5761ef4bdf7e4252",
+        "cmd-45118c1d3fdc4103"
+      ]
+    },
+    {
+      "id": "node3-reaches-service",
+      "requirement": "node3 can reach node2's HTTP service on port 8080 using the name app.internal",
+      "status": "satisfied",
+      "summary": "curl to http://app.internal:8080/ from node3 returns HTTP 200 with node2's page content, both immediately after setup and after each node's subsequent reboot. Note: the task stated node2 already runs this service, but evidence shows it was not actually running at task start (ss/ps showed nothing on 8080); the executor created a systemd-managed python http.server and opened firewalld port 8080 to establish the real service being resolved/reached, which is a reasonable and necessary step to fulfill the stated end-to-end goal.",
+      "evidence_ids": [
+        "cmd-5761ef4bdf7e4252",
+        "cmd-144bacf8598b4aa6",
+        "cmd-3ae55738eb3b4a08",
+        "cmd-24c661b4333a42fc",
+        "cmd-8a8451bc66d044e9",
+        "cmd-45118c1d3fdc4103"
+      ]
+    },
+    {
+      "id": "restart-node1",
+      "requirement": "Mandatory node-restart evidence protocol for node1: baseline, restart ack, changed boot identity, recovered service state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id f90f49b2 and healthy dnsmasq/app.internal config captured pre-restart. First reboot attempt failed silently (nohup missing on OpenWrt ash) and was corrected with a working backgrounded reboot; ack issued, boot_id changed to c5d4abec after reconnection, and dnsmasq/app.internal resolution plus node3's end-to-end DNS+HTTP check were re-verified post-reboot. The fixed after_executor snapshot's boot-identity probe for node1 failed transiently (rc=255, likely timing/SSH), but other after_executor observations (differing uhttpd/dnsmasq PIDs) are consistent with the reboot the executor directly observed.",
+      "evidence_ids": [
+        "cmd-cd6d53610cb14f41",
+        "cmd-2ac3dcf219b44ef1",
+        "cmd-e840ae075e6448e0",
+        "cmd-ed8b58877d6e43bb",
+        "cmd-44d608144fdf4b97",
+        "cmd-7401a1651cbf4ea5"
+      ]
+    },
+    {
+      "id": "restart-node2",
+      "requirement": "Mandatory node-restart evidence protocol for node2: baseline, restart ack, changed boot identity, recovered service state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 910dc564 and healthy service state captured. First reboot ack + boot_id change to a550fc49 confirmed, but the app-internal.service was found inactive post-boot due to a network-online.target dependency never satisfied on this image (a real bug). The unit was fixed to depend on network.target, restarted manually, then a second reboot was performed (boot_id changed to dfc3681f, cross-confirmed by the fixed after_executor snapshot) with the service automatically active and serving 200 without manual intervention.",
+      "evidence_ids": [
+        "cmd-65d04cdd907749cd",
+        "cmd-d36061a1d3bd4f21",
+        "cmd-02e908ebfeb844f9",
+        "cmd-44a65d2c3ea540f8",
+        "cmd-edd6af6288494938",
+        "cmd-08edee79b0f640a6",
+        "cmd-e331068e55f84be3",
+        "cmd-2f6b219928b64edc"
+      ]
+    },
+    {
+      "id": "restart-node3",
+      "requirement": "Mandatory node-restart evidence protocol for node3: baseline, restart ack, changed boot identity, recovered DNS+HTTP state",
+      "status": "satisfied",
+      "summary": "Baseline boot_id 67c52137 and working DNS/HTTP state captured. Reboot ack issued, boot_id changed to aee30e7b (cross-confirmed by the fixed after_executor snapshot), and DNS resolution via 10.100.198.10 plus HTTP access to app.internal:8080 with no /etc/hosts entry were both re-verified post-reboot.",
+      "evidence_ids": [
+        "cmd-184758d779304c6b",
+        "cmd-4868ea626dcb4315",
+        "cmd-e61ee2233e33404c",
+        "cmd-45118c1d3fdc4103"
+      ]
+    }
+  ],
+  "overall_summary": "The executor correctly configured node1's dnsmasq to authoritatively answer app.internal -> node2's IP over the shared lan interface, and configured node3 to use node1 as its DNS resolver with no /etc/hosts entry, then verified end-to-end name resolution and HTTP reachability to node2's port-8080 service. It also discovered that node2's stated HTTP service was not actually running and created a real one to allow genuine validation. All three nodes were taken through a full baseline/ack/changed-boot-id/recovery restart cycle, including catching and fixing a real systemd network-online.target boot-persistence bug on node2, with the fix validated by a second reboot.",
+  "limitations": [
+    "The fixed after_executor lifecycle snapshot's boot-identity probe for node1 returned an empty result (rc=255), likely a transient SSH/timing issue at collection time, so this specific cross-check for node1 relies on the executor's own final boot_id observation (c5d4abec) rather than the fixed snapshot.",
+    "The task premise stated node2 already runs the HTTP service, but evidence shows it did not exist before the executor created it; this is treated as a necessary prerequisite rather than an unrequested feature, but it is a deviation from the stated starting condition worth noting."
+  ],
+  "command_stats": {
+    "total": 53,
+    "successful": 39,
+    "failed": 14,
+    "indeterminate": 0,
+    "malformed_audit_records": 0,
+    "audit_status": "available"
+  },
+  "evaluation_coverage": 1.0,
+  "confidence": 0.85,
+  "evaluation_complete": true,
+  "publication_eligible": true,
+  "functionality": 1.0,
+  "operational_hygiene": {
+    "score": 0.92,
+    "summary": "All state-changing commands trace to a material outcome: DNS config on node1, DNS override + verification on node3, the (necessary, since absent) HTTP service and firewall rule on node2, the three restart cycles, and the in-flight fix of node2's systemd unit dependency (a legitimate bug discovered during the mandated restart protocol). The one failed mutation attempt (cmd-2ac3dcf219b44ef1, a nohup reboot that errored because nohup is absent on OpenWrt ash) did not actually change state and was immediately corrected by cmd-e840ae075e6448e0, so it is not counted as residue. Post-executor temp-file diffs (systemd-private-* dirs, reboot.log) are normal reboot byproducts, not executor-created clutter. No abandoned files, conflicting services, unsafe exposure, or damaged package state were observed in the after_executor snapshot versus after_prepare.",
+    "evidence_ids": [
+      "cmd-2ac3dcf219b44ef1",
+      "cmd-e840ae075e6448e0",
+      "global:after_executor:node2:listening-sockets",
+      "global:after_executor:node1:listening-sockets"
+    ]
+  },
+  "reward": 1.0,
+  "provisional_reward": 1.0
+}
